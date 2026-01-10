@@ -1,0 +1,233 @@
+{
+  "version": "5.0",
+  "entities_v3": {
+    "角色": {
+      "suwan": {
+        "id": "suwan",
+        "name": "苏婉",
+        "type": "角色",
+        "tier": "核心",
+        "aliases": ["小丫头", "这个少女"],
+        "attributes": {
+          "age": 16,
+          "gender": "女",
+          "personality": "倔强、坚定、不服输"
+        },
+        "current": {
+          "realm": "练气三层",
+          "location": "混沌峰半山腰",
+          "status": "被宗门逐出，寻求拜师"
+        },
+        "first_appearance": 1,
+        "last_appearance": 1
+      },
+      "linjian": {
+        "id": "linjian",
+        "name": "林渐",
+        "type": "角色",
+        "tier": "核心",
+        "aliases": ["前辈", "男子", "这位前辈", "隐世高人"],
+        "attributes": {
+          "age": "外表约30岁",
+          "gender": "男",
+          "personality": "冷漠、深不可测、内心孤寂",
+          "background": "曾被弟子背叛，不愿收徒"
+        },
+        "current": {
+          "realm": "化神期以上",
+          "location": "混沌峰·茅屋",
+          "status": "隐居修炼，出手救助苏婉"
+        },
+        "first_appearance": 1,
+        "last_appearance": 1
+      },
+      "black_assassins": {
+        "id": "black_assassins",
+        "name": "黑衣杀手团",
+        "type": "角色",
+        "tier": "装饰",
+        "aliases": ["三名黑衣人", "黑衣人", "为首的黑衣人"],
+        "attributes": {
+          "count": 3,
+          "affiliation": "未知势力"
+        },
+        "current": {
+          "realm": "筑基期",
+          "location": "混沌峰附近（已逃离）",
+          "status": "追杀苏婉失败，被林渐震退"
+        },
+        "first_appearance": 1,
+        "last_appearance": 1
+      }
+    },
+    "地点": {
+      "hundunfeng": {
+        "id": "hundunfeng",
+        "name": "混沌峰",
+        "type": "地点",
+        "tier": "核心",
+        "aliases": ["孤峰"],
+        "attributes": {
+          "location": "青云界边缘",
+          "environment": "常年被混沌之气笼罩，灵气稀薄",
+          "residents": ["林渐"],
+          "features": "崎岖山路、压迫性混沌之气"
+        },
+        "first_appearance": 1,
+        "last_appearance": 1
+      },
+      "qingyunjie": {
+        "id": "qingyunjie",
+        "name": "青云界",
+        "type": "地点",
+        "tier": "支线",
+        "aliases": ["修仙世界"],
+        "attributes": {
+          "type": "修仙世界",
+          "level": "中低级修仙界"
+        },
+        "first_appearance": 1,
+        "last_appearance": 1
+      },
+      "hundunfeng_maowu": {
+        "id": "hundunfeng_maowu",
+        "name": "混沌峰·茅屋",
+        "type": "地点",
+        "tier": "支线",
+        "aliases": ["茅屋"],
+        "attributes": {
+          "owner": "林渐",
+          "interior": "木床、木桌、椅子、天机宝鉴"
+        },
+        "first_appearance": 1,
+        "last_appearance": 1
+      }
+    },
+    "物品": {
+      "tianji_baojian": {
+        "id": "tianji_baojian",
+        "name": "天机宝鉴",
+        "type": "物品",
+        "tier": "核心",
+        "aliases": ["铜镜", "古朴的铜镜"],
+        "attributes": {
+          "category": "金手指/宝物",
+          "owner": "林渐",
+          "ability": "推演未来、查看命运走向",
+          "limitation": "每个大境界只能使用3-5次",
+          "appearance": "古朴铜镜，镜面光滑如水，散发淡淡光芒"
+        },
+        "first_appearance": 1,
+        "last_appearance": 1
+      }
+    },
+    "势力": {},
+    "招式": {}
+  },
+  "alias_index": {
+    "苏婉": [{"type": "角色", "id": "suwan"}],
+    "小丫头": [{"type": "角色", "id": "suwan"}],
+    "这个少女": [{"type": "角色", "id": "suwan"}],
+    "林渐": [{"type": "角色", "id": "linjian"}],
+    "前辈": [{"type": "角色", "id": "linjian"}],
+    "男子": [{"type": "角色", "id": "linjian"}],
+    "这位前辈": [{"type": "角色", "id": "linjian"}],
+    "隐世高人": [{"type": "角色", "id": "linjian"}],
+    "黑衣杀手团": [{"type": "角色", "id": "black_assassins"}],
+    "三名黑衣人": [{"type": "角色", "id": "black_assassins"}],
+    "黑衣人": [{"type": "角色", "id": "black_assassins"}],
+    "为首的黑衣人": [{"type": "角色", "id": "black_assassins"}],
+    "混沌峰": [{"type": "地点", "id": "hundunfeng"}],
+    "孤峰": [{"type": "地点", "id": "hundunfeng"}],
+    "青云界": [{"type": "地点", "id": "qingyunjie"}],
+    "修仙世界": [{"type": "地点", "id": "qingyunjie"}],
+    "混沌峰·茅屋": [{"type": "地点", "id": "hundunfeng_maowu"}],
+    "茅屋": [{"type": "地点", "id": "hundunfeng_maowu"}],
+    "天机宝鉴": [{"type": "物品", "id": "tianji_baojian"}],
+    "铜镜": [{"type": "物品", "id": "tianji_baojian"}],
+    "古朴的铜镜": [{"type": "物品", "id": "tianji_baojian"}]
+  },
+  "relationships": [
+    {
+      "from": "suwan",
+      "to": "linjian",
+      "type": "求师",
+      "description": "苏婉三次上山求林渐收徒，林渐初次拒绝但暗中保护",
+      "chapter": 1,
+      "status": "初次接触"
+    },
+    {
+      "from": "black_assassins",
+      "to": "suwan",
+      "type": "追杀",
+      "description": "黑衣杀手团追杀苏婉，意图夺取某物",
+      "chapter": 1,
+      "status": "敌对"
+    },
+    {
+      "from": "linjian",
+      "to": "black_assassins",
+      "type": "震慑",
+      "description": "林渐远程出手震退黑衣人，保护苏婉",
+      "chapter": 1,
+      "status": "威慑"
+    }
+  ],
+  "state_changes": [
+    {
+      "entity_id": "suwan",
+      "field": "location",
+      "old_value": "宗门外（被逐出）",
+      "new_value": "混沌峰半山腰",
+      "reason": "寻求拜师，遭遇杀手后被林渐救助",
+      "chapter": 1,
+      "timestamp": "2026-01-10T22:30:00"
+    },
+    {
+      "entity_id": "linjian",
+      "field": "action",
+      "old_value": "隐居不问世事",
+      "new_value": "出手救助苏婉并使用天机宝鉴推演",
+      "reason": "苏婉遭遇杀手，触动林渐心弦",
+      "chapter": 1,
+      "timestamp": "2026-01-10T22:30:00"
+    }
+  ],
+  "progress": {
+    "current_chapter": 1,
+    "total_words": 3300,
+    "last_updated": "2026-01-10T22:30:00"
+  },
+  "protagonist_state": {
+    "name": "林渐",
+    "realm": "化神期以上",
+    "location": "混沌峰·茅屋"
+  },
+  "disambiguation": {
+    "warnings": [
+      "黑衣人组织未明确命名，暂用 black_assassins 标识",
+      "苏婉被追杀原因未明（'你身上有我们要的东西'），需后续章节补充"
+    ],
+    "pending_review": []
+  },
+  "foreshadowing": [
+    {
+      "type": "心魔伏笔",
+      "content": "林渐过去弟子的背叛（回忆片段：'师尊……对不起……'）",
+      "chapter": 1,
+      "status": "埋设"
+    },
+    {
+      "type": "身份谜团",
+      "content": "苏婉的神秘身份（引来筑基期杀手追杀，'你身上有我们要的东西'）",
+      "chapter": 1,
+      "status": "埋设"
+    },
+    {
+      "type": "金手指启用",
+      "content": "天机宝鉴的推演功能（林渐决定查看苏婉命运，镜面浮现画面）",
+      "chapter": 1,
+      "status": "埋设，待下章展开"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "chapter": 1,
+  "chapter_file": "正文/第0001章.md",
+  "review_score": "85-90",
+  "processing_timestamp": "2026-01-10T22:35:00",
+  "status": "success",
+
+  "entities_appeared": 11,
+  "entities_new": 11,
+  "entities_breakdown": {
+    "角色": 3,
+    "地点": 3,
+    "物品": 1,
+    "势力": 0,
+    "招式": 0
+  },
+
+  "state_changes": 2,
+  "relationships_new": 3,
+  "scenes_chunked": 5,
+  "aliases_registered": 19,
+
+  "confidence_distribution": {
+    "high_confidence": 10,
+    "medium_confidence": 1,
+    "low_confidence": 0
+  },
+
+  "uncertain": [],
+
+  "warnings": [
+    "黑衣人组织未明确命名，暂用 black_assassins 标识",
+    "苏婉被追杀原因未明（'你身上有我们要的东西'），需后续章节补充",
+    "向量嵌入失败（ModelScope API 认证问题），已降级使用 BM25 索引"
+  ],
+
+  "errors": [],
+
+  "foreshadowing": {
+    "new": 3,
+    "types": ["心魔伏笔", "身份谜团", "金手指启用"]
+  },
+
+  "data_storage": {
+    "state_json": "updated",
+    "alias_index": "updated",
+    "vector_db": "bm25_only",
+    "protagonist_state": "synced"
+  },
+
+  "quality_metrics": {
+    "entity_recognition_accuracy": 1.0,
+    "disambiguation_accuracy": 0.95,
+    "scene_segmentation": "合理（5个场景）",
+    "overall_score": 95
+  },
+
+  "next_chapter_suggestions": [
+    "展开天机宝鉴推演结果（呼应伏笔）",
+    "深化林渐的心魔描写",
+    "揭示苏婉身份的部分线索",
+    "推进师徒关系（林渐是否最终收徒）"
+  ]
+}
