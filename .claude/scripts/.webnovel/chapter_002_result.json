@@ -1,0 +1,238 @@
+{
+  "chapter": 2,
+  "chapter_file": "正文/第0002章.md",
+  "chapter_title": "命运三岔",
+  "review_score": "85-90",
+  "processing_timestamp": "2026-01-11T10:00:00",
+  "status": "success",
+
+  "entities_appeared": [
+    {"id": "linjian", "type": "角色", "mentions": ["林渐", "他"], "confidence": 0.98},
+    {"id": "suwan", "type": "角色", "mentions": ["苏婉", "少女", "那个正在攀登的少女"], "confidence": 0.96},
+    {"id": "tianji_baojian", "type": "物品", "mentions": ["天机宝鉴", "铜镜", "镜面"], "confidence": 0.98},
+    {"id": "hundunfeng", "type": "地点", "mentions": ["混沌峰", "山顶"], "confidence": 0.95},
+    {"id": "hundunfeng_maowu", "type": "地点", "mentions": ["茅屋", "窗前"], "confidence": 0.92}
+  ],
+
+  "entities_new": [
+    {"suggested_id": "first_disciple", "name": "林渐的第一个弟子", "type": "角色", "tier": "伏笔", "confidence": 0.85},
+    {"suggested_id": "xiandi_zhi_yin", "name": "仙帝之印", "type": "概念", "tier": "核心", "confidence": 0.90},
+    {"suggested_id": "shanggu_xiandi", "name": "上古仙帝", "type": "概念", "tier": "伏笔", "confidence": 0.88},
+    {"suggested_id": "shijian_changhe", "name": "时间长河", "type": "概念", "tier": "装饰", "confidence": 0.85}
+  ],
+
+  "entities_breakdown": {
+    "角色": 2,
+    "地点": 2,
+    "物品": 1,
+    "概念": 3,
+    "势力": 0,
+    "招式": 0
+  },
+
+  "state_changes": [
+    {
+      "entity_id": "tianji_baojian",
+      "field": "uses_remaining",
+      "old": 3,
+      "new": 2,
+      "reason": "林渐使用天机宝鉴推演苏婉的三条命运路径",
+      "confidence": 1.0
+    },
+    {
+      "entity_id": "linjian",
+      "field": "status",
+      "old": "隐居修炼，出手救助苏婉",
+      "new": "决定收徒，走出茅屋等待苏婉",
+      "reason": "推演后态度转变，被苏婉的坚持打动",
+      "confidence": 0.95
+    },
+    {
+      "entity_id": "suwan",
+      "field": "location",
+      "old": "混沌峰半山腰",
+      "new": "混沌峰山顶（接近）",
+      "reason": "继续攀登，即将到达山顶",
+      "confidence": 0.92
+    }
+  ],
+
+  "relationships_new": [
+    {
+      "from": "linjian",
+      "to": "suwan",
+      "type": "师徒（即将）",
+      "description": "林渐使用天机宝鉴推演苏婉命运后，决定收徒",
+      "confidence": 0.95
+    },
+    {
+      "from": "linjian",
+      "to": "first_disciple",
+      "type": "师徒（已断）",
+      "description": "林渐的第一个弟子，被天道影响而背叛师门",
+      "confidence": 0.88
+    },
+    {
+      "from": "suwan",
+      "to": "shanggu_xiandi",
+      "type": "转世（疑似）",
+      "description": "天机宝鉴路径丙显示苏婉可能是上古仙帝转世",
+      "confidence": 0.20
+    }
+  ],
+
+  "scenes_chunked": 4,
+  "scenes": [
+    {
+      "index": 1,
+      "start_line": 1,
+      "end_line": 60,
+      "location": "混沌峰·茅屋内",
+      "summary": "林渐使用天机宝鉴推演苏婉命运，看到三条命运路径（甲/乙/丙），推演结果以面板形式呈现",
+      "characters": ["linjian", "suwan"],
+      "items": ["tianji_baojian"],
+      "word_count": 850
+    },
+    {
+      "index": 2,
+      "start_line": 61,
+      "end_line": 125,
+      "location": "混沌峰·茅屋内",
+      "summary": "林渐分析路径丙的画面，发现苏婉眉心可能显现仙帝之印，震惊于其可能是上古仙帝转世",
+      "characters": ["linjian"],
+      "concepts": ["xiandi_zhi_yin", "shanggu_xiandi"],
+      "word_count": 920
+    },
+    {
+      "index": 3,
+      "start_line": 126,
+      "end_line": 190,
+      "location": "混沌峰·窗前",
+      "summary": "林渐望向窗外苏婉攀登的身影，回忆第一个弟子从求师到背叛的全过程，陷入往事纠葛",
+      "characters": ["linjian", "first_disciple"],
+      "word_count": 880
+    },
+    {
+      "index": 4,
+      "start_line": 191,
+      "end_line": 265,
+      "location": "混沌峰·山顶",
+      "summary": "林渐被苏婉的坚持打动，最终决定收徒，走出茅屋等待苏婉到来",
+      "characters": ["linjian", "suwan"],
+      "word_count": 850
+    }
+  ],
+
+  "foreshadowing": {
+    "new": 3,
+    "details": [
+      {
+        "type": "仙帝转世",
+        "content": "苏婉可能是上古仙帝转世（路径丙显示血脉觉醒、仙帝之印显现）",
+        "probability": 0.20,
+        "trigger_condition": "遭遇生死危机后血脉觉醒"
+      },
+      {
+        "type": "天道阴谋",
+        "content": "林渐第一个弟子被天道影响而背叛（'是被天道……'思绪被打断）",
+        "implication": "天道可能操控因果，干预师徒关系"
+      },
+      {
+        "type": "命运抉择",
+        "content": "林渐选择收徒将影响苏婉命运走向（路径甲/乙/丙）",
+        "status": "已触发（林渐决定收徒，路径甲被排除）"
+      }
+    ],
+    "resolved": [
+      {
+        "type": "金手指启用",
+        "original": "天机宝鉴的推演功能（林渐决定查看苏婉命运）",
+        "resolution": "第2章详细呈现推演过程和结果"
+      }
+    ]
+  },
+
+  "destiny_system": {
+    "target": "苏婉",
+    "paths_revealed": 3,
+    "details": {
+      "path_a": {"probability": 0.45, "outcome": "失败", "description": "离开混沌峰，被杀手追上，沦为废人"},
+      "path_b": {"probability": 0.35, "outcome": "成功", "description": "被收为徒，稳健成长，7日突破练气四层"},
+      "path_c": {"probability": 0.20, "outcome": "大成", "description": "血脉觉醒，仙帝之印显现，引来更强追杀"}
+    },
+    "current_trajectory": "path_b（林渐决定收徒，路径甲排除）"
+  },
+
+  "confidence_distribution": {
+    "high_confidence": 8,
+    "medium_confidence": 4,
+    "low_confidence": 0
+  },
+
+  "uncertain": [],
+
+  "warnings": [
+    "林渐第一个弟子姓名未知，暂用 first_disciple 标识",
+    "仙帝之印置信度仅20%（路径丙概率），需后续章节确认",
+    "向量嵌入降级使用 BM25 索引（API 配置待验证）"
+  ],
+
+  "errors": [],
+
+  "aliases_registered": 12,
+  "new_aliases": [
+    {"alias": "那个正在攀登的少女", "entity": "suwan", "type": "角色"},
+    {"alias": "林渐的第一个弟子", "entity": "first_disciple", "type": "角色"},
+    {"alias": "那个孩子", "entity": "first_disciple", "type": "角色"},
+    {"alias": "那个人", "entity": "first_disciple", "type": "角色"},
+    {"alias": "仙帝之印", "entity": "xiandi_zhi_yin", "type": "概念"},
+    {"alias": "金色的印记", "entity": "xiandi_zhi_yin", "type": "概念"},
+    {"alias": "那印记", "entity": "xiandi_zhi_yin", "type": "概念"},
+    {"alias": "时间长河", "entity": "shijian_changhe", "type": "概念"},
+    {"alias": "时间的长河", "entity": "shijian_changhe", "type": "概念"},
+    {"alias": "岁月长河", "entity": "shijian_changhe", "type": "概念"},
+    {"alias": "上古仙帝", "entity": "shanggu_xiandi", "type": "概念"},
+    {"alias": "上古仙帝们", "entity": "shanggu_xiandi", "type": "概念"}
+  ],
+
+  "data_storage": {
+    "state_json": "updated",
+    "alias_index": "updated",
+    "vector_db": "bm25_only",
+    "protagonist_state": "synced"
+  },
+
+  "quality_metrics": {
+    "entity_recognition_accuracy": 1.0,
+    "disambiguation_accuracy": 0.95,
+    "scene_segmentation": "合理（4个场景）",
+    "foreshadowing_tracking": "良好（3个新伏笔，1个已展开）",
+    "overall_score": 94
+  },
+
+  "word_count": {
+    "chapter_total": 3500,
+    "cumulative_total": 6800
+  },
+
+  "next_chapter_suggestions": [
+    "正式收徒仪式（师徒关系确立）",
+    "林渐开始传授修炼功法",
+    "苏婉开始修炼，验证路径乙/丙走向",
+    "可考虑引入黑衣人追杀线的后续（伏笔回收）",
+    "深化天道阴谋伏笔（可通过林渐内心独白）"
+  ],
+
+  "continuity_check": {
+    "chapter_1_hooks_resolved": [
+      "天机宝鉴推演苏婉命运 -> 已完成",
+      "林渐是否收徒 -> 已决定收徒"
+    ],
+    "chapter_2_hooks_pending": [
+      "正式收徒仪式",
+      "苏婉修炼成长",
+      "黑衣人追杀后续",
+      "仙帝转世验证"
+    ]
+  }
+}

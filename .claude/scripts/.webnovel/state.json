@@ -7,19 +7,25 @@
         "name": "苏婉",
         "type": "角色",
         "tier": "核心",
-        "aliases": ["小丫头", "这个少女"],
+        "aliases": ["小丫头", "这个少女", "那个正在攀登的少女"],
         "attributes": {
           "age": 16,
           "gender": "女",
-          "personality": "倔强、坚定、不服输"
+          "personality": "倔强、坚定、不服输",
+          "potential": "可能是上古仙帝转世（待证实）"
         },
         "current": {
           "realm": "练气三层",
-          "location": "混沌峰半山腰",
-          "status": "被宗门逐出，寻求拜师"
+          "location": "混沌峰山顶（接近）",
+          "status": "即将被林渐收为徒弟"
+        },
+        "destiny_paths": {
+          "path_a": {"probability": 0.45, "outcome": "失败", "description": "离开混沌峰，被杀手追上，沦为废人"},
+          "path_b": {"probability": 0.35, "outcome": "成功", "description": "被收为徒，稳健成长，7日突破练气四层"},
+          "path_c": {"probability": 0.20, "outcome": "大成", "description": "血脉觉醒，仙帝之印显现，引来更强追杀"}
         },
         "first_appearance": 1,
-        "last_appearance": 1
+        "last_appearance": 2
       },
       "linjian": {
         "id": "linjian",
@@ -31,15 +37,19 @@
           "age": "外表约30岁",
           "gender": "男",
           "personality": "冷漠、深不可测、内心孤寂",
-          "background": "曾被弟子背叛，不愿收徒"
+          "background": "曾被弟子背叛（疑受天道影响），不愿收徒"
         },
         "current": {
           "realm": "化神期以上",
-          "location": "混沌峰·茅屋",
-          "status": "隐居修炼，出手救助苏婉"
+          "location": "混沌峰·山顶",
+          "status": "决定收徒，走出茅屋等待苏婉"
+        },
+        "past_trauma": {
+          "description": "第一个弟子被天道影响而背叛",
+          "memory_fragments": ["师尊，求您收我为徒！", "我一定会好好修炼", "师尊……对不起……"]
         },
         "first_appearance": 1,
-        "last_appearance": 1
+        "last_appearance": 2
       },
       "black_assassins": {
         "id": "black_assassins",
@@ -58,6 +68,26 @@
         },
         "first_appearance": 1,
         "last_appearance": 1
+      },
+      "first_disciple": {
+        "id": "first_disciple",
+        "name": "林渐的第一个弟子",
+        "type": "角色",
+        "tier": "伏笔",
+        "aliases": ["那个孩子", "那个人"],
+        "attributes": {
+          "gender": "未知",
+          "relationship": "林渐唯一的弟子（已背叛）",
+          "origin_talent": "资质普通，非天才"
+        },
+        "current": {
+          "realm": "曾达到金丹期（震动一方的天骄）",
+          "location": "未知",
+          "status": "背叛林渐（疑被天道影响）"
+        },
+        "backstory": "林渐悉心教导，从籍籍无名成长为一方天骄，最终因天道影响而背叛",
+        "first_appearance": 2,
+        "last_appearance": 2
       }
     },
     "地点": {
@@ -71,10 +101,10 @@
           "location": "青云界边缘",
           "environment": "常年被混沌之气笼罩，灵气稀薄",
           "residents": ["林渐"],
-          "features": "崎岖山路、压迫性混沌之气"
+          "features": "崎岖山路、压迫性混沌之气、混沌之气会自动为林渐让路"
         },
         "first_appearance": 1,
-        "last_appearance": 1
+        "last_appearance": 2
       },
       "qingyunjie": {
         "id": "qingyunjie",
@@ -100,7 +130,20 @@
           "interior": "木床、木桌、椅子、天机宝鉴"
         },
         "first_appearance": 1,
-        "last_appearance": 1
+        "last_appearance": 2
+      },
+      "hundunfeng_bianguan": {
+        "id": "hundunfeng_bianguan",
+        "name": "混沌峰·闭关室",
+        "type": "地点",
+        "tier": "装饰",
+        "aliases": ["闭关室"],
+        "attributes": {
+          "location": "茅屋内部",
+          "usage": "林渐使用天机宝鉴推演的场所"
+        },
+        "first_appearance": 2,
+        "last_appearance": 2
       }
     },
     "物品": {
@@ -113,12 +156,72 @@
         "attributes": {
           "category": "金手指/宝物",
           "owner": "林渐",
-          "ability": "推演未来、查看命运走向",
+          "ability": "推演未来、查看命运走向、可见时间长河与光点",
           "limitation": "每个大境界只能使用3-5次",
-          "appearance": "古朴铜镜，镜面光滑如水，散发淡淡光芒"
+          "appearance": "古朴铜镜，镜面光滑如水，使用时泛淡金色光芒"
+        },
+        "current": {
+          "level": "Lv1",
+          "uses_remaining": 2,
+          "max_uses": 3,
+          "cooldown": "7日",
+          "last_used_chapter": 2
         },
         "first_appearance": 1,
-        "last_appearance": 1
+        "last_appearance": 2
+      }
+    },
+    "概念": {
+      "xiandi_zhi_yin": {
+        "id": "xiandi_zhi_yin",
+        "name": "仙帝之印",
+        "type": "概念",
+        "tier": "核心",
+        "aliases": ["金色的印记", "那印记"],
+        "attributes": {
+          "origin": "上古时代",
+          "condition": "突破大乘期、即将渡劫飞升的绝世强者才会在眉心凝结",
+          "meaning": "天道对极致强者的认可，飞升上界的凭证",
+          "current_status": "应已随上古仙帝陨落而消失"
+        },
+        "foreshadowing": {
+          "hint": "苏婉眉心可能显现仙帝之印（路径丙画面）",
+          "implication": "苏婉可能是上古仙帝转世",
+          "confidence": 0.20
+        },
+        "first_appearance": 2,
+        "last_appearance": 2
+      },
+      "shijian_changhe": {
+        "id": "shijian_changhe",
+        "name": "时间长河",
+        "type": "概念",
+        "tier": "装饰",
+        "aliases": ["时间的长河", "岁月长河"],
+        "attributes": {
+          "description": "天机宝鉴推演时呈现的景象",
+          "visual": "无数光点流淌，每个光点代表一个可能的未来"
+        },
+        "first_appearance": 2,
+        "last_appearance": 2
+      },
+      "shanggu_xiandi": {
+        "id": "shanggu_xiandi",
+        "name": "上古仙帝",
+        "type": "概念",
+        "tier": "伏笔",
+        "aliases": ["上古仙帝们"],
+        "attributes": {
+          "era": "上古时代（已湮灭的纪元）",
+          "realm": "突破大乘期、渡劫飞升",
+          "current_status": "已陨落"
+        },
+        "foreshadowing": {
+          "hint": "苏婉可能是上古仙帝的转世",
+          "related_entity": "suwan"
+        },
+        "first_appearance": 2,
+        "last_appearance": 2
       }
     },
     "势力": {},
@@ -128,6 +231,7 @@
     "苏婉": [{"type": "角色", "id": "suwan"}],
     "小丫头": [{"type": "角色", "id": "suwan"}],
     "这个少女": [{"type": "角色", "id": "suwan"}],
+    "那个正在攀登的少女": [{"type": "角色", "id": "suwan"}],
     "林渐": [{"type": "角色", "id": "linjian"}],
     "前辈": [{"type": "角色", "id": "linjian"}],
     "男子": [{"type": "角色", "id": "linjian"}],
@@ -137,15 +241,28 @@
     "三名黑衣人": [{"type": "角色", "id": "black_assassins"}],
     "黑衣人": [{"type": "角色", "id": "black_assassins"}],
     "为首的黑衣人": [{"type": "角色", "id": "black_assassins"}],
+    "林渐的第一个弟子": [{"type": "角色", "id": "first_disciple"}],
+    "那个孩子": [{"type": "角色", "id": "first_disciple"}],
+    "那个人": [{"type": "角色", "id": "first_disciple"}],
     "混沌峰": [{"type": "地点", "id": "hundunfeng"}],
     "孤峰": [{"type": "地点", "id": "hundunfeng"}],
     "青云界": [{"type": "地点", "id": "qingyunjie"}],
     "修仙世界": [{"type": "地点", "id": "qingyunjie"}],
     "混沌峰·茅屋": [{"type": "地点", "id": "hundunfeng_maowu"}],
     "茅屋": [{"type": "地点", "id": "hundunfeng_maowu"}],
+    "混沌峰·闭关室": [{"type": "地点", "id": "hundunfeng_bianguan"}],
+    "闭关室": [{"type": "地点", "id": "hundunfeng_bianguan"}],
     "天机宝鉴": [{"type": "物品", "id": "tianji_baojian"}],
     "铜镜": [{"type": "物品", "id": "tianji_baojian"}],
-    "古朴的铜镜": [{"type": "物品", "id": "tianji_baojian"}]
+    "古朴的铜镜": [{"type": "物品", "id": "tianji_baojian"}],
+    "仙帝之印": [{"type": "概念", "id": "xiandi_zhi_yin"}],
+    "金色的印记": [{"type": "概念", "id": "xiandi_zhi_yin"}],
+    "那印记": [{"type": "概念", "id": "xiandi_zhi_yin"}],
+    "时间长河": [{"type": "概念", "id": "shijian_changhe"}],
+    "时间的长河": [{"type": "概念", "id": "shijian_changhe"}],
+    "岁月长河": [{"type": "概念", "id": "shijian_changhe"}],
+    "上古仙帝": [{"type": "概念", "id": "shanggu_xiandi"}],
+    "上古仙帝们": [{"type": "概念", "id": "shanggu_xiandi"}]
   },
   "relationships": [
     {
@@ -171,6 +288,30 @@
       "description": "林渐远程出手震退黑衣人，保护苏婉",
       "chapter": 1,
       "status": "威慑"
+    },
+    {
+      "from": "linjian",
+      "to": "suwan",
+      "type": "师徒（即将）",
+      "description": "林渐使用天机宝鉴推演苏婉命运后，决定收徒",
+      "chapter": 2,
+      "status": "进行中"
+    },
+    {
+      "from": "linjian",
+      "to": "first_disciple",
+      "type": "师徒（已断）",
+      "description": "林渐的第一个弟子，被天道影响而背叛师门",
+      "chapter": 2,
+      "status": "回忆/伏笔"
+    },
+    {
+      "from": "suwan",
+      "to": "shanggu_xiandi",
+      "type": "转世（疑似）",
+      "description": "天机宝鉴路径丙显示苏婉可能是上古仙帝转世",
+      "chapter": 2,
+      "status": "伏笔/待证实"
     }
   ],
   "state_changes": [
@@ -191,22 +332,50 @@
       "reason": "苏婉遭遇杀手，触动林渐心弦",
       "chapter": 1,
       "timestamp": "2026-01-10T22:30:00"
+    },
+    {
+      "entity_id": "tianji_baojian",
+      "field": "uses_remaining",
+      "old_value": 3,
+      "new_value": 2,
+      "reason": "林渐使用天机宝鉴推演苏婉的三条命运路径",
+      "chapter": 2,
+      "timestamp": "2026-01-11T10:00:00"
+    },
+    {
+      "entity_id": "linjian",
+      "field": "status",
+      "old_value": "隐居修炼，出手救助苏婉",
+      "new_value": "决定收徒，走出茅屋等待苏婉",
+      "reason": "推演后态度转变，被苏婉的坚持打动",
+      "chapter": 2,
+      "timestamp": "2026-01-11T10:00:00"
+    },
+    {
+      "entity_id": "suwan",
+      "field": "location",
+      "old_value": "混沌峰半山腰",
+      "new_value": "混沌峰山顶（接近）",
+      "reason": "继续攀登，即将到达山顶",
+      "chapter": 2,
+      "timestamp": "2026-01-11T10:00:00"
     }
   ],
   "progress": {
-    "current_chapter": 1,
-    "total_words": 3300,
-    "last_updated": "2026-01-10T22:30:00"
+    "current_chapter": 2,
+    "total_words": 6800,
+    "last_updated": "2026-01-11T10:00:00"
   },
   "protagonist_state": {
     "name": "林渐",
     "realm": "化神期以上",
-    "location": "混沌峰·茅屋"
+    "location": "混沌峰·山顶"
   },
   "disambiguation": {
     "warnings": [
       "黑衣人组织未明确命名，暂用 black_assassins 标识",
-      "苏婉被追杀原因未明（'你身上有我们要的东西'），需后续章节补充"
+      "苏婉被追杀原因未明（'你身上有我们要的东西'），需后续章节补充",
+      "林渐第一个弟子姓名未知，暂用 first_disciple 标识"
     ],
     "pending_review": []
   },
@@ -227,7 +396,66 @@
       "type": "金手指启用",
       "content": "天机宝鉴的推演功能（林渐决定查看苏婉命运，镜面浮现画面）",
       "chapter": 1,
-      "status": "埋设，待下章展开"
+      "status": "已展开（第2章详细呈现）"
+    },
+    {
+      "type": "仙帝转世",
+      "content": "苏婉可能是上古仙帝转世（路径丙显示血脉觉醒、仙帝之印显现）",
+      "chapter": 2,
+      "status": "埋设",
+      "probability": 0.20,
+      "trigger_condition": "遭遇生死危机后血脉觉醒"
+    },
+    {
+      "type": "天道阴谋",
+      "content": "林渐第一个弟子被天道影响而背叛（'是被天道……'思绪被打断）",
+      "chapter": 2,
+      "status": "埋设",
+      "implication": "天道可能操控因果，干预师徒关系"
+    },
+    {
+      "type": "命运抉择",
+      "content": "林渐选择收徒将影响苏婉命运走向（路径甲/乙/丙）",
+      "chapter": 2,
+      "status": "已触发（林渐决定收徒，路径甲被排除）"
     }
-  ]
+  ],
+  "scenes": {
+    "chapter_2": [
+      {
+        "index": 1,
+        "start_line": 1,
+        "end_line": 60,
+        "location": "混沌峰·茅屋内",
+        "summary": "林渐使用天机宝鉴推演苏婉命运，看到三条命运路径（甲/乙/丙），推演结果以面板形式呈现",
+        "characters": ["linjian", "suwan"],
+        "items": ["tianji_baojian"]
+      },
+      {
+        "index": 2,
+        "start_line": 61,
+        "end_line": 125,
+        "location": "混沌峰·茅屋内",
+        "summary": "林渐分析路径丙的画面，发现苏婉眉心可能显现仙帝之印，震惊于其可能是上古仙帝转世",
+        "characters": ["linjian"],
+        "concepts": ["xiandi_zhi_yin", "shanggu_xiandi"]
+      },
+      {
+        "index": 3,
+        "start_line": 126,
+        "end_line": 190,
+        "location": "混沌峰·窗前",
+        "summary": "林渐望向窗外苏婉攀登的身影，回忆第一个弟子从求师到背叛的全过程，陷入往事纠葛",
+        "characters": ["linjian", "first_disciple"]
+      },
+      {
+        "index": 4,
+        "start_line": 191,
+        "end_line": 265,
+        "location": "混沌峰·山顶",
+        "summary": "林渐被苏婉的坚持打动，最终决定收徒，走出茅屋等待苏婉到来",
+        "characters": ["linjian", "suwan"]
+      }
+    ]
+  }
 }

@@ -3,7 +3,7 @@
 """
 Data Modules - 配置文件
 
-API 配置通过环境变量读取：
+API 配置通过环境变量读取（支持 .env 文件）：
 - EMBED_BASE_URL, EMBED_MODEL, EMBED_API_KEY
 - RERANK_BASE_URL, RERANK_MODEL, RERANK_API_KEY
 """
@@ -12,6 +12,31 @@ import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
+
+# 加载 .env 文件
+def _load_dotenv():
+    """从项目根目录加载 .env 文件"""
+    # 尝试多个可能的位置
+    possible_paths = [
+        Path.cwd() / ".env",
+        Path(__file__).parent.parent.parent.parent / ".env",  # .claude/scripts/data_modules -> 项目根目录
+    ]
+
+    for env_path in possible_paths:
+        if env_path.exists():
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, _, value = line.partition("=")
+                        key = key.strip()
+                        value = value.strip()
+                        # 只在环境变量未设置时才从 .env 加载
+                        if key and key not in os.environ:
+                            os.environ[key] = value
+            break
+
+_load_dotenv()
 
 
 @dataclass
