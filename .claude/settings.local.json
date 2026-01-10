@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__mcpServers__search_context",
+      "Bash(python:*)",
+      "Bash(grep:*)",
+      "Bash(ls -la \"D:/wk/novel skill/webnovel-writer/scripts/\"*.deprecated)",
+      "Bash(git add -A)",
+      "Bash(git commit:*)",
+      "Bash(ls:*)",
+      "Bash(xargs:*)",
+      "Bash(for script in token_budget_analyzer stress_test_500chapters stress_test_index golden_three_checker)",
+      "Bash(do echo \"=== $script ===\" grep -rn \"$script\" \"D:/wk/novel skill/webnovel-writer/\" --include=\"*.md\" --include=\"*.py\")",
+      "Bash(done)",
+      "WebSearch"
+    ]
+  }
+}
