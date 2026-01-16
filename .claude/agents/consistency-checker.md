@@ -18,9 +18,19 @@ tools: Read, Grep
 
 ### Step 1: Load Reference Materials
 
+**输入参数**:
+```json
+{
+  "project_root": "{PROJECT_ROOT}",
+  "storage_path": ".webnovel/",
+  "state_file": ".webnovel/state.json",
+  "chapter_file": "正文/第{NNNN}章.md"
+}
+```
+
 **Parallel reads**:
 1. Target chapters from `正文/`
-2. `.webnovel/state.json` (current protagonist state)
+2. `{project_root}/.webnovel/state.json` (current protagonist state)
 3. `设定集/` (world-building bible)
 4. `大纲/` (outline for context)
 
@@ -88,14 +98,12 @@ tools: Read, Grep
    → VIOLATION: Timeline arithmetic error
 ```
 
-### Step 3: Entity Consistency Check (v5.0)
+### Step 3: Entity Consistency Check
 
 **For all new entities detected in chapters**:
 1. Check if they contradict existing settings
 2. Assess if their introduction is consistent with world-building
 3. Verify power levels are reasonable for the current arc
-
-**Note (v5.0)**: 不再检查 XML 标签，Data Agent 会使用 AI 自动提取实体。
 
 **Report inconsistent inventions**:
 ```

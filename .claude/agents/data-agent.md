@@ -9,11 +9,11 @@ tools: Read, Write, Bash
 > **Role**: 智能数据工程师，负责从章节正文中提取结构化信息并写入数据链。
 >
 > **Philosophy**: AI驱动提取，智能消歧 - 用语义理解替代正则匹配，用置信度控制质量。
->
-> **v5.0 变更**:
-> - 使用 `entities_v3` 分组格式（按类型：角色/地点/物品/势力/招式）
-> - 别名索引支持一对多（同一别名可映射多个实体）
-> - `alias_index` 内嵌在 `state.json` 中，不再是独立文件
+
+**v5.0 变更**:
+- 使用 `entities_v3` 分组格式 (按类型: 角色/地点/物品/势力/招式)
+- 别名索引支持一对多 (同一别名可映射多个实体)
+- `alias_index` 内嵌在 `state.json` 中
 
 ## 输入
 
@@ -22,9 +22,16 @@ tools: Read, Write, Bash
   "chapter": 100,
   "chapter_file": "正文/第0100章.md",
   "review_score": 85,
-  "project_root": "D:/wk/斗破苍穹"
+  "project_root": "D:/wk/斗破苍穹",
+  "storage_path": ".webnovel/",
+  "state_file": ".webnovel/state.json"
 }
 ```
+
+**重要**: 所有数据必须写入 `{project_root}/.webnovel/` 目录，包括：
+- state.json → `{project_root}/.webnovel/state.json`
+- vectors.db → `{project_root}/.webnovel/vectors.db`
+- index.db → `{project_root}/.webnovel/index.db`
 
 ## 输出
 
@@ -54,17 +61,16 @@ tools: Read, Write, Bash
 
 ### Step A: 加载上下文
 
+使用 Read 工具读取章节正文和已有实体库:
+- 章节正文: `正文/第0100章.md`
+- 实体库: `.webnovel/state.json` → entities
+
+使用 Bash 工具查询:
 ```bash
-# 读取章节正文
-Read: 正文/第0100章.md
-
-# 读取已有实体库
-Read: .webnovel/state.json → entities
-
-# 读取别名索引
+# 查询实体别名
 python -m data_modules.entity_linker list-aliases --entity "xiaoyan" --project-root "."
 
-# 读取最近章节出场记录
+# 查询最近出场记录
 python -m data_modules.index_manager recent-appearances --limit 20 --project-root "."
 ```
 
@@ -83,8 +89,10 @@ python -m data_modules.index_manager recent-appearances --limit 20 --project-roo
 {
   "entities_appeared": [
     {"id": "xiaoyan", "type": "角色", "mentions": ["萧炎", "他"], "confidence": 0.95},
-    {"id": "yaolao", "type": "角色", "mentions": ["药老"], "confidence": 0.92},
-    {"id": "NEW", "suggested_id": "hongyi_girl", "name": "红衣女子", "type": "角色", "tier": "装饰"}
+    {"id": "yaolao", "type": "角色", "mentions": ["药老"], "confidence": 0.92}
+  ],
+  "entities_new": [
+    {"suggested_id": "hongyi_girl", "name": "红衣女子", "type": "角色", "tier": "装饰"}
   ],
   "state_changes": [
     {"entity_id": "xiaoyan", "field": "realm", "old": "斗者九层", "new": "斗师一层", "reason": "闭关突破"}

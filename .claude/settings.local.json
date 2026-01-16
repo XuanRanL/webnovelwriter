@@ -12,7 +12,13 @@
       "Bash(for script in token_budget_analyzer stress_test_500chapters stress_test_index golden_three_checker)",
       "Bash(do echo \"=== $script ===\" grep -rn \"$script\" \"D:/wk/novel skill/webnovel-writer/\" --include=\"*.md\" --include=\"*.py\")",
       "Bash(done)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(curl:*)",
+      "Bash(git add:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "WebFetch(domain:linux.do)",
+      "Bash(cd:*)"
     ]
   }
 }

@@ -15,9 +15,16 @@ tools: Read, Grep, Bash
 ```json
 {
   "chapter": 100,
-  "project_root": "D:/wk/斗破苍穹"
+  "project_root": "D:/wk/斗破苍穹",
+  "storage_path": ".webnovel/",
+  "state_file": ".webnovel/state.json"
 }
 ```
+
+**重要**: 所有数据读取自 `{project_root}/.webnovel/` 目录：
+- state.json → `{project_root}/.webnovel/state.json`
+- vectors.db → `{project_root}/.webnovel/vectors.db`
+- index.db → `{project_root}/.webnovel/index.db`
 
 ## 输出
 
@@ -82,14 +89,9 @@ tools: Read, Grep, Bash
 
 ### Step 1: 分析本章需求
 
-**读取大纲**:
-```bash
-# 读取本章大纲
-Read: 大纲/卷N/第XXX章.md
-
-# 读取本卷大纲概述
-Read: 大纲/卷N/卷概述.md
-```
+**读取大纲** (使用 Read 工具):
+- 本章大纲: `大纲/卷N/第XXX章.md`
+- 本卷概述: `大纲/卷N/卷概述.md`
 
 **分析要点**:
 - 本章主要事件是什么？
@@ -99,18 +101,13 @@ Read: 大纲/卷N/卷概述.md
 
 ### Step 2: 获取主角状态
 
-```bash
-# 读取状态文件
-Read: .webnovel/state.json
-```
-
-**提取**:
-- `progress.current_chapter` (进度)
-- `entities_v3.角色` 中主角实体的属性 (境界/位置/物品)
-- `relationships` (重要关系)
-- `state_changes` 最近变化记录
-- `disambiguation_warnings` 最近消歧警告（0.5-0.8 采用但提示风险）
-- `disambiguation_pending` 待确认消歧（<0.5 不自动采用，需人工确认）
+使用 Read 工具读取 `.webnovel/state.json`，提取:
+- `progress.current_chapter` - 进度
+- `entities_v3.角色` - 主角实体属性 (境界/位置/物品)
+- `relationships` - 重要关系
+- `state_changes` - 最近变化记录
+- `disambiguation_warnings` - 消歧警告 (0.5-0.8)
+- `disambiguation_pending` - 待确认消歧 (<0.5)
 
 ### Step 3: 查询相关实体
 
@@ -144,10 +141,7 @@ python -m data_modules.rag_adapter search --query "大纲关键事件" --mode hy
 
 ### Step 5: 搜索设定集
 
-```bash
-# 搜索相关设定
-Grep: 设定集/ "关键词"
-```
+使用 Grep 工具搜索 `设定集/` 目录中的相关设定。
 
 **搜索内容**:
 - 修炼体系相关 (如果涉及突破)

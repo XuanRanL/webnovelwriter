@@ -18,11 +18,21 @@ tools: Read, Grep
 
 ### Step 1: Load Context
 
+**输入参数**:
+```json
+{
+  "project_root": "{PROJECT_ROOT}",
+  "storage_path": ".webnovel/",
+  "state_file": ".webnovel/state.json",
+  "chapter_file": "正文/第{NNNN}章.md"
+}
+```
+
 **Parallel reads**:
 1. Target chapters from `正文/`
 2. Previous 2-3 chapters (for transition context)
 3. `大纲/` (to check outline adherence - 大纲即法律)
-4. `.webnovel/state.json` (plot thread tracker, if exists)
+4. `{project_root}/.webnovel/state.json` (plot thread tracker, if exists)
 
 ### Step 2: Four-Tier Continuity Check
 

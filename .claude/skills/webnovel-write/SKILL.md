@@ -8,17 +8,22 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 ## Workflow Checklist
 
-复制并跟踪进度：
+⚠️ **强制要求**: 开始写作前，**必须复制以下清单**到回复中并逐项勾选。跳过任何步骤视为工作流不完整。
 
 ```
 章节创作进度 (v5.0)：
 - [ ] Step 1: Context Agent 搜集上下文
 - [ ] Step 2: 生成章节内容 (纯正文，3000-5000字)
-- [ ] Step 3: 审查 (5个Agent并行，只报告)
-- [ ] Step 4: 润色 (基于审查报告修复 + 去AI痕迹)
+- [ ] Step 3: 审查 (5个Agent并行，输出汇总表格)
+- [ ] Step 4: 润色 (加载指南 + AI检测 + 输出检查清单)
 - [ ] Step 5: Data Agent 处理数据链
 - [ ] Step 6: Git 备份
 ```
+
+**工作流规则**:
+1. 每完成一个 Step，立即更新 TodoWrite 状态
+2. Step 之间的验证必须通过才能进入下一步
+3. 如遇阻断，记录 deviation 但不可跳过
 
 ---
 
@@ -32,6 +37,8 @@ allowed-tools: Read Write Edit Grep Bash Task
 调用 context-agent，参数：
 - chapter: {chapter_num}
 - project_root: {PROJECT_ROOT}
+- storage_path: .webnovel/
+- state_file: .webnovel/state.json
 ```
 
 **Agent 自动完成**:
@@ -89,59 +96,72 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/core-constraints.md"
 
 ## Step 3: 审查
 
-**触发条件**: 每章都审查（不再是双章）
+⚠️ **强制要求**: 必须在**同一条消息**中并行调用全部 5 个 Agent。缺少任何一个视为步骤未完成，**禁止进入 Step 4**。
 
-**并行调用 5 个审查 Agent**:
+**执行命令（不可修改）**:
 
-使用 Task 工具并行调用：
+在一条消息中发送 5 个 Task 工具调用，每个调用需传入以下公共参数：
+- project_root: {PROJECT_ROOT}
+- storage_path: .webnovel/
+- state_file: .webnovel/state.json
+- chapter_file: "正文/第{NNNN}章.md"
+
+| # | subagent_type | 必须 | 说明 |
+|---|---------------|------|------|
+| 1 | `high-point-checker` | ✅ | 爽点密度检查 |
+| 2 | `consistency-checker` | ✅ | 设定一致性检查 |
+| 3 | `pacing-checker` | ✅ | Strand 节奏检查 |
+| 4 | `ooc-checker` | ✅ | 人物 OOC 检查 |
+| 5 | `continuity-checker` | ✅ | 连贯性检查 |
+
+**验证**: 收到全部 5 份报告后，**必须输出以下汇总表格**：
 
 ```
-并行调用以下 5 个 subagent，输入为第 {chapter_num} 章：
-
-1. high-point-checker - 爽点密度检查
-2. consistency-checker - 设定一致性检查
-3. pacing-checker - Strand 节奏检查
-4. ooc-checker - 人物 OOC 检查
-5. continuity-checker - 连贯性检查
+┌─────────────────────────────────────────────────┐
+│ 审查汇总 - 第 {chapter_num} 章                    │
+├─────────────────────┬───────────┬───────────────┤
+│ Agent               │ 结果      │ 关键问题数     │
+├─────────────────────┼───────────┼───────────────┤
+│ high-point-checker  │ PASS/FAIL │ {N}           │
+│ consistency-checker │ PASS/FAIL │ {N}           │
+│ pacing-checker      │ PASS/FAIL │ {N}           │
+│ ooc-checker         │ PASS/FAIL │ {N}           │
+│ continuity-checker  │ PASS/FAIL │ {N}           │
+├─────────────────────┴───────────┴───────────────┤
+│ critical issues: {N}  |  high issues: {N}       │
+│ 是否可进入润色: {是/否}                           │
+└─────────────────────────────────────────────────┘
 ```
 
-**审查输出汇总**:
-```json
-{
-  "overall_score": 85,
-  "issues": [
-    {"agent": "ooc-checker", "type": "OOC", "severity": "medium", "location": "第3段", "suggestion": "林天对敌人太客气，应更冷酷"},
-    {"agent": "consistency-checker", "type": "POWER_CONFLICT", "severity": "high", "location": "第5段", "suggestion": "筑基3层不能使用金丹期技能"}
-  ],
-  "style_score": 78,
-  "pacing_analysis": {
-    "quest_ratio": 0.4,
-    "fire_ratio": 0.35,
-    "constellation_ratio": 0.25
-  },
-  "pass": true
-}
-```
+**Only proceed to Step 4 when:**
+1. 已收到全部 5 份审查报告
+2. 已输出汇总表格
 
 ---
 
 ## Step 4: 润色 (基于审查报告)
 
-**输入**:
-1. 章节正文
-2. 审查报告 (Step 3 输出)
-3. polish-guide.md 规则
+⚠️ **强制要求**: 必须按以下顺序执行全部 4 个子步骤，不可跳过。
 
-**加载润色指南**:
+### 4.0 加载润色指南（必须先执行）
+
+**执行命令（不可跳过）**:
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 ```
 
-**润色内容**:
+如果未执行此命令，视为润色步骤无效。
 
 ### 4.1 修复审查问题
 
-根据审查报告的 `issues` 列表针对性修改：
+根据 Step 3 汇总表格中的 issues 列表针对性修改：
+
+| 严重度 | 处理方式 |
+|-------|---------|
+| critical | **必须修复**，否则记录 deviation |
+| high | 优先修复 |
+| medium | 建议修复 |
+| low | 可选修复 |
 
 | 问题类型 | 修复方式 |
 |---------|---------|
@@ -151,13 +171,17 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 | PACING_IMBALANCE | 调整 Strand 比例 |
 | LOW_COOL_POINTS | 增加爽点密度 |
 
-### 4.2 AI痕迹清除
+### 4.2 AI痕迹检测（必须执行）
 
-| 指标 | 警戒线 | 目标值 | 检测词 |
-|-----|-------|--------|--------|
-| 总结词密度 | > 1次/1000字 | 0次 | 综合/总之/由此可见 |
-| 列举结构 | > 0.5次/1000字 | 0次 | 首先…其次…最后… |
-| 学术词频 | > 3次/1000字 | < 1次 | 而言/某种程度上 |
+使用 Grep 工具检测以下关键词:
+
+| 类型 | 关键词模式 | 警戒线 | 目标值 |
+|-----|-----------|-------|--------|
+| 总结词 | `综合\|总之\|由此可见\|总而言之` | > 1次/1000字 | 0次 |
+| 列举结构 | `首先\|其次\|最后\|第一\|第二\|第三` | > 0.5次/1000字 | 0次 |
+| 学术词 | `而言\|某种程度上\|本质上` | > 3次/1000字 | < 1次 |
+
+如超标，必须修改后重新检测。
 
 ### 4.3 自然化处理
 
@@ -173,6 +197,34 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 - ❌ 修改主角实力 → 违反"设定即物理"
 - ❌ 改变人物关系 → 违反设定
 - ❌ 删除伏笔 → 破坏长线剧情
+
+### 4.5 输出检查清单（必须输出）
+
+润色完成后，**必须输出以下检查清单**：
+
+```
+┌─────────────────────────────────────────────────┐
+│ 润色检查清单 - 第 {chapter_num} 章               │
+├─────────────────────────────────────────────────┤
+│ [x] polish-guide.md 已加载                      │
+│ [x] critical issues 已修复: {是/否/无}          │
+│ [x] high issues 已修复: {是/否/无}              │
+├─────────────────────────────────────────────────┤
+│ AI痕迹检测:                                     │
+│   - 总结词: {N}次 {达标/超标}                    │
+│   - 列举结构: {N}次 {达标/超标}                  │
+│   - 学术词: {N}次 {达标/超标}                    │
+├─────────────────────────────────────────────────┤
+│ [x] 未违反润色红线                              │
+│ 是否可进入 Data Agent: {是/否}                  │
+└─────────────────────────────────────────────────┘
+```
+
+**Only proceed to Step 5 when:**
+1. 已加载 polish-guide.md
+2. 已修复所有 critical/high issues（或记录 deviation）
+3. AI 痕迹检测全部达标
+4. 已输出检查清单
 
 **输出**: 润色后的章节文件（覆盖原文件）
 
@@ -190,6 +242,8 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 - chapter_file: "正文/第{NNNN}章.md"
 - review_score: {overall_score from Step 3}
 - project_root: {PROJECT_ROOT}
+- storage_path: .webnovel/
+- state_file: .webnovel/state.json
 ```
 
 **Agent 自动完成**:
@@ -236,15 +290,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 ## Step 6: Git 备份
 
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/backup_manager.py" \
-  --chapter {chapter_num} \
-  --chapter-title "{title}"
-```
-
-或手动：
-```bash
-git add .
-git commit -m "Ch{chapter_num}: {title}"
+git add . && git commit -m "Ch{chapter_num}: {title}"
 ```
 
 ---
@@ -294,9 +340,27 @@ git commit -m "Ch{chapter_num}: {title}"
 
 ## 成功标准
 
-1. ✅ 章节字数 3000-5000
-2. ✅ 100% 执行大纲
-3. ✅ 审查 overall_score ≥ 70
-4. ✅ 润色后 AI 痕迹指标达标
-5. ✅ Data Agent 成功提取实体
-6. ✅ Git 提交成功
+章节完成后，**必须输出最终验证报告**：
+
+```
+┌─────────────────────────────────────────────────┐
+│ 章节完成验证 - 第 {chapter_num} 章               │
+├─────────────────────────────────────────────────┤
+│ 1. [x] 字数: {N}字 (3000-5000)                  │
+│ 2. [x] 大纲执行: 100%                           │
+│ 3. [x] 审查Agent: 5/5 已调用                    │
+│ 4. [x] 审查汇总表格: 已输出                      │
+│ 5. [x] polish-guide.md: 已加载                  │
+│ 6. [x] AI痕迹检测: 已执行                       │
+│ 7. [x] 润色检查清单: 已输出                      │
+│ 8. [x] Data Agent: 成功提取 {N} 个实体          │
+│ 9. [x] Git: 已提交 ({commit_hash})              │
+├─────────────────────────────────────────────────┤
+│ 最终状态: {成功/有deviation}                     │
+└─────────────────────────────────────────────────┘
+```
+
+**验证失败处理**:
+- 如有任何项目未完成，记录 deviation 原因
+- deviation 不阻断工作流，但必须记录
+- 连续 3 章出现相同 deviation → 标记为系统问题

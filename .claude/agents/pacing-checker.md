@@ -18,9 +18,19 @@ tools: Read, Grep
 
 ### Step 1: Load Context
 
+**输入参数**:
+```json
+{
+  "project_root": "{PROJECT_ROOT}",
+  "storage_path": ".webnovel/",
+  "state_file": ".webnovel/state.json",
+  "chapter_file": "正文/第{NNNN}章.md"
+}
+```
+
 **Parallel reads**:
 1. Target chapters from `正文/`
-2. `.webnovel/state.json` (strand_tracker history)
+2. `{project_root}/.webnovel/state.json` (strand_tracker history)
 3. `大纲/` (to understand intended arc structure)
 
 **Optional: Use status_reporter for automated analysis**:
@@ -96,19 +106,15 @@ Last Fire chapter: 34 | Current: 46 | Gap: 12 chapters
 Last Constellation: 38 | Current: 46 | Gap: 8 chapters
 ```
 
-### Step 4: Ideal Pacing Reference
+### Step 4: 节奏标准
 
-**Every 10 chapters should contain**:
-```
-Quest:         ~60% (6-7 chapters)
-Fire:          ~20% (2-3 chapters)
-Constellation: ~20% (1-2 chapters)
-```
+**每10章理想分布与缺席阈值**:
 
-**No strand should be absent for**:
-- Quest: > 3 chapters (罕见，因为主线推进)
-- Fire: > 10 chapters
-- Constellation: > 15 chapters
+| Strand | 理想占比 | 最大缺席 | 超限影响 |
+|--------|---------|---------|---------|
+| Quest (任务线) | 60% (6-7章) | 3 章 | 罕见，主线推进需要 |
+| Fire (情感线) | 20% (2-3章) | 10 章 | 人物关系停滞 |
+| Constellation (人际线) | 20% (1-2章) | 15 章 | 世界观单薄 |
 
 ### Step 5: Historical Trend Analysis
 
