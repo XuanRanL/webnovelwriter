@@ -141,16 +141,17 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/core-constraints.md"
 
 ## Step 4: 润色 (基于审查报告)
 
-⚠️ **强制要求**: 必须按以下顺序执行全部 4 个子步骤，不可跳过。
+⚠️ **强制要求**: 必须按以下顺序执行全部子步骤（4.0-4.5），不可跳过。
 
 ### 4.0 加载润色指南（必须先执行）
 
 **执行命令（不可跳过）**:
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.md"
 ```
 
-如果未执行此命令，视为润色步骤无效。
+如果未执行以上命令，视为润色步骤无效。
 
 ### 4.1 修复审查问题
 
@@ -180,6 +181,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 | 总结词 | `综合\|总之\|由此可见\|总而言之` | > 1次/1000字 | 0次 |
 | 列举结构 | `首先\|其次\|最后\|第一\|第二\|第三` | > 0.5次/1000字 | 0次 |
 | 学术词 | `而言\|某种程度上\|本质上` | > 3次/1000字 | < 1次 |
+| 因果连词 | `因为\|所以\|由于\|因此` | > 5次/1000字 | < 3次 |
 
 如超标，必须修改后重新检测。
 
@@ -188,8 +190,18 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 | 指标 | 不达标 | 达标 |
 |-----|-------|------|
 | 停顿词 | < 0.5次/500字 | 1-2次/500字 |
+| 不确定表达 | 0次 | ≥ 2次/章 |
 | 短句占比 | < 20% | 30-50% |
 | 口语词 | 0次/1000字 | ≥ 2次/1000字 |
+
+**自然化检测（必须执行）**：
+- 停顿词：`嗯\|这个\|那什么\|怎么说呢`
+- 不确定表达：`大概\|应该\|似乎\|好像`
+- 口语词：`咋回事\|得了\|行吧\|算了`
+- 短句占比：抽样 30 句（按 `。！？` 分句），≤25 字视为短句，目标 30-50%
+
+**排版检查（必须执行）**（见 typesetting.md）：
+- 对话换人换行；长段落（5行以上）拆分；场景切换留空行/分隔；章末钩子
 
 ### 4.4 润色红线
 
@@ -207,6 +219,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 │ 润色检查清单 - 第 {chapter_num} 章               │
 ├─────────────────────────────────────────────────┤
 │ [x] polish-guide.md 已加载                      │
+│ [x] typesetting.md 已加载                       │
 │ [x] critical issues 已修复: {是/否/无}          │
 │ [x] high issues 已修复: {是/否/无}              │
 ├─────────────────────────────────────────────────┤
@@ -214,6 +227,13 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 │   - 总结词: {N}次 {达标/超标}                    │
 │   - 列举结构: {N}次 {达标/超标}                  │
 │   - 学术词: {N}次 {达标/超标}                    │
+│   - 因果连词: {N}次 {达标/超标}                  │
+├─────────────────────────────────────────────────┤
+│ 自然化检测:                                     │
+│   - 停顿词: {N}次 {达标/偏少/偏多}               │
+│   - 不确定表达: {N}次 {达标/偏少}                │
+│   - 口语词: {N}次 {达标/偏少}                    │
+│   - 短句占比: {X}% {达标/偏低/偏高}              │
 ├─────────────────────────────────────────────────┤
 │ [x] 未违反润色红线                              │
 │ 是否可进入 Data Agent: {是/否}                  │
@@ -221,10 +241,11 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 ```
 
 **Only proceed to Step 5 when:**
-1. 已加载 polish-guide.md
+1. 已加载 polish-guide.md + typesetting.md
 2. 已修复所有 critical/high issues（或记录 deviation）
 3. AI 痕迹检测全部达标
-4. 已输出检查清单
+4. 自然化/排版检查已完成（不足则记录 deviation）
+5. 已输出检查清单
 
 **输出**: 润色后的章节文件（覆盖原文件）
 
