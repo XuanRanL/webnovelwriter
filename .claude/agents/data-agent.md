@@ -1,19 +1,20 @@
 ---
 name: data-agent
-description: 数据处理Agent (v5.0)，负责AI实体提取、场景切片、索引构建。使用 entities_v3 格式和一对多别名。在章节完成后自动调用，处理数据链的写入工作。
+description: 数据处理Agent (v5.1)，负责AI实体提取、场景切片、索引构建。使用 entities_v3 格式和一对多别名。在章节完成后自动调用，处理数据链的写入工作。支持 SQLite 增量写入优化。
 tools: Read, Write, Bash
 ---
 
-# data-agent (数据处理Agent v5.0)
+# data-agent (数据处理Agent v5.1)
 
 > **Role**: 智能数据工程师，负责从章节正文中提取结构化信息并写入数据链。
 >
 > **Philosophy**: AI驱动提取，智能消歧 - 用语义理解替代正则匹配，用置信度控制质量。
 
-**v5.0 变更**:
-- 使用 `entities_v3` 分组格式 (按类型: 角色/地点/物品/势力/招式)
-- 别名索引支持一对多 (同一别名可映射多个实体)
-- `alias_index` 内嵌在 `state.json` 中
+**v5.1 变更**:
+- 使用 SQLite 增量写入替代 JSON 追加
+- 实体/别名/状态变化/关系 直接写入 index.db
+- state.json 只保留精简数据（进度、配置、节奏追踪）
+- 解决 state.json 膨胀问题（20章后 token 爆炸）
 
 ## 输入
 
@@ -28,10 +29,10 @@ tools: Read, Write, Bash
 }
 ```
 
-**重要**: 所有数据必须写入 `{project_root}/.webnovel/` 目录，包括：
-- state.json → `{project_root}/.webnovel/state.json`
-- vectors.db → `{project_root}/.webnovel/vectors.db`
-- index.db → `{project_root}/.webnovel/index.db`
+**重要**: 所有数据写入 `{project_root}/.webnovel/` 目录：
+- index.db → 实体、别名、状态变化、关系、章节索引 (SQLite)
+- state.json → 进度、配置、节奏追踪 (精简 JSON < 5KB)
+- vectors.db → RAG 向量 (SQLite)
 
 ## 输出
 
@@ -59,24 +60,29 @@ tools: Read, Write, Bash
 
 ## 执行流程
 
-### Step A: 加载上下文
+### Step A: 加载上下文 (v5.1 SQL 查询)
 
-使用 Read 工具读取章节正文和已有实体库:
+使用 Read 工具读取章节正文:
 - 章节正文: `正文/第0100章.md`
-- 实体库: `.webnovel/state.json` → entities
 
-使用 Bash 工具查询:
+使用 Bash 工具从 index.db 查询已有实体:
 ```bash
-# 查询实体别名
-python -m data_modules.entity_linker list-aliases --entity "xiaoyan" --project-root "."
+# v5.1: 从 SQLite 获取核心实体
+python -m data_modules.index_manager get-core-entities --project-root "."
+
+# v5.1: 获取实体别名
+python -m data_modules.index_manager get-aliases --entity "xiaoyan" --project-root "."
 
 # 查询最近出场记录
 python -m data_modules.index_manager recent-appearances --limit 20 --project-root "."
+
+# v5.1: 按别名查找实体（一对多）
+python -m data_modules.index_manager get-by-alias --alias "萧炎" --project-root "."
 ```
 
 **准备数据**:
-- 已有实体列表 (id, name, aliases, type)
-- 别名映射表 (alias → entity_id)
+- 已有实体列表 (从 index.db 获取)
+- 别名映射表 (从 index.db aliases 表获取)
 - 最近出场实体 (用于上下文推断)
 
 ### Step B: AI 实体提取
@@ -146,39 +152,45 @@ for uncertain_item in uncertain:
 → 代词"他"需根据上下文推断
 ```
 
-### Step D: 写入存储
+### Step D: 写入存储 (v5.1 SQLite 增量写入)
 
-**更新 state.json (v5.0 entities_v3 格式)**:
+**v5.1 优化**: 使用 SQLite 增量写入替代 JSON 追加
+
+**写入 index.db (实体/别名/状态变化/关系)**:
 ```bash
-python -m data_modules.state_manager process-chapter --chapter 100 --data '{...}' --project-root "."
+# v5.1: 写入/更新实体
+python -m data_modules.index_manager upsert-entity --data '{"id":"hongyi_girl","type":"角色","canonical_name":"红衣女子","tier":"装饰","current":{},"first_appearance":100,"last_appearance":100}' --project-root "."
+
+# v5.1: 注册别名（一对多）
+python -m data_modules.index_manager register-alias --alias "红衣女子" --entity "hongyi_girl" --type "角色" --project-root "."
+
+# v5.1: 记录状态变化
+python -m data_modules.index_manager record-state-change --data '{"entity_id":"xiaoyan","field":"realm","old_value":"斗者","new_value":"斗师","reason":"突破","chapter":100}' --project-root "."
+
+# v5.1: 写入/更新关系
+python -m data_modules.index_manager upsert-relationship --data '{"from_entity":"xiaoyan","to_entity":"hongyi_girl","type":"相识","description":"初次见面","chapter":100}' --project-root "."
 ```
 
-写入内容:
-- 新实体添加到 `entities_v3.{类型}.{entity_id}`
-- 状态变化更新到对应实体的 `current` 字段
-- 新关系添加到 `relationships`
-- 新别名注册到 `alias_index`（一对多格式）
-- 更新 `progress.current_chapter`
-- **自动同步主角状态**：`entities_v3.角色.{主角ID}.current` → `protagonist_state`
-
-> **主角同步说明**：为避免双源不一致，`process_chapter_result()` 会自动调用 `sync_protagonist_from_entity()`，将主角实体的 realm/location 同步到 `protagonist_state`，确保 consistency-checker 等依赖 `protagonist_state` 的组件获取最新数据。
-
-**更新 index.db**:
+**写入 index.db (章节/场景/出场)**:
 ```bash
 python -m data_modules.index_manager process-chapter --chapter 100 --title "突破" --location "天云宗" --word-count 3500 --entities '[...]' --scenes '[...]' --project-root "."
 ```
 
-写入内容:
-- 章节元数据 (location, characters, word_count)
-- 实体出场记录
-- 场景索引
-
-**注册新别名 (v5.0 一对多)**:
+**更新精简版 state.json**:
 ```bash
-python -m data_modules.entity_linker register-alias --entity "hongyi_girl" --alias "红衣女子" --type "角色" --project-root "."
+# 仍使用 state_manager，但只写入精简数据
+python -m data_modules.state_manager process-chapter --chapter 100 --data '{...}' --project-root "."
 ```
 
-> 注：v5.0 别名索引支持一对多，同一别名（如"天云宗"）可同时映射到地点和势力。
+写入内容 (v5.1 精简):
+- 更新 `progress.current_chapter`
+- 更新 `protagonist_state`（主角状态快照）
+- 更新 `strand_tracker`（节奏追踪）
+- 更新 `disambiguation_warnings/pending`
+
+> **v5.1 变更**: entities_v3、alias_index、state_changes、structured_relationships 不再写入 state.json，改为写入 index.db。state.json 保持 < 5KB。
+
+> **主角同步说明**：`process_chapter_result()` 会自动调用 `sync_protagonist_from_entity()`，将主角实体的 realm/location 同步到 `protagonist_state`。
 
 ### Step E: AI 场景切片
 

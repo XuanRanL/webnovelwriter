@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Index Manager - 索引管理模块
+Index Manager - 索引管理模块 (v5.1)
 
 管理 index.db (SQLite) 的读写操作：
 - 章节元数据索引
 - 实体出场记录
 - 场景索引
+- 实体存储 (从 state.json 迁移)
+- 别名索引 (一对多)
+- 状态变化记录
+- 关系存储
 - 快速查询接口
+
+v5.1 变更:
+- 新增 entities 表替代 state.json 中的 entities_v3
+- 新增 aliases 表替代 state.json 中的 alias_index (支持一对多)
+- 新增 state_changes 表替代 state.json 中的 state_changes
+- 新增 relationships 表替代 state.json 中的 structured_relationships
 """
 
 import sqlite3
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from contextlib import contextmanager
+from datetime import datetime
 
 from .config import get_config
 
@@ -41,6 +52,42 @@ class SceneMeta:
     location: str
     summary: str
     characters: List[str]
+
+
+@dataclass
+class EntityMeta:
+    """实体元数据 (v5.1 新增)"""
+    id: str
+    type: str  # 角色/地点/物品/势力/招式
+    canonical_name: str
+    tier: str = "装饰"  # 核心/重要/次要/装饰
+    desc: str = ""
+    current: Dict = field(default_factory=dict)  # 当前状态 (realm/location/items等)
+    first_appearance: int = 0
+    last_appearance: int = 0
+    is_protagonist: bool = False
+    is_archived: bool = False
+
+
+@dataclass
+class StateChangeMeta:
+    """状态变化记录 (v5.1 新增)"""
+    entity_id: str
+    field: str
+    old_value: str
+    new_value: str
+    reason: str
+    chapter: int
+
+
+@dataclass
+class RelationshipMeta:
+    """关系记录 (v5.1 新增)"""
+    from_entity: str
+    to_entity: str
+    type: str
+    description: str
+    chapter: int
 
 
 class IndexManager:
@@ -101,6 +148,77 @@ class IndexManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_scenes_chapter ON scenes(chapter)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_appearances_entity ON appearances(entity_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_appearances_chapter ON appearances(chapter)")
+
+            # ==================== v5.1 新增表 ====================
+
+            # 实体表 (替代 state.json 中的 entities_v3)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS entities (
+                    id TEXT PRIMARY KEY,
+                    type TEXT NOT NULL,
+                    canonical_name TEXT NOT NULL,
+                    tier TEXT DEFAULT '装饰',
+                    desc TEXT,
+                    current_json TEXT,
+                    first_appearance INTEGER DEFAULT 0,
+                    last_appearance INTEGER DEFAULT 0,
+                    is_protagonist INTEGER DEFAULT 0,
+                    is_archived INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 别名表 (替代 state.json 中的 alias_index，支持一对多)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS aliases (
+                    alias TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (alias, entity_id, entity_type)
+                )
+            """)
+
+            # 状态变化表 (替代 state.json 中的 state_changes)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS state_changes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_id TEXT NOT NULL,
+                    field TEXT NOT NULL,
+                    old_value TEXT,
+                    new_value TEXT,
+                    reason TEXT,
+                    chapter INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # 关系表 (替代 state.json 中的 structured_relationships)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS relationships (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_entity TEXT NOT NULL,
+                    to_entity TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    description TEXT,
+                    chapter INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(from_entity, to_entity, type)
+                )
+            """)
+
+            # v5.1 新索引
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_entities_tier ON entities(tier)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_entities_protagonist ON entities(is_protagonist)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_aliases_entity ON aliases(entity_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_aliases_alias ON aliases(alias)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_state_changes_entity ON state_changes(entity_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_state_changes_chapter ON state_changes(chapter)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_from ON relationships(from_entity)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_to ON relationships(to_entity)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_chapter ON relationships(chapter)")
 
             conn.commit()
 
@@ -274,6 +392,375 @@ class IndexManager:
             """, (chapter,))
             return [self._row_to_dict(row, parse_json=["mentions"]) for row in cursor.fetchall()]
 
+    # ==================== v5.1 实体操作 ====================
+
+    def upsert_entity(self, entity: EntityMeta) -> bool:
+        """
+        插入或更新实体 (智能合并)
+
+        - 新实体: 直接插入
+        - 已存在: 更新 current_json, last_appearance, updated_at
+
+        返回是否为新实体
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+
+            # 检查是否存在
+            cursor.execute("SELECT id, current_json FROM entities WHERE id = ?", (entity.id,))
+            existing = cursor.fetchone()
+
+            if existing:
+                # 已存在: 智能合并 current_json
+                old_current = {}
+                if existing["current_json"]:
+                    try:
+                        old_current = json.loads(existing["current_json"])
+                    except json.JSONDecodeError:
+                        pass
+
+                # 合并 current (新值覆盖旧值)
+                merged_current = {**old_current, **entity.current}
+
+                cursor.execute("""
+                    UPDATE entities SET
+                        current_json = ?,
+                        last_appearance = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (
+                    json.dumps(merged_current, ensure_ascii=False),
+                    entity.last_appearance,
+                    entity.id
+                ))
+                conn.commit()
+                return False
+            else:
+                # 新实体: 插入
+                cursor.execute("""
+                    INSERT INTO entities
+                    (id, type, canonical_name, tier, desc, current_json,
+                     first_appearance, last_appearance, is_protagonist, is_archived)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    entity.id,
+                    entity.type,
+                    entity.canonical_name,
+                    entity.tier,
+                    entity.desc,
+                    json.dumps(entity.current, ensure_ascii=False),
+                    entity.first_appearance,
+                    entity.last_appearance,
+                    1 if entity.is_protagonist else 0,
+                    1 if entity.is_archived else 0
+                ))
+                conn.commit()
+                return True
+
+    def get_entity(self, entity_id: str) -> Optional[Dict]:
+        """获取单个实体"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM entities WHERE id = ?", (entity_id,))
+            row = cursor.fetchone()
+            if row:
+                return self._row_to_dict(row, parse_json=["current_json"])
+            return None
+
+    def get_entities_by_type(self, entity_type: str, include_archived: bool = False) -> List[Dict]:
+        """按类型获取实体"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            if include_archived:
+                cursor.execute("""
+                    SELECT * FROM entities WHERE type = ?
+                    ORDER BY last_appearance DESC
+                """, (entity_type,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM entities WHERE type = ? AND is_archived = 0
+                    ORDER BY last_appearance DESC
+                """, (entity_type,))
+            return [self._row_to_dict(row, parse_json=["current_json"]) for row in cursor.fetchall()]
+
+    def get_entities_by_tier(self, tier: str) -> List[Dict]:
+        """按重要度获取实体 (核心/重要/次要/装饰)"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM entities WHERE tier = ? AND is_archived = 0
+                ORDER BY last_appearance DESC
+            """, (tier,))
+            return [self._row_to_dict(row, parse_json=["current_json"]) for row in cursor.fetchall()]
+
+    def get_core_entities(self) -> List[Dict]:
+        """获取所有核心实体 (用于 Context Agent 全量加载)"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM entities
+                WHERE (tier IN ('核心', '重要') OR is_protagonist = 1) AND is_archived = 0
+                ORDER BY is_protagonist DESC, tier, last_appearance DESC
+            """)
+            return [self._row_to_dict(row, parse_json=["current_json"]) for row in cursor.fetchall()]
+
+    def get_protagonist(self) -> Optional[Dict]:
+        """获取主角实体"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM entities WHERE is_protagonist = 1 LIMIT 1")
+            row = cursor.fetchone()
+            if row:
+                return self._row_to_dict(row, parse_json=["current_json"])
+            return None
+
+    def update_entity_current(self, entity_id: str, updates: Dict) -> bool:
+        """
+        增量更新实体的 current 字段 (不覆盖其他字段)
+
+        例如: update_entity_current("xiaoyan", {"realm": "斗师"})
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT current_json FROM entities WHERE id = ?", (entity_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False
+
+            current = {}
+            if row["current_json"]:
+                try:
+                    current = json.loads(row["current_json"])
+                except json.JSONDecodeError:
+                    pass
+
+            current.update(updates)
+
+            cursor.execute("""
+                UPDATE entities SET
+                    current_json = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (json.dumps(current, ensure_ascii=False), entity_id))
+            conn.commit()
+            return True
+
+    def archive_entity(self, entity_id: str) -> bool:
+        """归档实体 (不删除，只是标记)"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE entities SET is_archived = 1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (entity_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ==================== v5.1 别名操作 ====================
+
+    def register_alias(self, alias: str, entity_id: str, entity_type: str) -> bool:
+        """
+        注册别名 (支持一对多)
+
+        同一别名可映射多个实体 (如 "天云宗" → 地点 + 势力)
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO aliases (alias, entity_id, entity_type)
+                    VALUES (?, ?, ?)
+                """, (alias, entity_id, entity_type))
+                conn.commit()
+                return cursor.rowcount > 0
+            except sqlite3.IntegrityError:
+                return False
+
+    def get_entities_by_alias(self, alias: str) -> List[Dict]:
+        """
+        根据别名查找实体 (一对多)
+
+        返回所有匹配的实体 (可能有多个不同类型)
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT e.*, a.entity_type as alias_type
+                FROM entities e
+                JOIN aliases a ON e.id = a.entity_id
+                WHERE a.alias = ?
+            """, (alias,))
+            return [self._row_to_dict(row, parse_json=["current_json"]) for row in cursor.fetchall()]
+
+    def get_entity_aliases(self, entity_id: str) -> List[str]:
+        """获取实体的所有别名"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT alias FROM aliases WHERE entity_id = ?", (entity_id,))
+            return [row["alias"] for row in cursor.fetchall()]
+
+    def remove_alias(self, alias: str, entity_id: str) -> bool:
+        """移除别名"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM aliases WHERE alias = ? AND entity_id = ?", (alias, entity_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ==================== v5.1 状态变化操作 ====================
+
+    def record_state_change(self, change: StateChangeMeta) -> int:
+        """
+        记录状态变化
+
+        返回记录 ID
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO state_changes
+                (entity_id, field, old_value, new_value, reason, chapter)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                change.entity_id,
+                change.field,
+                change.old_value,
+                change.new_value,
+                change.reason,
+                change.chapter
+            ))
+            conn.commit()
+            return cursor.lastrowid
+
+    def get_entity_state_changes(self, entity_id: str, limit: int = 20) -> List[Dict]:
+        """获取实体的状态变化历史"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM state_changes
+                WHERE entity_id = ?
+                ORDER BY chapter DESC, id DESC
+                LIMIT ?
+            """, (entity_id, limit))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_recent_state_changes(self, limit: int = 50) -> List[Dict]:
+        """获取最近的状态变化"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM state_changes
+                ORDER BY chapter DESC, id DESC
+                LIMIT ?
+            """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_chapter_state_changes(self, chapter: int) -> List[Dict]:
+        """获取某章的所有状态变化"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM state_changes
+                WHERE chapter = ?
+                ORDER BY id
+            """, (chapter,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    # ==================== v5.1 关系操作 ====================
+
+    def upsert_relationship(self, rel: RelationshipMeta) -> bool:
+        """
+        插入或更新关系
+
+        相同 (from, to, type) 会更新 description 和 chapter
+        返回是否为新关系
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+
+            # 检查是否存在
+            cursor.execute("""
+                SELECT id FROM relationships
+                WHERE from_entity = ? AND to_entity = ? AND type = ?
+            """, (rel.from_entity, rel.to_entity, rel.type))
+            existing = cursor.fetchone()
+
+            if existing:
+                cursor.execute("""
+                    UPDATE relationships SET
+                        description = ?,
+                        chapter = ?
+                    WHERE id = ?
+                """, (rel.description, rel.chapter, existing["id"]))
+                conn.commit()
+                return False
+            else:
+                cursor.execute("""
+                    INSERT INTO relationships
+                    (from_entity, to_entity, type, description, chapter)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    rel.from_entity,
+                    rel.to_entity,
+                    rel.type,
+                    rel.description,
+                    rel.chapter
+                ))
+                conn.commit()
+                return True
+
+    def get_entity_relationships(self, entity_id: str, direction: str = "both") -> List[Dict]:
+        """
+        获取实体的关系
+
+        direction: "from" | "to" | "both"
+        """
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+
+            if direction == "from":
+                cursor.execute("""
+                    SELECT * FROM relationships WHERE from_entity = ?
+                    ORDER BY chapter DESC
+                """, (entity_id,))
+            elif direction == "to":
+                cursor.execute("""
+                    SELECT * FROM relationships WHERE to_entity = ?
+                    ORDER BY chapter DESC
+                """, (entity_id,))
+            else:  # both
+                cursor.execute("""
+                    SELECT * FROM relationships
+                    WHERE from_entity = ? OR to_entity = ?
+                    ORDER BY chapter DESC
+                """, (entity_id, entity_id))
+
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_relationship_between(self, entity1: str, entity2: str) -> List[Dict]:
+        """获取两个实体之间的所有关系"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM relationships
+                WHERE (from_entity = ? AND to_entity = ?)
+                   OR (from_entity = ? AND to_entity = ?)
+                ORDER BY chapter DESC
+            """, (entity1, entity2, entity2, entity1))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_recent_relationships(self, limit: int = 30) -> List[Dict]:
+        """获取最近建立的关系"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM relationships
+                ORDER BY chapter DESC, id DESC
+                LIMIT ?
+            """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
     # ==================== 批量操作 ====================
 
     def process_chapter_data(
@@ -361,16 +848,38 @@ class IndexManager:
             scenes = cursor.fetchone()[0]
 
             cursor.execute("SELECT COUNT(DISTINCT entity_id) FROM appearances")
-            entities = cursor.fetchone()[0]
+            appearances = cursor.fetchone()[0]
 
             cursor.execute("SELECT MAX(chapter) FROM chapters")
             max_chapter = cursor.fetchone()[0] or 0
 
+            # v5.1 新增统计
+            cursor.execute("SELECT COUNT(*) FROM entities")
+            entities = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM entities WHERE is_archived = 0")
+            active_entities = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM aliases")
+            aliases = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM state_changes")
+            state_changes = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM relationships")
+            relationships = cursor.fetchone()[0]
+
             return {
                 "chapters": chapters,
                 "scenes": scenes,
+                "appearances": appearances,
+                "max_chapter": max_chapter,
+                # v5.1 新增
                 "entities": entities,
-                "max_chapter": max_chapter
+                "active_entities": active_entities,
+                "aliases": aliases,
+                "state_changes": state_changes,
+                "relationships": relationships
             }
 
 
@@ -379,7 +888,7 @@ class IndexManager:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Index Manager CLI")
+    parser = argparse.ArgumentParser(description="Index Manager CLI (v5.1)")
     parser.add_argument("--project-root", type=str, help="项目根目录")
 
     subparsers = parser.add_subparsers(dest="command")
@@ -413,6 +922,59 @@ def main():
     process_parser.add_argument("--word-count", type=int, required=True)
     process_parser.add_argument("--entities", required=True, help="JSON 格式的实体列表")
     process_parser.add_argument("--scenes", required=True, help="JSON 格式的场景列表")
+
+    # ==================== v5.1 新增命令 ====================
+
+    # 获取实体
+    get_entity_parser = subparsers.add_parser("get-entity")
+    get_entity_parser.add_argument("--id", required=True, help="实体 ID")
+
+    # 获取核心实体
+    subparsers.add_parser("get-core-entities")
+
+    # 获取主角
+    subparsers.add_parser("get-protagonist")
+
+    # 按类型获取实体
+    type_parser = subparsers.add_parser("get-entities-by-type")
+    type_parser.add_argument("--type", required=True, help="实体类型 (角色/地点/物品/势力/招式)")
+    type_parser.add_argument("--include-archived", action="store_true")
+
+    # 按别名查找实体
+    alias_parser = subparsers.add_parser("get-by-alias")
+    alias_parser.add_argument("--alias", required=True, help="别名")
+
+    # 获取实体别名
+    aliases_parser = subparsers.add_parser("get-aliases")
+    aliases_parser.add_argument("--entity", required=True, help="实体 ID")
+
+    # 注册别名
+    reg_alias_parser = subparsers.add_parser("register-alias")
+    reg_alias_parser.add_argument("--alias", required=True)
+    reg_alias_parser.add_argument("--entity", required=True)
+    reg_alias_parser.add_argument("--type", required=True, help="实体类型")
+
+    # 获取实体关系
+    rel_parser = subparsers.add_parser("get-relationships")
+    rel_parser.add_argument("--entity", required=True)
+    rel_parser.add_argument("--direction", choices=["from", "to", "both"], default="both")
+
+    # 获取状态变化
+    changes_parser = subparsers.add_parser("get-state-changes")
+    changes_parser.add_argument("--entity", required=True)
+    changes_parser.add_argument("--limit", type=int, default=20)
+
+    # 写入实体
+    upsert_entity_parser = subparsers.add_parser("upsert-entity")
+    upsert_entity_parser.add_argument("--data", required=True, help="JSON 格式的实体数据")
+
+    # 写入关系
+    upsert_rel_parser = subparsers.add_parser("upsert-relationship")
+    upsert_rel_parser.add_argument("--data", required=True, help="JSON 格式的关系数据")
+
+    # 写入状态变化
+    state_change_parser = subparsers.add_parser("record-state-change")
+    state_change_parser.add_argument("--data", required=True, help="JSON 格式的状态变化数据")
 
     args = parser.parse_args()
 
@@ -465,6 +1027,101 @@ def main():
         )
         print(f"✓ 已处理第 {args.chapter} 章")
         print(f"  章节: {stats['chapters']}, 场景: {stats['scenes']}, 出场记录: {stats['appearances']}")
+
+    # ==================== v5.1 新增命令处理 ====================
+
+    elif args.command == "get-entity":
+        entity = manager.get_entity(args.id)
+        if entity:
+            print(json.dumps(entity, ensure_ascii=False, indent=2))
+        else:
+            print(f"未找到实体: {args.id}")
+
+    elif args.command == "get-core-entities":
+        entities = manager.get_core_entities()
+        print(json.dumps(entities, ensure_ascii=False, indent=2))
+
+    elif args.command == "get-protagonist":
+        protagonist = manager.get_protagonist()
+        if protagonist:
+            print(json.dumps(protagonist, ensure_ascii=False, indent=2))
+        else:
+            print("未设置主角")
+
+    elif args.command == "get-entities-by-type":
+        entities = manager.get_entities_by_type(args.type, args.include_archived)
+        print(json.dumps(entities, ensure_ascii=False, indent=2))
+
+    elif args.command == "get-by-alias":
+        entities = manager.get_entities_by_alias(args.alias)
+        if entities:
+            print(json.dumps(entities, ensure_ascii=False, indent=2))
+        else:
+            print(f"未找到别名: {args.alias}")
+
+    elif args.command == "get-aliases":
+        aliases = manager.get_entity_aliases(args.entity)
+        if aliases:
+            print(f"{args.entity} 的别名: {', '.join(aliases)}")
+        else:
+            print(f"{args.entity} 没有别名")
+
+    elif args.command == "register-alias":
+        success = manager.register_alias(args.alias, args.entity, args.type)
+        if success:
+            print(f"✓ 已注册别名: {args.alias} → {args.entity} ({args.type})")
+        else:
+            print(f"别名已存在或注册失败: {args.alias}")
+
+    elif args.command == "get-relationships":
+        rels = manager.get_entity_relationships(args.entity, args.direction)
+        print(json.dumps(rels, ensure_ascii=False, indent=2))
+
+    elif args.command == "get-state-changes":
+        changes = manager.get_entity_state_changes(args.entity, args.limit)
+        print(json.dumps(changes, ensure_ascii=False, indent=2))
+
+    elif args.command == "upsert-entity":
+        data = json.loads(args.data)
+        entity = EntityMeta(
+            id=data["id"],
+            type=data["type"],
+            canonical_name=data["canonical_name"],
+            tier=data.get("tier", "装饰"),
+            desc=data.get("desc", ""),
+            current=data.get("current", {}),
+            first_appearance=data.get("first_appearance", 0),
+            last_appearance=data.get("last_appearance", 0),
+            is_protagonist=data.get("is_protagonist", False),
+            is_archived=data.get("is_archived", False)
+        )
+        is_new = manager.upsert_entity(entity)
+        print(f"✓ {'新建' if is_new else '更新'}实体: {entity.id}")
+
+    elif args.command == "upsert-relationship":
+        data = json.loads(args.data)
+        rel = RelationshipMeta(
+            from_entity=data["from_entity"],
+            to_entity=data["to_entity"],
+            type=data["type"],
+            description=data.get("description", ""),
+            chapter=data["chapter"]
+        )
+        is_new = manager.upsert_relationship(rel)
+        print(f"✓ {'新建' if is_new else '更新'}关系: {rel.from_entity} → {rel.to_entity} ({rel.type})")
+
+    elif args.command == "record-state-change":
+        data = json.loads(args.data)
+        change = StateChangeMeta(
+            entity_id=data["entity_id"],
+            field=data["field"],
+            old_value=data.get("old_value", ""),
+            new_value=data["new_value"],
+            reason=data.get("reason", ""),
+            chapter=data["chapter"]
+        )
+        record_id = manager.record_state_change(change)
+        print(f"✓ 已记录状态变化 #{record_id}: {change.entity_id}.{change.field}")
 
 
 if __name__ == "__main__":

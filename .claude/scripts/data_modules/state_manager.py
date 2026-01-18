@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-State Manager - 状态管理模块
+State Manager - 状态管理模块 (v5.1)
 
 管理 state.json 的读写操作：
 - 实体状态管理
 - 进度追踪
 - 关系记录
+
+v5.1 变更:
+- 集成 SQLStateManager，同步写入 SQLite (index.db)
+- state.json 保留精简数据，大数据自动迁移到 SQLite
 """
 
 import json
@@ -74,16 +78,33 @@ class _EntityPatch:
 
 
 class StateManager:
-    """状态管理器 (v5.0 entities_v3 格式)"""
+    """状态管理器 (v5.1 entities_v3 格式 + SQLite 同步)"""
 
     # v5.0 支持的实体类型
     ENTITY_TYPES = ["角色", "地点", "物品", "势力", "招式"]
 
-    def __init__(self, config=None):
+    def __init__(self, config=None, enable_sqlite_sync: bool = True):
+        """
+        初始化状态管理器
+
+        参数:
+        - config: 配置对象
+        - enable_sqlite_sync: 是否启用 SQLite 同步 (默认 True)
+        """
         self.config = config or get_config()
         self._state: Dict[str, Any] = {}
         # 与 security_utils.atomic_write_json 保持一致：state.json.lock
         self._lock_path = self.config.state_file.with_suffix(self.config.state_file.suffix + ".lock")
+
+        # v5.1: SQLite 同步
+        self._enable_sqlite_sync = enable_sqlite_sync
+        self._sql_state_manager = None
+        if enable_sqlite_sync:
+            try:
+                from .sql_state_manager import SQLStateManager
+                self._sql_state_manager = SQLStateManager(self.config)
+            except ImportError:
+                pass  # SQLStateManager 不可用时静默降级
 
         # 待写入的增量（锁内重读 + 合并 + 写入）
         self._pending_entity_patches: Dict[tuple[str, str], _EntityPatch] = {}
@@ -94,6 +115,15 @@ class StateManager:
         self._pending_disambiguation_pending: List[Dict[str, Any]] = []
         self._pending_progress_chapter: Optional[int] = None
         self._pending_progress_words_delta: int = 0
+
+        # v5.1: 缓存待同步到 SQLite 的数据
+        self._pending_sqlite_data: Dict[str, Any] = {
+            "entities_appeared": [],
+            "entities_new": [],
+            "state_changes": [],
+            "relationships_new": [],
+            "chapter": None
+        }
 
         self._load_state()
 
@@ -424,8 +454,48 @@ class StateManager:
                 self._pending_disambiguation_pending.clear()
                 self._pending_progress_chapter = None
                 self._pending_progress_words_delta = 0
+
+                # v5.1: 同步到 SQLite
+                self._sync_to_sqlite()
+
         except filelock.Timeout:
             raise RuntimeError("无法获取 state.json 文件锁，请稍后重试")
+
+    def _sync_to_sqlite(self):
+        """v5.1: 同步待处理数据到 SQLite"""
+        if not self._sql_state_manager:
+            return
+
+        sqlite_data = self._pending_sqlite_data
+        chapter = sqlite_data.get("chapter")
+
+        if chapter is None:
+            # 清空并返回
+            self._clear_pending_sqlite_data()
+            return
+
+        try:
+            self._sql_state_manager.process_chapter_entities(
+                chapter=chapter,
+                entities_appeared=sqlite_data.get("entities_appeared", []),
+                entities_new=sqlite_data.get("entities_new", []),
+                state_changes=sqlite_data.get("state_changes", []),
+                relationships_new=sqlite_data.get("relationships_new", [])
+            )
+        except Exception:
+            pass  # SQLite 同步失败时静默降级，不影响主流程
+        finally:
+            self._clear_pending_sqlite_data()
+
+    def _clear_pending_sqlite_data(self):
+        """清空待同步的 SQLite 数据"""
+        self._pending_sqlite_data = {
+            "entities_appeared": [],
+            "entities_new": [],
+            "state_changes": [],
+            "relationships_new": [],
+            "chapter": None
+        }
 
     # ==================== 进度管理 ====================
 
@@ -794,7 +864,7 @@ class StateManager:
 
     def process_chapter_result(self, chapter: int, result: Dict) -> List[str]:
         """
-        处理 Data Agent 的章节处理结果 (v5.0)
+        处理 Data Agent 的章节处理结果 (v5.1)
 
         输入格式:
         - entities_appeared: 出场实体列表
@@ -806,12 +876,17 @@ class StateManager:
         """
         warnings = []
 
+        # v5.1: 记录章节号用于 SQLite 同步
+        self._pending_sqlite_data["chapter"] = chapter
+
         # 处理出场实体
         for entity in result.get("entities_appeared", []):
             entity_id = entity.get("id")
             entity_type = entity.get("type")
             if entity_id:
                 self.update_entity_appearance(entity_id, chapter, entity_type)
+                # v5.1: 缓存用于 SQLite 同步
+                self._pending_sqlite_data["entities_appeared"].append(entity)
 
         # 处理新实体
         for entity in result.get("entities_new", []):
@@ -828,6 +903,8 @@ class StateManager:
                 )
                 if not self.add_entity(new_entity):
                     warnings.append(f"实体已存在: {entity_id}")
+                # v5.1: 缓存用于 SQLite 同步
+                self._pending_sqlite_data["entities_new"].append(entity)
 
         # 处理状态变化
         for change in result.get("state_changes", []):
@@ -839,6 +916,8 @@ class StateManager:
                 reason=change.get("reason", ""),
                 chapter=chapter
             )
+            # v5.1: 缓存用于 SQLite 同步
+            self._pending_sqlite_data["state_changes"].append(change)
 
         # 处理关系
         for rel in result.get("relationships_new", []):
@@ -849,6 +928,8 @@ class StateManager:
                 description=rel.get("description", ""),
                 chapter=chapter
             )
+            # v5.1: 缓存用于 SQLite 同步
+            self._pending_sqlite_data["relationships_new"].append(rel)
 
         # 处理消歧不确定项（不影响实体写入，但必须对 Writer 可见）
         warnings.extend(self._record_disambiguation(chapter, result.get("uncertain", [])))

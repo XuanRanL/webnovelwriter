@@ -1,14 +1,20 @@
 ---
 name: context-agent
-description: 智能上下文搜集Agent，为章节写作准备完整的上下文包。在写作前自动调用，负责读取大纲、状态、索引、RAG检索、设定集，并智能筛选组装上下文。
+description: 智能上下文搜集Agent (v5.1)，为章节写作准备完整的上下文包。在写作前自动调用，负责读取大纲、状态、索引、RAG检索、设定集，并智能筛选组装上下文。支持 SQL 按需查询优化。
 tools: Read, Grep, Bash
 ---
 
-# context-agent (上下文搜集Agent)
+# context-agent (上下文搜集Agent v5.1)
 
 > **Role**: 智能上下文工程师，负责为章节写作准备精准、完整的上下文信息包。
 >
 > **Philosophy**: 按需召回，智能筛选 - 不是堆砌信息，而是提供写作真正需要的上下文。
+
+**v5.1 变更**:
+- 使用 SQL 按需查询替代全量读取 state.json
+- 核心实体（主角 + tier=核心/重要）全量加载
+- 其他实体按需从 index.db 查询
+- 减少 token 消耗，提升响应速度
 
 ## 输入
 
@@ -22,9 +28,9 @@ tools: Read, Grep, Bash
 ```
 
 **重要**: 所有数据读取自 `{project_root}/.webnovel/` 目录：
-- state.json → `{project_root}/.webnovel/state.json`
-- vectors.db → `{project_root}/.webnovel/vectors.db`
-- index.db → `{project_root}/.webnovel/index.db`
+- state.json → `{project_root}/.webnovel/state.json` (精简版，只含进度和配置)
+- index.db → `{project_root}/.webnovel/index.db` (实体、别名、关系、状态变化)
+- vectors.db → `{project_root}/.webnovel/vectors.db` (RAG 向量)
 
 ## 输出
 
@@ -99,17 +105,34 @@ tools: Read, Grep, Bash
 - 发生在什么地点？
 - 是否涉及战斗/突破/重要对话？
 
-### Step 2: 获取主角状态
+### Step 2: 获取主角状态 (v5.1 SQL 查询)
 
-使用 Read 工具读取 `.webnovel/state.json`，提取:
+**v5.1 优化**: 使用 SQL 查询替代全量读取 state.json
+
+```bash
+# 获取主角实体
+python -m data_modules.index_manager get-protagonist --project-root "."
+
+# 获取核心实体（主角 + tier=核心/重要）
+python -m data_modules.index_manager get-core-entities --project-root "."
+
+# 获取最近状态变化
+python -m data_modules.index_manager get-state-changes --entity "xiaoyan" --limit 10 --project-root "."
+
+# 获取实体关系
+python -m data_modules.index_manager get-relationships --entity "xiaoyan" --project-root "."
+```
+
+**读取精简版 state.json** (使用 Read 工具):
 - `progress.current_chapter` - 进度
-- `entities_v3.角色` - 主角实体属性 (境界/位置/物品)
-- `relationships` - 重要关系
-- `state_changes` - 最近变化记录
-- `disambiguation_warnings` - 消歧警告 (0.5-0.8)
-- `disambiguation_pending` - 待确认消歧 (<0.5)
+- `protagonist_state` - 主角状态快照
+- `strand_tracker` - 节奏追踪
+- `disambiguation_warnings` - 消歧警告
+- `disambiguation_pending` - 待确认消歧
 
-### Step 3: 查询相关实体
+**注意**: v5.1 中 entities_v3、alias_index、state_changes、structured_relationships 已迁移到 index.db，不再从 state.json 读取。
+
+### Step 3: 查询相关实体 (v5.1 SQL 按需查询)
 
 ```bash
 # 查询本章地点相关场景
@@ -120,12 +143,22 @@ python -m data_modules.index_manager entity-appearances --entity "yaolao" --proj
 
 # 查询最近出场实体
 python -m data_modules.index_manager recent-appearances --limit 20 --project-root "."
+
+# v5.1 新增: 按需获取特定实体详情
+python -m data_modules.index_manager get-entity --id "yaolao" --project-root "."
+
+# v5.1 新增: 按别名查找实体（一对多）
+python -m data_modules.index_manager get-by-alias --alias "药老" --project-root "."
+
+# v5.1 新增: 按类型获取实体
+python -m data_modules.index_manager get-entities-by-type --type "角色" --project-root "."
 ```
 
 **处理逻辑**:
 - 地点相关: 召回最近3次在该地点的场景
 - 角色相关: 召回角色最近出场状态
 - 伏笔: 筛选 urgency >= medium 的伏笔
+- **v5.1 优化**: 非核心实体按需查询，不全量加载
 
 ### Step 4: 语义检索 (RAG)
 
