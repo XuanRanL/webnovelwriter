@@ -479,26 +479,97 @@ class StateManager:
         if not self._sql_state_manager:
             return
 
+        # 方式1: 通过 process_chapter_result 收集的数据
         sqlite_data = self._pending_sqlite_data
         chapter = sqlite_data.get("chapter")
 
-        if chapter is None:
-            # 清空并返回
-            self._clear_pending_sqlite_data()
+        if chapter is not None:
+            try:
+                self._sql_state_manager.process_chapter_entities(
+                    chapter=chapter,
+                    entities_appeared=sqlite_data.get("entities_appeared", []),
+                    entities_new=sqlite_data.get("entities_new", []),
+                    state_changes=sqlite_data.get("state_changes", []),
+                    relationships_new=sqlite_data.get("relationships_new", [])
+                )
+            except Exception:
+                pass  # SQLite 同步失败时静默降级，不影响主流程
+
+        # 方式2: 通过 add_entity/update_entity 等直接调用收集的数据
+        # 这些数据存储在 _pending_entity_patches 等变量中
+        self._sync_pending_patches_to_sqlite()
+
+        # 清空
+        self._clear_pending_sqlite_data()
+
+    def _sync_pending_patches_to_sqlite(self):
+        """v5.1: 同步 _pending_entity_patches 等到 SQLite"""
+        if not self._sql_state_manager:
             return
 
         try:
-            self._sql_state_manager.process_chapter_entities(
-                chapter=chapter,
-                entities_appeared=sqlite_data.get("entities_appeared", []),
-                entities_new=sqlite_data.get("entities_new", []),
-                state_changes=sqlite_data.get("state_changes", []),
-                relationships_new=sqlite_data.get("relationships_new", [])
-            )
+            from .sql_state_manager import EntityData
+
+            # 同步实体补丁
+            for (entity_type, entity_id), patch in self._pending_entity_patches.items():
+                if patch.base_entity:
+                    # 新实体
+                    entity_data = EntityData(
+                        id=entity_id,
+                        type=entity_type,
+                        name=patch.base_entity.get("canonical_name", entity_id),
+                        tier=patch.base_entity.get("tier", "装饰"),
+                        desc=patch.base_entity.get("desc", ""),
+                        current=patch.base_entity.get("current", {}),
+                        aliases=[],
+                        first_appearance=patch.base_entity.get("first_appearance", 0),
+                        last_appearance=patch.base_entity.get("last_appearance", 0),
+                        is_protagonist=patch.base_entity.get("is_protagonist", False)
+                    )
+                    self._sql_state_manager.upsert_entity(entity_data)
+                elif patch.current_updates or patch.top_updates:
+                    # 更新现有实体
+                    updates = {**patch.top_updates}
+                    if patch.current_updates:
+                        updates.update(patch.current_updates)
+                    if updates:
+                        self._sql_state_manager.update_entity_current(entity_id, updates)
+
+                # 更新 last_appearance
+                if patch.appearance_chapter is not None:
+                    self._sql_state_manager._update_last_appearance(entity_id, patch.appearance_chapter)
+
+            # 同步别名
+            for alias, entries in self._pending_alias_entries.items():
+                for entry in entries:
+                    entity_type = entry.get("type")
+                    entity_id = entry.get("id")
+                    if entity_type and entity_id:
+                        self._sql_state_manager.register_alias(alias, entity_id, entity_type)
+
+            # 同步状态变化
+            for change in self._pending_state_changes:
+                self._sql_state_manager.record_state_change(
+                    entity_id=change.get("entity_id", ""),
+                    field=change.get("field", ""),
+                    old_value=change.get("old", change.get("old_value", "")),
+                    new_value=change.get("new", change.get("new_value", "")),
+                    reason=change.get("reason", ""),
+                    chapter=change.get("chapter", 0)
+                )
+
+            # 同步关系
+            for rel in self._pending_structured_relationships:
+                self._sql_state_manager.upsert_relationship(
+                    from_entity=rel.get("from_entity", ""),
+                    to_entity=rel.get("to_entity", ""),
+                    type=rel.get("type", "相识"),
+                    description=rel.get("description", ""),
+                    chapter=rel.get("chapter", 0)
+                )
+
         except Exception:
-            pass  # SQLite 同步失败时静默降级，不影响主流程
-        finally:
-            self._clear_pending_sqlite_data()
+            pass  # SQLite 同步失败时静默降级
 
     def _clear_pending_sqlite_data(self):
         """清空待同步的 SQLite 数据"""
