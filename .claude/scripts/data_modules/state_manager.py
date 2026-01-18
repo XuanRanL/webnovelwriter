@@ -457,6 +457,9 @@ class StateManager:
                 # 原子写入（锁已持有，不再二次加锁）
                 atomic_write_json(self.config.state_file, disk_state, use_lock=False, backup=True)
 
+                # v5.1: 同步到 SQLite（必须在清空 pending 之前调用）
+                self._sync_to_sqlite()
+
                 # 同步内存为磁盘最新快照，并清空增量队列
                 self._state = disk_state
                 self._pending_entity_patches.clear()
@@ -467,9 +470,6 @@ class StateManager:
                 self._pending_disambiguation_pending.clear()
                 self._pending_progress_chapter = None
                 self._pending_progress_words_delta = 0
-
-                # v5.1: 同步到 SQLite
-                self._sync_to_sqlite()
 
         except filelock.Timeout:
             raise RuntimeError("无法获取 state.json 文件锁，请稍后重试")
@@ -507,8 +507,12 @@ class StateManager:
         if not self._sql_state_manager:
             return
 
+        # 元数据字段（不应写入 current_json）
+        METADATA_FIELDS = {"canonical_name", "tier", "desc", "is_protagonist", "is_archived"}
+
         try:
             from .sql_state_manager import EntityData
+            from .index_manager import EntityMeta
 
             # 同步实体补丁
             for (entity_type, entity_id), patch in self._pending_entity_patches.items():
@@ -527,17 +531,59 @@ class StateManager:
                         is_protagonist=patch.base_entity.get("is_protagonist", False)
                     )
                     self._sql_state_manager.upsert_entity(entity_data)
-                elif patch.current_updates or patch.top_updates:
-                    # 更新现有实体
-                    updates = {**patch.top_updates}
-                    if patch.current_updates:
-                        updates.update(patch.current_updates)
-                    if updates:
-                        self._sql_state_manager.update_entity_current(entity_id, updates)
 
-                # 更新 last_appearance
-                if patch.appearance_chapter is not None:
-                    self._sql_state_manager._update_last_appearance(entity_id, patch.appearance_chapter)
+                    # 记录首次出场
+                    if patch.appearance_chapter is not None:
+                        self._sql_state_manager._index_manager.record_appearance(
+                            entity_id=entity_id,
+                            chapter=patch.appearance_chapter,
+                            mentions=[entity_data.name],
+                            confidence=1.0
+                        )
+                else:
+                    # 更新现有实体
+                    has_metadata_updates = bool(patch.top_updates and
+                                                 any(k in METADATA_FIELDS for k in patch.top_updates))
+
+                    if has_metadata_updates:
+                        # 有元数据更新：使用 upsert_entity(update_metadata=True)
+                        existing = self._sql_state_manager.get_entity(entity_id)
+                        if existing:
+                            # 合并 current_updates
+                            current = existing.get("current_json", {})
+                            if isinstance(current, str):
+                                import json
+                                current = json.loads(current) if current else {}
+                            if patch.current_updates:
+                                current.update(patch.current_updates)
+
+                            entity_meta = EntityMeta(
+                                id=entity_id,
+                                type=existing.get("type", entity_type),
+                                canonical_name=patch.top_updates.get("canonical_name", existing.get("canonical_name", "")),
+                                tier=patch.top_updates.get("tier", existing.get("tier", "装饰")),
+                                desc=patch.top_updates.get("desc", existing.get("desc", "")),
+                                current=current,
+                                first_appearance=existing.get("first_appearance", 0),
+                                last_appearance=patch.appearance_chapter or existing.get("last_appearance", 0),
+                                is_protagonist=patch.top_updates.get("is_protagonist", existing.get("is_protagonist", False)),
+                                is_archived=patch.top_updates.get("is_archived", existing.get("is_archived", False))
+                            )
+                            self._sql_state_manager._index_manager.upsert_entity(entity_meta, update_metadata=True)
+                    elif patch.current_updates:
+                        # 只有 current 更新
+                        self._sql_state_manager.update_entity_current(entity_id, patch.current_updates)
+
+                    # 更新 last_appearance 并记录出场
+                    if patch.appearance_chapter is not None:
+                        self._sql_state_manager._update_last_appearance(entity_id, patch.appearance_chapter)
+                        # 补充 appearances 记录
+                        self._sql_state_manager._index_manager.record_appearance(
+                            entity_id=entity_id,
+                            chapter=patch.appearance_chapter,
+                            mentions=[],
+                            confidence=1.0
+                        )
 
             # 同步别名
             for alias, entries in self._pending_alias_entries.items():
