@@ -335,11 +335,30 @@ class IndexManager:
         entity_id: str,
         chapter: int,
         mentions: List[str],
-        confidence: float = 1.0
+        confidence: float = 1.0,
+        skip_if_exists: bool = False
     ):
-        """记录实体出场"""
+        """记录实体出场
+
+        Args:
+            entity_id: 实体ID
+            chapter: 章节号
+            mentions: 提及列表
+            confidence: 置信度
+            skip_if_exists: 如果为True，当记录已存在时跳过（避免覆盖已有mentions）
+        """
         with self._get_conn() as conn:
             cursor = conn.cursor()
+
+            if skip_if_exists:
+                # 先检查是否已存在
+                cursor.execute(
+                    "SELECT 1 FROM appearances WHERE entity_id = ? AND chapter = ?",
+                    (entity_id, chapter)
+                )
+                if cursor.fetchone():
+                    return  # 已存在，跳过
+
             cursor.execute("""
                 INSERT OR REPLACE INTO appearances
                 (entity_id, chapter, mentions, confidence)

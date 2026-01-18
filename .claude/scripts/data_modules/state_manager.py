@@ -558,24 +558,37 @@ class StateManager:
                                 entity_id=entity_id,
                                 chapter=patch.appearance_chapter,
                                 mentions=[entity_data.name],
-                                confidence=1.0
+                                confidence=1.0,
+                                skip_if_exists=True  # 关键：不覆盖已有记录
                             )
                 else:
                     # 更新现有实体
                     has_metadata_updates = bool(patch.top_updates and
                                                  any(k in METADATA_FIELDS for k in patch.top_updates))
 
+                    # 非元数据的 top_updates 应该当作 current 更新
+                    # 例如：realm, layer, location 等状态字段
+                    non_metadata_top_updates = {
+                        k: v for k, v in patch.top_updates.items()
+                        if k not in METADATA_FIELDS
+                    } if patch.top_updates else {}
+
+                    # 合并 current_updates 和非元数据的 top_updates
+                    effective_current_updates = {**non_metadata_top_updates}
+                    if patch.current_updates:
+                        effective_current_updates.update(patch.current_updates)
+
                     if has_metadata_updates:
                         # 有元数据更新：使用 upsert_entity(update_metadata=True)
                         existing = self._sql_state_manager.get_entity(entity_id)
                         if existing:
-                            # 合并 current_updates
+                            # 合并 current
                             current = existing.get("current_json", {})
                             if isinstance(current, str):
                                 import json
                                 current = json.loads(current) if current else {}
-                            if patch.current_updates:
-                                current.update(patch.current_updates)
+                            if effective_current_updates:
+                                current.update(effective_current_updates)
 
                             new_canonical_name = patch.top_updates.get("canonical_name")
                             old_canonical_name = existing.get("canonical_name", "")
@@ -599,20 +612,22 @@ class StateManager:
                                 self._sql_state_manager.register_alias(
                                     new_canonical_name, entity_id, existing.get("type", entity_type)
                                 )
-                    elif patch.current_updates:
-                        # 只有 current 更新
-                        self._sql_state_manager.update_entity_current(entity_id, patch.current_updates)
+                    elif effective_current_updates:
+                        # 只有 current 更新（包括非元数据的 top_updates）
+                        self._sql_state_manager.update_entity_current(entity_id, effective_current_updates)
 
-                    # 更新 last_appearance 并记录出场（跳过已处理的，避免覆盖 mentions）
+                    # 更新 last_appearance 并记录出场
                     if patch.appearance_chapter is not None:
                         self._sql_state_manager._update_last_appearance(entity_id, patch.appearance_chapter)
-                        # 补充 appearances 记录（仅当未被 process_chapter_entities 处理时）
+                        # 补充 appearances 记录
+                        # 使用 skip_if_exists=True 避免覆盖已有记录的 mentions
                         if (entity_id, patch.appearance_chapter) not in processed_appearances:
                             self._sql_state_manager._index_manager.record_appearance(
                                 entity_id=entity_id,
                                 chapter=patch.appearance_chapter,
                                 mentions=[],
-                                confidence=1.0
+                                confidence=1.0,
+                                skip_if_exists=True  # 关键：不覆盖已有记录
                             )
 
             # 同步别名
