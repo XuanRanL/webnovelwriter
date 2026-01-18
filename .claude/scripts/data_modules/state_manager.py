@@ -264,123 +264,136 @@ class StateManager:
 
                     progress["last_updated"] = self._now_progress_timestamp()
 
-                # entities_v3（按补丁应用）
-                entities_v3 = disk_state.get("entities_v3", {})
-                if not isinstance(entities_v3, dict):
-                    entities_v3 = {}
-                    disk_state["entities_v3"] = entities_v3
-                for t in self.ENTITY_TYPES:
-                    if not isinstance(entities_v3.get(t), dict):
-                        entities_v3[t] = {}
+                # v5.1: 检查是否已迁移到 SQLite
+                # 如果启用了 SQLite 同步，则不再写入大数据字段到 state.json
+                _migrated = self._enable_sqlite_sync and self._sql_state_manager is not None
 
-                for (entity_type, entity_id), patch in self._pending_entity_patches.items():
-                    bucket = entities_v3.setdefault(entity_type, {})
-                    if not isinstance(bucket, dict):
-                        bucket = {}
-                        entities_v3[entity_type] = bucket
+                if not _migrated:
+                    # ==================== 旧模式：写入 state.json ====================
+                    # entities_v3（按补丁应用）
+                    entities_v3 = disk_state.get("entities_v3", {})
+                    if not isinstance(entities_v3, dict):
+                        entities_v3 = {}
+                        disk_state["entities_v3"] = entities_v3
+                    for t in self.ENTITY_TYPES:
+                        if not isinstance(entities_v3.get(t), dict):
+                            entities_v3[t] = {}
 
-                    entity = bucket.get(entity_id)
-                    if not isinstance(entity, dict):
-                        entity = {}
-                        bucket[entity_id] = entity
+                    for (entity_type, entity_id), patch in self._pending_entity_patches.items():
+                        bucket = entities_v3.setdefault(entity_type, {})
+                        if not isinstance(bucket, dict):
+                            bucket = {}
+                            entities_v3[entity_type] = bucket
 
-                    # 新建实体时：只填充缺失字段，避免覆盖并发写入的更完整信息
-                    if patch.base_entity:
-                        for k, v in patch.base_entity.items():
-                            if k not in entity:
-                                entity[k] = v
-                            elif isinstance(entity.get(k), dict) and isinstance(v, dict):
-                                # 递归填充缺失
-                                for kk, vv in v.items():
-                                    if kk not in entity[k]:
-                                        entity[k][kk] = vv
+                        entity = bucket.get(entity_id)
+                        if not isinstance(entity, dict):
+                            entity = {}
+                            bucket[entity_id] = entity
 
-                    # top-level updates（明确写入）
-                    for k, v in patch.top_updates.items():
-                        entity[k] = v
+                        # 新建实体时：只填充缺失字段，避免覆盖并发写入的更完整信息
+                        if patch.base_entity:
+                            for k, v in patch.base_entity.items():
+                                if k not in entity:
+                                    entity[k] = v
+                                elif isinstance(entity.get(k), dict) and isinstance(v, dict):
+                                    # 递归填充缺失
+                                    for kk, vv in v.items():
+                                        if kk not in entity[k]:
+                                            entity[k][kk] = vv
 
-                    # current updates（明确写入）
-                    if patch.current_updates:
-                        current = entity.get("current")
-                        if not isinstance(current, dict):
-                            current = {}
-                            entity["current"] = current
-                        current.update(patch.current_updates)
+                        # top-level updates（明确写入）
+                        for k, v in patch.top_updates.items():
+                            entity[k] = v
 
-                    # appearance updates（first=min(non-zero), last=max）
-                    if patch.appearance_chapter is not None:
-                        chapter = int(patch.appearance_chapter)
-                        try:
-                            first = int(entity.get("first_appearance", 0) or 0)
-                        except (TypeError, ValueError):
-                            first = 0
-                        try:
-                            last = int(entity.get("last_appearance", 0) or 0)
-                        except (TypeError, ValueError):
-                            last = 0
+                        # current updates（明确写入）
+                        if patch.current_updates:
+                            current = entity.get("current")
+                            if not isinstance(current, dict):
+                                current = {}
+                                entity["current"] = current
+                            current.update(patch.current_updates)
 
-                        if first <= 0:
-                            entity["first_appearance"] = chapter
-                        else:
-                            entity["first_appearance"] = min(first, chapter)
-                        entity["last_appearance"] = max(last, chapter)
+                        # appearance updates（first=min(non-zero), last=max）
+                        if patch.appearance_chapter is not None:
+                            chapter = int(patch.appearance_chapter)
+                            try:
+                                first = int(entity.get("first_appearance", 0) or 0)
+                            except (TypeError, ValueError):
+                                first = 0
+                            try:
+                                last = int(entity.get("last_appearance", 0) or 0)
+                            except (TypeError, ValueError):
+                                last = 0
 
-                # alias_index（一对多：合并去重）
-                alias_index = disk_state.get("alias_index", {})
-                if not isinstance(alias_index, dict):
-                    alias_index = {}
-                    disk_state["alias_index"] = alias_index
+                            if first <= 0:
+                                entity["first_appearance"] = chapter
+                            else:
+                                entity["first_appearance"] = min(first, chapter)
+                            entity["last_appearance"] = max(last, chapter)
 
-                for alias, entries in self._pending_alias_entries.items():
-                    if not alias:
-                        continue
-                    existing = alias_index.get(alias)
-                    if not isinstance(existing, list):
-                        existing = []
-                        alias_index[alias] = existing
+                    # alias_index（一对多：合并去重）
+                    alias_index = disk_state.get("alias_index", {})
+                    if not isinstance(alias_index, dict):
+                        alias_index = {}
+                        disk_state["alias_index"] = alias_index
 
-                    for entry in entries:
-                        et = entry.get("type")
-                        eid = entry.get("id")
-                        if not et or not eid:
+                    for alias, entries in self._pending_alias_entries.items():
+                        if not alias:
                             continue
-                        if any(e.get("type") == et and e.get("id") == eid for e in existing if isinstance(e, dict)):
-                            continue
-                        existing.append({"type": et, "id": eid})
+                        existing = alias_index.get(alias)
+                        if not isinstance(existing, list):
+                            existing = []
+                            alias_index[alias] = existing
 
-                # state_changes（追加）
-                if self._pending_state_changes:
-                    changes = disk_state.get("state_changes")
-                    if not isinstance(changes, list):
-                        changes = []
-                        disk_state["state_changes"] = changes
-                    changes.extend(self._pending_state_changes)
+                        for entry in entries:
+                            et = entry.get("type")
+                            eid = entry.get("id")
+                            if not et or not eid:
+                                continue
+                            if any(e.get("type") == et and e.get("id") == eid for e in existing if isinstance(e, dict)):
+                                continue
+                            existing.append({"type": et, "id": eid})
 
-                # structured_relationships（追加去重）
-                if self._pending_structured_relationships:
-                    rels = disk_state.get("structured_relationships")
-                    if not isinstance(rels, list):
-                        rels = []
-                        disk_state["structured_relationships"] = rels
+                    # state_changes（追加）
+                    if self._pending_state_changes:
+                        changes = disk_state.get("state_changes")
+                        if not isinstance(changes, list):
+                            changes = []
+                            disk_state["state_changes"] = changes
+                        changes.extend(self._pending_state_changes)
 
-                    def _rel_key(r: Dict[str, Any]) -> tuple:
-                        return (
-                            r.get("from_entity"),
-                            r.get("to_entity"),
-                            r.get("type"),
-                            r.get("description"),
-                            r.get("chapter"),
-                        )
+                    # structured_relationships（追加去重）
+                    if self._pending_structured_relationships:
+                        rels = disk_state.get("structured_relationships")
+                        if not isinstance(rels, list):
+                            rels = []
+                            disk_state["structured_relationships"] = rels
 
-                    existing_keys = {_rel_key(r) for r in rels if isinstance(r, dict)}
-                    for r in self._pending_structured_relationships:
-                        if not isinstance(r, dict):
-                            continue
-                        k = _rel_key(r)
-                        if k in existing_keys:
-                            continue
-                        rels.append(r)
-                        existing_keys.add(k)
+                        def _rel_key(r: Dict[str, Any]) -> tuple:
+                            return (
+                                r.get("from_entity"),
+                                r.get("to_entity"),
+                                r.get("type"),
+                                r.get("description"),
+                                r.get("chapter"),
+                            )
+
+                        existing_keys = {_rel_key(r) for r in rels if isinstance(r, dict)}
+                        for r in self._pending_structured_relationships:
+                            if not isinstance(r, dict):
+                                continue
+                            k = _rel_key(r)
+                            if k in existing_keys:
+                                continue
+                            rels.append(r)
+                            existing_keys.add(k)
+                else:
+                    # ==================== v5.1 模式：移除大数据字段 ====================
+                    # 确保 state.json 中不存在这些膨胀字段
+                    for field in ["entities_v3", "alias_index", "state_changes", "structured_relationships"]:
+                        disk_state.pop(field, None)
+                    # 标记已迁移
+                    disk_state["_migrated_to_sqlite"] = True
 
                 # disambiguation_warnings（追加去重 + 截断）
                 if self._pending_disambiguation_warnings:

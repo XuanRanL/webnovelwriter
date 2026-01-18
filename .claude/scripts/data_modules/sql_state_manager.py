@@ -342,6 +342,17 @@ class SQLStateManager:
             # 统计别名
             stats["aliases"] += 1 + len(entity_data.aliases)
 
+            # 记录新实体的首次出场（解决 appearances 缺失问题）
+            mentions = entity.get("mentions", [])
+            if not mentions:
+                mentions = [entity_data.name]  # 至少包含实体名
+            self._index_manager.record_appearance(
+                entity_id=suggested_id,
+                chapter=chapter,
+                mentions=mentions,
+                confidence=entity.get("confidence", 1.0)
+            )
+
         # 3. 处理状态变化
         for change in state_changes:
             entity_id = change.get("entity_id")
@@ -361,7 +372,8 @@ class SQLStateManager:
             # 同步更新实体的 current
             field_name = change.get("field")
             new_value = change.get("new", change.get("new_value"))
-            if field_name and new_value:
+            # 注意：new_value 可能是 0/""/False 等 falsy 值，需要用 is not None 判断
+            if field_name and new_value is not None:
                 self._index_manager.update_entity_current(entity_id, {field_name: new_value})
 
         # 4. 处理新关系
@@ -414,7 +426,8 @@ class SQLStateManager:
             entities = self.get_entities_by_type(entity_type, include_archived=True)
             for e in entities:
                 entity_dict = {
-                    "name": e.get("canonical_name"),
+                    "canonical_name": e.get("canonical_name"),
+                    "name": e.get("canonical_name"),  # 兼容性别名
                     "tier": e.get("tier", "装饰"),
                     "aliases": e.get("aliases", []),
                     "desc": e.get("desc", ""),

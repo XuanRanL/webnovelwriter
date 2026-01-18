@@ -394,12 +394,13 @@ class IndexManager:
 
     # ==================== v5.1 实体操作 ====================
 
-    def upsert_entity(self, entity: EntityMeta) -> bool:
+    def upsert_entity(self, entity: EntityMeta, update_metadata: bool = False) -> bool:
         """
         插入或更新实体 (智能合并)
 
         - 新实体: 直接插入
         - 已存在: 更新 current_json, last_appearance, updated_at
+        - update_metadata=True: 同时更新 canonical_name/tier/desc/is_protagonist/is_archived
 
         返回是否为新实体
         """
@@ -422,17 +423,42 @@ class IndexManager:
                 # 合并 current (新值覆盖旧值)
                 merged_current = {**old_current, **entity.current}
 
-                cursor.execute("""
-                    UPDATE entities SET
-                        current_json = ?,
-                        last_appearance = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (
-                    json.dumps(merged_current, ensure_ascii=False),
-                    entity.last_appearance,
-                    entity.id
-                ))
+                if update_metadata:
+                    # 完整更新（包括元数据）
+                    cursor.execute("""
+                        UPDATE entities SET
+                            canonical_name = ?,
+                            tier = ?,
+                            desc = ?,
+                            current_json = ?,
+                            last_appearance = ?,
+                            is_protagonist = ?,
+                            is_archived = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (
+                        entity.canonical_name,
+                        entity.tier,
+                        entity.desc,
+                        json.dumps(merged_current, ensure_ascii=False),
+                        entity.last_appearance,
+                        1 if entity.is_protagonist else 0,
+                        1 if entity.is_archived else 0,
+                        entity.id
+                    ))
+                else:
+                    # 只更新 current 和 last_appearance
+                    cursor.execute("""
+                        UPDATE entities SET
+                            current_json = ?,
+                            last_appearance = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (
+                        json.dumps(merged_current, ensure_ascii=False),
+                        entity.last_appearance,
+                        entity.id
+                    ))
                 conn.commit()
                 return False
             else:
