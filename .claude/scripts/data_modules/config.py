@@ -104,6 +104,9 @@ class DataModulesConfig:
     cold_start_timeout: int = 300
     normal_timeout: int = 180
 
+    # ================= 重试配置 =================
+    api_max_retries: int = 3  # 最大重试次数
+    api_retry_delay: float = 1.0  # 初始重试延迟（秒），使用指数退避
 
     # ================= 检索配置 =================
     vector_top_k: int = 30

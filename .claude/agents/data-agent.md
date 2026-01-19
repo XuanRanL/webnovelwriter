@@ -1,6 +1,6 @@
 ---
 name: data-agent
-description: 数据处理Agent (v5.1)，负责AI实体提取、场景切片、索引构建。使用 entities_v3 格式和一对多别名。在章节完成后自动调用，处理数据链的写入工作。支持 SQLite 增量写入优化。
+description: 数据处理Agent (v5.1)，负责AI实体提取、场景切片、索引构建。使用 v5.1 实体格式和一对多别名，写入 index.db。在章节完成后自动调用，处理数据链的写入工作。支持 SQLite 增量写入优化。
 tools: Read, Write, Bash
 ---
 
@@ -321,6 +321,65 @@ python -m data_modules.style_sampler extract --chapter 100 --score 85 --scenes '
 
 ---
 
+## 故障恢复流程 (v5.1)
+
+### 索引重建
+
+当 index.db 损坏或与实际数据不一致时，执行索引重建：
+
+```bash
+# 完整重建索引（从正文重新提取所有实体）
+python -m data_modules.index_manager rebuild-index --project-root "."
+
+# 仅重建特定章节范围
+python -m data_modules.index_manager rebuild-index --start 1 --end 50 --project-root "."
+
+# 验证索引完整性
+python -m data_modules.index_manager verify-index --project-root "."
+```
+
+### 向量重建
+
+当 vectors.db 损坏或嵌入模型更换时，执行向量重建：
+
+```bash
+# 完整重建向量库
+python -m data_modules.rag_adapter rebuild-vectors --project-root "."
+
+# 仅重建特定章节范围
+python -m data_modules.rag_adapter rebuild-vectors --start 1 --end 50 --project-root "."
+
+# 检查向量覆盖率
+python -m data_modules.rag_adapter check-coverage --project-root "."
+```
+
+### 状态同步
+
+当 state.json 与 index.db 不一致时：
+
+```bash
+# 从 index.db 同步主角状态到 state.json
+python -m data_modules.index_manager sync-protagonist --project-root "."
+
+# 导出当前状态快照
+python -m data_modules.index_manager export-state --output snapshot.json --project-root "."
+```
+
+### 数据一致性检查
+
+```bash
+# 全面检查数据链一致性
+python -m data_modules.index_manager health-check --project-root "."
+
+# 输出示例:
+# ✅ index.db: 256 entities, 512 aliases, 1024 scenes
+# ✅ vectors.db: 1024 vectors (100% coverage)
+# ⚠️ state.json: protagonist_state.entity_id missing in index.db
+# → 建议执行 sync-protagonist
+```
+
+---
+
 ## 成功标准
 
 1. ✅ 所有出场实体被正确识别（准确率 > 90%）
@@ -343,14 +402,20 @@ python -m data_modules.style_sampler extract --chapter 100 --score 85 --scenes '
 Context Agent (读) ←→ 数据存储 ←→ Data Agent (写)
 ```
 
-**数据流 (v5.0)**:
+**数据流 (v5.1)**:
 ```
-章节正文 → Data Agent → state.json
-                      ├── entities_v3.{类型}.{id}
-                      ├── alias_index (一对多)
+章节正文 → Data Agent → state.json (精简)
+                      └── protagonist_state (快照)
+
+                      → index.db (v5.1 schema)
+                      ├── entities (id, canonical_name, current_json)
+                      ├── aliases (一对多)
                       ├── relationships
-                      └── state_changes
-                      → index.db
+                      ├── state_changes
+                      └── scenes
+
+                      → vectors.db
+                      └── 场景向量嵌入
                               ↓
                       Context Agent → 下一章上下文
 ```
