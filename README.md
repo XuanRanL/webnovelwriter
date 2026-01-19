@@ -87,6 +87,14 @@
 
 ## 快速开始
 
+### 前置要求
+
+| 依赖 | 版本要求 | 说明 |
+|------|---------|------|
+| Python | >= 3.8 | 数据处理脚本运行环境 |
+| Claude Code | 最新版 | Anthropic 官方 CLI 工具 |
+| Git | 任意版本 | 版本控制和章节备份 |
+
 ### 1. 安装
 
 ```bash
@@ -95,7 +103,17 @@ cd your-novel-project
 
 # 克隆插件到 .claude 目录
 git clone https://github.com/lingfengQAQ/webnovel-writer.git .claude
+
+# 安装 Python 依赖
+pip install -r .claude/scripts/requirements.txt
 ```
+
+**Python 依赖说明**：
+
+| 包名 | 用途 |
+|------|------|
+| aiohttp | 异步 HTTP 客户端，用于 Embedding/Reranker API 调用 |
+| filelock | 文件锁，防止 state.json 并发写入冲突 |
 
 ### 2. 初始化项目
 
