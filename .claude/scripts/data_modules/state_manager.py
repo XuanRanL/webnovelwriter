@@ -558,12 +558,18 @@ class StateManager:
         if words > 0:
             self._pending_progress_words_delta += int(words)
 
-    # ==================== 实体管理 (v5.0 entities_v3) ====================
+    # ==================== 实体管理 (v5.1 SQLite-first) ====================
 
     def get_entity(self, entity_id: str, entity_type: str = None) -> Optional[Dict]:
-        """获取实体 (v5.0 entities_v3 格式)"""
-        entities_v3 = self._state.get("entities_v3", {})
+        """获取实体 (v5.1: 优先从 SQLite 读取)"""
+        # v5.1: 优先从 SQLite 读取
+        if self._sql_state_manager:
+            entity = self._sql_state_manager._index_manager.get_entity(entity_id)
+            if entity:
+                return entity
 
+        # 回退到内存 state (兼容未迁移场景)
+        entities_v3 = self._state.get("entities_v3", {})
         if entity_type:
             return entities_v3.get(entity_type, {}).get(entity_id)
 
@@ -575,13 +581,33 @@ class StateManager:
 
     def get_entity_type(self, entity_id: str) -> Optional[str]:
         """获取实体所属类型"""
+        # v5.1: 优先从 SQLite 读取
+        if self._sql_state_manager:
+            entity = self._sql_state_manager._index_manager.get_entity(entity_id)
+            if entity:
+                return entity.get("type")
+
+        # 回退到内存 state
         for type_name, entities in self._state.get("entities_v3", {}).items():
             if entity_id in entities:
                 return type_name
         return None
 
     def get_all_entities(self) -> Dict[str, Dict]:
-        """获取所有实体（扁平化视图，兼容旧代码）"""
+        """获取所有实体（扁平化视图）"""
+        # v5.1: 优先从 SQLite 读取
+        if self._sql_state_manager:
+            result = {}
+            for entity_type in self.ENTITY_TYPES:
+                entities = self._sql_state_manager._index_manager.get_entities_by_type(entity_type)
+                for e in entities:
+                    eid = e.get("id")
+                    if eid:
+                        result[eid] = {**e, "type": entity_type}
+            if result:
+                return result
+
+        # 回退到内存 state
         result = {}
         for type_name, entities in self._state.get("entities_v3", {}).items():
             for eid, e in entities.items():
@@ -590,10 +616,30 @@ class StateManager:
 
     def get_entities_by_type(self, entity_type: str) -> Dict[str, Dict]:
         """按类型获取实体"""
+        # v5.1: 优先从 SQLite 读取
+        if self._sql_state_manager:
+            entities = self._sql_state_manager._index_manager.get_entities_by_type(entity_type)
+            if entities:
+                return {e.get("id"): e for e in entities if e.get("id")}
+
+        # 回退到内存 state
         return self._state.get("entities_v3", {}).get(entity_type, {})
 
     def get_entities_by_tier(self, tier: str) -> Dict[str, Dict]:
         """按层级获取实体"""
+        # v5.1: 优先从 SQLite 读取
+        if self._sql_state_manager:
+            result = {}
+            for entity_type in self.ENTITY_TYPES:
+                entities = self._sql_state_manager._index_manager.get_entities_by_tier(tier)
+                for e in entities:
+                    eid = e.get("id")
+                    if eid and e.get("type") == entity_type:
+                        result[eid] = {**e, "type": entity_type}
+            if result:
+                return result
+
+        # 回退到内存 state
         result = {}
         for type_name, entities in self._state.get("entities_v3", {}).items():
             for eid, e in entities.items():
@@ -1014,7 +1060,7 @@ class StateManager:
 
     def sync_protagonist_from_entity(self, entity_id: str = None):
         """
-        将 entities_v3 中主角实体的状态同步到 protagonist_state
+        将主角实体的状态同步到 protagonist_state (v5.1: 从 SQLite 读取)
 
         用于确保 consistency-checker 等依赖 protagonist_state 的组件获取最新数据
         """

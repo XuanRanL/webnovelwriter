@@ -206,8 +206,8 @@ class TestStateManager:
         assert manager.get_current_chapter() == 100
 
     def test_save_state_with_init_project_schema(self, temp_project):
-        """回归：init_project 生成的 state.json 无 meta 字段，StateManager 仍应可写入。"""
-        # 模拟 init_project.py 生成的 v5.0 state.json 形状（包含 entities_v3/alias_index）
+        """回归：init_project 生成的 state.json，StateManager 仍应可写入。(v5.1 SQLite-only)"""
+        # v5.1: state.json 不再包含 entities_v3/alias_index，实体数据在 SQLite
         init_state = {
             "project_info": {"title": "测试书名", "genre": "修仙/玄幻", "created_at": "2026-01-01"},
             "progress": {"current_chapter": 0, "total_words": 0, "last_updated": "2026-01-01 00:00:00"},
@@ -217,8 +217,6 @@ class TestStateManager:
             "plot_threads": {"active_threads": [], "foreshadowing": []},
             "review_checkpoints": [],
             "strand_tracker": {"current_dominant": "quest", "history": []},
-            "entities_v3": {"角色": {}, "地点": {}, "物品": {}, "势力": {}, "招式": {}},
-            "alias_index": {},
         }
         temp_project.state_file.write_text(json.dumps(init_state, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -230,11 +228,10 @@ class TestStateManager:
         assert "meta" not in saved
         assert saved["progress"]["current_chapter"] == 5
         assert saved["progress"]["total_words"] == 100
-        assert isinstance(saved.get("entities_v3"), dict)
-        assert isinstance(saved.get("alias_index"), dict)
+        # v5.1: entities_v3/alias_index 不再在 state.json 中
 
     def test_save_state_preserves_unrelated_fields(self, temp_project):
-        """回归：仅写入增量，不应覆盖/丢失其他模块维护的字段。"""
+        """回归：仅写入增量，不应覆盖/丢失其他模块维护的字段。(v5.1 SQLite-only)"""
         init_state = {
             "project_info": {"title": "测试书名", "genre": "修仙/玄幻", "created_at": "2026-01-01"},
             "progress": {"current_chapter": 10, "total_words": 1000, "last_updated": "2026-01-01 00:00:00"},
@@ -244,8 +241,6 @@ class TestStateManager:
             "plot_threads": {"active_threads": [{"id": "t1", "title": "主线"}], "foreshadowing": []},
             "review_checkpoints": [],
             "strand_tracker": {"current_dominant": "quest", "history": []},
-            "entities_v3": {"角色": {}, "地点": {}, "物品": {}, "势力": {}, "招式": {}},
-            "alias_index": {},
             "custom_field": {"keep": True},
         }
         temp_project.state_file.write_text(json.dumps(init_state, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -45,6 +45,14 @@ from pathlib import Path
 from security_utils import create_secure_directory, atomic_write_json
 from project_locator import resolve_project_root
 
+# v5.1: 使用 IndexManager 读取实体
+try:
+    from data_modules.index_manager import IndexManager
+    from data_modules.config import get_config
+except ImportError:
+    from scripts.data_modules.index_manager import IndexManager
+    from scripts.data_modules.config import get_config
+
 # Windows UTF-8 编码修复
 if sys.platform == 'win32':
     import io
@@ -62,8 +70,13 @@ class ArchiveManager:
         else:
             project_root = Path(project_root)
 
+        self.project_root = project_root
         self.state_file = project_root / ".webnovel" / "state.json"
         self.archive_dir = project_root / ".webnovel" / "archive"
+
+        # v5.1: IndexManager 用于读取实体
+        self._config = get_config(project_root)
+        self._index_manager = IndexManager(self._config)
 
         # ============================================================================
         # 安全修复：使用安全目录创建函数（P1 MEDIUM）
@@ -134,15 +147,15 @@ class ArchiveManager:
         }
 
     def identify_inactive_characters(self, state):
-        """识别不活跃的次要角色 (v5.0 entities_v3 格式)"""
+        """识别不活跃的次要角色 (v5.1 SQLite)"""
         current_chapter = state.get("progress", {}).get("current_chapter", 0)
-        # v5.0: 从 entities_v3.角色 获取角色列表
-        entities_v3 = state.get("entities_v3", {})
-        characters_dict = entities_v3.get("角色", {})
         threshold = self.config["character_inactive_threshold"]
 
+        # v5.1: 从 SQLite 获取所有角色实体
+        characters = self._index_manager.get_entities_by_type("角色")
+
         inactive = []
-        for char_id, char in characters_dict.items():
+        for char in characters:
             # 只归档次要角色（tier="装饰" 或 tier="支线"）
             tier = str(char.get("tier", "")).strip()
             if tier == "核心":
@@ -160,7 +173,7 @@ class ArchiveManager:
             inactive_chapters = current_chapter - last_appearance
 
             if inactive_chapters >= threshold:
-                # 构造兼容结构
+                char_id = char.get("id", "")
                 char_data = {
                     "id": char_id,
                     "name": char.get("canonical_name", char_id),
@@ -283,7 +296,7 @@ class ArchiveManager:
         return old_reviews
 
     def archive_characters(self, inactive_list, dry_run=False):
-        """归档不活跃角色（Priority 2 修复：与索引集成）"""
+        """归档不活跃角色（v5.1: 使用 IndexManager 更新状态）"""
         if not inactive_list:
             return 0
 
@@ -296,23 +309,17 @@ class ArchiveManager:
             item["character"]["archived_at"] = timestamp
             archived.append(item["character"])
 
-            # ✅ Priority 2 修复：同步更新索引状态（而非删除）
+            # v5.1: 通过 IndexManager 更新实体状态
             if not dry_run:
                 try:
-                    # 导入索引模块
-                    import sys
-                    from pathlib import Path
-                    script_dir = Path(__file__).parent
-                    sys.path.insert(0, str(script_dir))
-                    from structured_index import StructuredIndex
-
-                    # 更新索引状态为 'archived'
-                    project_root = self.state_file.parent.parent
-                    index = StructuredIndex(str(project_root))
-                    index.mark_character_archived(item["character"]["name"], timestamp)
+                    entity_id = item["character"].get("id")
+                    if entity_id:
+                        # 更新实体的 current_json 添加 archived 标记
+                        self._index_manager.update_entity_field(
+                            entity_id, "status", "archived"
+                        )
                 except Exception as e:
-                    # 索引更新失败不影响归档流程
-                    print(f"⚠️ 索引状态更新失败（不影响归档）: {e}")
+                    print(f"⚠️ 实体状态更新失败（不影响归档）: {e}")
 
         if not dry_run:
             self.save_archive(self.characters_archive, archived)
@@ -358,15 +365,9 @@ class ArchiveManager:
         return len(old_reviews_list)
 
     def remove_from_state(self, state, inactive_chars, resolved_threads, old_reviews):
-        """从 state.json 中移除已归档的数据 (v5.0 entities_v3 格式)"""
-        # 移除不活跃角色 (v5.0: 从 entities_v3.角色 中移除)
-        if inactive_chars:
-            char_ids = {item["character"].get("id") for item in inactive_chars}
-            entities_v3 = state.get("entities_v3", {})
-            characters_dict = entities_v3.get("角色", {})
-            for char_id in char_ids:
-                if char_id in characters_dict:
-                    del characters_dict[char_id]
+        """从 state.json/SQLite 中移除已归档的数据 (v5.1)"""
+        # v5.1: 角色数据在 SQLite，archive_characters 已处理状态更新
+        # 这里只需要处理 state.json 中的伏笔和审查报告
 
         # 移除已归档的伏笔
         if resolved_threads:
@@ -476,9 +477,8 @@ class ArchiveManager:
         print(f"\n💾 文件大小: {trigger['file_size_mb']:.2f} MB → {new_size_mb:.2f} MB (节省 {saved_mb:.2f} MB)")
 
     def restore_character(self, name):
-        """恢复归档的角色（Priority 2 修复：同步恢复索引状态）"""
+        """恢复归档的角色（v5.1: 使用 IndexManager 恢复状态）"""
         archived = self.load_archive(self.characters_archive)
-        state = self.load_state()
 
         # 查找角色
         char_to_restore = None
@@ -494,44 +494,18 @@ class ArchiveManager:
         # 移除 archived_at 字段
         char_to_restore.pop("archived_at", None)
 
-        # ✅ 原子性修复：先从归档中移除，再添加到 state.json
-        # 理由：即使崩溃，数据仍在归档中，可重新恢复，不会丢失或重复
+        # 原子性修复：先从归档中移除
         archived = [char for char in archived if char["name"] != name]
         self.save_archive(self.characters_archive, archived)
 
-        # 恢复到 state.json (v5.0: 添加到 entities_v3.角色)
-        if "entities_v3" not in state:
-            state["entities_v3"] = {"角色": {}, "地点": {}, "物品": {}, "势力": {}, "招式": {}}
-        if "角色" not in state["entities_v3"]:
-            state["entities_v3"]["角色"] = {}
-
+        # v5.1: 恢复到 SQLite (通过 IndexManager)
         char_id = char_to_restore.get("id", char_to_restore.get("name", "unknown"))
-        state["entities_v3"]["角色"][char_id] = {
-            "canonical_name": char_to_restore.get("name", char_id),
-            "tier": char_to_restore.get("tier", "装饰"),
-            "desc": char_to_restore.get("desc", ""),
-            "current": char_to_restore.get("current", {}),
-            "first_appearance": char_to_restore.get("first_appearance", 0),
-            "last_appearance": char_to_restore.get("last_appearance", 0),
-            "history": char_to_restore.get("history", [])
-        }
-        self.save_state(state)
-
-        # ✅ Priority 2 修复：同步恢复索引状态为 'active'
         try:
-            import sys
-            from pathlib import Path
-            script_dir = Path(__file__).parent
-            sys.path.insert(0, str(script_dir))
-            from structured_index import StructuredIndex
-
-            project_root = self.state_file.parent.parent
-            index = StructuredIndex(str(project_root))
-            index.mark_character_active(name)
+            # 更新实体状态为 active
+            self._index_manager.update_entity_field(char_id, "status", "active")
+            print(f"✅ 角色已恢复: {name}")
         except Exception as e:
-            print(f"⚠️ 索引状态恢复失败（不影响数据恢复）: {e}")
-
-        print(f"✅ 角色已恢复: {name}")
+            print(f"⚠️ 实体状态恢复失败: {e}")
 
     def show_stats(self):
         """显示归档统计"""

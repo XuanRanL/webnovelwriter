@@ -59,6 +59,7 @@ def _ensure_state_schema(state: Dict[str, Any]) -> Dict[str, Any]:
     state.setdefault("project_info", {})
     state.setdefault("progress", {})
     state.setdefault("protagonist_state", {})
+    state.setdefault("relationships", {})  # update_state.py 需要此字段
     state.setdefault("disambiguation_warnings", [])
     state.setdefault("disambiguation_pending", [])
     state.setdefault("world_settings", {"power_system": [], "factions": [], "locations": []})

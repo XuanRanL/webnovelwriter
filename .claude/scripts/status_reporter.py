@@ -92,8 +92,10 @@ from chapter_paths import extract_chapter_num_from_filename
 # 导入配置
 try:
     from data_modules.config import get_config, DataModulesConfig
+    from data_modules.index_manager import IndexManager
 except ImportError:
     from scripts.data_modules.config import get_config, DataModulesConfig
+    from scripts.data_modules.index_manager import IndexManager
 
 def _is_resolved_foreshadowing_status(raw_status: Any) -> bool:
     """判断伏笔是否已回收（兼容历史字段与同义词）。"""
@@ -131,13 +133,8 @@ class StatusReporter:
         self.state = None
         self.chapters_data = []
 
-        # 可选：集成结构化索引（如果可用，角色统计更准）
-        self.index = None
-        try:
-            from structured_index import StructuredIndex
-            self.index = StructuredIndex(self.project_root)
-        except Exception:
-            self.index = None
+        # v5.1: 使用 IndexManager 读取实体
+        self._index_manager = IndexManager(self.config)
 
     def _extract_stats_field(self, content: str, field_name: str) -> str:
         """
@@ -173,19 +170,22 @@ class StatusReporter:
         # 2) 正文/第1卷/第001章-标题.md
         chapter_files = sorted(self.chapters_dir.rglob("第*.md"))
 
-        # 角色候选（fallback 用）：从 state.json 获取已知角色名 (v5.0 entities_v3 格式)
+        # v5.1: 从 SQLite 获取已知角色名
         known_character_names: List[str] = []
         protagonist_name = ""
         if self.state:
             protagonist_name = self.state.get("protagonist_state", {}).get("name", "") or ""
-            # v5.0: 从 entities_v3.角色 获取角色名
-            entities_v3 = self.state.get("entities_v3", {})
-            characters_dict = entities_v3.get("角色", {})
+
+        # 从 SQLite 获取所有角色的 canonical_name
+        try:
+            characters_from_db = self._index_manager.get_entities_by_type("角色")
             known_character_names = [
-                c.get("canonical_name", char_id)
-                for char_id, c in characters_dict.items()
+                c.get("canonical_name", c.get("id", ""))
+                for c in characters_from_db
                 if c.get("canonical_name")
             ]
+        except Exception:
+            known_character_names = []
 
         for chapter_file in chapter_files:
             chapter_num = extract_chapter_num_from_filename(chapter_file.name)
@@ -202,40 +202,29 @@ class StatusReporter:
             text = re.sub(r'---', '', text)  # 去除分隔线
             word_count = len(text.strip())
 
-            # 主导 Strand / 爽点类型（优先从“本章统计”解析）
+            # 主导 Strand / 爽点类型（优先从"本章统计"解析）
             dominant_strand = (self._extract_stats_field(content, "主导Strand") or "").lower()
             cool_point_type = self._extract_stats_field(content, "爽点")
 
-            # 角色提取：优先从结构化索引读取（若有），否则 fallback 用“出现即算出场”
+            # v5.1: 角色提取从 SQLite chapters 表读取
             characters: List[str] = []
-            if self.index is not None:
-                try:
-                    cursor = self.index.conn.execute(
-                        "SELECT characters FROM chapters WHERE chapter_num = ?",
-                        (chapter_num,),
-                    )
-                    row = cursor.fetchone()
-                    if row and row[0]:
-                        try:
-                            stored = json.loads(row[0])
-                            if isinstance(stored, list):
-                                # v4.0: chapters.characters 存 entity_id 列表，输出时尽量还原为 canonical_name
-                                for x in stored:
-                                    entity_id = str(x).strip()
-                                    if not entity_id:
-                                        continue
-                                    name = entity_id
-                                    try:
-                                        ent = self.index.query_entity_by_id(entity_id)
-                                        if ent and ent.get("canonical_name"):
-                                            name = str(ent["canonical_name"]).strip() or entity_id
-                                    except Exception:
-                                        name = entity_id
-                                    characters.append(name)
-                        except json.JSONDecodeError:
-                            characters = []
-                except Exception:
-                    characters = []
+            try:
+                chapter_info = self._index_manager.get_chapter(chapter_num)
+                if chapter_info and chapter_info.get("characters"):
+                    stored = chapter_info["characters"]
+                    if isinstance(stored, str):
+                        stored = json.loads(stored)
+                    if isinstance(stored, list):
+                        for entity_id in stored:
+                            entity_id = str(entity_id).strip()
+                            if not entity_id:
+                                continue
+                            # 尝试获取 canonical_name
+                            entity = self._index_manager.get_entity(entity_id)
+                            name = entity.get("canonical_name", entity_id) if entity else entity_id
+                            characters.append(name)
+            except Exception:
+                characters = []
 
             if not characters and (protagonist_name or known_character_names):
                 # 限制候选规模，避免在超大角色库下过慢
@@ -262,26 +251,30 @@ class StatusReporter:
             })
 
     def analyze_characters(self) -> Dict:
-        """分析角色活跃度 (v5.0 entities_v3 格式)"""
+        """分析角色活跃度 (v5.1 SQLite)"""
         if not self.state:
             return {}
 
         current_chapter = self.state.get("progress", {}).get("current_chapter", 0)
-        # v5.0: 从 entities_v3.角色 获取角色
-        entities_v3 = self.state.get("entities_v3", {})
-        characters_dict = entities_v3.get("角色", {})
+
+        # v5.1: 从 SQLite 获取所有角色
+        try:
+            characters_list = self._index_manager.get_entities_by_type("角色")
+        except Exception:
+            characters_list = []
 
         # 统计每个角色的最后出场章节
         character_activity = {}
 
-        for char_id, char in characters_dict.items():
-            char_name = char.get("canonical_name", char_id)
+        for char in characters_list:
+            char_name = char.get("canonical_name", char.get("id", ""))
             if not char_name:
                 continue
 
             # 查找最后出场章节
-            last_appearance = 0
+            last_appearance = char.get("last_appearance", 0) or 0
 
+            # 也从 chapters_data 中检查
             for ch_data in self.chapters_data:
                 if char_name in ch_data.get("characters", []):
                     last_appearance = max(last_appearance, ch_data["chapter"])
