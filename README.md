@@ -361,20 +361,23 @@ Step 6: Git 自动提交备份
 
 ### 配置
 
-| 组件 | 提供商 | 模型 |
-|-----|-------|------|
-| Embedding | ModelScope / OpenAI | Qwen3-Embedding-8B / text-embedding-3-small |
+| 组件 | 默认提供商 | 默认模型 |
+|-----|----------|---------|
+| Embedding | ModelScope (魔搭) | Qwen/Qwen3-Embedding-8B |
 | Reranker | Jina AI | jina-reranker-v3 |
 
 ### 环境变量
 
 ```bash
 # .env 文件
-EMBED_API_TYPE=openai          # openai 或 modal
-EMBED_BASE_URL=https://api.openai.com/v1
-EMBED_MODEL=text-embedding-3-small
-EMBED_API_KEY=sk-xxx
 
+# Embedding 配置 (默认使用魔搭)
+EMBED_API_TYPE=openai          # openai 兼容接口
+EMBED_BASE_URL=https://api-inference.modelscope.cn/v1
+EMBED_MODEL=Qwen/Qwen3-Embedding-8B
+EMBED_API_KEY=your-modelscope-token
+
+# Reranker 配置
 RERANK_API_TYPE=openai         # openai (兼容 Jina/Cohere)
 RERANK_BASE_URL=https://api.jina.ai/v1
 RERANK_MODEL=jina-reranker-v3
