@@ -105,6 +105,16 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/creativity/selling-po
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/worldbuilding/character-design.md"
 ```
 
+**按需加载世界构建参考**（Standard+ 模式推荐）：
+```bash
+# 势力体系设计
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/worldbuilding/faction-systems.md"
+# 设定一致性指南
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/worldbuilding/setting-consistency.md"
+# 世界规则设计
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/worldbuilding/world-rules.md"
+```
+
 **使用 AskUserQuestion 收集**：
 - 金手指类型（系统面板/签到/鉴定/吞噬）
 - 系统名称/代号
@@ -119,6 +129,10 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/worldbuilding/charact
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/creativity/inspiration-collection.md"
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/worldbuilding/power-systems.md"
+# 创意组合方法
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/creativity/creative-combination.md"
+# 市场定位分析
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/creativity/market-positioning.md"
 ```
 
 收集：

@@ -1,6 +1,6 @@
 ---
 name: webnovel-write
-description: Writes webnovel chapters (3000-5000 words) using v5.0 dual-agent architecture. Context Agent gathers context, writer produces pure text (no XML tags), review agents report issues, polish fixes problems, Data Agent extracts entities with AI.
+description: Writes webnovel chapters (3000-5000 words) using v5.1 dual-agent architecture. Context Agent gathers context, writer produces pure text (no XML tags), review agents report issues, polish fixes problems, Data Agent extracts entities with AI.
 allowed-tools: Read Write Edit Grep Bash Task
 ---
 
@@ -11,7 +11,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 ⚠️ **强制要求**: 开始写作前，**必须复制以下清单**到回复中并逐项勾选。跳过任何步骤视为工作流不完整。
 
 ```
-章节创作进度 (v5.0)：
+章节创作进度 (v5.1)：
 - [ ] Step 1: Context Agent 搜集上下文
 - [ ] Step 2: 生成章节内容 (纯正文，3000-5000字)
 - [ ] Step 3: 审查 (5个Agent并行，输出汇总表格)
@@ -87,6 +87,13 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/core-constraints.md"
 | 对话密集 | 预估对话 >50% | `cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/dialogue-writing.md"` |
 | 复杂场景 | 新地点/大场面描写 | `cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/scene-description.md"` |
 | 欲念描写 | 大纲含暧昧/亲密/情欲场景 | `cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/desire-description.md"` |
+
+**可选加载题材风格参考**（用户指定时加载）:
+```bash
+# 如需特定题材的写作风格参考，可按需加载 genres 目录下的对应文件
+# 示例: cat "${CLAUDE_PLUGIN_ROOT}/genres/修仙/修仙-writing-style.md"
+# 可用题材: 修仙、系统流、都市异能、狗血言情、知乎短篇、古言、现实题材、规则怪谈等
+```
 
 **输出格式**:
 - Markdown 文件: `正文/第{NNNN}章.md`
@@ -270,8 +277,8 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.
 
 **Agent 自动完成**:
 
-1. **AI 实体提取**
-   - 调用 LLM 从正文中语义提取实体
+1. **AI 实体提取**（Agent 内置，无需外部 LLM）
+   - 从正文中语义提取实体
    - 匹配已有实体库，识别新实体
    - 识别状态变化（境界/位置/关系）
 

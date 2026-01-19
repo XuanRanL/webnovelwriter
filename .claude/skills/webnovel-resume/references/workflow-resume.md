@@ -1,7 +1,7 @@
 ---
 name: workflow-resume
 purpose: 任务恢复时加载，指导中断恢复流程
-version: "5.0"
+version: "5.1"
 ---
 
 <context>
@@ -10,7 +10,7 @@ version: "5.0"
 
 <instructions>
 
-## Step 中断难度分级 (v5.0)
+## Step 中断难度分级 (v5.1)
 
 | Step | 名称 | 影响 | 难度 | 默认策略 |
 |------|------|------|------|----------|

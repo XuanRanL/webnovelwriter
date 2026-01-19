@@ -49,6 +49,12 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-review/references/strand-weave-patter
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-review/references/common-mistakes.md"
 ```
 
+**可选加载节奏控制参考**：
+```bash
+# 如需深入分析节奏控制，可加载此文件
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-review/references/pacing-control.md"
+```
+
 ## Step 5: 加载项目状态
 
 ```bash

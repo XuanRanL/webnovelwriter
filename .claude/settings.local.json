@@ -18,7 +18,15 @@
       "Bash(git remote add:*)",
       "Bash(git push:*)",
       "WebFetch(domain:linux.do)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(tree:*)",
+      "Bash(dir:*)",
+      "Bash(git checkout -b feature/integrate-refined-docs-v3)",
+      "Bash(收获型\" → 无结果（旧术语已清除）\n✓ grep \"场景创作时.*标注.*压扬比例\" → 无结果（标注要求已删除）\n✓ 密度基准改为基于模式叠加和里程碑胜利\n✓ AI执行指令从4条改为3条（三处同步）\n\nFiles changed:\n- .claude/agents/high-point-checker.md \\(密度基准\\)\n- .claude/skills/webnovel-write/references/cool-points-guide.md \\(示例+边界案例+AI指令\\)\n- .claude/skills/webnovel-plan/references/cool-points-guide.md \\(示例+边界案例+AI指令\\)\n- .claude/skills/webnovel-review/references/cool-points-guide.md \\(示例+边界案例+AI指令\\)\nEOF\n\\)\")",
+      "Bash(git checkout master)",
+      "Bash(git merge:*)",
+      "Bash(head:*)"
     ]
   }
 }

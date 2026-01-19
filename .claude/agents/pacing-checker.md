@@ -50,9 +50,9 @@ python -m scripts.status_reporter --focus strand --project-root "${PROJECT_ROOT}
 
 | Strand | Indicators | Examples |
 |--------|-----------|----------|
-| **Quest** (任务线) | 战斗/任务/探索/升级/打怪 | 参加宗门大比、探索秘境、击败反派 |
-| **Fire** (情感线) | 情感关系/暧昧/友情/羁绊 | 与李雪的感情发展、师徒情深、兄弟义气 |
-| **Constellation** (人际线) | 势力关系/阵营/社交/揭示世界观 | 新势力登场、修仙界格局展示、宗门政治 |
+| **Quest** (主线) | 战斗/任务/探索/升级/打怪 | 参加宗门大比、探索秘境、击败反派 |
+| **Fire** (感情线) | 情感关系/暧昧/友情/羁绊 | 与李雪的感情发展、师徒情深、兄弟义气 |
+| **Constellation** (世界观线) | 势力关系/阵营/社交网络/揭示世界观 | 新势力登场、修仙界格局展示、宗门政治 |
 
 **Classification Rules**:
 - A chapter can have **undertones** of multiple strands, but only **one dominant**
@@ -112,9 +112,9 @@ Last Constellation: 38 | Current: 46 | Gap: 8 chapters
 
 | Strand | 理想占比 | 最大缺席 | 超限影响 |
 |--------|---------|---------|---------|
-| Quest (任务线) | 60% (6-7章) | 3 章 | 罕见，主线推进需要 |
-| Fire (情感线) | 20% (2-3章) | 10 章 | 人物关系停滞 |
-| Constellation (人际线) | 20% (1-2章) | 15 章 | 世界观单薄 |
+| Quest (主线) | 55-65% | 5 章连续 | 战斗疲劳，缺少情感深度 |
+| Fire (感情线) | 20-30% | 10 章 | 人物关系停滞 |
+| Constellation (世界观线) | 10-20% | 15 章 | 世界观单薄 |
 
 ### Step 5: Historical Trend Analysis
 
@@ -156,7 +156,7 @@ Chapters {N} - {M}
 | {M} | Quest | - | Medium |
 
 ## Strand Balance 检查
-### Quest Strand (任务线)
+### Quest Strand (主线)
 - Last appearance: Chapter {X}
 - Consecutive chapters: {count}
 - **Status**: {✓ Normal / ⚠️ Warning / ✗ Overload}
@@ -166,7 +166,7 @@ Chapters {N} - {M}
 - Gap since last: {count} chapters
 - **Status**: {✓ Normal / ⚠️ Warning / ✗ Drought}
 
-### Constellation Strand (人际线)
+### Constellation Strand (世界观线)
 - Last appearance: Chapter {Z}
 - Gap since last: {count} chapters
 - **Status**: {✓ Normal / ⚠️ Warning}

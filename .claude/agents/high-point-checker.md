@@ -36,9 +36,9 @@ Scan for the **6 standard execution modes** (执行模式):
 ### Step 3: Density Check
 
 **Required Baseline**:
-- **Every chapter**: ≥ 1 cool-point (任何单一模式)
-- **Every 5 chapters**: ≥ 1 combo cool-point (2种以上模式叠加)
-- **Every 10 chapters**: ≥ 1 milestone victory (改变主角地位的阶段性胜利)
+- **Every chapter**: ≥ 1 小爽点（单一模式）
+- **Every 5 chapters**: ≥ 1 组合爽点（2种模式叠加）
+- **Every 10-15 chapters**: ≥ 1 里程碑爽点（改变主角地位）
 
 **Output**:
 ```

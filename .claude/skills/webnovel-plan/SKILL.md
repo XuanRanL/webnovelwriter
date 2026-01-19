@@ -32,8 +32,9 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/cool-points-guide.md"
 ```
 
 关键规则：
-- 每章 ≥1 个爽点
-- 每 5 章 ≥1 个大爽点 (⭐⭐⭐)
+- 每章 ≥1 个小爽点（单一模式）
+- 每 5 章 ≥1 个组合爽点（2种模式叠加）
+- 每 10-15 章 ≥1 个里程碑爽点（改变主角地位）
 - 避免连续 3 章同类型
 
 ## Step 2: 加载节奏规范（必须执行）
@@ -82,6 +83,18 @@ cat 大纲/总纲.md
 - 金手指差异化
 
 ## Step 7: 生成详细大纲
+
+**按需加载大纲设计参考**（推荐）：
+```bash
+# 章节规划指南
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/outlining/chapter-planning.md"
+# 冲突设计指南
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/outlining/conflict-design.md"
+# 大纲结构指南
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/outlining/outline-structure.md"
+# 情节框架参考
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/outlining/plot-frameworks.md"
+```
 
 **大纲结构**：
 

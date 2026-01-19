@@ -42,7 +42,7 @@ CREATE TABLE entities (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,  -- 角色/地点/物品/势力/招式
     canonical_name TEXT NOT NULL,
-    tier TEXT DEFAULT '装饰',  -- 核心/支线/装饰
+    tier TEXT DEFAULT '装饰',  -- 核心/重要/次要/装饰
     desc TEXT,
     current_json TEXT,  -- JSON 格式的当前状态
     first_appearance INTEGER,
@@ -54,11 +54,10 @@ CREATE TABLE entities (
 
 -- 别名表 (一对多)
 CREATE TABLE aliases (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
     alias TEXT NOT NULL,
     entity_id TEXT NOT NULL,
     entity_type TEXT NOT NULL,
-    UNIQUE(alias, entity_id)
+    PRIMARY KEY (alias, entity_id, entity_type)
 );
 
 -- 状态变化表

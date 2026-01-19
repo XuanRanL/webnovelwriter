@@ -67,7 +67,7 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
 | `backup_manager.py` | 章节号 | 自动 Git 备份 |
 | `status_reporter.py` | 无 | 生成健康报告/伏笔紧急度 |
 | `archive_manager.py` | 无 | 归档不活跃数据 |
-| `migrate_state_to_sqlite.py` | 项目路径 | 迁移旧 state.json 到 SQLite (v5.1 新增) |
+| `data_modules/migrate_state_to_sqlite.py` | 项目路径 | 迁移旧 state.json 到 SQLite (v5.1 新增) |
 
 ### data_modules 模块
 
@@ -212,7 +212,7 @@ v5.0 不再要求 XML 标签，由 Data Agent 智能提取：
    - 置信度 0.5-0.8: 采用但记录 warning
    - 置信度 < 0.5: 标记待人工确认
 4. **状态变化识别**: 境界突破/位置移动/关系变化
-5. **写入存储**: entities_v3 + alias_index + index.db
+5. **写入存储**: 直接写入 index.db（实体/别名/关系/状态变化）
 
 ## 伏笔字段规范
 
