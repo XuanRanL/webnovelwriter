@@ -364,7 +364,7 @@ Step 6: Git 自动提交备份
 | 组件 | 提供商 | 模型 |
 |-----|-------|------|
 | Embedding | ModelScope / OpenAI | Qwen3-Embedding-8B / text-embedding-3-small |
-| Rerank | Jina AI | jina-reranker-v2-base-multilingual |
+| Reranker | Jina AI | jina-reranker-v3 |
 
 ### 环境变量
 
@@ -377,7 +377,7 @@ EMBED_API_KEY=sk-xxx
 
 RERANK_API_TYPE=openai         # openai (兼容 Jina/Cohere)
 RERANK_BASE_URL=https://api.jina.ai/v1
-RERANK_MODEL=jina-reranker-v2-base-multilingual
+RERANK_MODEL=jina-reranker-v3
 RERANK_API_KEY=jina_xxx
 ```
 
