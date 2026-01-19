@@ -2,6 +2,11 @@
 """
 结构化索引系统（Structured Index System）v4.0
 
+⚠️ DEPRECATED: 本模块已被 v5.1 index_manager 替代。
+   - v5.1 使用不同的 schema（entities.id, aliases, current_json）
+   - 本模块仅保留用于兼容旧项目迁移
+   - 新项目请使用 data_modules.index_manager
+
 目标：取代向量化检索，使用 SQLite 提供精确、快速的结构化查询
 
 v4.0 变更：

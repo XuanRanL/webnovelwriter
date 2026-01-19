@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
-Context Pack Builder v4.0
+Context Pack Builder v5.1
 
 为章节写作生成结构化上下文包，取代直接读取 state.json。
+
+v5.1 变更:
+- 使用 v5.1 index_manager schema (entities.id, aliases, current_json)
+- 移除对 entity_kv 表的依赖，改用 current_json 字段
+- 移除对 entity_aliases 表的依赖，改用 aliases 表
 
 输出 Schema:
 {
@@ -88,7 +93,7 @@ class ContextPackBuilder:
             "meta": {
                 "chapter": chapter_num,
                 "project_root": str(self.project_root),
-                "version": "5.0"
+                "version": "5.1"
             },
             "core": self._build_core(chapter_num),
             "scene": self._build_scene(chapter_num),
@@ -209,33 +214,28 @@ class ContextPackBuilder:
         protagonist_id = snapshot.get("entity_id", "")
         conn = self._conn_index()
         if protagonist_id and conn is not None:
+            # v5.1 schema: entities 表使用 id 字段，current_json 存储状态
             row = conn.execute(
-                "SELECT canonical_name FROM entities WHERE entity_id = ? LIMIT 1",
+                "SELECT canonical_name, current_json FROM entities WHERE id = ? LIMIT 1",
                 (protagonist_id,),
             ).fetchone()
-            if row and row["canonical_name"]:
-                snapshot["name"] = row["canonical_name"]
-
-            kv_rows = conn.execute(
-                "SELECT key, value FROM entity_kv WHERE entity_id = ?",
-                (protagonist_id,),
-            ).fetchall()
-
-            def _parse(v: str):
-                try:
-                    return json.loads(v)
-                except Exception:
-                    return v
-
-            kv = {r["key"]: _parse(r["value"]) for r in kv_rows} if kv_rows else {}
-            if isinstance(kv.get("realm"), str) and kv.get("realm"):
-                snapshot["realm"] = kv["realm"]
-            if kv.get("layer") is not None and kv.get("layer") != "":
-                snapshot["layer"] = kv["layer"]
-            if isinstance(kv.get("bottleneck"), str) and kv.get("bottleneck"):
-                snapshot["bottleneck"] = kv["bottleneck"]
-            if isinstance(kv.get("location"), str) and kv.get("location"):
-                snapshot["location"] = kv["location"]
+            if row:
+                if row["canonical_name"]:
+                    snapshot["name"] = row["canonical_name"]
+                # 从 current_json 解析状态
+                if row["current_json"]:
+                    try:
+                        current = json.loads(row["current_json"])
+                        if isinstance(current.get("realm"), str) and current.get("realm"):
+                            snapshot["realm"] = current["realm"]
+                        if current.get("layer") is not None and current.get("layer") != "":
+                            snapshot["layer"] = current["layer"]
+                        if isinstance(current.get("bottleneck"), str) and current.get("bottleneck"):
+                            snapshot["bottleneck"] = current["bottleneck"]
+                        if isinstance(current.get("location"), str) and current.get("location"):
+                            snapshot["location"] = current["location"]
+                    except (json.JSONDecodeError, TypeError):
+                        pass
 
         return snapshot
 
@@ -283,8 +283,9 @@ class ContextPackBuilder:
         if conn is None:
             return {"name": "未知地点", "desc": ""}
 
+        # v5.1 schema: 使用 aliases 表（替代 entity_aliases）
         rows = conn.execute(
-            "SELECT alias, entity_id FROM entity_aliases WHERE entity_type = ?",
+            "SELECT alias, entity_id FROM aliases WHERE entity_type = ?",
             ("地点",),
         ).fetchall()
         if not rows:
@@ -302,8 +303,9 @@ class ContextPackBuilder:
             if alias not in outline:
                 continue
 
+            # v5.1 schema: entities 表使用 id 字段
             e = conn.execute(
-                "SELECT canonical_name, desc FROM entities WHERE entity_id = ? LIMIT 1",
+                "SELECT canonical_name, desc FROM entities WHERE id = ? LIMIT 1",
                 (entity_id,),
             ).fetchone()
             return {
@@ -321,8 +323,9 @@ class ContextPackBuilder:
         if conn is None:
             return []
 
+        # v5.1 schema: 使用 aliases 表（替代 entity_aliases）
         rows = conn.execute(
-            "SELECT alias, entity_id FROM entity_aliases WHERE entity_type = ?",
+            "SELECT alias, entity_id FROM aliases WHERE entity_type = ?",
             ("角色",),
         ).fetchall()
         if not rows:
@@ -339,27 +342,24 @@ class ContextPackBuilder:
         if not matched_ids:
             return []
 
-        def _parse(v: str):
-            try:
-                return json.loads(v)
-            except Exception:
-                return v
-
         tier_order = {"核心": 0, "支线": 1, "装饰": 2, "": 3}
         matched: List[Dict[str, Any]] = []
         for entity_id in matched_ids:
+            # v5.1 schema: entities 表使用 id 字段，current_json 存储状态
             e = conn.execute(
-                "SELECT canonical_name, tier FROM entities WHERE entity_id = ? LIMIT 1",
+                "SELECT canonical_name, tier, current_json FROM entities WHERE id = ? LIMIT 1",
                 (entity_id,),
             ).fetchone()
             if not e:
                 continue
 
-            kv_rows = conn.execute(
-                "SELECT key, value FROM entity_kv WHERE entity_id = ?",
-                (entity_id,),
-            ).fetchall()
-            snapshot = {r["key"]: _parse(r["value"]) for r in kv_rows} if kv_rows else {}
+            # 从 current_json 解析快照
+            snapshot = {}
+            if e["current_json"]:
+                try:
+                    snapshot = json.loads(e["current_json"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
             matched.append(
                 {
@@ -478,7 +478,7 @@ class ContextPackBuilder:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Context Pack Builder v4.0")
+    parser = argparse.ArgumentParser(description="Context Pack Builder v5.1")
     parser.add_argument("--chapter", type=int, required=True, help="章节编号")
     parser.add_argument("--project-root", metavar="PATH", help="项目根目录")
     parser.add_argument("--output", metavar="FILE", help="输出文件路径（默认输出到 stdout）")
