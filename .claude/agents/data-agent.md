@@ -323,59 +323,70 @@ python -m data_modules.style_sampler extract --chapter 100 --score 85 --scenes '
 
 ## 故障恢复流程 (v5.1)
 
+> **注意**: 以下恢复命令为规划中功能，当前版本请使用替代方案。
+
 ### 索引重建
 
-当 index.db 损坏或与实际数据不一致时，执行索引重建：
+当 index.db 损坏或与实际数据不一致时：
 
+**当前替代方案**（逐章重新处理）:
 ```bash
-# 完整重建索引（从正文重新提取所有实体）
-python -m data_modules.index_manager rebuild-index --project-root "."
+# 重新处理单章（会更新索引）
+python -m data_modules.index_manager process-chapter --chapter 1 --project-root "."
 
-# 仅重建特定章节范围
-python -m data_modules.index_manager rebuild-index --start 1 --end 50 --project-root "."
+# 批量重新处理（shell 循环）
+for i in $(seq 1 50); do
+  python -m data_modules.index_manager process-chapter --chapter $i --project-root "."
+done
 
-# 验证索引完整性
-python -m data_modules.index_manager verify-index --project-root "."
+# 查看索引统计
+python -m data_modules.index_manager stats --project-root "."
 ```
 
 ### 向量重建
 
-当 vectors.db 损坏或嵌入模型更换时，执行向量重建：
+当 vectors.db 损坏或嵌入模型更换时：
 
+**当前替代方案**（逐章重新索引）:
 ```bash
-# 完整重建向量库
-python -m data_modules.rag_adapter rebuild-vectors --project-root "."
+# 重新索引单章
+python -m data_modules.rag_adapter index-chapter --chapter 1 --project-root "."
 
-# 仅重建特定章节范围
-python -m data_modules.rag_adapter rebuild-vectors --start 1 --end 50 --project-root "."
+# 批量重新索引（shell 循环）
+for i in $(seq 1 50); do
+  python -m data_modules.rag_adapter index-chapter --chapter $i --project-root "."
+done
 
-# 检查向量覆盖率
-python -m data_modules.rag_adapter check-coverage --project-root "."
+# 查看向量统计
+python -m data_modules.rag_adapter stats --project-root "."
 ```
 
 ### 状态同步
 
 当 state.json 与 index.db 不一致时：
 
+**当前替代方案**（手动查询和更新）:
 ```bash
-# 从 index.db 同步主角状态到 state.json
-python -m data_modules.index_manager sync-protagonist --project-root "."
+# 查看主角实体信息
+python -m data_modules.index_manager get-protagonist --project-root "."
 
-# 导出当前状态快照
-python -m data_modules.index_manager export-state --output snapshot.json --project-root "."
+# 查看核心实体列表
+python -m data_modules.index_manager get-core-entities --project-root "."
+
+# 手动更新：根据输出结果编辑 state.json 中的 protagonist_state
 ```
 
 ### 数据一致性检查
 
+**当前替代方案**（分别查看统计）:
 ```bash
-# 全面检查数据链一致性
-python -m data_modules.index_manager health-check --project-root "."
+# 查看索引统计
+python -m data_modules.index_manager stats --project-root "."
 
-# 输出示例:
-# ✅ index.db: 256 entities, 512 aliases, 1024 scenes
-# ✅ vectors.db: 1024 vectors (100% coverage)
-# ⚠️ state.json: protagonist_state.entity_id missing in index.db
-# → 建议执行 sync-protagonist
+# 查看向量统计
+python -m data_modules.rag_adapter stats --project-root "."
+
+# 对比结果判断一致性
 ```
 
 ---

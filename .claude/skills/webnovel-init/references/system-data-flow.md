@@ -11,7 +11,7 @@ purpose: 重定向到权威版本
 
 ## 权威版本位置
 
-`skills/webnovel-query/references/system-data-flow.md` (v5.0)
+`skills/webnovel-query/references/system-data-flow.md` (v5.1)
 
 ## 加载方式
 
