@@ -58,9 +58,7 @@ class DataModulesConfig:
     def index_db(self) -> Path:
         return self.webnovel_dir / "index.db"
 
-    @property
-    def alias_index_file(self) -> Path:
-        return self.webnovel_dir / "alias_index.json"
+    # v5.1: alias_index_file 已废弃，别名存储在 index.db aliases 表
 
     @property
     def chapters_dir(self) -> Path:

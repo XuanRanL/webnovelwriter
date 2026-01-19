@@ -49,12 +49,16 @@ def _write_text_if_missing(path: Path, content: str) -> None:
 
 
 def _ensure_state_schema(state: Dict[str, Any]) -> Dict[str, Any]:
-    """确保 state.json 具备 v5.0 架构所需的字段集合。"""
+    """确保 state.json 具备 v5.1 架构所需的字段集合。
+
+    v5.1 变更:
+    - entities_v3 和 alias_index 已迁移到 index.db，不再存储在 state.json
+    - structured_relationships 已迁移到 index.db relationships 表
+    - state.json 保持精简 (< 5KB)
+    """
     state.setdefault("project_info", {})
     state.setdefault("progress", {})
     state.setdefault("protagonist_state", {})
-    state.setdefault("relationships", {})
-    state.setdefault("structured_relationships", [])
     state.setdefault("disambiguation_warnings", [])
     state.setdefault("disambiguation_pending", [])
     state.setdefault("world_settings", {"power_system": [], "factions": [], "locations": []})
@@ -71,13 +75,8 @@ def _ensure_state_schema(state: Dict[str, Any]) -> Dict[str, Any]:
             "history": [],
         },
     )
-    # v5.0: entities_v3 分组格式（按类型）
-    state.setdefault(
-        "entities_v3",
-        {"角色": {}, "地点": {}, "物品": {}, "势力": {}, "招式": {}},
-    )
-    # v5.0: alias_index 一对多映射
-    state.setdefault("alias_index", {})
+    # v5.1: entities_v3, alias_index, structured_relationships 已迁移到 index.db
+    # 不再在 state.json 中初始化这些字段
 
     # progress schema evolution
     state["progress"].setdefault("current_chapter", 0)

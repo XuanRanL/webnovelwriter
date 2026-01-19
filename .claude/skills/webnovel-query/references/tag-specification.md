@@ -1,15 +1,15 @@
 ---
 name: tag-specification
-purpose: XML 标签格式参考（v5.0 可选使用）
-version: "5.0"
+purpose: XML 标签格式参考（v5.1 可选使用）
+version: "5.1"
 ---
 
 <context>
 此文件用于 XML 标签格式参考。
 
-**v5.0 重要变更**:
+**v5.1 重要变更**:
 - 章节写作时**不再要求**添加 XML 标签
-- Data Agent 会自动从纯正文中提取实体
+- Data Agent 会自动从纯正文中提取实体，写入 index.db
 - 标签仅用于**手动标注**场景（如明确标记重要实体、补充提取遗漏）
 - 如果你选择使用标签，请遵循以下规范
 </context>
@@ -40,7 +40,7 @@ version: "5.0"
 
 ### id / ref（实体引用）
 - **id（推荐）**: 稳定唯一标识（便于后续更新/加别名）
-- **ref**: 用已出现过的名称/别名引用（脚本会通过 `alias_index` 自动解析）
+- **ref**: 用已出现过的名称/别名引用（通过 index.db aliases 表自动解析）
 - **type（可选）**: 当 ref 有歧义时用于消歧（如同名不同人）；若仍歧义必须改用 `id`
 
 ### `<entity-update>` 子操作

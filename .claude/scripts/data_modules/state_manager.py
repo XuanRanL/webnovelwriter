@@ -165,21 +165,8 @@ class StateManager:
         )
 
         entities_v3 = state.get("entities_v3")
-        if not isinstance(entities_v3, dict):
-            entities_v3 = {}
-            state["entities_v3"] = entities_v3
-        for t in self.ENTITY_TYPES:
-            if not isinstance(entities_v3.get(t), dict):
-                entities_v3[t] = {}
-
-        if not isinstance(state.get("alias_index"), dict):
-            state["alias_index"] = {}
-
-        if not isinstance(state.get("state_changes"), list):
-            state["state_changes"] = []
-
-        if not isinstance(state.get("structured_relationships"), list):
-            state["structured_relationships"] = []
+        # v5.1: entities_v3, alias_index, state_changes, structured_relationships 已迁移到 index.db
+        # 不再在 state.json 中初始化或维护这些字段
 
         if not isinstance(state.get("disambiguation_warnings"), list):
             state["disambiguation_warnings"] = []
@@ -264,136 +251,12 @@ class StateManager:
 
                     progress["last_updated"] = self._now_progress_timestamp()
 
-                # v5.1: 检查是否已迁移到 SQLite
-                # 如果启用了 SQLite 同步，则不再写入大数据字段到 state.json
-                _migrated = self._enable_sqlite_sync and self._sql_state_manager is not None
-
-                if not _migrated:
-                    # ==================== 旧模式：写入 state.json ====================
-                    # entities_v3（按补丁应用）
-                    entities_v3 = disk_state.get("entities_v3", {})
-                    if not isinstance(entities_v3, dict):
-                        entities_v3 = {}
-                        disk_state["entities_v3"] = entities_v3
-                    for t in self.ENTITY_TYPES:
-                        if not isinstance(entities_v3.get(t), dict):
-                            entities_v3[t] = {}
-
-                    for (entity_type, entity_id), patch in self._pending_entity_patches.items():
-                        bucket = entities_v3.setdefault(entity_type, {})
-                        if not isinstance(bucket, dict):
-                            bucket = {}
-                            entities_v3[entity_type] = bucket
-
-                        entity = bucket.get(entity_id)
-                        if not isinstance(entity, dict):
-                            entity = {}
-                            bucket[entity_id] = entity
-
-                        # 新建实体时：只填充缺失字段，避免覆盖并发写入的更完整信息
-                        if patch.base_entity:
-                            for k, v in patch.base_entity.items():
-                                if k not in entity:
-                                    entity[k] = v
-                                elif isinstance(entity.get(k), dict) and isinstance(v, dict):
-                                    # 递归填充缺失
-                                    for kk, vv in v.items():
-                                        if kk not in entity[k]:
-                                            entity[k][kk] = vv
-
-                        # top-level updates（明确写入）
-                        for k, v in patch.top_updates.items():
-                            entity[k] = v
-
-                        # current updates（明确写入）
-                        if patch.current_updates:
-                            current = entity.get("current")
-                            if not isinstance(current, dict):
-                                current = {}
-                                entity["current"] = current
-                            current.update(patch.current_updates)
-
-                        # appearance updates（first=min(non-zero), last=max）
-                        if patch.appearance_chapter is not None:
-                            chapter = int(patch.appearance_chapter)
-                            try:
-                                first = int(entity.get("first_appearance", 0) or 0)
-                            except (TypeError, ValueError):
-                                first = 0
-                            try:
-                                last = int(entity.get("last_appearance", 0) or 0)
-                            except (TypeError, ValueError):
-                                last = 0
-
-                            if first <= 0:
-                                entity["first_appearance"] = chapter
-                            else:
-                                entity["first_appearance"] = min(first, chapter)
-                            entity["last_appearance"] = max(last, chapter)
-
-                    # alias_index（一对多：合并去重）
-                    alias_index = disk_state.get("alias_index", {})
-                    if not isinstance(alias_index, dict):
-                        alias_index = {}
-                        disk_state["alias_index"] = alias_index
-
-                    for alias, entries in self._pending_alias_entries.items():
-                        if not alias:
-                            continue
-                        existing = alias_index.get(alias)
-                        if not isinstance(existing, list):
-                            existing = []
-                            alias_index[alias] = existing
-
-                        for entry in entries:
-                            et = entry.get("type")
-                            eid = entry.get("id")
-                            if not et or not eid:
-                                continue
-                            if any(e.get("type") == et and e.get("id") == eid for e in existing if isinstance(e, dict)):
-                                continue
-                            existing.append({"type": et, "id": eid})
-
-                    # state_changes（追加）
-                    if self._pending_state_changes:
-                        changes = disk_state.get("state_changes")
-                        if not isinstance(changes, list):
-                            changes = []
-                            disk_state["state_changes"] = changes
-                        changes.extend(self._pending_state_changes)
-
-                    # structured_relationships（追加去重）
-                    if self._pending_structured_relationships:
-                        rels = disk_state.get("structured_relationships")
-                        if not isinstance(rels, list):
-                            rels = []
-                            disk_state["structured_relationships"] = rels
-
-                        def _rel_key(r: Dict[str, Any]) -> tuple:
-                            return (
-                                r.get("from_entity"),
-                                r.get("to_entity"),
-                                r.get("type"),
-                                r.get("description"),
-                                r.get("chapter"),
-                            )
-
-                        existing_keys = {_rel_key(r) for r in rels if isinstance(r, dict)}
-                        for r in self._pending_structured_relationships:
-                            if not isinstance(r, dict):
-                                continue
-                            k = _rel_key(r)
-                            if k in existing_keys:
-                                continue
-                            rels.append(r)
-                            existing_keys.add(k)
-                else:
-                    # ==================== v5.1 模式：移除大数据字段 ====================
-                    # 确保 state.json 中不存在这些膨胀字段
-                    for field in ["entities_v3", "alias_index", "state_changes", "structured_relationships"]:
-                        disk_state.pop(field, None)
-                    # 标记已迁移
-                    disk_state["_migrated_to_sqlite"] = True
+                # v5.1: 强制使用 SQLite 模式，移除大数据字段
+                # 确保 state.json 中不存在这些膨胀字段
+                for field in ["entities_v3", "alias_index", "state_changes", "structured_relationships"]:
+                    disk_state.pop(field, None)
+                # 标记已迁移
+                disk_state["_migrated_to_sqlite"] = True
 
                 # disambiguation_warnings（追加去重 + 截断）
                 if self._pending_disambiguation_warnings:
@@ -774,37 +637,22 @@ class StateManager:
         patch.replace = True
         patch.base_entity = v3_entity
 
-        # 注册别名到 alias_index
-        self._register_alias_internal(entity.id, entity_type, entity.name)
-        for alias in entity.aliases:
-            self._register_alias_internal(entity.id, entity_type, alias)
+        # v5.1: 注册别名到 index.db (通过 SQLStateManager)
+        if self._sql_state_manager:
+            self._sql_state_manager._index_manager.register_alias(entity.name, entity.id, entity_type)
+            for alias in entity.aliases:
+                if alias:
+                    self._sql_state_manager._index_manager.register_alias(alias, entity.id, entity_type)
 
         return True
 
     def _register_alias_internal(self, entity_id: str, entity_type: str, alias: str):
-        """内部方法：注册别名到 state.json 的 alias_index"""
+        """内部方法：注册别名到 index.db (v5.1)"""
         if not alias:
             return
-        if "alias_index" not in self._state:
-            self._state["alias_index"] = {}
-
-        if alias not in self._state["alias_index"]:
-            self._state["alias_index"][alias] = []
-
-        # 检查是否已存在
-        exists = any(
-            e.get("type") == entity_type and e.get("id") == entity_id
-            for e in self._state["alias_index"][alias]
-        )
-        if not exists:
-            self._state["alias_index"][alias].append({
-                "type": entity_type,
-                "id": entity_id
-            })
-            # 记录待合并增量：避免锁外读-改-写覆盖
-            pending = self._pending_alias_entries.setdefault(alias, [])
-            if not any(e.get("type") == entity_type and e.get("id") == entity_id for e in pending):
-                pending.append({"type": entity_type, "id": entity_id})
+        # v5.1: 直接写入 SQLite
+        if self._sql_state_manager:
+            self._sql_state_manager._index_manager.register_alias(alias, entity_id, entity_type)
 
     def update_entity(self, entity_id: str, updates: Dict[str, Any], entity_type: str = None) -> bool:
         """更新实体属性 (v5.0)"""
@@ -1135,8 +983,9 @@ class StateManager:
         return {
             "progress": self._state.get("progress", {}),
             "entities": entities_flat,
-            "alias_index": self._state.get("alias_index", {}),
-            "recent_changes": self._state.get("state_changes", [])[-self.config.export_recent_changes_slice:],
+            # v5.1: alias_index 已迁移到 index.db，这里返回空（兼容性）
+            "alias_index": {},
+            "recent_changes": [],  # v5.1: 从 index.db 查询
             "disambiguation": {
                 "warnings": self._state.get("disambiguation_warnings", [])[-self.config.export_disambiguation_slice:],
                 "pending": self._state.get("disambiguation_pending", [])[-self.config.export_disambiguation_slice:],
@@ -1146,17 +995,18 @@ class StateManager:
     # ==================== 主角同步 ====================
 
     def get_protagonist_entity_id(self) -> Optional[str]:
-        """获取主角实体 ID（通过 is_protagonist 标记或 protagonist_state.name 查找）"""
-        # 方式1: 查找 is_protagonist 标记
-        for eid, e in self._state.get("entities_v3", {}).get("角色", {}).items():
-            if e.get("is_protagonist"):
-                return eid
+        """获取主角实体 ID（通过 is_protagonist 标记或 SQLite 查询）"""
+        # 方式1: 通过 SQLStateManager 查询 (v5.1)
+        if self._sql_state_manager:
+            protagonist = self._sql_state_manager.get_protagonist()
+            if protagonist:
+                return protagonist.get("id")
 
-        # 方式2: 通过 protagonist_state.name 查找
+        # 方式2: 通过 protagonist_state.name 查找别名
         protag_name = self._state.get("protagonist_state", {}).get("name")
-        if protag_name:
-            alias_entries = self._state.get("alias_index", {}).get(protag_name, [])
-            for entry in alias_entries:
+        if protag_name and self._sql_state_manager:
+            entities = self._sql_state_manager._index_manager.get_entities_by_alias(protag_name)
+            for entry in entities:
                 if entry.get("type") == "角色":
                     return entry.get("id")
 
