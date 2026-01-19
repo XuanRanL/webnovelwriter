@@ -86,6 +86,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/core-constraints.md"
 | 情感戏 | 大纲含告白/冲突/羁绊 | `cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/emotion-psychology.md"` |
 | 对话密集 | 预估对话 >50% | `cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/dialogue-writing.md"` |
 | 复杂场景 | 新地点/大场面描写 | `cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/scene-description.md"` |
+| 欲念描写 | 大纲含暧昧/亲密/情欲场景 | `cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/desire-description.md"` |
 
 **输出格式**:
 - Markdown 文件: `正文/第{NNNN}章.md`

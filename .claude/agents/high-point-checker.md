@@ -72,11 +72,19 @@ For each identified cool-point, check:
 1. **Setup sufficiency**: Was there adequate build-up (至少1-2章伏笔)?
 2. **Reversal impact**: Is the twist unexpected yet logical?
 3. **Emotional payoff**: Did it deliver catharsis (读者情绪释放)?
+4. **30/40/30 Formula**: Does the cool-point follow the standard structure?
+   - 30% Setup/Buildup (铺垫)
+   - 40% Delivery/Execution (兑现)
+   - 30% Twist/Aftermath (微反转)
+5. **Pressure/Relief Ratio** (压扬比例): Does it match the genre?
+   - 传统爽文: 压3扬7
+   - 硬核正剧: 压5扬5
+   - 虐恋文: 压7扬3
 
 **Quality Grades**:
-- **A (优秀)**: All 3 criteria met, strong execution
-- **B (良好)**: 2/3 criteria met
-- **C (及格)**: 1/3 criteria met
+- **A (优秀)**: All criteria met, strong execution, follows 30/40/30
+- **B (良好)**: Most criteria met, may have minor ratio issues
+- **C (及格)**: Basic criteria met but structure weak
 - **F (失败)**: Sudden cool-point without setup, or logically inconsistent
 
 ### Step 6: Generate Report
@@ -103,10 +111,10 @@ Chapters {N} - {M}
 **Verdict**: {PASS/WARNING} (Monotony risk if one type > 80%)
 
 ## 质量评级 (Quality)
-| Chapter | Cool-Point | Type | Grade | Issue (if any) |
-|---------|-----------|------|-------|----------------|
-| {N} | 主角被嘲讽后一招秒杀对手 | 打脸型 | A | - |
-| {M} | 突然顿悟突破境界 | 升级型 | C | 缺少铺垫（no prior struggle） |
+| Chapter | Cool-Point | Type | Grade | 30/40/30 | 压扬比 | Issue (if any) |
+|---------|-----------|------|-------|---------|--------|----------------|
+| {N} | 主角被嘲讽后一招秒杀对手 | 打脸型 | A | ✓ | 压3扬7 | - |
+| {M} | 突然顿悟突破境界 | 升级型 | C | ✗ | 压1扬9 | 缺少铺垫（no prior struggle），压扬比失衡 |
 
 **Verdict**: Average grade = {X}
 
@@ -114,6 +122,8 @@ Chapters {N} - {M}
 - [If density violation] Chapter {M} 缺少爽点，建议添加{type}型爽点
 - [If monotony] 过度依赖{type}型，建议增加{other_types}
 - [If quality issue] Chapter {M} 的爽点执行不足，需要补充{missing_element}
+- [If 30/40/30 violation] 爽点结构失衡，建议调整铺垫/兑现/微反转比例
+- [If pressure/relief violation] 压扬比例不符合{genre}类型，建议调整为{ratio}
 
 ## 综合评分
 **Overall**: {PASS/FAIL} - {Brief summary}
