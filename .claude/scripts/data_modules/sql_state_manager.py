@@ -155,7 +155,7 @@ class SQLStateManager:
         """
         获取核心实体（用于 Context Agent 全量加载）
 
-        返回所有 tier=核心/重要 或 is_protagonist=1 的实体
+        返回所有 tier=核心/重要/次要 或 is_protagonist=1 的实体
         """
         entities = self._index_manager.get_core_entities()
         for e in entities:

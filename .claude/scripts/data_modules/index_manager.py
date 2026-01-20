@@ -544,7 +544,7 @@ class IndexManager:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM entities
-                WHERE (tier IN ('核心', '重要') OR is_protagonist = 1) AND is_archived = 0
+                WHERE (tier IN ('核心', '重要', '次要') OR is_protagonist = 1) AND is_archived = 0
                 ORDER BY is_protagonist DESC, tier, last_appearance DESC
             """)
             return [self._row_to_dict(row, parse_json=["current_json"]) for row in cursor.fetchall()]

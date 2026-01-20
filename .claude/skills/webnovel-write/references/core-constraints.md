@@ -53,17 +53,17 @@ v5.1 不再要求在正文中写 XML 标签。新实体由 Data Agent 在章节�
 <example>
 <input>主角需要使用"天雷掌"击败敌人</input>
 <output>
-1. 检查 state.json → entities 中是否有"天雷掌"技能
+1. 查询 index.db 中是否有"天雷掌"技能（v5.1 使用 SQLite）
 2. 若有：直接使用
 3. 若无：在正文中安排获得途径（如拜师/领悟/传承），Data Agent 会自动提取
 </output>
 </example>
 
 <example type="edge_case">
-<input>剧情需要主角展示筑基期实力，但 state.json 显示练气期</input>
+<input>剧情需要主角展示筑基期实力，但 index.db 显示练气期</input>
 <output>
 ❌ 直接写筑基期战力 → 违反"设定即物理"
-✅ 先安排突破场景，更新 state.json，再展示新实力
+✅ 先安排突破场景，Data Agent 更新 index.db，再展示新实力
 </output>
 </example>
 
@@ -71,5 +71,5 @@ v5.1 不再要求在正文中写 XML 标签。新实体由 Data Agent 在章节�
 
 <errors>
 ❌ 主角突然会新技能 → ✅ 先在正文中安排获得途径
-❌ 实力设定不一致 → ✅ 写作前查询 state.json 确认
+❌ 实力设定不一致 → ✅ 写作前查询 index.db 确认
 </errors>

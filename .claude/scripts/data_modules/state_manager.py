@@ -36,7 +36,7 @@ class EntityState:
     id: str
     name: str
     type: str  # 角色/地点/物品/势力
-    tier: str = "装饰"  # 核心/支线/装饰
+    tier: str = "装饰"  # 核心/重要/次要/装饰
     aliases: List[str] = field(default_factory=list)
     attributes: Dict[str, Any] = field(default_factory=dict)
     first_appearance: int = 0

@@ -91,8 +91,14 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/core-constraints.md"
 **可选加载题材风格参考**（用户指定时加载）:
 ```bash
 # 如需特定题材的写作风格参考，可按需加载 genres 目录下的对应文件
-# 示例: cat "${CLAUDE_PLUGIN_ROOT}/genres/修仙/修仙-writing-style.md"
-# 可用题材: 修仙、系统流、都市异能、狗血言情、知乎短篇、古言、现实题材、规则怪谈等
+# 可用题材目录:
+#   xuanhuan/          - 玄幻修仙
+#   dog-blood-romance/ - 狗血言情
+#   zhihu-short/       - 知乎短篇
+#   period-drama/      - 古言/宫斗
+#   realistic/         - 现实题材
+#   rules-mystery/     - 规则怪谈/推理
+# 示例: cat "${CLAUDE_PLUGIN_ROOT}/genres/xuanhuan/power-systems.md"
 ```
 
 **输出格式**:
