@@ -88,7 +88,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/templates/genres/{题材}.md"
 |------|------|
 | 标题风格 | 《XXX系统》金手指型 / 《我在XXX当XXX》身份型 / 《从XXX开始》开局型 / 《XXX：XXX》副标题型 |
 
-> 用户选择风格后，可在 Other 中输入具体标题，或由 Claude 根据风格生成建议。
+> AskUserQuestion 自动提供 Other 选项，用户可直接输入完整标题；若选择风格模板，Claude 根据风格生成具体建议。
 
 ### 3.2 主角姓名
 

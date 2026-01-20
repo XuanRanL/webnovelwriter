@@ -245,7 +245,7 @@ ls 大纲/第*卷*.md 2>/dev/null
 
 ### 6.2 第二步：分批生成章节详情
 
-**[AskUserQuestion]**（骨架完成后）
+**[AskUserQuestion Round 5]**（骨架完成后）
 
 | 问题 | 选项 |
 |------|------|
@@ -337,5 +337,6 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/update_state.py" \
 | Round 2 | Phase 5 | 2 | 确认是否调整 + 爽点侧重 |
 | Round 3 | Phase 5 | 2 | Strand偏好 + 感情线 |
 | Round 4 | Phase 5 | 2 | 境界突破（如适用） |
+| Round 5 | Phase 6 | 1 | 骨架完成后确认生成范围 |
 
-**总计**: 4轮，约7个问题（Round 4 可选）
+**总计**: 5轮，约8个问题（Round 4/5 可选）
