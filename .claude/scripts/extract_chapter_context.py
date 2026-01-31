@@ -4,7 +4,7 @@ extract_chapter_context.py - 提取章节创作所需的精简上下文
 
 功能：
 - 提取当前章节的大纲片段（~500字）
-- 提取前2章的摘要（~400字）
+- 提取前2章的摘要（优先 .webnovel/summaries）
 - 提取 state.json 关键字段（~300字）
 
 用法：
@@ -72,8 +72,25 @@ def extract_chapter_outline(project_root: Path, chapter_num: int) -> str:
     return f"⚠️ 未找到第 {chapter_num} 章的大纲"
 
 
+def _load_summary_file(project_root: Path, chapter_num: int) -> str:
+    """从 .webnovel/summaries/chNNNN.md 提取剧情摘要"""
+    summary_path = project_root / ".webnovel" / "summaries" / f"ch{chapter_num:04d}.md"
+    if not summary_path.exists():
+        return ""
+
+    text = summary_path.read_text(encoding="utf-8")
+    summary_match = re.search(r"##\s*剧情摘要\s*\r?\n(.+?)(?=\r?\n##|$)", text, re.DOTALL)
+    if summary_match:
+        return summary_match.group(1).strip()
+    return ""
+
+
 def extract_chapter_summary(project_root: Path, chapter_num: int) -> str:
-    """提取指定章节的摘要（从章节文件末尾的"本章摘要"部分）"""
+    """提取指定章节摘要（优先 summaries/，再降级正文）"""
+    summary = _load_summary_file(project_root, chapter_num)
+    if summary:
+        return summary
+
     volume_num = (chapter_num - 1) // 50 + 1
     chapter_dir = project_root / "正文" / f"第{volume_num}卷"
 
@@ -95,18 +112,17 @@ def extract_chapter_summary(project_root: Path, chapter_num: int) -> str:
 
     content = chapter_file.read_text(encoding="utf-8")
 
-    # 尝试提取"本章摘要"部分
-    summary_match = re.search(r"##\s*本章摘要\s*\n(.+?)(?=##|$)", content, re.DOTALL)
+    # 兼容旧格式：尝试提取"本章摘要"部分
+    summary_match = re.search(r"##\s*本章摘要\s*\r?\n(.+?)(?=\r?\n##|$)", content, re.DOTALL)
     if summary_match:
         return summary_match.group(1).strip()
 
     # 如果没有摘要，提取"本章统计"部分
-    stats_match = re.search(r"##\s*本章统计\s*\n(.+?)(?=##|$)", content, re.DOTALL)
+    stats_match = re.search(r"##\s*本章统计\s*\r?\n(.+?)(?=\r?\n##|$)", content, re.DOTALL)
     if stats_match:
         return f"[无摘要，仅统计]\n{stats_match.group(1).strip()}"
 
     # 最后降级：提取前500字作为摘要
-    # 跳过标题
     lines = content.split("\n")
     text_lines = [l for l in lines if not l.startswith("#") and l.strip()]
     text = "\n".join(text_lines)[:500]

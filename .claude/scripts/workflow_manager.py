@@ -184,7 +184,7 @@ def analyze_recovery_options(interrupt_info):
     step_id = current_step['id']
 
     # 基于Step ID的恢复策略
-    if step_id == 'Step 1':
+    if step_id in {'Step 1', 'Step 1.5'}:
         # Step 1中断：无副作用
         return [{
             'option': 'A',
@@ -197,8 +197,8 @@ def analyze_recovery_options(interrupt_info):
             ]
         }]
 
-    elif step_id == 'Step 2':
-        # Step 2中断：可能有半成品文件
+    elif step_id in {'Step 2', 'Step 2A', 'Step 2B'}:
+        # Step 2A/2B 中断：可能有半成品文件
         chapter_file = interrupt_info['artifacts'].get('chapter_file', {})
 
         # 使用 chapter_paths 模块定位章节文件（兼容新旧目录结构）
@@ -249,9 +249,9 @@ def analyze_recovery_options(interrupt_info):
                 'option': 'A',
                 'label': '重新执行审查',
                 'risk': 'medium',
-                'description': '重新调用5个审查员（并行）',
+                'description': '重新调用6个审查员（并行）',
                 'actions': [
-                    "重新调用5个审查员（并行）",
+                    "重新调用6个审查员（并行）",
                     "生成审查报告",
                     "继续 Step 4 润色"
                 ]
@@ -293,7 +293,7 @@ def analyze_recovery_options(interrupt_info):
             },
             {
                 'option': 'B',
-                'label': '删除润色稿，从 Step 2 重写',
+                'label': '删除润色稿，从 Step 2A 重写',
                 'risk': 'medium',
                 'description': f"删除 {chapter_path}，重新生成章节内容",
                 'actions': [
@@ -415,16 +415,18 @@ def save_state(state):
     atomic_write_json(state_file, state, use_lock=True, backup=False)
 
 def get_pending_steps(command):
-    """获取待执行步骤列表 (v5.0)"""
+    """获取待执行步骤列表 (v5.2)"""
     if command == 'webnovel-write':
-        # v5.0 工作流：6 步
+        # v5.2 工作流：8 步（含 Step 1.5 & 2A/2B）
         # Step 1: Context Agent 搜集上下文
-        # Step 2: 生成章节内容 (纯正文，3000-5000字)
-        # Step 3: 审查 (5个Agent并行，只报告)
-        # Step 4: 润色 (基于审查报告修复 + 去AI痕迹)
+        # Step 1.5: 章节设计（开头/钩子/爽点模式）
+        # Step 2A: 生成粗稿
+        # Step 2B: 风格适配（可选）
+        # Step 3: 审查 (6个Agent并行，只报告)
+        # Step 4: 网文化润色
         # Step 5: Data Agent 处理数据链
         # Step 6: Git 备份
-        return ['Step 1', 'Step 2', 'Step 3', 'Step 4', 'Step 5', 'Step 6']
+        return ['Step 1', 'Step 1.5', 'Step 2A', 'Step 2B', 'Step 3', 'Step 4', 'Step 5', 'Step 6']
     elif command == 'webnovel-review':
         return ['Step 1', 'Step 2', 'Step 3', 'Step 4', 'Step 5', 'Step 6', 'Step 7', 'Step 8']
     # 其他命令...

@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-Context Pack Builder v5.1
+Context Pack Builder v5.2
 
 为章节写作生成结构化上下文包，取代直接读取 state.json。
 
-v5.1 变更:
+v5.2 变更:
 - 使用 v5.1 index_manager schema (entities.id, aliases, current_json)
 - 移除对 entity_kv 表的依赖，改用 current_json 字段
 - 移除对 entity_aliases 表的依赖，改用 aliases 表
+- 章节摘要改为读取 .webnovel/summaries/chNNNN.md
 
 输出 Schema:
 {
   "core": {
     "chapter_outline": "本章大纲内容",
     "protagonist_snapshot": {...},
-    "recent_summaries": [{...}, ...]
+    "recent_summaries": [{...}, ...],
+    "recent_meta": [{...}, ...]
   },
   "scene": {
     "location_context": {...},
@@ -69,6 +71,7 @@ class ContextPackBuilder:
         self.config = get_config(project_root)
         self.state_file = project_root / ".webnovel" / "state.json"
         self.index_db = project_root / ".webnovel" / "index.db"
+        self.summaries_dir = project_root / ".webnovel" / "summaries"
         self.outline_dir = project_root / "大纲"
         self.settings_dir = project_root / "设定集"
         self.chapters_dir = project_root / "正文"
@@ -93,7 +96,7 @@ class ContextPackBuilder:
             "meta": {
                 "chapter": chapter_num,
                 "project_root": str(self.project_root),
-                "version": "5.1"
+                "version": "5.2"
             },
             "core": self._build_core(chapter_num),
             "scene": self._build_scene(chapter_num),
@@ -110,7 +113,8 @@ class ContextPackBuilder:
             "protagonist_snapshot": self._get_protagonist_snapshot(state),
             "recent_summaries": self._get_recent_summaries(
                 chapter_num, window=self.config.context_recent_summaries_window
-            )
+            ),
+            "recent_meta": self._get_recent_chapter_meta(chapter_num, window=3),
         }
 
     def _build_scene(self, chapter_num: int) -> Dict[str, Any]:
@@ -239,17 +243,23 @@ class ContextPackBuilder:
 
         return snapshot
 
-    def _get_recent_summaries(self, chapter_num: int, window: int = 5) -> List[Dict]:
+    def _get_recent_summaries(self, chapter_num: int, window: int = 3) -> List[Dict]:
         """获取最近 N 章的摘要"""
         summaries = []
         start = max(1, chapter_num - window)
 
         for ch in range(start, chapter_num):
+            summary = self._load_summary_file(ch)
+            if summary:
+                summaries.append(summary)
+                continue
+
+            # 兼容降级：若摘要文件不存在，尝试从章节正文提取
             chapter_file = find_chapter_file(self.project_root, ch)
             if chapter_file and chapter_file.exists():
-                summary = self._extract_summary_from_chapter(chapter_file, ch)
-                if summary:
-                    summaries.append(summary)
+                fallback = self._extract_summary_from_chapter(chapter_file, ch)
+                if fallback:
+                    summaries.append(fallback)
 
         return summaries
 
@@ -259,7 +269,7 @@ class ContextPackBuilder:
             content = f.read()
 
         # 查找摘要区块
-        summary_match = re.search(r'## 本章摘要\s*\n(.*?)(?=\n##|$)', content, re.DOTALL)
+        summary_match = re.search(r'## 本章摘要\s*\r?\n(.*?)(?=\r?\n##|$)', content, re.DOTALL)
         if summary_match:
             summary_text = summary_match.group(1).strip()
             return {
@@ -276,6 +286,64 @@ class ContextPackBuilder:
             "title": title,
             "summary": None
         }
+
+    def _load_summary_file(self, chapter_num: int) -> Optional[Dict]:
+        """从 .webnovel/summaries/chNNNN.md 读取摘要"""
+        summary_path = self.summaries_dir / f"ch{chapter_num:04d}.md"
+        if not summary_path.exists():
+            return None
+
+        text = summary_path.read_text(encoding="utf-8")
+
+        # 解析 YAML 头部（--- ... ---）
+        meta: Dict[str, Any] = {}
+        fm_match = re.match(r"^---\s*\r?\n(.*?)\r?\n---\s*\r?\n", text, re.DOTALL)
+        if fm_match:
+            fm = fm_match.group(1)
+            for line in fm.splitlines():
+                if ":" not in line:
+                    continue
+                key, _, value = line.partition(":")
+                key = key.strip()
+                value = value.strip()
+                if not key:
+                    continue
+                # 简单解析列表
+                if value.startswith("[") and value.endswith("]"):
+                    items = [v.strip().strip('\"').strip("'") for v in value[1:-1].split(",") if v.strip()]
+                    meta[key] = items
+                else:
+                    meta[key] = value.strip('\"').strip("'")
+
+        # 提取剧情摘要段落
+        summary_match = re.search(r"##\s*剧情摘要\s*\r?\n(.*?)(?=\r?\n##|\Z)", text, re.DOTALL)
+        summary_text = summary_match.group(1).strip() if summary_match else ""
+
+        result = {
+            "chapter": chapter_num,
+            "summary": summary_text
+        }
+        # 附加部分元数据（可选）
+        for k in ["hook_type", "hook_strength", "time", "location"]:
+            if k in meta:
+                result[k] = meta[k]
+        return result
+
+    def _get_recent_chapter_meta(self, chapter_num: int, window: int = 3) -> List[Dict[str, Any]]:
+        """读取最近 N 章的 chapter_meta（用于模式重复检查）"""
+        state = self._load_state()
+        meta = state.get("chapter_meta", {}) or {}
+        items: List[Dict[str, Any]] = []
+        for ch in range(max(1, chapter_num - window), chapter_num):
+            key_candidates = [f"{ch:04d}", str(ch)]
+            entry = None
+            for key in key_candidates:
+                if key in meta:
+                    entry = meta.get(key)
+                    break
+            if entry:
+                items.append({"chapter": ch, **entry})
+        return items
 
     def _predict_location(self, outline: str, state: Dict) -> Dict:
         """从大纲推断地点（优先使用 index.db 别名表）"""

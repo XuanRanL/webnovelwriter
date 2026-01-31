@@ -115,6 +115,7 @@ class StateManager:
         self._pending_disambiguation_pending: List[Dict[str, Any]] = []
         self._pending_progress_chapter: Optional[int] = None
         self._pending_progress_words_delta: int = 0
+        self._pending_chapter_meta: Dict[str, Any] = {}
 
         # v5.1: 缓存待同步到 SQLite 的数据
         self._pending_sqlite_data: Dict[str, Any] = {
@@ -152,6 +153,7 @@ class StateManager:
         state.setdefault("world_settings", {"power_system": [], "factions": [], "locations": []})
         state.setdefault("plot_threads", {"active_threads": [], "foreshadowing": []})
         state.setdefault("review_checkpoints", [])
+        state.setdefault("chapter_meta", {})
         state.setdefault(
             "strand_tracker",
             {
@@ -212,6 +214,7 @@ class StateManager:
                 self._pending_structured_relationships,
                 self._pending_disambiguation_warnings,
                 self._pending_disambiguation_pending,
+                self._pending_chapter_meta,
                 self._pending_progress_chapter is not None,
                 self._pending_progress_words_delta != 0,
             ]
@@ -317,6 +320,14 @@ class StateManager:
                     if len(pending_list) > max_keep:
                         disk_state["disambiguation_pending"] = pending_list[-max_keep:]
 
+                # chapter_meta（新增：按章节号覆盖写入）
+                if self._pending_chapter_meta:
+                    chapter_meta = disk_state.get("chapter_meta")
+                    if not isinstance(chapter_meta, dict):
+                        chapter_meta = {}
+                        disk_state["chapter_meta"] = chapter_meta
+                    chapter_meta.update(self._pending_chapter_meta)
+
                 # 原子写入（锁已持有，不再二次加锁）
                 atomic_write_json(self.config.state_file, disk_state, use_lock=False, backup=True)
 
@@ -331,6 +342,7 @@ class StateManager:
                 self._pending_structured_relationships.clear()
                 self._pending_disambiguation_warnings.clear()
                 self._pending_disambiguation_pending.clear()
+                self._pending_chapter_meta.clear()
                 self._pending_progress_chapter = None
                 self._pending_progress_words_delta = 0
 
@@ -1002,6 +1014,14 @@ class StateManager:
 
         # 处理消歧不确定项（不影响实体写入，但必须对 Writer 可见）
         warnings.extend(self._record_disambiguation(chapter, result.get("uncertain", [])))
+
+        # 写入 chapter_meta（钩子/模式/结束状态）
+        chapter_meta = result.get("chapter_meta")
+        if isinstance(chapter_meta, dict):
+            meta_key = f"{int(chapter):04d}"
+            self._state.setdefault("chapter_meta", {})
+            self._state["chapter_meta"][meta_key] = chapter_meta
+            self._pending_chapter_meta[meta_key] = chapter_meta
 
         # 更新进度
         self.update_progress(chapter)

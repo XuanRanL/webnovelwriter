@@ -1,6 +1,6 @@
 ---
 name: webnovel-review
-description: Reviews chapter quality using 5 specialized checkers and generates comprehensive reports. Activates when user requests chapter review or /webnovel-review.
+description: Reviews chapter quality using 6 specialized checkers (including reader-pull) and generates comprehensive reports. Activates when user requests chapter review or /webnovel-review.
 allowed-tools: Read Grep Write Edit Bash Task AskUserQuestion
 ---
 
@@ -18,7 +18,7 @@ Copy and track progress:
 - [ ] Step 4: 加载常见错误 (cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-review/references/common-mistakes.md")
 - [ ] Step 5: 加载项目状态 (cat .webnovel/state.json)
 - [ ] Step 6: 确认上下文充足
-- [ ] Step 7: 调用 5 个检查员 (并行 Task)
+- [ ] Step 7: 调用 6 个检查员 (并行 Task)
 - [ ] Step 8: 生成审查报告
 - [ ] Step 9: 处理关键问题
 ```
@@ -73,9 +73,9 @@ cat .webnovel/state.json
 
 **如有缺失 → 返回对应 Step**
 
-## Step 7: 调用 5 个检查员（并行）
+## Step 7: 调用 6 个检查员（并行）
 
-**使用 Task 工具并行调用 5 个专职检查员**：
+**使用 Task 工具并行调用 6 个专职检查员**：
 
 调用格式示例（所有检查员并行执行）：
 - 调用 `high-point-checker` 子代理：审查章节 {range}，重点检查爽点密度和多样性
@@ -83,6 +83,7 @@ cat .webnovel/state.json
 - 调用 `pacing-checker` 子代理：审查章节 {range}，重点检查 Strand 分布
 - 调用 `ooc-checker` 子代理：审查章节 {range}，重点检查角色行为一致性
 - 调用 `continuity-checker` 子代理：审查章节 {range}，重点检查时间线和剧情连贯
+- 调用 `reader-pull-checker` 子代理：审查章节 {range}，重点检查章末钩子与追读动机
 
 **注意**：Claude 会自动根据描述匹配并调用对应的子代理
 
@@ -104,7 +105,8 @@ cat .webnovel/state.json
 | 节奏控制 | X/10 | ... |
 | 人物塑造 | X/10 | ... |
 | 连贯性 | X/10 | ... |
-| **总评** | **X/50** | **等级** |
+| 追读力 | X/10 | ... |
+| **总评** | **X/60** | **等级** |
 
 ## 📋 修改优先级
 

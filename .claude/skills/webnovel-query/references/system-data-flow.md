@@ -1,7 +1,7 @@
 ---
 name: system-data-flow
 purpose: 项目初始化和状态查询时加载，理解数据结构
-version: "5.1"
+version: "5.2"
 ---
 
 <context>
@@ -22,6 +22,7 @@ version: "5.1"
     ├── index.db            # SQLite 主存储：实体/别名/关系/状态变化/章节/场景
     ├── workflow_state.json # 工作流断点（用于 /webnovel-resume）
     ├── vectors.db          # RAG 向量数据库
+    ├── summaries/          # 章节摘要（chNNNN.md）
     └── archive/            # 归档数据（不活跃角色/已回收伏笔）
 ```
 
@@ -40,7 +41,7 @@ version: "5.1"
 | strand_tracker | state.json | state.json (保留) |
 | disambiguation_* | state.json | state.json (保留) |
 
-## v5.1 双 Agent 架构
+## v5.2 双 Agent 架构
 
 ```
 写作前: Context Agent 读取数据 → 组装上下文包
@@ -51,7 +52,8 @@ version: "5.1"
 
 写作后: Data Agent 处理正文 → AI 提取实体 → 写入数据链
         ├── 写入 index.db（实体/别名/状态变化/关系）
-        └── 更新 state.json（进度/主角快照）
+        ├── 更新 state.json（进度/主角快照 + chapter_meta）
+        └── 写入 summaries/chNNNN.md（章节摘要）
 
 Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
 ```
@@ -82,41 +84,44 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
 | `api_client.py` | LLM API 调用封装 |
 | `config.py` | 配置管理 |
 
-## 每章数据链（v5.1 顺序）
+## 每章数据链（v5.2 顺序）
 
 ```
-1. Context Agent 组装上下文包
+1. Context Agent 组装创作任务书
    → 读取 state.json（精简版：进度/配置）
    → SQL 查询 index.db（核心实体/按需实体）
    → RAG 检索（相关场景）
-   → 输出上下文包 JSON
 
-2. Writer 生成章节内容
-   → 纯正文，3000-5000 字
-   → 无需写 XML 标签
+2. Step 1.5 章节设计
+   → 选开头/钩子/爽点模式（避开最近3章）
 
-3. 审查 (5 个 Agent 并行)
-   → 爽点/一致性/节奏/OOC/连贯性检查
+3. Writer 生成章节内容
+   → 2A 粗稿（纯正文）
+   → 2B 风格适配（可选）
+
+4. 审查 (6 个 Agent 并行)
+   → 爽点/一致性/节奏/OOC/连贯性/追读力检查
    → 输出审查报告
 
-4. 润色
+5. 网文化润色
    → 基于审查报告修复问题
-   → AI 痕迹清除
+   → 强化口感规则
 
-5. Data Agent 处理数据链
+6. Data Agent 处理数据链
    → AI 实体提取（替代 XML 标签解析）
    → 实体消歧（置信度策略）
    → 写入 index.db（实体/别名/状态变化/关系）
-   → 更新 state.json（进度/主角快照）
+   → 更新 state.json（进度/主角快照 + chapter_meta）
+   → 写入 summaries/chNNNN.md（章节摘要）
    → 向量嵌入 (RAG)
    → 风格样本评估
 
-6. Git 备份（强制）
+7. Git 备份（强制）
 ```
 
 > `update_state.py` 用于手动/脚本化更新 `progress`/`protagonist_state`/`strand_tracker` 等字段；主流程通常由 Data Agent 在处理数据链时同步推进进度。
 
-## state.json 精简结构 (v5.1)
+## state.json 精简结构 (v5.2)
 
 ```json
 {
@@ -142,6 +147,7 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
   "disambiguation_warnings": [],
   "disambiguation_pending": [],
   "review_checkpoints": [],
+  "chapter_meta": {},
   "_migrated_to_sqlite": true
 }
 ```

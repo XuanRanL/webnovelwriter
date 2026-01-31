@@ -1,7 +1,7 @@
 ---
 name: workflow-resume
 purpose: 任务恢复时加载，指导中断恢复流程
-version: "5.1"
+version: "5.2"
 ---
 
 <context>
@@ -10,14 +10,16 @@ version: "5.1"
 
 <instructions>
 
-## Step 中断难度分级 (v5.1)
+## Step 中断难度分级 (v5.2)
 
 | Step | 名称 | 影响 | 难度 | 默认策略 |
 |------|------|------|------|----------|
 | Step 1 | Context Agent | 无副作用（仅读取） | ⭐ | 直接重新执行 |
-| Step 2 | 生成章节内容 | 半成品章节文件 | ⭐⭐ | **删除半成品**，从 Step 1 重新开始 |
+| Step 1.5 | 章节设计 | 结构未固化 | ⭐ | 重新设计 |
+| Step 2A | 生成粗稿 | 半成品章节文件 | ⭐⭐ | **删除半成品**，从 Step 1 重新开始 |
+| Step 2B | 风格适配 | 部分改写内容 | ⭐⭐ | 继续适配或回到 2A |
 | Step 3 | 审查 | 审查未完成 | ⭐⭐⭐ | 用户决定：重审或跳过 |
-| Step 4 | 润色 | 部分润色的文件 | ⭐⭐ | 继续润色或删除重写 |
+| Step 4 | 网文化润色 | 部分润色的文件 | ⭐⭐ | 继续润色或删除重写 |
 | Step 5 | Data Agent | 实体未提取完 | ⭐⭐ | 重新运行（幂等） |
 | Step 6 | Git 备份 | 未提交 | ⭐⭐⭐ | 检查暂存区，决定提交/回滚 |
 
@@ -73,18 +75,18 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" clear
 <examples>
 
 <example>
-<input>Step 2 中断（最常见）</input>
+<input>Step 2A 中断（最常见）</input>
 <output>
 🔴 检测到中断任务：
 
 任务：/webnovel-write 7
-中断位置：Step 2 - 章节内容生成中
+中断位置：Step 2A - 章节内容生成中
 
 已完成：
   ✅ Step 1: Context Agent 搜集上下文
 
 未完成：
-  ⏸️ Step 2: 生成章节内容（已写1500字）
+  ⏸️ Step 2A: 生成章节内容（已写1500字）
   ⏹️ Step 3-6: 未开始
 
 恢复选项：
@@ -100,7 +102,7 @@ B) 回滚到 Ch6，放弃 Ch7 所有进度
 <output>
 恢复选项：
 A) 重新执行审查 ⚠️
-   - 调用5个审查员
+   - 调用6个审查员
    - 生成审查报告
    - 继续 Step 4 润色
 
@@ -121,7 +123,7 @@ A) 继续润色（推荐）⭐
    - 保存文件
    - 继续 Step 5（Data Agent）
 
-B) 删除润色稿，从 Step 2 重写
+B) 删除润色稿，从 Step 2A 重写
    - 删除 正文/第0007章.md
    - 重新生成章节内容
 

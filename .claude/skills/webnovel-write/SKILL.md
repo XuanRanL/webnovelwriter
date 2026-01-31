@@ -1,6 +1,6 @@
 ---
 name: webnovel-write
-description: Writes webnovel chapters (3000-5000 words) using v5.1 dual-agent architecture. Context Agent gathers context, writer produces pure text (no XML tags), review agents report issues, polish fixes problems, Data Agent extracts entities with AI.
+description: Writes webnovel chapters (3000-5000 words) using v5.2 architecture. Context Agent outputs creative brief, writer produces pure text, review agents report issues, webnovel polish fixes problems, Data Agent extracts entities and records hooks/patterns.
 allowed-tools: Read Write Edit Grep Bash Task
 ---
 
@@ -11,11 +11,13 @@ allowed-tools: Read Write Edit Grep Bash Task
 ⚠️ **强制要求**: 开始写作前，**必须复制以下清单**到回复中并逐项勾选。跳过任何步骤视为工作流不完整。
 
 ```
-章节创作进度 (v5.1)：
-- [ ] Step 1: Context Agent 搜集上下文
-- [ ] Step 2: 生成章节内容 (纯正文，3000-5000字)
-- [ ] Step 3: 审查 (5个Agent并行，输出汇总表格)
-- [ ] Step 4: 润色 (加载指南 + AI检测 + 输出检查清单)
+章节创作进度 (v5.2)：
+- [ ] Step 1: Context Agent 搜集上下文（创作任务书）
+- [ ] Step 1.5: 章节设计（开头/钩子/爽点模式）
+- [ ] Step 2A: 生成粗稿（剧情正确、场面成立）
+- [ ] Step 2B: 风格适配器（网文化改写，剧情不变）
+- [ ] Step 3: 审查 (6个Agent并行，输出汇总表格)
+- [ ] Step 4: 网文化润色（基于审查报告）
 - [ ] Step 5: Data Agent 处理数据链
 - [ ] Step 6: Git 备份
 ```
@@ -24,6 +26,20 @@ allowed-tools: Read Write Edit Grep Bash Task
 1. 每完成一个 Step，立即更新 TodoWrite 状态
 2. Step 之间的验证必须通过才能进入下一步
 3. 如遇阻断，记录 deviation 但不可跳过
+
+---
+
+## 模式说明（可选）
+
+```
+/webnovel-write --mode fast    # 快速模式：跳过 Step 2B
+/webnovel-write --mode minimal # 极简模式：跳过 Step 2B + 仅运行3个核心 checker
+```
+
+**模式影响**:
+- **标准模式**: 完整执行 Step 1-6
+- **快速模式**: 跳过 Step 2B（风格适配），其余照常
+- **极简模式**: 跳过 Step 2B + 仅运行 3 个核心审查（consistency / continuity / ooc）
 
 ---
 
@@ -44,29 +60,55 @@ allowed-tools: Read Write Edit Grep Bash Task
 **Agent 自动完成**:
 1. 读取本章大纲，分析需要什么信息
 2. 读取 state.json 获取主角状态快照
-3. 调用 index.db (v5.1 schema) 查询相关实体和别名
+3. 查询 index.db (v5.1 schema) 召回实体/别名/关系
 4. 调用 data_modules.rag_adapter 语义检索
 5. Grep 设定集搜索相关设定
 6. 评估伏笔紧急度
 7. 选择风格样本
-8. 组装上下文包 JSON (v5.1)
+8. 组装**创作任务书**（人话版）
 
-**输出**：上下文包 JSON，包含：
-- `core`: 大纲、主角快照、最近摘要
-- `scene`: 地点上下文、出场角色、紧急伏笔
-- `global`: 世界观骨架、力量体系、风格样本
-- `rag`: 语义检索召回的相关场景
-- `alerts`: 关键风险提示（如消歧警告/待确认项）
+**输出**：创作任务书（非 JSON），包含：
+- 本章核心任务（冲突一句话、必须完成、绝对不能）
+- 接住上章（上章钩子、读者期待、开头必须）
+- 出场角色（状态、动机、情绪底色、说话风格、红线）
+- 场景与力量约束（地点、可用/禁用能力）
+- 风格指导（本章类型、参考样本、最近模式、本章建议）
+- 伏笔管理（必须处理、可选提及）
+- 连贯性检查点（时间、位置、情绪）
+- 章末钩子设置（建议类型、禁止事项）
 
-**失败处理**：
+**失败处理**:
 - 如果大纲不存在 → 提示用户先创建大纲
 - 如果 state.json 不存在 → 提示用户初始化项目
 
 ---
 
-## Step 2: 生成章节内容
+## Step 1.5: 章节设计（新增）
 
-**字数**: 3000-5000 字
+**目标**: 在写作前明确本章结构与变体，避免模式重复。
+
+**加载变体池（必须执行）**:
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/style-variants.md"
+```
+
+**输出内容**:
+- 核心冲突一句话
+- 开头类型（冲突开场/悬疑开场/动作开场/对话开场/氛围开场）
+- 钩子类型（危机钩/悬念钩/反转钩/期待钩/代价钩）
+- 爽点执行模式（装逼打脸/扮猪吃虎/越级反杀/打脸权威/反派翻车/甜蜜超预期）
+- 情绪节奏（低→高/高→低/低→高→低/平稳）
+- 信息密度（low/medium/high）
+
+**差异化检查**:
+- 查询 `state.json → chapter_meta` 最近 3 章模式
+- 避免与最近 3 章“开头类型/钩子类型/情绪节奏”重复
+
+---
+
+## Step 2A: 生成粗稿（剧情正确）
+
+**字数**: 3000-5000 字（短章 <2000 字需声明）
 
 **核心原则**:
 - **大纲即法律**: 100% 执行大纲
@@ -103,22 +145,39 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/core-constraints.md"
 
 **输出格式**:
 - Markdown 文件: `正文/第{NNNN}章.md`
-- 章节末尾追加摘要（见模板）
-- 纯正文，Data Agent 会自动提取实体
+- **不追加摘要**（摘要由 Data Agent 独立写入 `.webnovel/summaries/`）
+
+---
+
+## Step 2B: 风格适配器（网文化改写）
+
+**跳过条件**: fast / minimal 模式跳过
+
+**加载风格适配器**:
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/style-adapter.md"
+```
+
+**目标**:
+- 保持剧情不变
+- 提升网文口感（短句、动作、对白张力、情绪反应）
+- 强化开头冲突与章末钩子
 
 ---
 
 ## Step 3: 审查
 
-⚠️ **强制要求**: 必须在**同一条消息**中并行调用全部 5 个 Agent。缺少任何一个视为步骤未完成，**禁止进入 Step 4**。
+⚠️ **强制要求**: 必须在**同一条消息**中并行调用全部审查 Agent（除非 minimal 模式）。
 
 **执行命令（不可修改）**:
 
-在一条消息中发送 5 个 Task 工具调用，每个调用需传入以下公共参数：
+在一条消息中发送 Task 工具调用，每个调用需传入以下公共参数：
 - project_root: {PROJECT_ROOT}
 - storage_path: .webnovel/
 - state_file: .webnovel/state.json
 - chapter_file: "正文/第{NNNN}章.md"
+
+**标准/快速模式：6 个 Agent**
 
 | # | subagent_type | 必须 | 说明 |
 |---|---------------|------|------|
@@ -127,49 +186,53 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/core-constraints.md"
 | 3 | `pacing-checker` | ✅ | Strand 节奏检查 |
 | 4 | `ooc-checker` | ✅ | 人物 OOC 检查 |
 | 5 | `continuity-checker` | ✅ | 连贯性检查 |
+| 6 | `reader-pull-checker` | ✅ | 追读力检查 |
 
-**验证**: 收到全部 5 份报告后，**必须输出以下汇总表格**：
+**极简模式：仅 3 个核心 Agent**
+- `consistency-checker`
+- `continuity-checker`
+- `ooc-checker`
+
+**验证**: 收到全部报告后，**必须输出以下汇总表格**：
 
 ```
 ┌─────────────────────────────────────────────────┐
 │ 审查汇总 - 第 {chapter_num} 章                    │
-├─────────────────────┬───────────┬───────────────┤
-│ Agent               │ 结果      │ 关键问题数     │
-├─────────────────────┼───────────┼───────────────┤
-│ high-point-checker  │ PASS/FAIL │ {N}           │
-│ consistency-checker │ PASS/FAIL │ {N}           │
-│ pacing-checker      │ PASS/FAIL │ {N}           │
-│ ooc-checker         │ PASS/FAIL │ {N}           │
-│ continuity-checker  │ PASS/FAIL │ {N}           │
-├─────────────────────┴───────────┴───────────────┤
+├──────────────────────┬───────────┬──────────────┤
+│ Agent                │ 结果      │ 关键问题数    │
+├──────────────────────┼───────────┼──────────────┤
+│ high-point-checker   │ PASS/FAIL │ {N}          │
+│ consistency-checker  │ PASS/FAIL │ {N}          │
+│ pacing-checker       │ PASS/FAIL │ {N}          │
+│ ooc-checker          │ PASS/FAIL │ {N}          │
+│ continuity-checker   │ PASS/FAIL │ {N}          │
+│ reader-pull-checker  │ PASS/FAIL │ {N}          │
+├──────────────────────┴───────────┴──────────────┤
 │ critical issues: {N}  |  high issues: {N}       │
 │ 是否可进入润色: {是/否}                           │
 └─────────────────────────────────────────────────┘
 ```
 
 **Only proceed to Step 4 when:**
-1. 已收到全部 5 份审查报告
+1. 已收到全部审查报告（或 minimal 模式仅 3 份）
 2. 已输出汇总表格
+
+> **Minimal 模式**: 汇总表格仅列出已执行的 3 个 Agent。
 
 ---
 
-## Step 4: 润色 (基于审查报告)
+## Step 4: 网文化润色（基于审查报告）
 
-⚠️ **强制要求**: 必须按以下顺序执行全部子步骤（4.0-4.5），不可跳过。
+⚠️ **强制要求**: 必须按以下顺序执行全部子步骤（4.0-4.4），不可跳过。
 
 ### 4.0 加载润色指南（必须先执行）
 
-**执行命令（不可跳过）**:
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.md"
 ```
 
-如果未执行以上命令，视为润色步骤无效。
-
 ### 4.1 修复审查问题
-
-根据 Step 3 汇总表格中的 issues 列表针对性修改：
 
 | 严重度 | 处理方式 |
 |-------|---------|
@@ -178,55 +241,24 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.
 | medium | 建议修复 |
 | low | 可选修复 |
 
-| 问题类型 | 修复方式 |
-|---------|---------|
-| OOC | 调整角色言行，符合人设 |
-| POWER_CONFLICT | 修改能力描述，符合当前境界 |
-| TIMELINE_ISSUE | 调整时间线描述 |
-| PACING_IMBALANCE | 调整 Strand 比例 |
-| LOW_COOL_POINTS | 增加爽点密度 |
+### 4.2 网文口感硬规则检查
 
-### 4.2 AI痕迹检测（必须执行）
+- 开头 120 字必须出现冲突/风险/强情绪
+- 每 800-1200 字至少一次局面变化
+- 结尾 80-150 字设置钩子
+- 对话每句必须带意图
+- 连续 400 字纯解释 → 必须打散
 
-使用 Grep 工具检测以下关键词:
+### 4.3 AI 痕迹检测（辅助提醒）
 
-| 类型 | 关键词模式 | 警戒线 | 目标值 |
-|-----|-----------|-------|--------|
-| 总结词 | `综合\|总之\|由此可见\|总而言之` | > 1次/1000字 | 0次 |
-| 列举结构 | `首先\|其次\|最后\|第一\|第二\|第三` | > 0.5次/1000字 | 0次 |
-| 学术词 | `而言\|某种程度上\|本质上` | > 3次/1000字 | < 1次 |
-| 因果连词 | `因为\|所以\|由于\|因此` | > 5次/1000字 | < 3次 |
+**注意**: 词频统计仅作为提醒，不再作为硬性门槛。若明显超标，请修复并简要说明。
 
-如超标，必须修改后重新检测。
+- 总结词：`综合|总之|由此可见|总而言之`
+- 列举结构：`首先|其次|最后|第一|第二|第三`
+- 学术词：`而言|某种程度上|本质上`
+- 因果连词：`因为|所以|由于|因此`
 
-### 4.3 自然化处理
-
-| 指标 | 不达标 | 达标 |
-|-----|-------|------|
-| 停顿词 | < 0.5次/500字 | 1-2次/500字 |
-| 不确定表达 | 0次 | ≥ 2次/章 |
-| 短句占比 | < 20% | 30-50% |
-| 口语词 | 0次/1000字 | ≥ 2次/1000字 |
-
-**自然化检测（必须执行）**：
-- 停顿词：`嗯\|这个\|那什么\|怎么说呢`
-- 不确定表达：`大概\|应该\|似乎\|好像`
-- 口语词：`咋回事\|得了\|行吧\|算了`
-- 短句占比：抽样 30 句（按 `。！？` 分句），≤25 字视为短句，目标 30-50%
-
-**排版检查（必须执行）**（见 typesetting.md）：
-- 对话换人换行；长段落（5行以上）拆分；场景切换留空行/分隔；章末钩子
-
-### 4.4 润色红线
-
-- ❌ 改变情节走向 → 违反"大纲即法律"
-- ❌ 修改主角实力 → 违反"设定即物理"
-- ❌ 改变人物关系 → 违反设定
-- ❌ 删除伏笔 → 破坏长线剧情
-
-### 4.5 输出检查清单（必须输出）
-
-润色完成后，**必须输出以下检查清单**：
+### 4.4 输出检查清单（必须输出）
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -237,18 +269,12 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.
 │ [x] critical issues 已修复: {是/否/无}          │
 │ [x] high issues 已修复: {是/否/无}              │
 ├─────────────────────────────────────────────────┤
-│ AI痕迹检测:                                     │
-│   - 总结词: {N}次 {达标/超标}                    │
-│   - 列举结构: {N}次 {达标/超标}                  │
-│   - 学术词: {N}次 {达标/超标}                    │
-│   - 因果连词: {N}次 {达标/超标}                  │
+│ 网文口感检查:                                   │
+│   - 开头120字冲突: {是/否}                       │
+│   - 局面变化频率: {达标/偏少}                    │
+│   - 章末钩子: {是/否}                            │
 ├─────────────────────────────────────────────────┤
-│ 自然化检测:                                     │
-│   - 停顿词: {N}次 {达标/偏少/偏多}               │
-│   - 不确定表达: {N}次 {达标/偏少}                │
-│   - 口语词: {N}次 {达标/偏少}                    │
-│   - 短句占比: {X}% {达标/偏低/偏高}              │
-├─────────────────────────────────────────────────┤
+│ AI痕迹提醒: {已检查/未检查}                      │
 │ [x] 未违反润色红线                              │
 │ 是否可进入 Data Agent: {是/否}                  │
 └─────────────────────────────────────────────────┘
@@ -257,9 +283,8 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.
 **Only proceed to Step 5 when:**
 1. 已加载 polish-guide.md + typesetting.md
 2. 已修复所有 critical/high issues（或记录 deviation）
-3. AI 痕迹检测全部达标
-4. 自然化/排版检查已完成（不足则记录 deviation）
-5. 已输出检查清单
+3. 网文口感硬规则已达标（不足则记录 deviation）
+4. 已输出检查清单
 
 **输出**: 润色后的章节文件（覆盖原文件）
 
@@ -284,29 +309,14 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.
 **Agent 自动完成**:
 
 1. **AI 实体提取**（Agent 内置，无需外部 LLM）
-   - 从正文中语义提取实体
-   - 匹配已有实体库，识别新实体
-   - 识别状态变化（境界/位置/关系）
-
-2. **实体消歧**
-   - 高置信度 (>0.8): 自动采用
-   - 中置信度 (0.5-0.8): 采用但记录 warning
-   - 低置信度 (<0.5): 标记待人工确认
-
+2. **实体消歧**（高/中/低置信度策略）
 3. **写入存储**
-   - 更新 state.json (精简状态)
-   - 更新 index.db (v5.1 schema: entities/aliases/state_changes)
-   - 注册新别名到 aliases 表
-
-4. **AI 场景切片**
-   - 按地点/时间/视角切分场景
-   - 生成场景摘要
-
-5. **向量嵌入**
-   - 调用 data_modules.rag_adapter 存入向量库
-
-6. **风格样本评估**
-   - 如果 review_score > 80，提取高质量片段作为样本候选
+   - 更新 state.json (精简状态 + chapter_meta)
+   - 更新 index.db (实体/别名/状态变化/关系)
+4. **AI 场景切片**（生成场景摘要）
+5. **向量嵌入**（rag_adapter）
+6. **风格样本评估**（review_score > 80）
+7. **摘要分离存储**：写入 `.webnovel/summaries/ch{NNNN}.md`
 
 **输出**:
 ```json
@@ -326,23 +336,6 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.
 
 ```bash
 git add . && git commit -m "Ch{chapter_num}: {title}"
-```
-
----
-
-## 章节摘要模板
-
-章节末尾追加：
-
-```markdown
----
-## 本章摘要
-**剧情**: {主要事件}
-**人物**: {角色互动}
-**状态变化**: {实力/位置/关系}
-**伏笔**: [埋设] / [回收]
-**承接点**: {下章衔接}
-**压扬比例**: 压{X}扬{Y} ({genre}类型标准)
 ```
 
 ---
@@ -384,13 +377,14 @@ git add . && git commit -m "Ch{chapter_num}: {title}"
 ├─────────────────────────────────────────────────┤
 │ 1. [x] 字数: {N}字 (3000-5000)                  │
 │ 2. [x] 大纲执行: 100%                           │
-│ 3. [x] 审查Agent: 5/5 已调用                    │
+│ 3. [x] 审查Agent: {6/6 or 3/3} 已调用           │
 │ 4. [x] 审查汇总表格: 已输出                      │
 │ 5. [x] polish-guide.md: 已加载                  │
-│ 6. [x] AI痕迹检测: 已执行                       │
+│ 6. [x] 网文口感规则: 已检查                      │
 │ 7. [x] 润色检查清单: 已输出                      │
 │ 8. [x] Data Agent: 成功提取 {N} 个实体          │
-│ 9. [x] Git: 已提交 ({commit_hash})              │
+│ 9. [x] summaries: 已生成 ch{NNNN}.md            │
+│ 10.[x] Git: 已提交 ({commit_hash})              │
 ├─────────────────────────────────────────────────┤
 │ 最终状态: {成功/有deviation}                     │
 └─────────────────────────────────────────────────┘

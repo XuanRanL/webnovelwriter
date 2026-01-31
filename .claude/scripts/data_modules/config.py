@@ -125,7 +125,7 @@ class DataModulesConfig:
     max_disambiguation_pending: int = 1000
     max_state_changes: int = 2000
 
-    context_recent_summaries_window: int = 5
+    context_recent_summaries_window: int = 3
     context_alerts_slice: int = 10
     context_max_appearing_characters: int = 10
     context_max_urgent_foreshadowing: int = 5

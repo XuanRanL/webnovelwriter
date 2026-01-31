@@ -114,25 +114,47 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/creativity/selling-po
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/worldbuilding/character-design.md"
 ```
 
-### 4.2 金手指核心设计
+### 4.2 按题材动态显示金手指选项
+
+**题材-金手指匹配表**:
+
+| 题材 | 推荐金手指 |
+|------|-----------|
+| 玄幻修仙 | 系统面板、签到打卡、老爷爷/传承、血脉觉醒 |
+| 都市异能 | 系统面板、重生记忆、异能觉醒、随身空间 |
+| 言情 | 重生记忆、随身空间、无金手指 |
+| 知乎短篇 | 单一特殊能力、无金手指 |
+| 规则怪谈 | 系统提示、规则解读能力 |
 
 **[AskUserQuestion Round 5]**
 
 | 问题 | 选项 |
 |------|------|
-| 金手指类型 | 系统面板型 / 签到打卡型 / 鉴定万物型 / 吞噬进化型 |
-| 系统性格 | 冷酷理性 / 傲娇话痨 / 沉默寡言 / 搞笑吐槽 |
+| 金手指类型 | 根据题材动态显示 + “无金手指” |
 | 成长曲线 | 前期爆发型 / 稳步提升型 / 厚积薄发型 |
 
-### 4.3 金手指细节设计
+### 4.3 根据金手指类型动态调整问题
 
-**[AskUserQuestion Round 6]**
+**系统面板型**
+- 系统性格 / 系统命名 / 代价或限制 / 升级节奏
 
-| 问题 | 选项 |
-|------|------|
-| 系统命名风格 | 天道类（天道系统/造化系统） / 商城类（万界商城/无限商店） / 功能类（无限升级/万能抽卡） / 自定义名称 |
-| 代价/限制 | 积分消耗型 / 任务惩罚型 / 生命值扣除型 / 无明显代价 |
-| 核心卖点方向 | 战力碾压型 / 智商压制型 / 收集养成型 / 感情治愈型 |
+**重生/穿越型**
+- 重生时间点 / 记忆完整度 / 先知程度 / 蝴蝶效应
+
+**老爷爷/器灵型**
+- 器灵性格 / 器灵实力 / 辅助方式 / 恢复条件
+
+**随身空间型**
+- 空间大小 / 特殊功能 / 升级方式
+
+**血脉/天赋型**
+- 血脉来源 / 觉醒条件 / 能力限制
+
+**异能觉醒型**（都市异能专用）
+- 异能来源 / 异能上限 / 代价或副作用 / 是否可进化
+
+**无金手指**
+- 主角天赋 / 特殊机遇 / 成长路线
 
 ---
 
@@ -153,7 +175,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/worldbuilding/world-r
 
 ### 5.2 世界观框架
 
-**[AskUserQuestion Round 7]** (可选)
+**[AskUserQuestion Round 6]** (可选)
 
 | 问题 | 选项 |
 |------|------|
@@ -178,7 +200,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/creativity/market-pos
 
 ### 6.2 市场定位与主角设计
 
-**[AskUserQuestion Round 8]**
+**[AskUserQuestion Round 7]**
 
 | 问题 | 选项 |
 |------|------|
@@ -188,7 +210,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/creativity/market-pos
 
 ### 6.3 反派与感情线设计
 
-**[AskUserQuestion Round 9]**
+**[AskUserQuestion Round 8]**
 
 | 问题 | 选项 |
 |------|------|
@@ -223,17 +245,22 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py" \
   --core-selling-points "{points}"
 ```
 
-### 7.2 生成文件清单
+### 7.2 生成文件清单（含模板写入）
 
-| 文件 | 说明 |
-|------|------|
-| `.webnovel/state.json` | 运行时状态 |
-| `.webnovel/index.db` | 实体索引数据库 |
-| `设定集/世界观.md` | 世界设定 |
-| `设定集/力量体系.md` | 力量体系 |
-| `设定集/主角卡.md` | 主角卡 |
-| `设定集/金手指设计.md` | 金手指设计 |
-| `大纲/总纲.md` | 总纲 |
+| 文件 | 说明 | 生成时机 | 写入路径 |
+|------|------|---------|---------|
+| `.webnovel/state.json` | 运行时状态 | init Phase 7 | `.webnovel/state.json` |
+| `.webnovel/index.db` | 实体索引数据库 | init Phase 7 | `.webnovel/index.db` |
+| `设定集/世界观.md` | 世界观设定模板 | init Phase 7 | `设定集/世界观.md` |
+| `设定集/力量体系.md` | 力量体系模板 | init Phase 7 | `设定集/力量体系.md` |
+| `设定集/主角卡.md` | 主角卡模板 | init Phase 7 | `设定集/主角卡.md` |
+| `设定集/金手指设计.md` | 金手指设计模板 | init Phase 7 | `设定集/金手指设计.md` |
+| `大纲/总纲.md` | 总纲模板 | init Phase 7 | `大纲/总纲.md` |
+
+**模板引用方式**:
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/templates/output/设定集-世界观.md" | 填充变量 > 设定集/世界观.md
+```
 
 ---
 
@@ -268,12 +295,11 @@ git init && git add . && git commit -m "初始化网文项目：{title}"
 | Round 2 | Phase 2 | 1 | All |
 | Round 3 | Phase 2 | 2 | All |
 | Round 4 | Phase 3 | 2 | All |
-| Round 5 | Phase 4 | 3 | Standard/Deep |
-| Round 6 | Phase 4 | 3 | Standard/Deep |
-| Round 7 | Phase 5 | 3 | Standard/Deep |
+| Round 5 | Phase 4 | 2 | Standard/Deep |
+| Round 6 | Phase 5 | 3 | Standard/Deep |
+| Round 7 | Phase 6 | 3 | Deep |
 | Round 8 | Phase 6 | 3 | Deep |
-| Round 9 | Phase 6 | 3 | Deep |
 
-**Quick 模式**: Round 1-4 (4轮，约6个问题)
-**Standard 模式**: Round 1-7 (7轮，约15个问题)
-**Deep 模式**: Round 1-9 (9轮，约21个问题)
+**Quick 模式**: Round 1-4
+**Standard 模式**: Round 1-6
+**Deep 模式**: Round 1-8

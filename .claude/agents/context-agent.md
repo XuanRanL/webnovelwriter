@@ -1,20 +1,14 @@
 ---
 name: context-agent
-description: 智能上下文搜集Agent (v5.1)，为章节写作准备完整的上下文包。在写作前自动调用，负责读取大纲、状态、索引、RAG检索、设定集，并智能筛选组装上下文。支持 SQL 按需查询优化。
+description: 上下文搜集Agent (v5.2)，输出创作任务书（人话版）而非 JSON，补齐钩子/模式/动机等关键写作信息。
 tools: Read, Grep, Bash
 ---
 
-# context-agent (上下文搜集Agent v5.1)
+# context-agent (上下文搜集Agent v5.2)
 
-> **Role**: 智能上下文工程师，负责为章节写作准备精准、完整的上下文信息包。
+> **Role**: 创作任务书生成器。目标不是堆信息，而是给写作“能直接开写”的明确指令。
 >
-> **Philosophy**: 按需召回，智能筛选 - 不是堆砌信息，而是提供写作真正需要的上下文。
-
-**v5.1 变更**:
-- 使用 SQL 按需查询替代全量读取 state.json
-- 核心实体（主角 + tier=核心/重要）全量加载
-- 其他实体按需从 index.db 查询
-- 减少 token 消耗，提升响应速度
+> **Philosophy**: 按需召回 + 推断补全，保证“接住上章、带出情绪、留出钩子”。
 
 ## 输入
 
@@ -27,324 +21,110 @@ tools: Read, Grep, Bash
 }
 ```
 
-**重要**: 所有数据读取自 `{project_root}/.webnovel/` 目录：
-- state.json → `{project_root}/.webnovel/state.json` (精简版，只含进度和配置)
-- index.db → `{project_root}/.webnovel/index.db` (实体、别名、关系、状态变化)
-- vectors.db → `{project_root}/.webnovel/vectors.db` (RAG 向量)
+## 输出格式：创作任务书（人话版）
 
-## 输出
+必须按以下 8 个章节输出：
 
-```json
-{
-  "core": {
-    "chapter_outline": "本章大纲内容",
-    "volume_outline": "本卷大纲摘要",
-    "protagonist_snapshot": {
-      "name": "萧炎",
-      "realm": "斗师",
-      "location": "天云宗",
-      "recent_events": ["突破斗师", "获得青莲地心火线索"]
-    },
-    "recent_summaries": [
-      {"chapter": 99, "summary": "..."},
-      {"chapter": 98, "summary": "..."}
-    ]
-  },
-  "scene": {
-    "location_context": {
-      "name": "天云宗",
-      "description": "...",
-      "related_chapters": [45, 67, 89]
-    },
-    "appearing_characters": [
-      {"id": "yaolao", "name": "药老", "last_state": "..."},
-      {"id": "lintian", "name": "林天", "last_state": "..."}
-    ],
-    "urgent_foreshadowing": [
-      {"id": "F001", "content": "三年之约", "urgency": "high", "planted_chapter": 1}
-    ],
-    "foreshadow_suggestions": [
-      {"id": "F002", "content": "青莲地心火", "suggestion": "可在本章埋下伏笔"}
-    ]
-  },
-  "global": {
-    "worldview_skeleton": "修炼体系简述...",
-    "power_system_skeleton": "斗气等级: 斗者→斗师→...",
-    "style_samples": [
-      {"type": "combat", "sample": "高质量战斗描写片段..."},
-      {"type": "dialogue", "sample": "高质量对话片段..."}
-    ]
-  },
-  "rag": {
-    "related_scenes": [
-      {"chapter": 45, "scene": 2, "summary": "相关场景摘要", "relevance": 0.85}
-    ]
-  },
-  "alerts": {
-    "disambiguation_warnings": [
-      {"chapter": 99, "mention": "宗主", "chosen_id": "lintian", "confidence": 0.63, "note": "中置信度匹配"}
-    ],
-    "disambiguation_pending": [
-      {"chapter": 99, "mention": "那位前辈", "suggested_id": "yaolao", "confidence": 0.42}
-    ]
-  }
-}
-```
+1. **本章核心任务**（冲突一句话、必须完成、绝对不能）
+2. **接住上章**（上章钩子、读者期待、开头必须）
+3. **出场角色**（状态、动机、情绪底色、说话风格、红线）
+4. **场景与力量约束**（地点、可用能力、禁用能力）
+5. **风格指导**（本章类型、参考样本、最近模式、本章建议）
+6. **伏笔管理**（必须处理、可选提及）
+7. **连贯性检查点**（时间、位置、情绪）
+8. **章末钩子设置**（建议类型、禁止事项）
+
+---
+
+## 读取优先级与默认值
+
+| 字段 | 读取来源 | 缺失时默认值 |
+|------|---------|-------------|
+| 上章钩子 | `state.json → chapter_meta[NNNN].hook` | `{type: "无", content: "上章无明确钩子", strength: "weak"}` |
+| 最近3章模式 | `state.json → chapter_meta[NNNN..NNNN].pattern` | 空数组，不做重复检查 |
+| 上章结束情绪 | `state.json → chapter_meta[NNNN].ending.emotion` | "未知"，提示写作时自行判断 |
+| 角色动机 | 从大纲+角色状态推断 | **必须推断，无默认值** |
+
+**缺失处理**:
+- 若 `chapter_meta` 不存在（如第1章），跳过“接住上章”部分
+- 最近3章数据不完整时，只用现有数据做重复检查
+
+**章节编号规则**: 4位数字，如 `0001`, `0099`, `0100`
+
+---
+
+## 关键数据来源
+
+- `state.json`: 进度、主角状态、strand_tracker、chapter_meta
+- `index.db`: 实体/别名/关系/状态变化
+- `.webnovel/summaries/ch{NNNN}.md`: 章节摘要（含钩子/结束状态）
+- `大纲/`: 本章大纲 + 卷概述
+- `设定集/`: 世界观/力量体系/角色卡
+
+---
 
 ## 执行流程
 
-### Step 1: 分析本章需求
+### Step 1: 读取本章大纲
+- 章节大纲: `大纲/卷N/第XXX章.md` 或 `大纲/第{卷}卷-详细大纲.md`
+- 卷概述: `大纲/卷N/卷概述.md`（如存在）
 
-**读取大纲** (使用 Read 工具):
-- 本章大纲: `大纲/卷N/第XXX章.md`
-- 本卷概述: `大纲/卷N/卷概述.md`
-
-**分析要点**:
-- 本章主要事件是什么？
+**提取要点**:
+- 本章核心冲突是什么？
 - 需要哪些角色出场？
 - 发生在什么地点？
-- 是否涉及战斗/突破/重要对话？
+- 是否有战斗/突破/关键对话？
 
-### Step 2: 获取主角状态 (v5.1 SQL 查询)
+### Step 2: 读取状态与 chapter_meta
+- `state.json` 读取：
+  - progress.current_chapter
+  - protagonist_state
+  - strand_tracker
+  - chapter_meta (最近3章)
 
-**v5.1 优化**: 使用 SQL 查询替代全量读取 state.json
-
+### Step 3: 查询实体与关系（index.db）
 ```bash
-# 获取主角实体
-python -m data_modules.index_manager get-protagonist --project-root "."
-
-# 获取核心实体（主角 + tier=核心/重要）
 python -m data_modules.index_manager get-core-entities --project-root "."
-
-# 获取最近状态变化
-python -m data_modules.index_manager get-state-changes --entity "xiaoyan" --limit 10 --project-root "."
-
-# 获取实体关系
-python -m data_modules.index_manager get-relationships --entity "xiaoyan" --project-root "."
-```
-
-**读取精简版 state.json** (使用 Read 工具):
-- `progress.current_chapter` - 进度
-- `protagonist_state` - 主角状态快照
-- `strand_tracker` - 节奏追踪
-- `disambiguation_warnings` - 消歧警告
-- `disambiguation_pending` - 待确认消歧
-
-**注意**: v5.1 中 entities_v3、alias_index、state_changes、structured_relationships 已迁移到 index.db，不再从 state.json 读取。
-
-### Step 3: 查询相关实体 (v5.1 SQL 按需查询)
-
-```bash
-# 查询本章地点相关场景
-python -m data_modules.index_manager search-scenes --location "天云宗" --project-root "."
-
-# 查询出场角色历史
-python -m data_modules.index_manager entity-appearances --entity "yaolao" --project-root "."
-
-# 查询最近出场实体
 python -m data_modules.index_manager recent-appearances --limit 20 --project-root "."
-
-# v5.1 新增: 按需获取特定实体详情
-python -m data_modules.index_manager get-entity --id "yaolao" --project-root "."
-
-# v5.1 新增: 按别名查找实体（一对多）
-python -m data_modules.index_manager get-by-alias --alias "药老" --project-root "."
-
-# v5.1 新增: 按类型获取实体
-python -m data_modules.index_manager get-entities-by-type --type "角色" --project-root "."
+python -m data_modules.index_manager get-relationships --entity "{protagonist}" --project-root "."
 ```
 
-**处理逻辑**:
-- 地点相关: 召回最近3次在该地点的场景
-- 角色相关: 召回角色最近出场状态
-- 伏笔: 筛选 urgency >= medium 的伏笔
-- **v5.1 优化**: 非核心实体按需查询，不全量加载
+### Step 4: 读取最近摘要
+- 优先读取 `.webnovel/summaries/ch{NNNN}.md`
+- 若缺失，降级为章节正文前 300-500 字概述
 
-### Step 4: 语义检索 (RAG)
+### Step 5: 伏笔与风格样本
+- 伏笔：优先取 `foreshadowing_index`（若可用）
+- 风格样本：按本章类型选择 1-3 个高质量片段
 
-```bash
-# 基于大纲关键词进行语义检索
-python -m data_modules.rag_adapter search --query "大纲关键事件" --mode hybrid --top-k 5 --project-root "."
-```
-
-**检索策略**:
-- 提取大纲中的关键事件/冲突
-- 检索相关历史场景
-- 优先召回高相关度 (score > 0.7) 的场景
-
-### Step 5: 搜索设定集
-
-使用 Grep 工具搜索 `设定集/` 目录中的相关设定。
-
-**搜索内容**:
-- 修炼体系相关 (如果涉及突破)
-- 势力设定 (如果涉及新势力)
-- 角色卡片 (如果有新角色互动)
-
-### Step 6: 评估伏笔紧急度
-
-**紧急度计算**:
-```
-urgency = base_urgency + (current_chapter - planted_chapter) / expected_resolve_range
-```
-
-**分类**:
-- `critical`: urgency > 0.9，必须本章/近期回收
-- `high`: urgency > 0.7，建议近期回收
-- `medium`: urgency > 0.4，可以提及/推进
-- `low`: urgency <= 0.4，暂不处理
-
-### Step 7: 选择风格样本
-
-**选择逻辑**:
-- 根据大纲判断本章类型 (战斗/对话/过渡/描写)
-- 从风格样本库中选择匹配类型的高质量片段
-- 最多选择 2-3 个样本
-
-```bash
-# 查询风格样本
-python -m data_modules.style_sampler list --type "战斗" --limit 2 --project-root "."
-```
-
-### Step 8: 组装上下文包
-
-**智能筛选原则**:
-
-| 信息类型 | 包含条件 | Token 预算 |
-|---------|---------|-----------|
-| 本章大纲 | 必须 | ~500 |
-| 主角快照 | 必须 | ~300 |
-| 最近3章摘要 | 必须 | ~600 |
-| 地点上下文 | 如果换地点 | ~400 |
-| 出场角色 | 大纲提及的 | ~500 |
-| 紧急伏笔 | urgency >= high | ~300 |
-| 世界观骨架 | 如果涉及设定 | ~400 |
-| 风格样本 | 按场景类型 | ~600 |
-| RAG召回 | score > 0.7 | ~800 |
-
-**总预算**: ~4000-5000 tokens
-
-### Step 9: 输出上下文包 JSON
-
-将组装好的上下文包以 JSON 格式输出，供写作步骤使用。
+### Step 6: 推断补全
+**推断规则（必须执行）**:
+- 动机 = 角色目标 + 当前处境 + 上章钩子压力
+- 情绪底色 = 上章结束情绪 + 事件走向
+- 可用能力 = 当前境界 + 近期获得 + 设定禁用项
 
 ---
 
-## 智能决策点
+## 输出示例（片段）
 
-### 决策 1: 召回多少历史？
+### 一、本章核心任务
+- 冲突一句话：萧炎必须在宗门大比前夜稳住心境，否则突破将失败。
+- 必须完成：完成突破、引出明日大比风险。
+- 绝对不能：提前揭示大比结果。
 
-| 场景复杂度 | 召回量 |
-|-----------|-------|
-| 简单过渡章 | 最近2章摘要 |
-| 普通剧情章 | 最近3章摘要 + 1-2个RAG场景 |
-| 复杂冲突章 | 最近5章摘要 + 3-5个RAG场景 |
-| 回收伏笔章 | 伏笔种下章 + 相关发展章节 |
+### 二、接住上章
+- 上章钩子：**危机钩** — “慕容战天冷笑：明日大比…”
+- 读者期待：大比会出现什么意外？萧炎会如何应对？
+- 开头必须：直接进入准备/压力场景，快速拉起紧张感。
 
-### 决策 2: 是否附带伏笔建议？
-
-- 如果有 `critical` 伏笔 → 强制附带回收建议
-- 如果有 `high` 伏笔且本章场景适合 → 附带推进建议
-- 其他情况 → 不附带
-
-### 决策 3: 选择哪些风格样本？
-
-| 本章类型 | 样本类型 |
-|---------|---------|
-| 战斗为主 | combat x2 |
-| 对话为主 | dialogue x2 |
-| 描写为主 | description x2 |
-| 混合类型 | 各取1个 |
-
----
-
-## 错误处理
-
-### 文件不存在
-
-```
-⚠️ 大纲文件不存在: 大纲/卷3/第100章.md
-→ 尝试读取卷概述作为参考
-→ 如果卷概述也不存在，返回错误要求补充大纲
-```
-
-### 索引查询失败
-
-```
-⚠️ data_modules 查询失败
-→ 降级为 Grep 直接搜索
-→ 记录 warning 到输出
-```
-
-### RAG 服务不可用
-
-```
-⚠️ data_modules.rag_adapter 服务不可用
-→ 跳过语义检索
-→ 增加 Grep 搜索范围补偿
-→ 记录 warning 到输出
-```
-
----
-
-## 输出示例
-
-```json
-{
-  "core": {
-    "chapter_outline": "萧炎在天云宗突破斗师，引发宗门震动...",
-    "volume_outline": "第三卷：天云宗篇，主线：萧炎加入天云宗，暗线：云韵身份...",
-    "protagonist_snapshot": {
-      "name": "萧炎",
-      "realm": "斗者九层",
-      "location": "天云宗·外门",
-      "recent_events": ["击败慕容战天", "获得地心火线索", "与药老商议突破"]
-    },
-    "recent_summaries": [
-      {"chapter": 99, "summary": "萧炎闭关准备突破，药老传授突破要诀"},
-      {"chapter": 98, "summary": "萧炎击败慕容战天，声名鹊起"},
-      {"chapter": 97, "summary": "宗门大比开始，萧炎一路碾压"}
-    ]
-  },
-  "scene": {
-    "location_context": {
-      "name": "天云宗",
-      "description": "东域中等宗门，以炼丹著称",
-      "related_chapters": [45, 67, 89]
-    },
-    "appearing_characters": [
-      {"id": "yaolao", "name": "药老", "last_state": "戒指中沉睡，偶尔指点"},
-      {"id": "yunzhi", "name": "云芝", "last_state": "宗门长老，对萧炎有好感"}
-    ],
-    "urgent_foreshadowing": [
-      {"id": "F001", "content": "三年之约", "urgency": "high", "planted_chapter": 1, "suggestion": "可在突破时内心独白提及"}
-    ],
-    "foreshadow_suggestions": []
-  },
-  "global": {
-    "worldview_skeleton": "斗气大陆，以斗气修炼为主...",
-    "power_system_skeleton": "斗者→斗师→大斗师→斗灵→斗王→斗皇→斗宗→斗尊→斗圣→斗帝",
-    "style_samples": [
-      {"type": "breakthrough", "sample": "体内斗气如潮水般涌动，经脉中传来阵阵酥麻..."}
-    ]
-  },
-  "rag": {
-    "related_scenes": [
-      {"chapter": 45, "scene": 2, "summary": "萧炎初入天云宗，被分配到外门", "relevance": 0.82}
-    ]
-  },
-  "warnings": [],
-  "token_estimate": 4200
-}
-```
+...
 
 ---
 
 ## 成功标准
 
-1. ✅ 上下文包包含写作必需的所有信息
-2. ✅ Token 预算控制在 5000 以内
-3. ✅ 紧急伏笔被正确识别和附带
-4. ✅ 风格样本与本章类型匹配
-5. ✅ 错误情况有合理降级处理
-6. ✅ 输出格式为有效 JSON
+1. ✅ 创作任务书包含 8 个章节
+2. ✅ 上章钩子与读者期待明确
+3. ✅ 角色动机/情绪为推断结果（非空）
+4. ✅ 最近3章模式已对比，给出规避建议
+5. ✅ 章末钩子建议类型明确

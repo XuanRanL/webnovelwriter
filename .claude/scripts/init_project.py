@@ -65,6 +65,7 @@ def _ensure_state_schema(state: Dict[str, Any]) -> Dict[str, Any]:
     state.setdefault("world_settings", {"power_system": [], "factions": [], "locations": []})
     state.setdefault("plot_threads", {"active_threads": [], "foreshadowing": []})
     state.setdefault("review_checkpoints", [])
+    state.setdefault("chapter_meta", {})
     state.setdefault(
         "strand_tracker",
         {
@@ -127,6 +128,31 @@ def _build_master_outline(target_chapters: int, *, chapters_per_volume: int = 50
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _inject_volume_rows(template_text: str, target_chapters: int, *, chapters_per_volume: int = 50) -> str:
+    """在总纲模板的卷表中注入卷行（若存在表头）。"""
+    lines = template_text.splitlines()
+    header_idx = None
+    for i, line in enumerate(lines):
+        if line.strip().startswith("| 卷号"):
+            header_idx = i
+            break
+    if header_idx is None:
+        return template_text
+
+    insert_idx = header_idx + 2 if header_idx + 1 < len(lines) else len(lines)
+    volumes = (target_chapters - 1) // chapters_per_volume + 1 if target_chapters > 0 else 1
+    rows = []
+    for v in range(1, volumes + 1):
+        start = (v - 1) * chapters_per_volume + 1
+        end = min(v * chapters_per_volume, target_chapters)
+        rows.append(f"| {v} | | 第{start}-{end}章 | | |")
+
+    # 避免重复插入（若模板已有数据行）
+    existing = {line.strip() for line in lines}
+    rows = [r for r in rows if r.strip() not in existing]
+    return "\n".join(lines[:insert_idx] + rows + lines[insert_idx:])
+
+
 def init_project(
     project_dir: str,
     title: str,
@@ -153,6 +179,7 @@ def init_project(
     directories = [
         ".webnovel/backups",
         ".webnovel/archive",
+        ".webnovel/summaries",
         "设定集/角色库/主要角色",
         "设定集/角色库/次要角色",
         "设定集/角色库/反派角色",
@@ -198,7 +225,12 @@ def init_project(
     if protagonist_name:
         state["protagonist_state"]["name"] = protagonist_name
 
-    if golden_finger_name:
+    gf_type_norm = (golden_finger_type or "").strip()
+    if gf_type_norm in {"无", "无金手指", "none"}:
+        state["protagonist_state"]["golden_finger"]["name"] = "无金手指"
+        state["protagonist_state"]["golden_finger"]["level"] = 0
+        state["protagonist_state"]["golden_finger"]["cooldown"] = 0
+    elif golden_finger_name:
         state["protagonist_state"]["golden_finger"]["name"] = golden_finger_name
 
     # 确保 golden_finger 字段存在且可编辑
@@ -213,6 +245,7 @@ def init_project(
     # 读取内置模板（可选）
     script_dir = Path(__file__).resolve().parent
     templates_dir = script_dir.parent / "templates"
+    output_templates_dir = templates_dir / "output"
     genre_key = (genre or "").strip()
     genre_template_key = {
         "修仙/玄幻": "修仙",
@@ -220,13 +253,18 @@ def init_project(
     }.get(genre_key, genre_key)
     genre_template = _read_text_if_exists(templates_dir / "genres" / f"{genre_template_key}.md")
     golden_finger_templates = _read_text_if_exists(templates_dir / "golden-finger-templates.md")
+    output_worldview = _read_text_if_exists(output_templates_dir / "设定集-世界观.md")
+    output_power = _read_text_if_exists(output_templates_dir / "设定集-力量体系.md")
+    output_protagonist = _read_text_if_exists(output_templates_dir / "设定集-主角卡.md")
+    output_golden_finger = _read_text_if_exists(output_templates_dir / "设定集-金手指.md")
+    output_outline = _read_text_if_exists(output_templates_dir / "大纲-总纲.md")
 
     # 基础文件（只在缺失时生成，避免覆盖已有内容）
     now = datetime.now().strftime("%Y-%m-%d")
 
-    _write_text_if_missing(
-        project_path / "设定集" / "世界观.md",
-        "\n".join(
+    worldview_content = output_worldview.strip() if output_worldview else ""
+    if not worldview_content:
+        worldview_content = "\n".join(
             [
                 "# 世界观",
                 "",
@@ -248,12 +286,15 @@ def init_project(
                 "",
                 (genre_template.strip() + "\n") if genre_template else "（未找到对应题材模板，可自行补充）\n",
             ]
-        ),
+        ).rstrip() + "\n"
+    _write_text_if_missing(
+        project_path / "设定集" / "世界观.md",
+        worldview_content,
     )
 
-    _write_text_if_missing(
-        project_path / "设定集" / "力量体系.md",
-        "\n".join(
+    power_content = output_power.strip() if output_power else ""
+    if not power_content:
+        power_content = "\n".join(
             [
                 "# 力量体系",
                 "",
@@ -272,12 +313,15 @@ def init_project(
                 "- 新增能力必须申报并入库（发明需申报）",
                 "",
             ]
-        ),
+        ).rstrip() + "\n"
+    _write_text_if_missing(
+        project_path / "设定集" / "力量体系.md",
+        power_content,
     )
 
-    _write_text_if_missing(
-        project_path / "设定集" / "主角卡.md",
-        "\n".join(
+    protagonist_content = output_protagonist.strip() if output_protagonist else ""
+    if not protagonist_content:
+        protagonist_content = "\n".join(
             [
                 "# 主角卡",
                 "",
@@ -300,12 +344,15 @@ def init_project(
                 "- 成长曲线：",
                 "",
             ]
-        ),
+        ).rstrip() + "\n"
+    _write_text_if_missing(
+        project_path / "设定集" / "主角卡.md",
+        protagonist_content,
     )
 
-    _write_text_if_missing(
-        project_path / "设定集" / "金手指设计.md",
-        "\n".join(
+    golden_finger_content = output_golden_finger.strip() if output_golden_finger else ""
+    if not golden_finger_content:
+        golden_finger_content = "\n".join(
             [
                 "# 金手指设计",
                 "",
@@ -331,7 +378,10 @@ def init_project(
                 "",
                 (golden_finger_templates.strip() + "\n") if golden_finger_templates else "（未找到金手指模板库）\n",
             ]
-        ),
+        ).rstrip() + "\n"
+    _write_text_if_missing(
+        project_path / "设定集" / "金手指设计.md",
+        golden_finger_content,
     )
 
     if antagonist_level:
@@ -353,7 +403,12 @@ def init_project(
             ),
         )
 
-    _write_text_if_missing(project_path / "大纲" / "总纲.md", _build_master_outline(int(target_chapters)))
+    outline_content = output_outline.strip() if output_outline else ""
+    if outline_content:
+        outline_content = _inject_volume_rows(outline_content, int(target_chapters)).rstrip() + "\n"
+    else:
+        outline_content = _build_master_outline(int(target_chapters))
+    _write_text_if_missing(project_path / "大纲" / "总纲.md", outline_content)
 
     _write_text_if_missing(
         project_path / "大纲" / "爽点规划.md",

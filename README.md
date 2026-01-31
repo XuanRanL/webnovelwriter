@@ -15,7 +15,7 @@
 - [快速开始](#快速开始)
 - [命令详解](#命令详解)
 - [双 Agent 架构](#双-agent-架构)
-- [五维并行审查](#五维并行审查)
+- [六维并行审查](#六维并行审查)
 - [RAG 检索系统](#rag-检索系统)
 - [题材模板](#题材模板)
 - [配置说明](#配置说明)
@@ -66,14 +66,14 @@
 │  │  review  │ │  query   │ │  resume  │                     │
 │  └──────────┘ └──────────┘ └──────────┘                     │
 ├─────────────────────────────────────────────────────────────┤
-│  Agents (8个)                                                │
+│  Agents (9个)                                                │
 │  ┌─────────────────┐  ┌─────────────────┐                   │
 │  │  Context Agent  │  │   Data Agent    │                   │
 │  │     (读取)      │  │     (写入)      │                   │
 │  └─────────────────┘  └─────────────────┘                   │
-│  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐         │
-│  │ 爽点  │ │ 一致性│ │ 节奏  │ │  OOC  │ │ 连贯性│         │
-│  └───────┘ └───────┘ └───────┘ └───────┘ └───────┘         │
+│  ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐│
+│  │ 爽点  │ │ 一致性│ │ 节奏  │ │  OOC  │ │ 连贯性│ │追读力 ││
+│  └───────┘ └───────┘ └───────┘ └───────┘ └───────┘ └───────┘│
 ├─────────────────────────────────────────────────────────────┤
 │  Data Layer                                                  │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐                     │
@@ -197,25 +197,34 @@ pip install -r .claude/scripts/requirements.txt
 /webnovel-write 45      # 创作第45章
 ```
 
-**创作流程**：
+**创作流程 (v5.2)**：
 
 ```
-Step 1: Context Agent 搜集上下文
+Step 1: Context Agent 搜集上下文 → 创作任务书
         ↓
-Step 2: 生成 3000-5000 字正文
+Step 1.5: 章节设计（开头/钩子/爽点模式选择）
         ↓
-Step 3: 5 Agent 并行审查
+Step 2A: 生成粗稿（3000-5000字）
         ↓
-Step 4: 润色 + AI 痕迹检测
+Step 2B: 风格适配器（网文化改写）
+        ↓
+Step 3: 6 Agent 并行审查
+        ↓
+Step 4: 网文化润色
         ↓
 Step 5: Data Agent 提取实体/更新索引
         ↓
 Step 6: Git 自动提交备份
 ```
 
+**写作模式**：
+- **标准模式**: 完整执行 Step 1-6
+- **快速模式** (`--mode fast`): 跳过 Step 2B
+- **极简模式** (`--mode minimal`): 跳过 Step 2B + 仅 3 个核心审查
+
 **产出**：
 - `正文/第N章-标题.md`
-- 章节末尾自动附加摘要
+- `.webnovel/summaries/ch{NNNN}.md` - 章节摘要（独立存储）
 
 ---
 
@@ -266,44 +275,30 @@ Step 6: Git 自动提交备份
 
 ## 双 Agent 架构
 
-### Context Agent（上下文包工程师）
+### Context Agent（创作任务书工程师）
 
-**职责**：为写作准备精准的上下文
+**职责**：为写作准备精准的创作任务书（人话版）
 
 **工作流程**：
 1. 读取本章大纲，分析需要什么信息
 2. 从 `state.json` 获取主角状态快照
-3. 调用 `index.db` (v5.1 schema) 查询相关实体和别名
-4. 调用 RAG 语义检索相关历史场景
-5. 搜索设定集获取相关设定
-6. 评估伏笔紧急度
-7. 组装上下文包 JSON
+3. 从 `state.json → chapter_meta` 读取上章钩子/模式
+4. 调用 `index.db` 查询相关实体和别名
+5. 调用 RAG 语义检索相关历史场景
+6. 搜索设定集获取相关设定
+7. 评估伏笔紧急度
+8. 推断角色动机/情绪
+9. 组装**创作任务书**
 
-**输出结构**：
-```json
-{
-  "core": {
-    "chapter_outline": "本章大纲",
-    "protagonist_snapshot": {...},
-    "recent_summaries": [...]
-  },
-  "scene": {
-    "location_context": {...},
-    "appearing_characters": [...],
-    "urgent_foreshadowing": [...]
-  },
-  "global": {
-    "worldview_skeleton": "...",
-    "power_system_skeleton": "...",
-    "style_contract_ref": "..."
-  },
-  "rag": [...],
-  "alerts": {
-    "disambiguation_warnings": [...],
-    "disambiguation_pending": [...]
-  }
-}
-```
+**输出结构（8个章节）**：
+1. **本章核心任务**（冲突一句话、必须完成、绝对不能）
+2. **接住上章**（上章钩子、读者期待、开头必须）
+3. **出场角色**（状态、动机、情绪底色、说话风格、红线）
+4. **场景与力量约束**（地点、可用能力、禁用能力）
+5. **风格指导**（本章类型、参考样本、最近模式、本章建议）
+6. **伏笔管理**（必须处理、可选提及）
+7. **连贯性检查点**（时间、位置、情绪）
+8. **章末钩子设置**（建议类型、禁止事项）
 
 ---
 
@@ -317,9 +312,11 @@ Step 6: Git 自动提交备份
    - 高置信度 (>0.8)：自动采用
    - 中置信度 (0.5-0.8)：采用但记录 warning
    - 低置信度 (<0.5)：标记待人工确认
-3. **写入存储**：更新 `index.db` (entities/aliases/state_changes)
+3. **写入存储**：更新 `index.db` + `state.json`
 4. **场景切片**：按地点/时间/视角切分场景
 5. **向量嵌入**：调用 RAG 存入向量库
+6. **记录章节元数据**：钩子/模式/结束状态写入 `chapter_meta`
+7. **生成章节摘要**：写入 `.webnovel/summaries/ch{NNNN}.md`
 
 **输出格式**：
 ```json
@@ -338,7 +335,7 @@ Step 6: Git 自动提交备份
 
 ---
 
-## 五维并行审查
+## 六维并行审查
 
 | Checker | 检查内容 | 关键指标 |
 |---------|---------|---------|
@@ -347,6 +344,7 @@ Step 6: Git 自动提交备份
 | **Pacing Checker** | Strand 比例分布 | Quest/Fire/Constellation |
 | **OOC Checker** | 人物言行是否符合人设 | 角色卡片对照 |
 | **Continuity Checker** | 场景转换流畅度 | 伏笔回收情况 |
+| **Reader-pull Checker** | 追读力检查 | 钩子强度、模式重复、读者期待 |
 
 ### 爽点六大执行模式
 
@@ -463,14 +461,15 @@ context_max_urgent_foreshadowing = 5  # 最大紧急伏笔数
 ```
 your-novel-project/
 ├── .claude/                    # 插件目录
-│   ├── agents/                 # 8 个专职 Agent
-│   │   ├── context-agent.md    # 上下文包工程师
+│   ├── agents/                 # 9 个专职 Agent
+│   │   ├── context-agent.md    # 创作任务书工程师
 │   │   ├── data-agent.md       # 数据链工程师
 │   │   ├── high-point-checker.md
 │   │   ├── consistency-checker.md
 │   │   ├── pacing-checker.md
 │   │   ├── ooc-checker.md
-│   │   └── continuity-checker.md
+│   │   ├── continuity-checker.md
+│   │   └── reader-pull-checker.md  # 追读力检查（v5.2新增）
 │   ├── skills/                 # 6 个核心 Skill
 │   │   ├── webnovel-init/
 │   │   ├── webnovel-plan/
@@ -499,9 +498,12 @@ your-novel-project/
 │       ├── cool-points-guide.md
 │       └── ...
 ├── .webnovel/                  # 运行时数据
-│   ├── state.json              # 权威状态 (< 5KB)
+│   ├── state.json              # 权威状态 (含 chapter_meta)
 │   ├── index.db                # SQLite 索引
-│   └── vectors.db              # RAG 向量库
+│   ├── vectors.db              # RAG 向量库
+│   └── summaries/              # 章节摘要（v5.2新增）
+│       ├── ch0001.md
+│       └── ...
 ├── 正文/                       # 章节文件
 │   ├── 第1章-标题.md
 │   └── ...
@@ -565,7 +567,17 @@ git checkout ch0045
 
 ## 版本历史
 
-### v5.1 (当前)
+### v5.2 (当前)
+- 创作任务书：Context Agent 输出人话版 8 章节格式（替代 JSON）
+- 追读力检查：新增 reader-pull-checker（第 6 个审查 Agent）
+- 章节设计：Step 1.5 选择开头/钩子/爽点模式，避免重复
+- 风格适配器：Step 2A/2B 拆分，先写剧情后网文化
+- 摘要分离：章节摘要存入 `.webnovel/summaries/ch{NNNN}.md`
+- chapter_meta：记录钩子/模式/结束状态到 state.json
+- 轻量模式：支持 `--mode fast/minimal` 加速写作
+- 输出模板：7 个标准模板文件（state/index schema、设定集、大纲）
+
+### v5.1
 - SQLite 存储：entities/aliases/state_changes 迁移到 index.db
 - state.json 精简至 < 5KB
 - API 重试机制（指数退避）
