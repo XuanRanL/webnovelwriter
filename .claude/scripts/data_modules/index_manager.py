@@ -1135,32 +1135,72 @@ class IndexManager:
 
     def create_override_contract(self, contract: OverrideContractMeta) -> int:
         """
-        创建 Override Contract
+        创建或更新 Override Contract
+
+        使用 UPSERT 语义：如果已存在相同 (chapter, constraint_type, constraint_id) 的记录，
+        则更新该记录但保持 id 不变，避免 chase_debt.override_contract_id 悬挂。
 
         返回合约 ID
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
+
+            # 先查询是否存在
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO override_contracts
-                (chapter, constraint_type, constraint_id, rationale_type,
-                 rationale_text, payback_plan, due_chapter, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                SELECT id FROM override_contracts
+                WHERE chapter = ? AND constraint_type = ? AND constraint_id = ?
             """,
-                (
-                    contract.chapter,
-                    contract.constraint_type,
-                    contract.constraint_id,
-                    contract.rationale_type,
-                    contract.rationale_text,
-                    contract.payback_plan,
-                    contract.due_chapter,
-                    contract.status,
-                ),
+                (contract.chapter, contract.constraint_type, contract.constraint_id),
             )
+            existing = cursor.fetchone()
+
+            if existing:
+                # 更新现有记录，保持 id 不变
+                contract_id = existing["id"]
+                cursor.execute(
+                    """
+                    UPDATE override_contracts SET
+                        rationale_type = ?,
+                        rationale_text = ?,
+                        payback_plan = ?,
+                        due_chapter = ?,
+                        status = ?
+                    WHERE id = ?
+                """,
+                    (
+                        contract.rationale_type,
+                        contract.rationale_text,
+                        contract.payback_plan,
+                        contract.due_chapter,
+                        contract.status,
+                        contract_id,
+                    ),
+                )
+            else:
+                # 插入新记录
+                cursor.execute(
+                    """
+                    INSERT INTO override_contracts
+                    (chapter, constraint_type, constraint_id, rationale_type,
+                     rationale_text, payback_plan, due_chapter, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                    (
+                        contract.chapter,
+                        contract.constraint_type,
+                        contract.constraint_id,
+                        contract.rationale_type,
+                        contract.rationale_text,
+                        contract.payback_plan,
+                        contract.due_chapter,
+                        contract.status,
+                    ),
+                )
+                contract_id = cursor.lastrowid
+
             conn.commit()
-            return cursor.lastrowid
+            return contract_id
 
     def get_pending_overrides(self, before_chapter: int = None) -> List[Dict]:
         """获取待偿还的Override Contracts"""
@@ -1280,13 +1320,14 @@ class IndexManager:
             return [dict(row) for row in cursor.fetchall()]
 
     def get_overdue_debts(self, current_chapter: int) -> List[Dict]:
-        """获取已逾期的债务"""
+        """获取已逾期的债务（包括 active 但已过期的，以及已标记为 overdue 的）"""
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
                 SELECT * FROM chase_debt
-                WHERE status = 'active' AND due_chapter < ?
+                WHERE (status = 'overdue')
+                   OR (status = 'active' AND due_chapter < ?)
                 ORDER BY due_chapter ASC
             """,
                 (current_chapter,),
@@ -1294,12 +1335,12 @@ class IndexManager:
             return [dict(row) for row in cursor.fetchall()]
 
     def get_total_debt_balance(self) -> float:
-        """获取总债务余额"""
+        """获取总债务余额（包括 active 和 overdue）"""
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT COALESCE(SUM(current_amount), 0) FROM chase_debt
-                WHERE status = 'active'
+                WHERE status IN ('active', 'overdue')
             """)
             return cursor.fetchone()[0]
 
@@ -1307,16 +1348,25 @@ class IndexManager:
         """
         计算利息（每章调用一次）
 
-        返回: {debts_processed, total_interest, new_overdues}
+        - 对 active 和 overdue 债务都计息（逾期债务继续累积利息）
+        - 使用 debt_events 表防止同一章重复计息
+        - 检查逾期并更新状态
+
+        返回: {debts_processed, total_interest, new_overdues, skipped_already_processed}
         """
-        result = {"debts_processed": 0, "total_interest": 0.0, "new_overdues": 0}
+        result = {
+            "debts_processed": 0,
+            "total_interest": 0.0,
+            "new_overdues": 0,
+            "skipped_already_processed": 0,
+        }
 
         with self._get_conn() as conn:
             cursor = conn.cursor()
 
-            # 获取所有活跃债务
+            # 获取所有未偿还债务（active + overdue 都继续计息）
             cursor.execute("""
-                SELECT * FROM chase_debt WHERE status = 'active'
+                SELECT * FROM chase_debt WHERE status IN ('active', 'overdue')
             """)
             debts = cursor.fetchall()
 
@@ -1325,6 +1375,19 @@ class IndexManager:
                 current_amount = debt["current_amount"]
                 interest_rate = debt["interest_rate"]
                 due_chapter = debt["due_chapter"]
+                debt_status = debt["status"]
+
+                # 检查本章是否已计息（防止重复调用）
+                cursor.execute(
+                    """
+                    SELECT 1 FROM debt_events
+                    WHERE debt_id = ? AND chapter = ? AND event_type = 'interest_accrued'
+                """,
+                    (debt_id, current_chapter),
+                )
+                if cursor.fetchone():
+                    result["skipped_already_processed"] += 1
+                    continue
 
                 # 计算利息
                 interest = current_amount * interest_rate
@@ -1354,8 +1417,8 @@ class IndexManager:
                 result["debts_processed"] += 1
                 result["total_interest"] += interest
 
-                # 检查是否逾期
-                if current_chapter > due_chapter:
+                # 检查是否逾期（仅对 active 状态的债务）
+                if debt_status == "active" and current_chapter > due_chapter:
                     cursor.execute(
                         """
                         UPDATE chase_debt SET status = 'overdue'
@@ -1382,20 +1445,34 @@ class IndexManager:
         """
         偿还债务
 
-        返回: {remaining, fully_paid}
+        - 校验 amount > 0
+        - 完全偿还时自动标记关联的 Override Contract 为 fulfilled
+
+        返回: {remaining, fully_paid, override_fulfilled}
         """
+        # 校验偿还金额
+        if amount <= 0:
+            return {
+                "remaining": 0,
+                "fully_paid": False,
+                "error": "偿还金额必须大于0",
+            }
+
         with self._get_conn() as conn:
             cursor = conn.cursor()
 
             cursor.execute(
-                "SELECT current_amount FROM chase_debt WHERE id = ?", (debt_id,)
+                "SELECT current_amount, override_contract_id FROM chase_debt WHERE id = ?",
+                (debt_id,),
             )
             row = cursor.fetchone()
             if not row:
                 return {"remaining": 0, "fully_paid": False, "error": "债务不存在"}
 
             current = row["current_amount"]
+            override_contract_id = row["override_contract_id"]
             remaining = max(0, current - amount)
+            override_fulfilled = False
 
             if remaining == 0:
                 # 完全偿还
@@ -1412,6 +1489,20 @@ class IndexManager:
                 self._record_debt_event(
                     cursor, debt_id, "full_payment", amount, chapter, "债务已完全偿还"
                 )
+
+                # 自动标记关联的 Override Contract 为 fulfilled
+                if override_contract_id:
+                    cursor.execute(
+                        """
+                        UPDATE override_contracts SET
+                            status = 'fulfilled',
+                            fulfilled_at = CURRENT_TIMESTAMP
+                        WHERE id = ? AND status = 'pending'
+                    """,
+                        (override_contract_id,),
+                    )
+                    if cursor.rowcount > 0:
+                        override_fulfilled = True
             else:
                 # 部分偿还
                 cursor.execute(
@@ -1433,7 +1524,11 @@ class IndexManager:
                 )
 
             conn.commit()
-            return {"remaining": remaining, "fully_paid": remaining == 0}
+            return {
+                "remaining": remaining,
+                "fully_paid": remaining == 0,
+                "override_fulfilled": override_fulfilled,
+            }
 
     def _record_debt_event(
         self,
@@ -2140,13 +2235,18 @@ def main():
         print(f"  处理债务: {result['debts_processed']} 笔")
         print(f"  总利息: {result['total_interest']:.2f}")
         print(f"  新逾期: {result['new_overdues']} 笔")
+        if result.get("skipped_already_processed", 0) > 0:
+            print(f"  跳过(已计息): {result['skipped_already_processed']} 笔")
 
     elif args.command == "pay-debt":
         result = manager.pay_debt(args.debt_id, args.amount, args.chapter)
         if "error" in result:
             print(f"✗ {result['error']}")
         elif result["fully_paid"]:
-            print(f"✓ 债务 #{args.debt_id} 已完全偿还")
+            msg = f"✓ 债务 #{args.debt_id} 已完全偿还"
+            if result.get("override_fulfilled"):
+                msg += " (关联Override已标记fulfilled)"
+            print(msg)
         else:
             print(f"✓ 债务 #{args.debt_id} 部分偿还，剩余: {result['remaining']:.2f}")
 
