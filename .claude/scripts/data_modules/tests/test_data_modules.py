@@ -8,6 +8,7 @@ import pytest
 import asyncio
 import json
 import tempfile
+import sys
 from pathlib import Path
 
 from data_modules import (
@@ -21,6 +22,15 @@ from data_modules import (
     ChapterMeta,
     SceneMeta,
     StyleSample,
+)
+import data_modules.index_manager as index_manager_module
+from data_modules.index_manager import (
+    EntityMeta,
+    StateChangeMeta,
+    RelationshipMeta,
+    OverrideContractMeta,
+    ChaseDebtMeta,
+    ChapterReadingPowerMeta,
 )
 
 
@@ -38,6 +48,17 @@ class TestEntityLinker:
 
     def test_register_and_lookup_alias(self, temp_project):
         linker = EntityLinker(temp_project)
+        # 先注册实体，否则 aliases JOIN 不会返回
+        IndexManager(temp_project).upsert_entity(
+            EntityMeta(
+                id="xiaoyan",
+                type="角色",
+                canonical_name="萧炎",
+                current={},
+                first_appearance=1,
+                last_appearance=1,
+            )
+        )
 
         # 注册别名
         assert linker.register_alias("xiaoyan", "萧炎")
@@ -52,6 +73,28 @@ class TestEntityLinker:
         """v5.0: 同一别名可映射多个实体（一对多）"""
         linker = EntityLinker(temp_project)
 
+        idx = IndexManager(temp_project)
+        idx.upsert_entity(
+            EntityMeta(
+                id="xiaoyan",
+                type="角色",
+                canonical_name="萧炎",
+                current={},
+                first_appearance=1,
+                last_appearance=1,
+            )
+        )
+        idx.upsert_entity(
+            EntityMeta(
+                id="other_person",
+                type="角色",
+                canonical_name="萧炎",
+                current={},
+                first_appearance=1,
+                last_appearance=1,
+            )
+        )
+
         linker.register_alias("xiaoyan", "萧炎", "角色")
         # v5.0: 同一别名可绑定不同实体（一对多）
         assert linker.register_alias("other_person", "萧炎", "角色")
@@ -62,6 +105,16 @@ class TestEntityLinker:
 
     def test_get_all_aliases(self, temp_project):
         linker = EntityLinker(temp_project)
+        IndexManager(temp_project).upsert_entity(
+            EntityMeta(
+                id="xiaoyan",
+                type="角色",
+                canonical_name="萧炎",
+                current={},
+                first_appearance=1,
+                last_appearance=1,
+            )
+        )
 
         linker.register_alias("xiaoyan", "萧炎")
         linker.register_alias("xiaoyan", "小炎子")
@@ -370,6 +423,16 @@ class TestIndexManager:
     def test_get_stats(self, temp_project):
         manager = IndexManager(temp_project)
 
+        manager.upsert_entity(
+            EntityMeta(
+                id="xiaoyan",
+                type="角色",
+                canonical_name="萧炎",
+                current={},
+                first_appearance=1,
+                last_appearance=1,
+            )
+        )
         manager.add_chapter(ChapterMeta(chapter=1, title="", location="", word_count=1000, characters=[]))
         manager.add_scenes(1, [SceneMeta(chapter=1, scene_index=1, start_line=1, end_line=50,
                                         location="", summary="", characters=[])])
@@ -379,6 +442,717 @@ class TestIndexManager:
         assert stats["chapters"] == 1
         assert stats["scenes"] == 1
         assert stats["entities"] == 1
+
+    def test_entity_alias_and_relationships(self, temp_project):
+        manager = IndexManager(temp_project)
+
+        entity_main = EntityMeta(
+            id="xiaoyan",
+            type="角色",
+            canonical_name="萧炎",
+            tier="核心",
+            desc="主角",
+            current={"realm": "斗者"},
+            first_appearance=1,
+            last_appearance=1,
+            is_protagonist=True,
+        )
+        entity_other = EntityMeta(
+            id="yaolao",
+            type="角色",
+            canonical_name="药老",
+            tier="重要",
+            current={},
+            first_appearance=1,
+            last_appearance=2,
+        )
+
+        assert manager.upsert_entity(entity_main) is True
+        assert manager.upsert_entity(entity_other) is True
+
+        # 更新 current
+        assert manager.update_entity_current("xiaoyan", {"realm": "斗师"}) is True
+        entity = manager.get_entity("xiaoyan")
+        assert entity["current_json"]["realm"] == "斗师"
+
+        # 元数据更新
+        entity_main.desc = "主角（更新）"
+        entity_main.last_appearance = 3
+        assert manager.upsert_entity(entity_main, update_metadata=True) is False
+
+        # 别名管理
+        assert manager.register_alias("炎帝", "xiaoyan", "角色")
+        assert "炎帝" in manager.get_entity_aliases("xiaoyan")
+        assert manager.get_entities_by_alias("炎帝")[0]["id"] == "xiaoyan"
+        assert manager.remove_alias("炎帝", "xiaoyan")
+        assert manager.get_entities_by_alias("炎帝") == []
+
+        # 类型/层级/核心/主角查询
+        assert len(manager.get_entities_by_type("角色")) == 2
+        assert any(e["id"] == "xiaoyan" for e in manager.get_entities_by_tier("核心"))
+        assert any(e["id"] == "xiaoyan" for e in manager.get_core_entities())
+        assert manager.get_protagonist()["id"] == "xiaoyan"
+
+        # 归档实体
+        assert manager.archive_entity("yaolao") is True
+        assert all(e["id"] != "yaolao" for e in manager.get_entities_by_type("角色"))
+        assert any(
+            e["id"] == "yaolao"
+            for e in manager.get_entities_by_type("角色", include_archived=True)
+        )
+
+        # 关系管理（新建 + 更新）
+        rel = RelationshipMeta(
+            from_entity="xiaoyan",
+            to_entity="yaolao",
+            type="师徒",
+            description="收徒",
+            chapter=1,
+        )
+        assert manager.upsert_relationship(rel) is True
+        rel.description = "收徒（更新）"
+        rel.chapter = 2
+        assert manager.upsert_relationship(rel) is False
+
+        assert len(manager.get_entity_relationships("xiaoyan", "from")) == 1
+        assert len(manager.get_entity_relationships("yaolao", "to")) == 1
+        assert len(manager.get_entity_relationships("xiaoyan", "both")) >= 1
+        assert len(manager.get_relationship_between("xiaoyan", "yaolao")) == 1
+        assert len(manager.get_recent_relationships(limit=5)) >= 1
+
+    def test_state_changes_and_appearances(self, temp_project):
+        manager = IndexManager(temp_project)
+
+        entity = EntityMeta(
+            id="xiaoyan",
+            type="角色",
+            canonical_name="萧炎",
+            current={},
+            first_appearance=1,
+            last_appearance=1,
+        )
+        manager.upsert_entity(entity)
+
+        change = StateChangeMeta(
+            entity_id="xiaoyan",
+            field="realm",
+            old_value="斗者",
+            new_value="斗师",
+            reason="突破",
+            chapter=2,
+        )
+        change_id = manager.record_state_change(change)
+        assert change_id > 0
+
+        assert len(manager.get_entity_state_changes("xiaoyan")) == 1
+        assert len(manager.get_recent_state_changes(limit=5)) == 1
+        assert len(manager.get_chapter_state_changes(2)) == 1
+
+        # 出场记录（含 skip_if_exists 分支）
+        manager.record_appearance("xiaoyan", 2, ["萧炎"], 1.0)
+        manager.record_appearance("xiaoyan", 2, ["萧炎"], 1.0, skip_if_exists=True)
+        manager.record_appearance("xiaoyan", 3, ["萧炎"], 1.0)
+
+        assert len(manager.get_entity_appearances("xiaoyan")) == 2
+        assert len(manager.get_recent_appearances(limit=5)) >= 1
+        assert len(manager.get_chapter_appearances(2)) == 1
+
+    def test_chapter_queries_and_bulk(self, temp_project):
+        manager = IndexManager(temp_project)
+
+        manager.add_chapter(
+            ChapterMeta(
+                chapter=1,
+                title="起点",
+                location="天云宗",
+                word_count=1000,
+                characters=["xiaoyan"],
+            )
+        )
+        manager.add_chapter(
+            ChapterMeta(
+                chapter=2,
+                title="突破",
+                location="天云宗",
+                word_count=1200,
+                characters=["xiaoyan", "yaolao"],
+            )
+        )
+
+        recent = manager.get_recent_chapters()
+        assert recent[0]["chapter"] == 2
+
+        scenes = [
+            SceneMeta(
+                chapter=1,
+                scene_index=1,
+                start_line=1,
+                end_line=50,
+                location="天云宗·闭关室",
+                summary="闭关",
+                characters=["xiaoyan"],
+            ),
+            SceneMeta(
+                chapter=1,
+                scene_index=2,
+                start_line=51,
+                end_line=80,
+                location="天云宗·演武场",
+                summary="练习",
+                characters=["xiaoyan"],
+            ),
+        ]
+        manager.add_scenes(1, scenes)
+        assert len(manager.get_scenes(1)) == 2
+
+        results = manager.search_scenes_by_location("天云宗")
+        assert len(results) >= 2
+
+        stats = manager.process_chapter_data(
+            chapter=10,
+            title="试炼",
+            location="秘境",
+            word_count=1500,
+            entities=[{"id": "xiaoyan", "type": "角色", "mentions": ["萧炎"]}],
+            scenes=[{"index": 1, "start_line": 1, "end_line": 20, "location": "秘境", "summary": "开场", "characters": ["xiaoyan"]}],
+        )
+        assert stats["chapters"] == 1
+        assert stats["scenes"] == 1
+        assert stats["appearances"] == 1
+
+    def test_debt_and_override_flow(self, temp_project):
+        manager = IndexManager(temp_project)
+
+        contract = OverrideContractMeta(
+            chapter=1,
+            constraint_type="SOFT_MICROPAYOFF",
+            constraint_id="micropayoff_count",
+            rationale_type="TRANSITIONAL_SETUP",
+            rationale_text="铺垫需要",
+            payback_plan="下章补偿",
+            due_chapter=3,
+            status="pending",
+        )
+        contract_id = manager.create_override_contract(contract)
+        assert contract_id > 0
+
+        # pending 状态允许更新
+        contract.rationale_text = "调整理由"
+        contract.due_chapter = 4
+        assert manager.create_override_contract(contract) == contract_id
+        updated = manager.get_chapter_overrides(1)[0]
+        assert updated["rationale_text"] == "调整理由"
+        assert updated["due_chapter"] == 4
+
+        # 终态冻结
+        contract.status = "fulfilled"
+        contract.rationale_text = "终态理由"
+        contract.due_chapter = 5
+        manager.create_override_contract(contract)
+        frozen = manager.get_chapter_overrides(1)[0]
+        assert frozen["status"] == "fulfilled"
+        assert frozen["rationale_text"] == "终态理由"
+
+        # 试图回写 pending，不应改动终态字段
+        contract.status = "pending"
+        contract.rationale_text = "不应生效"
+        contract.due_chapter = 99
+        manager.create_override_contract(contract)
+        frozen_again = manager.get_chapter_overrides(1)[0]
+        assert frozen_again["status"] == "fulfilled"
+        assert frozen_again["rationale_text"] == "终态理由"
+        assert frozen_again["due_chapter"] == 5
+
+        debt_contract_id = manager.create_override_contract(
+            OverrideContractMeta(
+                chapter=2,
+                constraint_type="SOFT_HOOK_STRENGTH",
+                constraint_id="hook_strength",
+                rationale_type="ARC_TIMING",
+                rationale_text="节奏安排",
+                payback_plan="后续补强",
+                due_chapter=4,
+                status="pending",
+            )
+        )
+
+        debt1 = ChaseDebtMeta(
+            debt_type="hook_strength",
+            original_amount=1.0,
+            current_amount=1.0,
+            interest_rate=0.1,
+            source_chapter=1,
+            due_chapter=2,
+            override_contract_id=debt_contract_id,
+            status="active",
+        )
+        debt2 = ChaseDebtMeta(
+            debt_type="micropayoff",
+            original_amount=2.0,
+            current_amount=2.0,
+            interest_rate=0.2,
+            source_chapter=1,
+            due_chapter=2,
+            override_contract_id=debt_contract_id,
+            status="active",
+        )
+        debt_id_1 = manager.create_debt(debt1)
+        debt_id_2 = manager.create_debt(debt2)
+        assert len(manager.get_active_debts()) == 2
+        assert manager.get_total_debt_balance() > 0
+
+        # 计息与幂等保护
+        result = manager.accrue_interest(current_chapter=2)
+        assert result["debts_processed"] == 2
+        result_again = manager.accrue_interest(current_chapter=2)
+        assert result_again["skipped_already_processed"] == 2
+
+        # 逾期标记
+        result_overdue = manager.accrue_interest(current_chapter=3)
+        assert result_overdue["new_overdues"] >= 1
+        overdue = manager.get_overdue_debts(current_chapter=3)
+        assert any(d["status"] == "overdue" for d in overdue)
+        history = manager.get_debt_history(debt_id_1)
+        assert any(h["event_type"] == "interest_accrued" for h in history)
+
+        # 金额校验
+        error = manager.pay_debt(debt_id_1, 0, chapter=3)
+        assert "error" in error
+
+        # 部分偿还
+        partial = manager.pay_debt(debt_id_1, 0.5, chapter=3)
+        assert partial["fully_paid"] is False
+
+        # 完全偿还（仍有另一笔债务时不应 fulfilled）
+        full = manager.pay_debt(debt_id_1, 100, chapter=3)
+        assert full["fully_paid"] is True
+        assert full["override_fulfilled"] is False
+
+        # 清空最后一笔债务 -> fulfilled
+        full2 = manager.pay_debt(debt_id_2, 100, chapter=3)
+        assert full2["fully_paid"] is True
+        assert full2["override_fulfilled"] is True
+
+    def test_reading_power_and_debt_summary(self, temp_project):
+        manager = IndexManager(temp_project)
+
+        # 追读力元数据
+        manager.save_chapter_reading_power(
+            ChapterReadingPowerMeta(
+                chapter=1,
+                hook_type="渴望钩",
+                hook_strength="strong",
+                coolpoint_patterns=["打脸权威", "身份掉马"],
+                micropayoffs=["能力兑现"],
+                hard_violations=[],
+                soft_suggestions=["SOFT_HOOK_STRENGTH"],
+                is_transition=False,
+                override_count=1,
+                debt_balance=1.5,
+            )
+        )
+        manager.save_chapter_reading_power(
+            ChapterReadingPowerMeta(
+                chapter=2,
+                hook_type="悬念钩",
+                hook_strength="medium",
+                coolpoint_patterns=["身份掉马"],
+                micropayoffs=["信息兑现"],
+                hard_violations=["HARD-004"],
+                soft_suggestions=[],
+                is_transition=True,
+                override_count=0,
+                debt_balance=0.0,
+            )
+        )
+
+        record = manager.get_chapter_reading_power(1)
+        assert record["hook_type"] == "渴望钩"
+        assert "身份掉马" in record["coolpoint_patterns"]
+        assert record["is_transition"] == 0  # SQLite 存储为 0/1
+        assert manager.get_chapter_reading_power(999) is None
+
+        recent = manager.get_recent_reading_power(limit=2)
+        assert len(recent) == 2
+
+        pattern_stats = manager.get_pattern_usage_stats(last_n_chapters=5)
+        assert pattern_stats.get("身份掉马") == 2
+
+        hook_stats = manager.get_hook_type_stats(last_n_chapters=5)
+        assert hook_stats.get("渴望钩") == 1
+
+        # 债务汇总
+        contract_id = manager.create_override_contract(
+            OverrideContractMeta(
+                chapter=3,
+                constraint_type="SOFT_HOOK_STRENGTH",
+                constraint_id="hook_strength",
+                rationale_type="ARC_TIMING",
+                rationale_text="节奏安排",
+                payback_plan="后续补强",
+                due_chapter=5,
+                status="pending",
+            )
+        )
+        manager.create_debt(
+            ChaseDebtMeta(
+                debt_type="hook_strength",
+                original_amount=1.0,
+                current_amount=1.0,
+                interest_rate=0.1,
+                source_chapter=3,
+                due_chapter=4,
+                override_contract_id=contract_id,
+                status="active",
+            )
+        )
+        manager.create_debt(
+            ChaseDebtMeta(
+                debt_type="micropayoff",
+                original_amount=2.0,
+                current_amount=2.0,
+                interest_rate=0.1,
+                source_chapter=3,
+                due_chapter=4,
+                override_contract_id=0,
+                status="overdue",
+            )
+        )
+
+        summary = manager.get_debt_summary()
+        assert summary["active_debts"] == 1
+        assert summary["overdue_debts"] == 1
+        assert summary["pending_overrides"] >= 1
+        assert summary["total_balance"] == summary["active_total"] + summary["overdue_total"]
+
+        pending = manager.get_pending_overrides()
+        assert any(o["id"] == contract_id for o in pending)
+        pending_before = manager.get_pending_overrides(before_chapter=10)
+        assert any(o["id"] == contract_id for o in pending_before)
+        overdue_overrides = manager.get_overdue_overrides(current_chapter=6)
+        assert any(o["id"] == contract_id for o in overdue_overrides)
+
+        other_id = manager.create_override_contract(
+            OverrideContractMeta(
+                chapter=4,
+                constraint_type="SOFT_EXPECTATION_OVERLOAD",
+                constraint_id="expectation_count",
+                rationale_type="EDITORIAL_INTENT",
+                rationale_text="作者意图",
+                payback_plan="后续补足",
+                due_chapter=6,
+                status="pending",
+            )
+        )
+        assert manager.fulfill_override(other_id) is True
+        assert manager.get_chapter_overrides(4)[0]["status"] == "fulfilled"
+
+    def test_index_manager_cli(self, temp_project, monkeypatch, capsys):
+        root = str(temp_project.project_root)
+        manager = IndexManager(temp_project)
+
+        # 基础数据
+        manager.upsert_entity(
+            EntityMeta(
+                id="xiaoyan",
+                type="角色",
+                canonical_name="萧炎",
+                tier="核心",
+                current={"realm": "斗者"},
+                first_appearance=1,
+                last_appearance=1,
+                is_protagonist=True,
+            )
+        )
+        manager.upsert_entity(
+            EntityMeta(
+                id="yaolao",
+                type="角色",
+                canonical_name="药老",
+                tier="重要",
+                current={},
+                first_appearance=1,
+                last_appearance=2,
+            )
+        )
+
+        manager.register_alias("炎帝", "xiaoyan", "角色")
+        manager.add_chapter(
+            ChapterMeta(
+                chapter=1,
+                title="起点",
+                location="天云宗",
+                word_count=1000,
+                characters=["xiaoyan"],
+            )
+        )
+        manager.add_scenes(
+            1,
+            [
+                SceneMeta(
+                    chapter=1,
+                    scene_index=1,
+                    start_line=1,
+                    end_line=20,
+                    location="天云宗·闭关室",
+                    summary="闭关",
+                    characters=["xiaoyan"],
+                )
+            ],
+        )
+        manager.record_appearance("xiaoyan", 1, ["萧炎"], 1.0)
+        manager.record_state_change(
+            StateChangeMeta(
+                entity_id="xiaoyan",
+                field="realm",
+                old_value="斗者",
+                new_value="斗师",
+                reason="突破",
+                chapter=1,
+            )
+        )
+        manager.upsert_relationship(
+            RelationshipMeta(
+                from_entity="xiaoyan",
+                to_entity="yaolao",
+                type="师徒",
+                description="收徒",
+                chapter=1,
+            )
+        )
+
+        # 追读力与债务
+        manager.save_chapter_reading_power(
+            ChapterReadingPowerMeta(
+                chapter=1,
+                hook_type="渴望钩",
+                hook_strength="medium",
+                coolpoint_patterns=["身份掉马"],
+                micropayoffs=["能力兑现"],
+                hard_violations=[],
+                soft_suggestions=[],
+            )
+        )
+        contract_id = manager.create_override_contract(
+            OverrideContractMeta(
+                chapter=1,
+                constraint_type="SOFT_HOOK_STRENGTH",
+                constraint_id="hook_strength",
+                rationale_type="ARC_TIMING",
+                rationale_text="节奏安排",
+                payback_plan="后续补强",
+                due_chapter=2,
+                status="pending",
+            )
+        )
+        debt_id = manager.create_debt(
+            ChaseDebtMeta(
+                debt_type="hook_strength",
+                original_amount=1.0,
+                current_amount=1.0,
+                interest_rate=0.1,
+                source_chapter=1,
+                due_chapter=2,
+                override_contract_id=contract_id,
+                status="active",
+            )
+        )
+
+        def run_cli(args):
+            monkeypatch.setattr(sys, "argv", ["index_manager"] + args)
+            index_manager_module.main()
+
+        # 基础命令
+        run_cli(["--project-root", root, "stats"])
+        run_cli(["--project-root", root, "get-chapter", "--chapter", "1"])
+        run_cli(["--project-root", root, "get-chapter", "--chapter", "99"])
+        run_cli(["--project-root", root, "recent-appearances", "--limit", "5"])
+        run_cli(["--project-root", root, "entity-appearances", "--entity", "xiaoyan", "--limit", "5"])
+        run_cli(["--project-root", root, "search-scenes", "--location", "天云宗", "--limit", "5"])
+
+        # 处理章节
+        run_cli(
+            [
+                "--project-root",
+                root,
+                "process-chapter",
+                "--chapter",
+                "2",
+                "--title",
+                "试炼",
+                "--location",
+                "秘境",
+                "--word-count",
+                "1200",
+                "--entities",
+                json.dumps([{"id": "xiaoyan", "mentions": ["萧炎"]}], ensure_ascii=False),
+                "--scenes",
+                json.dumps(
+                    [
+                        {
+                            "index": 1,
+                            "start_line": 1,
+                            "end_line": 10,
+                            "location": "秘境",
+                            "summary": "开场",
+                            "characters": ["xiaoyan"],
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+
+        # v5.1 命令
+        run_cli(["--project-root", root, "get-entity", "--id", "xiaoyan"])
+        run_cli(["--project-root", root, "get-entity", "--id", "missing"])
+        run_cli(["--project-root", root, "get-core-entities"])
+        run_cli(["--project-root", root, "get-protagonist"])
+        run_cli(
+            ["--project-root", root, "get-entities-by-type", "--type", "角色", "--include-archived"]
+        )
+        run_cli(["--project-root", root, "get-by-alias", "--alias", "炎帝"])
+        run_cli(["--project-root", root, "get-by-alias", "--alias", "不存在"])
+        run_cli(["--project-root", root, "get-aliases", "--entity", "xiaoyan"])
+        run_cli(["--project-root", root, "register-alias", "--alias", "炎哥", "--entity", "xiaoyan", "--type", "角色"])
+        run_cli(["--project-root", root, "get-relationships", "--entity", "xiaoyan", "--direction", "from"])
+        run_cli(["--project-root", root, "get-state-changes", "--entity", "xiaoyan", "--limit", "20"])
+        run_cli(
+            [
+                "--project-root",
+                root,
+                "upsert-entity",
+                "--data",
+                json.dumps(
+                    {
+                        "id": "lintian",
+                        "type": "角色",
+                        "canonical_name": "林天",
+                        "tier": "装饰",
+                        "current": {"realm": "斗者"},
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        run_cli(
+            [
+                "--project-root",
+                root,
+                "upsert-relationship",
+                "--data",
+                json.dumps(
+                    {
+                        "from_entity": "xiaoyan",
+                        "to_entity": "lintian",
+                        "type": "相识",
+                        "description": "初见",
+                        "chapter": 2,
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        run_cli(
+            [
+                "--project-root",
+                root,
+                "record-state-change",
+                "--data",
+                json.dumps(
+                    {
+                        "entity_id": "xiaoyan",
+                        "field": "realm",
+                        "old_value": "斗者",
+                        "new_value": "斗师",
+                        "reason": "突破",
+                        "chapter": 2,
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+
+        # v5.3 命令
+        run_cli(["--project-root", root, "get-debt-summary"])
+        run_cli(["--project-root", root, "get-recent-reading-power", "--limit", "5"])
+        run_cli(["--project-root", root, "get-chapter-reading-power", "--chapter", "1"])
+        run_cli(["--project-root", root, "get-chapter-reading-power", "--chapter", "99"])
+        run_cli(["--project-root", root, "get-pattern-usage-stats", "--last-n", "5"])
+        run_cli(["--project-root", root, "get-hook-type-stats", "--last-n", "5"])
+        run_cli(["--project-root", root, "get-pending-overrides"])
+        run_cli(["--project-root", root, "get-overdue-overrides", "--current-chapter", "3"])
+        run_cli(["--project-root", root, "get-active-debts"])
+        run_cli(["--project-root", root, "get-overdue-debts", "--current-chapter", "3"])
+        run_cli(["--project-root", root, "accrue-interest", "--current-chapter", "3"])
+        run_cli(["--project-root", root, "pay-debt", "--debt-id", str(debt_id), "--amount", "0", "--chapter", "3"])
+        run_cli(["--project-root", root, "pay-debt", "--debt-id", str(debt_id), "--amount", "5", "--chapter", "3"])
+        run_cli(
+            [
+                "--project-root",
+                root,
+                "create-override-contract",
+                "--data",
+                json.dumps(
+                    {
+                        "chapter": 3,
+                        "constraint_type": "SOFT_MICROPAYOFF",
+                        "constraint_id": "micropayoff_count",
+                        "rationale_type": "TRANSITIONAL_SETUP",
+                        "rationale_text": "铺垫",
+                        "payback_plan": "后续补偿",
+                        "due_chapter": 4,
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        run_cli(
+            [
+                "--project-root",
+                root,
+                "create-debt",
+                "--data",
+                json.dumps(
+                    {
+                        "debt_type": "micropayoff",
+                        "original_amount": 1.0,
+                        "current_amount": 1.0,
+                        "interest_rate": 0.1,
+                        "source_chapter": 3,
+                        "due_chapter": 4,
+                        "override_contract_id": contract_id,
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+        run_cli(["--project-root", root, "fulfill-override", "--contract-id", str(contract_id)])
+        run_cli(
+            [
+                "--project-root",
+                root,
+                "save-chapter-reading-power",
+                "--data",
+                json.dumps(
+                    {
+                        "chapter": 3,
+                        "hook_type": "悬念钩",
+                        "hook_strength": "medium",
+                        "coolpoint_patterns": ["打脸权威"],
+                        "micropayoffs": ["信息兑现"],
+                        "hard_violations": [],
+                        "soft_suggestions": [],
+                        "is_transition": False,
+                        "override_count": 0,
+                        "debt_balance": 0.0,
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        )
+
+        capsys.readouterr()
 
 
 class TestStyleSampler:
