@@ -78,10 +78,10 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                      Claude Code                             │
 ├─────────────────────────────────────────────────────────────┤
-│  Skills (6个)                                                │
+│  Skills (7个)                                                │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐                     │
-│  │  init    │ │   plan   │ │  write   │                     │
-│  └──────────┘ └──────────┘ └──────────┘                     │
+│  │  init    │ │   plan   │ │  write   │ │  learn   │        │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘        │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐                     │
 │  │  review  │ │  query   │ │  resume  │                     │
 │  └──────────┘ └──────────┘ └──────────┘                     │
@@ -134,6 +134,7 @@ pip install -r .claude/scripts/requirements.txt
 |------|------|
 | aiohttp | 异步 HTTP 客户端，用于 Embedding/Reranker API 调用 |
 | filelock | 文件锁，防止 state.json 并发写入冲突 |
+| pydantic | Schema 校验和数据验证 |
 | pytest | 单元测试（可选） |
 | pytest-cov | 覆盖率统计（可选） |
 
@@ -518,17 +519,19 @@ your-novel-project/
 │   │   ├── ooc-checker.md
 │   │   ├── continuity-checker.md
 │   │   └── reader-pull-checker.md  # 追读力检查（v5.2新增）
-│   ├── skills/                 # 6 个核心 Skill
+│   ├── skills/                 # 7 个核心 Skill
 │   │   ├── webnovel-init/
 │   │   ├── webnovel-plan/
 │   │   ├── webnovel-write/
 │   │   ├── webnovel-review/
 │   │   ├── webnovel-query/
-│   │   └── webnovel-resume/
+│   │   ├── webnovel-resume/
+│   │   └── webnovel-learn/     # 模式学习（v5.4新增）
 │   ├── scripts/                # Python 脚本
 │   │   ├── data_modules/
 │   │   │   ├── index_manager.py    # SQLite 索引管理 (v5.3)
-│   │   │   ├── rag_adapter.py      # RAG 检索层
+│   │   │   ├── rag_adapter.py      # RAG 检索层（v5.4父子索引）
+│   │   │   ├── context_manager.py  # Token预算管理（v5.4新增）
 │   │   │   ├── api_client.py       # API 客户端
 │   │   │   └── config.py           # 配置管理
 │   │   ├── context_pack_builder.py # 上下文包构建器
@@ -639,7 +642,17 @@ git checkout ch0045
 
 ## 版本历史
 
-### v5.3 (当前)
+### v5.4 (当前)
+- **上下文工程升级**：基于 Context Engineering Guide 优化
+- **invalid_facts 表**：追踪无效事实，支持 pending/confirmed 状态
+- **父子向量索引**：parent_chunk_id 支持摘要-场景层级检索
+- **Token 预算管理**：ContextManager 实现 40%/35%/25% 优先级分配
+- **webnovel-learn skill**：从会话提取成功模式写入 project_memory.json
+- **CLI 统一输出**：CLIResponse 标准化 JSON 输出格式
+- **Pydantic Schema**：DataAgentOutput 等结构化验证
+- **不向前兼容**：vectors.db 表结构变更时自动 DROP+CREATE
+
+### v5.3
 - **追读力分类标准**：钩子5类型、爽点8模式、微兑现7类型
 - **约束分层机制**：Hard Invariants (4条) + Soft Guidance (可Override)
 - **Override Contract**：违反软建议需记录理由和偿还计划
