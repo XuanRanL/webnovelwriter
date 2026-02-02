@@ -163,6 +163,22 @@ Chapters {N} - {M}
 **Minor Issues**: {count} (Recommend fixing)
 ```
 
+### Step 5: 标记无效事实（新增）
+
+对于发现的 **CRITICAL** 级别问题，自动标记到 invalid_facts（pending）：
+
+```bash
+python -m data_modules.index_manager mark-invalid \
+  --source-type entity \
+  --source-id {entity_id} \
+  --reason "{问题描述}" \
+  --marked-by consistency-checker \
+  --chapter {current_chapter} \
+  --project-root "."
+```
+
+> 注意：自动标记仅为 `pending`，需用户确认后才生效。
+
 ## Anti-Patterns (Forbidden)
 
 ❌ Approving chapters with POWER_CONFLICT (战力崩坏)
