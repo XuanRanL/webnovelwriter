@@ -105,6 +105,33 @@ async def test_hybrid_search_prefilter(tmp_path, monkeypatch):
     assert results
 
 
+@pytest.mark.asyncio
+async def test_search_with_backtrack(temp_project):
+    adapter = RAGAdapter(temp_project)
+    chunks = [
+        {
+            "chapter": 1,
+            "scene_index": 0,
+            "content": "章节摘要",
+            "chunk_type": "summary",
+            "chunk_id": "ch0001_summary",
+            "source_file": "summaries/ch0001.md",
+        },
+        {
+            "chapter": 1,
+            "scene_index": 1,
+            "content": "场景内容",
+            "chunk_type": "scene",
+            "chunk_id": "ch0001_s1",
+            "parent_chunk_id": "ch0001_summary",
+            "source_file": "正文/第0001章.md#scene_1",
+        },
+    ]
+    await adapter.store_chunks(chunks)
+    results = await adapter.search_with_backtrack("场景", top_k=1)
+    assert any(r.chunk_type == "summary" for r in results)
+
+
 def test_vector_helpers(temp_project):
     adapter = RAGAdapter(temp_project)
     emb = [1.0, 0.0]
@@ -119,14 +146,14 @@ def test_recent_and_fetch_vectors(temp_project):
     with adapter._get_conn() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO vectors (chunk_id, chapter, scene_index, content, embedding) VALUES (?, ?, ?, ?, ?)",
-            ("ch1_s1", 1, 1, "内容", b""),
+            "INSERT INTO vectors (chunk_id, chapter, scene_index, content, embedding, parent_chunk_id, chunk_type, source_file) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("ch0001_s1", 1, 1, "内容", b"", None, "scene", "正文/第0001章.md#scene_1"),
         )
         conn.commit()
 
     assert adapter._get_vectors_count() == 1
-    assert adapter._get_recent_chunk_ids(1) == ["ch1_s1"]
-    rows = adapter._fetch_vectors_by_chunk_ids(["ch1_s1"])
+    assert adapter._get_recent_chunk_ids(1) == ["ch0001_s1"]
+    rows = adapter._fetch_vectors_by_chunk_ids(["ch0001_s1"])
     assert len(rows) == 1
 
 
