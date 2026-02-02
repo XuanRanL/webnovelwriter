@@ -1140,15 +1140,17 @@ class IndexManager:
         使用 SQLite 的 INSERT ... ON CONFLICT ... DO UPDATE 实现原子 UPSERT：
         - 并发安全，无需显式锁
         - 保持 id 不变，避免 chase_debt.override_contract_id 悬挂
-        - 保护终态：已 fulfilled/cancelled 的合约不会被拉回 pending
+        - 完全冻结终态：已 fulfilled/cancelled 的合约所有字段都不会被修改
+
+        兼容性：支持 SQLite 3.24+（ON CONFLICT 语法），不依赖 RETURNING（3.35+）
 
         返回合约 ID
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
 
-            # 使用 ON CONFLICT 实现原子 UPSERT
-            # 注意：仅当现有状态为 pending 时才更新，保护 fulfilled/cancelled 终态
+            # 使用 ON CONFLICT 实现原子 UPSERT（SQLite 3.24+）
+            # 终态完全冻结：fulfilled/cancelled 状态下所有字段都保持不变
             cursor.execute(
                 """
                 INSERT INTO override_contracts
@@ -1156,16 +1158,31 @@ class IndexManager:
                  rationale_text, payback_plan, due_chapter, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(chapter, constraint_type, constraint_id) DO UPDATE SET
-                    rationale_type = excluded.rationale_type,
-                    rationale_text = excluded.rationale_text,
-                    payback_plan = excluded.payback_plan,
-                    due_chapter = excluded.due_chapter,
+                    rationale_type = CASE
+                        WHEN override_contracts.status IN ('fulfilled', 'cancelled')
+                        THEN override_contracts.rationale_type
+                        ELSE excluded.rationale_type
+                    END,
+                    rationale_text = CASE
+                        WHEN override_contracts.status IN ('fulfilled', 'cancelled')
+                        THEN override_contracts.rationale_text
+                        ELSE excluded.rationale_text
+                    END,
+                    payback_plan = CASE
+                        WHEN override_contracts.status IN ('fulfilled', 'cancelled')
+                        THEN override_contracts.payback_plan
+                        ELSE excluded.payback_plan
+                    END,
+                    due_chapter = CASE
+                        WHEN override_contracts.status IN ('fulfilled', 'cancelled')
+                        THEN override_contracts.due_chapter
+                        ELSE excluded.due_chapter
+                    END,
                     status = CASE
                         WHEN override_contracts.status IN ('fulfilled', 'cancelled')
                         THEN override_contracts.status
                         ELSE excluded.status
                     END
-                RETURNING id
             """,
                 (
                     contract.chapter,
@@ -1178,8 +1195,17 @@ class IndexManager:
                     contract.status,
                 ),
             )
+
+            # 不使用 RETURNING（需要 SQLite 3.35+），改用查询获取 id
+            cursor.execute(
+                """
+                SELECT id FROM override_contracts
+                WHERE chapter = ? AND constraint_type = ? AND constraint_id = ?
+            """,
+                (contract.chapter, contract.constraint_type, contract.constraint_id),
+            )
             row = cursor.fetchone()
-            contract_id = row[0] if row else cursor.lastrowid
+            contract_id = row[0] if row else 0
 
             conn.commit()
             return contract_id
@@ -1428,7 +1454,8 @@ class IndexManager:
         偿还债务
 
         - 校验 amount > 0
-        - 完全偿还时，若关联 Override 的所有债务都已清零，才标记为 fulfilled
+        - 完全偿还时，使用原子 UPDATE 检查并标记关联 Override 为 fulfilled
+          （并发安全：用 NOT EXISTS 子查询确保所有债务都已清零）
 
         返回: {remaining, fully_paid, override_fulfilled}
         """
@@ -1472,32 +1499,26 @@ class IndexManager:
                     cursor, debt_id, "full_payment", amount, chapter, "债务已完全偿还"
                 )
 
-                # 检查关联 Override 的所有债务是否都已清零
-                # 只有当同一 override_contract_id 下没有 active/overdue 债务时才标记 fulfilled
+                # 原子检查并标记 Override 为 fulfilled
+                # 使用 NOT EXISTS 子查询确保并发安全：只有当确实没有未清债务时才更新
                 if override_contract_id:
                     cursor.execute(
                         """
-                        SELECT COUNT(*) FROM chase_debt
-                        WHERE override_contract_id = ?
-                          AND status IN ('active', 'overdue')
-                          AND id != ?
+                        UPDATE override_contracts SET
+                            status = 'fulfilled',
+                            fulfilled_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                          AND status = 'pending'
+                          AND NOT EXISTS (
+                              SELECT 1 FROM chase_debt
+                              WHERE override_contract_id = ?
+                                AND status IN ('active', 'overdue')
+                          )
                     """,
-                        (override_contract_id, debt_id),
+                        (override_contract_id, override_contract_id),
                     )
-                    remaining_debts = cursor.fetchone()[0]
-
-                    if remaining_debts == 0:
-                        cursor.execute(
-                            """
-                            UPDATE override_contracts SET
-                                status = 'fulfilled',
-                                fulfilled_at = CURRENT_TIMESTAMP
-                            WHERE id = ? AND status = 'pending'
-                        """,
-                            (override_contract_id,),
-                        )
-                        if cursor.rowcount > 0:
-                            override_fulfilled = True
+                    if cursor.rowcount > 0:
+                        override_fulfilled = True
             else:
                 # 部分偿还
                 cursor.execute(
