@@ -167,10 +167,10 @@ def test_sql_state_manager_export_protagonist_and_cli(temp_project, monkeypatch,
     def run_cli(args):
         monkeypatch.setattr(sys, "argv", args)
         sql_state_manager_module.main()
-        return capsys.readouterr().out
+        return json.loads(capsys.readouterr().out or "{}")
 
     out = run_cli(["sql_state_manager", "--project-root", str(temp_project.project_root), "get-protagonist"])
-    assert "未设置主角" in out
+    assert out.get("status") == "error"
 
     manager.upsert_entity(
         EntityData(id="xiaoyan", type="角色", name="萧炎", is_protagonist=True)
@@ -179,19 +179,23 @@ def test_sql_state_manager_export_protagonist_and_cli(temp_project, monkeypatch,
     assert exported["角色"]["xiaoyan"]["is_protagonist"] is True
 
     out = run_cli(["sql_state_manager", "--project-root", str(temp_project.project_root), "get-protagonist"])
-    assert "萧炎" in out
+    assert out["status"] == "success"
+    assert out["data"].get("canonical_name") == "萧炎"
 
     out = run_cli(["sql_state_manager", "--project-root", str(temp_project.project_root), "stats"])
-    assert "entities" in out
+    assert out["status"] == "success"
+    assert "entities" in out.get("data", {})
 
     out = run_cli(["sql_state_manager", "--project-root", str(temp_project.project_root), "get-core-entities"])
-    assert "萧炎" in out
+    assert out["status"] == "success"
 
     out = run_cli(["sql_state_manager", "--project-root", str(temp_project.project_root), "export-entities-v3"])
-    assert "角色" in out
+    assert out["status"] == "success"
+    assert "角色" in out.get("data", {})
 
     out = run_cli(["sql_state_manager", "--project-root", str(temp_project.project_root), "export-alias-index"])
-    assert isinstance(json.loads(out or "{}"), dict)
+    assert out["status"] == "success"
+    assert isinstance(out.get("data", {}), dict)
 
     payload = json.dumps({"entities_appeared": [], "entities_new": [], "state_changes": [], "relationships_new": []})
     out = run_cli([
@@ -204,4 +208,4 @@ def test_sql_state_manager_export_protagonist_and_cli(temp_project, monkeypatch,
         "--data",
         payload,
     ])
-    assert "已处理第 2 章" in out
+    assert out["status"] == "success"

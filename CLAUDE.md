@@ -28,7 +28,7 @@
 │   ├── reader-pull-checker.md  # 追读力检查器 (v5.3)
 │   ├── high-point-checker.md   # 爽点检查器 (v5.3)
 │   └── ...
-├── skills/                 # 6 个核心 Skill
+├── skills/                 # 7 个核心 Skill
 │   ├── webnovel-init/
 │   ├── webnovel-plan/
 │   ├── webnovel-write/     # 主写作流程 (v5.3)
@@ -54,6 +54,7 @@
 | `/webnovel-review [范围]` | 质量审查 |
 | `/webnovel-query [关键词]` | 信息查询 |
 | `/webnovel-resume` | 恢复中断任务 |
+| `/webnovel-learn [描述]` | 记忆写入 |
 
 ## v5.3 新增功能
 

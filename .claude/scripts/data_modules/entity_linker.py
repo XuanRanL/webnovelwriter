@@ -179,6 +179,8 @@ class EntityLinker:
 
 def main():
     import argparse
+    from .cli_output import print_success, print_error
+    from .index_manager import IndexManager
 
     parser = argparse.ArgumentParser(description="Entity Linker CLI (v5.1 SQLite)")
     parser.add_argument("--project-root", type=str, help="项目根目录")
@@ -214,41 +216,50 @@ def main():
         config = DataModulesConfig.from_project_root(args.project_root)
 
     linker = EntityLinker(config)
+    logger = IndexManager(config)
+    tool_name = f"entity_linker:{args.command or 'unknown'}"
+
+    def emit_success(data=None, message: str = "ok"):
+        print_success(data, message=message)
+        try:
+            logger.log_tool_call(tool_name, True)
+        except Exception:
+            pass
+
+    def emit_error(code: str, message: str, suggestion: str | None = None):
+        print_error(code, message, suggestion=suggestion)
+        try:
+            logger.log_tool_call(tool_name, False, error_code=code, error_message=message)
+        except Exception:
+            pass
 
     if args.command == "register-alias":
         entity_type = getattr(args, "type", "角色")
         success = linker.register_alias(args.entity, args.alias, entity_type)
         if success:
-            print(f"✓ 已注册: {args.alias} → {args.entity} (类型: {entity_type})")
+            emit_success({"entity": args.entity, "alias": args.alias, "type": entity_type}, message="alias_registered")
         else:
-            print(f"✗ 注册失败或已存在")
+            emit_error("ALIAS_EXISTS", "注册失败或已存在")
 
     elif args.command == "lookup":
         entity_type = getattr(args, "type", None)
         entity_id = linker.lookup_alias(args.mention, entity_type)
         if entity_id:
-            print(f"{args.mention} → {entity_id}")
+            emit_success({"mention": args.mention, "entity": entity_id}, message="lookup")
         else:
-            print(f"未找到: {args.mention}")
+            emit_error("NOT_FOUND", f"未找到别名: {args.mention}")
 
     elif args.command == "lookup-all":
-        entries = linker.lookup_alias_all(args.mention)
-        if entries:
-            print(f"{args.mention} 的所有匹配:")
-            for entry in entries:
-                print(f"  - {entry.get('id')} (类型: {entry.get('type')})")
-        else:
-            print(f"未找到: {args.mention}")
+        matches = linker.lookup_alias_all(args.mention)
+        emit_success(matches, message="lookup_all")
 
     elif args.command == "list-aliases":
         entity_type = getattr(args, "type", None)
         aliases = linker.get_all_aliases(args.entity, entity_type)
-        if aliases:
-            print(f"{args.entity} 的别名:")
-            for alias in aliases:
-                print(f"  - {alias}")
-        else:
-            print(f"未找到 {args.entity} 的别名")
+        emit_success(aliases, message="aliases")
+
+    else:
+        emit_error("UNKNOWN_COMMAND", "未指定有效命令", suggestion="请查看 --help")
 
 
 if __name__ == "__main__":

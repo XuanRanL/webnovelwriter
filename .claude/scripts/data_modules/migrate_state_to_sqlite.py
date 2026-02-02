@@ -324,6 +324,8 @@ def _slim_relationships(relationships: Dict) -> Dict:
 
 def main():
     import argparse
+    from .cli_output import print_success, print_error
+    from .index_manager import IndexManager
 
     parser = argparse.ArgumentParser(description="迁移 state.json 到 SQLite (v5.1)")
     parser.add_argument("--project-root", type=str, required=True, help="项目根目录")
@@ -336,22 +338,37 @@ def main():
 
     config = DataModulesConfig.from_project_root(args.project_root)
     backup = not args.no_backup
+    logger = IndexManager(config)
+    tool_name = "migrate_state_to_sqlite"
 
-    print(f"🚀 开始迁移 state.json → SQLite")
-    print(f"   项目: {config.project_root}")
-    print(f"   state.json: {config.state_file}")
-    print(f"   index.db: {config.index_db}")
-    print()
+    try:
+        stats = migrate_state_to_sqlite(
+            config=config,
+            dry_run=args.dry_run,
+            backup=backup,
+            verbose=False,
+        )
+    except Exception as exc:
+        print_error("MIGRATE_FAILED", str(exc), suggestion="检查 state.json 与 index.db 权限")
+        try:
+            logger.log_tool_call(tool_name, False, error_code="MIGRATE_FAILED", error_message=str(exc))
+        except Exception:
+            pass
+        raise SystemExit(1)
 
-    stats = migrate_state_to_sqlite(
-        config=config,
-        dry_run=args.dry_run,
-        backup=backup,
-        verbose=not args.quiet
-    )
+    if stats.get("errors", 0) > 0:
+        print_error("MIGRATE_ERRORS", "迁移出现错误", details=stats)
+        try:
+            logger.log_tool_call(tool_name, False, error_code="MIGRATE_ERRORS", error_message="迁移出现错误")
+        except Exception:
+            pass
+        raise SystemExit(1)
 
-    if stats["errors"] > 0:
-        exit(1)
+    print_success({"project": str(config.project_root), **stats}, message="migrated")
+    try:
+        logger.log_tool_call(tool_name, True)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

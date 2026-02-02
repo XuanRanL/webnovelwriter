@@ -18,6 +18,9 @@ from .entity_linker import EntityLinker, DisambiguationResult
 from .state_manager import StateManager, EntityState, Relationship, StateChange
 from .index_manager import IndexManager, ChapterMeta, SceneMeta
 from .rag_adapter import RAGAdapter, SearchResult
+from .context_manager import ContextManager
+from .snapshot_manager import SnapshotManager
+from .query_router import QueryRouter
 from .style_sampler import StyleSampler, StyleSample, SceneType
 
 __all__ = [
@@ -43,6 +46,9 @@ __all__ = [
     # RAG Adapter
     "RAGAdapter",
     "SearchResult",
+    "ContextManager",
+    "SnapshotManager",
+    "QueryRouter",
     # Style Sampler
     "StyleSampler",
     "StyleSample",

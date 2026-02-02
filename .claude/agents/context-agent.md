@@ -69,6 +69,9 @@ tools: Read, Grep, Bash
 - `state.json`: 进度、主角状态、strand_tracker、chapter_meta、project.genre
 - `index.db`: 实体/别名/关系/状态变化/override_contracts/chase_debt/chapter_reading_power
 - `.webnovel/summaries/ch{NNNN}.md`: 章节摘要（含钩子/结束状态）
+- `.webnovel/context_snapshots/`: 上下文快照（优先复用）
+- `.webnovel/preferences.json`: 用户偏好（阶段3）
+- `.webnovel/project_memory.json`: 项目记忆（阶段3）
 - `大纲/`: 本章大纲 + 卷概述
 - `设定集/`: 世界观/力量体系/角色卡
 - `.claude/references/`: Taxonomy + Genre Profiles
@@ -76,6 +79,14 @@ tools: Read, Grep, Bash
 ---
 
 ## 执行流程
+
+### Step 0: ContextManager 快照优先
+```bash
+python -m data_modules.context_manager --chapter {NNNN} --project-root "."
+```
+- 若存在兼容快照，直接读取
+- 版本不兼容时自动重建并保存
+- 过滤 confirmed 的 invalid_facts，pending 标记为提示
 
 ### Step 1: 读取题材Profile
 ```bash
@@ -121,6 +132,12 @@ python -m data_modules.index_manager get-hook-type-stats --last-n 20 --project-r
 python -m data_modules.index_manager get-debt-summary --project-root "."
 python -m data_modules.index_manager get-pending-overrides --before-chapter {current+3} --project-root "."
 ```
+
+### Step 6: 来源标注（人读）
+- 对所有事实性引用追加来源标注，例如：
+  - `【来源: summaries/ch0100.md】`
+  - `【来源: 正文/第0100章.md#scene_2】`
+- 若为推断信息，明确标注“推断”。
 
 ### Step 6: 查询实体与关系（index.db）
 ```bash

@@ -470,6 +470,8 @@ class SQLStateManager:
 
 def main():
     import argparse
+    from .cli_output import print_success, print_error
+    from .index_manager import IndexManager
 
     parser = argparse.ArgumentParser(description="SQL State Manager CLI (v5.1)")
     parser.add_argument("--project-root", type=str, help="项目根目录")
@@ -505,29 +507,45 @@ def main():
         config = DataModulesConfig.from_project_root(args.project_root)
 
     manager = SQLStateManager(config)
+    logger = IndexManager(config)
+    tool_name = f"sql_state_manager:{args.command or 'unknown'}"
+
+    def emit_success(data=None, message: str = "ok"):
+        print_success(data, message=message)
+        try:
+            logger.log_tool_call(tool_name, True)
+        except Exception:
+            pass
+
+    def emit_error(code: str, message: str, suggestion: str | None = None):
+        print_error(code, message, suggestion=suggestion)
+        try:
+            logger.log_tool_call(tool_name, False, error_code=code, error_message=message)
+        except Exception:
+            pass
 
     if args.command == "stats":
         stats = manager.get_stats()
-        print(json.dumps(stats, ensure_ascii=False, indent=2))
+        emit_success(stats, message="stats")
 
     elif args.command == "get-protagonist":
         protagonist = manager.get_protagonist()
         if protagonist:
-            print(json.dumps(protagonist, ensure_ascii=False, indent=2))
+            emit_success(protagonist, message="protagonist")
         else:
-            print("未设置主角")
+            emit_error("NOT_FOUND", "未设置主角")
 
     elif args.command == "get-core-entities":
         entities = manager.get_core_entities()
-        print(json.dumps(entities, ensure_ascii=False, indent=2))
+        emit_success(entities, message="core_entities")
 
     elif args.command == "export-entities-v3":
         data = manager.export_to_entities_v3_format()
-        print(json.dumps(data, ensure_ascii=False, indent=2))
+        emit_success(data, message="entities_v3")
 
     elif args.command == "export-alias-index":
         data = manager.export_to_alias_index_format()
-        print(json.dumps(data, ensure_ascii=False, indent=2))
+        emit_success(data, message="alias_index")
 
     elif args.command == "process-chapter":
         data = json.loads(args.data)
@@ -536,10 +554,12 @@ def main():
             entities_appeared=data.get("entities_appeared", []),
             entities_new=data.get("entities_new", []),
             state_changes=data.get("state_changes", []),
-            relationships_new=data.get("relationships_new", [])
+            relationships_new=data.get("relationships_new", []),
         )
-        print(f"✓ 已处理第 {args.chapter} 章")
-        print(json.dumps(stats, ensure_ascii=False, indent=2))
+        emit_success(stats, message="chapter_processed")
+
+    else:
+        emit_error("UNKNOWN_COMMAND", "未指定有效命令", suggestion="请查看 --help")
 
 
 if __name__ == "__main__":

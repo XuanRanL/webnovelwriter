@@ -134,8 +134,8 @@ def test_migrate_state_cli_main(tmp_path, monkeypatch, capsys):
     ]
     monkeypatch.setattr("sys.argv", args)
     migrate_module.main()
-    output = capsys.readouterr().out
-    assert "state.json" in output
+    output = json.loads(capsys.readouterr().out or "{}")
+    assert output.get("status") == "success"
 
 def test_migrate_state_backup_and_skips(temp_project):
     state = {

@@ -308,6 +308,8 @@ class StyleSampler:
 
 def main():
     import argparse
+    from .cli_output import print_success, print_error
+    from .index_manager import IndexManager
 
     parser = argparse.ArgumentParser(description="Style Sampler CLI")
     parser.add_argument("--project-root", type=str, help="项目根目录")
@@ -342,20 +344,33 @@ def main():
         config = DataModulesConfig.from_project_root(args.project_root)
 
     sampler = StyleSampler(config)
+    logger = IndexManager(config)
+    tool_name = f"style_sampler:{args.command or 'unknown'}"
+
+    def emit_success(data=None, message: str = "ok"):
+        print_success(data, message=message)
+        try:
+            logger.log_tool_call(tool_name, True)
+        except Exception:
+            pass
+
+    def emit_error(code: str, message: str, suggestion: str | None = None):
+        print_error(code, message, suggestion=suggestion)
+        try:
+            logger.log_tool_call(tool_name, False, error_code=code, error_message=message)
+        except Exception:
+            pass
 
     if args.command == "stats":
         stats = sampler.get_stats()
-        print(json.dumps(stats, ensure_ascii=False, indent=2))
+        emit_success(stats, message="stats")
 
     elif args.command == "list":
         if args.type:
             samples = sampler.get_samples_by_type(args.type, args.limit)
         else:
             samples = sampler.get_best_samples(args.limit)
-
-        for s in samples:
-            print(f"\n[{s.scene_type}] 第 {s.chapter} 章 (score: {s.score:.2f})")
-            print(f"  {s.content[:100]}...")
+        emit_success([s.__dict__ for s in samples], message="samples")
 
     elif args.command == "extract":
         scenes = json.loads(args.scenes)
@@ -363,22 +378,24 @@ def main():
             chapter=args.chapter,
             content="",
             review_score=args.score,
-            scenes=scenes
+            scenes=scenes,
         )
 
+        added = []
+        skipped = []
         for c in candidates:
             if sampler.add_sample(c):
-                print(f"✓ 添加样本: {c.id} ({c.scene_type})")
+                added.append(c.id)
             else:
-                print(f"✗ 样本已存在: {c.id}")
+                skipped.append(c.id)
+        emit_success({"added": added, "skipped": skipped}, message="extracted")
 
     elif args.command == "select":
         samples = sampler.select_samples_for_chapter(args.outline, max_samples=args.max)
+        emit_success([s.__dict__ for s in samples], message="selected")
 
-        print(f"选择了 {len(samples)} 个风格样本:")
-        for s in samples:
-            print(f"\n[{s.scene_type}] 第 {s.chapter} 章")
-            print(f"  {s.content[:200]}...")
+    else:
+        emit_error("UNKNOWN_COMMAND", "未指定有效命令", suggestion="请查看 --help")
 
 
 if __name__ == "__main__":

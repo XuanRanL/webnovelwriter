@@ -152,8 +152,19 @@ hook_strength: "strong"
 ### Step G: 向量嵌入
 
 ```bash
-python -m data_modules.rag_adapter index-chapter --chapter 100 --scenes '[...]' --project-root "."
+python -m data_modules.rag_adapter index-chapter \
+  --chapter 100 \
+  --scenes '[...]' \
+  --summary "本章摘要文本" \
+  --project-root "."
 ```
+
+**父子索引规则 (v1.2)**:
+- 父块: `chunk_type='summary'`, `chunk_id='ch0100_summary'`
+- 子块: `chunk_type='scene'`, `chunk_id='ch0100_s{scene_index}'`, `parent_chunk_id='ch0100_summary'`
+- `source_file`:
+  - summary: `summaries/ch0100.md`
+  - scene: `正文/第0100章.md#scene_{scene_index}`
 
 ### Step H: 风格样本评估
 

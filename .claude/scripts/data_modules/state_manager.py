@@ -1163,18 +1163,22 @@ class StateManager:
 
 def main():
     import argparse
+    from pydantic import ValidationError
+    from .cli_output import print_success, print_error
+    from .schemas import validate_data_agent_output, format_validation_error, normalize_data_agent_output
+    from .index_manager import IndexManager
 
-    parser = argparse.ArgumentParser(description="State Manager CLI")
+    parser = argparse.ArgumentParser(description="State Manager CLI (v5.2)")
     parser.add_argument("--project-root", type=str, help="项目根目录")
 
     subparsers = parser.add_subparsers(dest="command")
 
-    # 获取进度
+    # 读取进度
     subparsers.add_parser("get-progress")
 
     # 获取实体
     get_entity_parser = subparsers.add_parser("get-entity")
-    get_entity_parser.add_argument("--id", required=True, help="实体ID")
+    get_entity_parser.add_argument("--id", required=True)
 
     # 列出实体
     list_parser = subparsers.add_parser("list-entities")
@@ -1195,16 +1199,32 @@ def main():
         config = DataModulesConfig.from_project_root(args.project_root)
 
     manager = StateManager(config)
+    logger = IndexManager(config)
+    tool_name = f"state_manager:{args.command or 'unknown'}"
+
+    def emit_success(data=None, message: str = "ok"):
+        print_success(data, message=message)
+        try:
+            logger.log_tool_call(tool_name, True)
+        except Exception:
+            pass
+
+    def emit_error(code: str, message: str, suggestion: str | None = None):
+        print_error(code, message, suggestion=suggestion)
+        try:
+            logger.log_tool_call(tool_name, False, error_code=code, error_message=message)
+        except Exception:
+            pass
 
     if args.command == "get-progress":
-        print(json.dumps(manager._state.get("progress", {}), ensure_ascii=False, indent=2))
+        emit_success(manager._state.get("progress", {}), message="progress")
 
     elif args.command == "get-entity":
         entity = manager.get_entity(args.id)
         if entity:
-            print(json.dumps(entity, ensure_ascii=False, indent=2))
+            emit_success(entity, message="entity")
         else:
-            print(f"未找到实体: {args.id}")
+            emit_error("NOT_FOUND", f"未找到实体: {args.id}")
 
     elif args.command == "list-entities":
         if args.type:
@@ -1214,19 +1234,36 @@ def main():
         else:
             entities = manager.get_all_entities()
 
-        for eid, e in entities.items():
-            print(f"{eid}: {e.get('name')} ({e.get('type')}/{e.get('tier')})")
+        payload = [{"id": eid, **e} for eid, e in entities.items()]
+        emit_success(payload, message="entities")
 
     elif args.command == "process-chapter":
         data = json.loads(args.data)
-        warnings = manager.process_chapter_result(args.chapter, data)
-        manager.save_state()
+        validated = None
+        last_exc = None
+        for _ in range(3):
+            try:
+                validated = validate_data_agent_output(data)
+                break
+            except ValidationError as exc:
+                last_exc = exc
+                data = normalize_data_agent_output(data)
+        if validated is None:
+            err = format_validation_error(last_exc) if last_exc else {
+                "code": "SCHEMA_VALIDATION_FAILED",
+                "message": "数据结构校验失败",
+                "details": {"errors": []},
+                "suggestion": "请检查 data-agent 输出字段是否完整且类型正确",
+            }
+            emit_error(err["code"], err["message"], suggestion=err.get("suggestion"))
+            return
 
-        print(f"✓ 已处理第 {args.chapter} 章")
-        if warnings:
-            print("警告:")
-            for w in warnings:
-                print(f"  - {w}")
+        warnings = manager.process_chapter_result(args.chapter, validated.model_dump(by_alias=True))
+        manager.save_state()
+        emit_success({"chapter": args.chapter, "warnings": warnings}, message="chapter_processed")
+
+    else:
+        emit_error("UNKNOWN_COMMAND", "未指定有效命令", suggestion="请查看 --help")
 
 
 if __name__ == "__main__":

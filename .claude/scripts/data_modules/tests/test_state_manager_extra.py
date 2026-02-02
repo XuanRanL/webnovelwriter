@@ -485,22 +485,27 @@ def test_state_manager_cli_commands(temp_project, monkeypatch, capsys):
         from data_modules import state_manager as sm
 
         sm.main()
-        return capsys.readouterr().out
+        out = capsys.readouterr().out
+        return json.loads(out)
 
     out = run_cli(["state_manager", "--project-root", str(temp_project.project_root), "get-progress"])
-    assert "current_chapter" in out
+    assert out["status"] == "success"
+    assert "current_chapter" in out.get("data", {})
 
     out = run_cli(["state_manager", "--project-root", str(temp_project.project_root), "get-entity", "--id", "missing"])
-    assert "未找到实体" in out
+    assert out["status"] == "error"
 
     out = run_cli(["state_manager", "--project-root", str(temp_project.project_root), "get-entity", "--id", "xiaoyan"])
-    assert "xiaoyan" in out
+    assert out["status"] == "success"
+    assert out["data"].get("id") == "xiaoyan"
 
     out = run_cli(["state_manager", "--project-root", str(temp_project.project_root), "list-entities", "--type", "角色"])
-    assert "xiaoyan" in out
+    assert out["status"] == "success"
+    assert any(e.get("id") == "xiaoyan" for e in out.get("data", []))
 
     out = run_cli(["state_manager", "--project-root", str(temp_project.project_root), "list-entities", "--tier", "核心"])
-    assert "xiaoyan" in out
+    assert out["status"] == "success"
+    assert any(e.get("id") == "xiaoyan" for e in out.get("data", []))
 
     payload = json.dumps({"entities_appeared": [], "entities_new": [], "state_changes": [], "relationships_new": []})
     out = run_cli([
@@ -513,7 +518,7 @@ def test_state_manager_cli_commands(temp_project, monkeypatch, capsys):
         "--data",
         payload,
     ])
-    assert "已处理第 1 章" in out
+    assert out["status"] == "success"
 
 
 def test_save_state_timeout(monkeypatch, temp_project):
