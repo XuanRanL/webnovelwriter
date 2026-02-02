@@ -1137,67 +1137,49 @@ class IndexManager:
         """
         创建或更新 Override Contract
 
-        使用 UPSERT 语义：如果已存在相同 (chapter, constraint_type, constraint_id) 的记录，
-        则更新该记录但保持 id 不变，避免 chase_debt.override_contract_id 悬挂。
+        使用 SQLite 的 INSERT ... ON CONFLICT ... DO UPDATE 实现原子 UPSERT：
+        - 并发安全，无需显式锁
+        - 保持 id 不变，避免 chase_debt.override_contract_id 悬挂
+        - 保护终态：已 fulfilled/cancelled 的合约不会被拉回 pending
 
         返回合约 ID
         """
         with self._get_conn() as conn:
             cursor = conn.cursor()
 
-            # 先查询是否存在
+            # 使用 ON CONFLICT 实现原子 UPSERT
+            # 注意：仅当现有状态为 pending 时才更新，保护 fulfilled/cancelled 终态
             cursor.execute(
                 """
-                SELECT id FROM override_contracts
-                WHERE chapter = ? AND constraint_type = ? AND constraint_id = ?
+                INSERT INTO override_contracts
+                (chapter, constraint_type, constraint_id, rationale_type,
+                 rationale_text, payback_plan, due_chapter, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(chapter, constraint_type, constraint_id) DO UPDATE SET
+                    rationale_type = excluded.rationale_type,
+                    rationale_text = excluded.rationale_text,
+                    payback_plan = excluded.payback_plan,
+                    due_chapter = excluded.due_chapter,
+                    status = CASE
+                        WHEN override_contracts.status IN ('fulfilled', 'cancelled')
+                        THEN override_contracts.status
+                        ELSE excluded.status
+                    END
+                RETURNING id
             """,
-                (contract.chapter, contract.constraint_type, contract.constraint_id),
+                (
+                    contract.chapter,
+                    contract.constraint_type,
+                    contract.constraint_id,
+                    contract.rationale_type,
+                    contract.rationale_text,
+                    contract.payback_plan,
+                    contract.due_chapter,
+                    contract.status,
+                ),
             )
-            existing = cursor.fetchone()
-
-            if existing:
-                # 更新现有记录，保持 id 不变
-                contract_id = existing["id"]
-                cursor.execute(
-                    """
-                    UPDATE override_contracts SET
-                        rationale_type = ?,
-                        rationale_text = ?,
-                        payback_plan = ?,
-                        due_chapter = ?,
-                        status = ?
-                    WHERE id = ?
-                """,
-                    (
-                        contract.rationale_type,
-                        contract.rationale_text,
-                        contract.payback_plan,
-                        contract.due_chapter,
-                        contract.status,
-                        contract_id,
-                    ),
-                )
-            else:
-                # 插入新记录
-                cursor.execute(
-                    """
-                    INSERT INTO override_contracts
-                    (chapter, constraint_type, constraint_id, rationale_type,
-                     rationale_text, payback_plan, due_chapter, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                    (
-                        contract.chapter,
-                        contract.constraint_type,
-                        contract.constraint_id,
-                        contract.rationale_type,
-                        contract.rationale_text,
-                        contract.payback_plan,
-                        contract.due_chapter,
-                        contract.status,
-                    ),
-                )
-                contract_id = cursor.lastrowid
+            row = cursor.fetchone()
+            contract_id = row[0] if row else cursor.lastrowid
 
             conn.commit()
             return contract_id
@@ -1446,7 +1428,7 @@ class IndexManager:
         偿还债务
 
         - 校验 amount > 0
-        - 完全偿还时自动标记关联的 Override Contract 为 fulfilled
+        - 完全偿还时，若关联 Override 的所有债务都已清零，才标记为 fulfilled
 
         返回: {remaining, fully_paid, override_fulfilled}
         """
@@ -1490,19 +1472,32 @@ class IndexManager:
                     cursor, debt_id, "full_payment", amount, chapter, "债务已完全偿还"
                 )
 
-                # 自动标记关联的 Override Contract 为 fulfilled
+                # 检查关联 Override 的所有债务是否都已清零
+                # 只有当同一 override_contract_id 下没有 active/overdue 债务时才标记 fulfilled
                 if override_contract_id:
                     cursor.execute(
                         """
-                        UPDATE override_contracts SET
-                            status = 'fulfilled',
-                            fulfilled_at = CURRENT_TIMESTAMP
-                        WHERE id = ? AND status = 'pending'
+                        SELECT COUNT(*) FROM chase_debt
+                        WHERE override_contract_id = ?
+                          AND status IN ('active', 'overdue')
+                          AND id != ?
                     """,
-                        (override_contract_id,),
+                        (override_contract_id, debt_id),
                     )
-                    if cursor.rowcount > 0:
-                        override_fulfilled = True
+                    remaining_debts = cursor.fetchone()[0]
+
+                    if remaining_debts == 0:
+                        cursor.execute(
+                            """
+                            UPDATE override_contracts SET
+                                status = 'fulfilled',
+                                fulfilled_at = CURRENT_TIMESTAMP
+                            WHERE id = ? AND status = 'pending'
+                        """,
+                            (override_contract_id,),
+                        )
+                        if cursor.rowcount > 0:
+                            override_fulfilled = True
             else:
                 # 部分偿还
                 cursor.execute(
