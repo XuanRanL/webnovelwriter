@@ -1205,7 +1205,14 @@ class IndexManager:
                 (contract.chapter, contract.constraint_type, contract.constraint_id),
             )
             row = cursor.fetchone()
-            contract_id = row[0] if row else 0
+            if not row:
+                # UPSERT 后查不到记录是异常情况，不应发生
+                raise RuntimeError(
+                    f"Override Contract UPSERT 后无法获取 id: "
+                    f"chapter={contract.chapter}, type={contract.constraint_type}, "
+                    f"id={contract.constraint_id}"
+                )
+            contract_id = row[0]
 
             conn.commit()
             return contract_id
