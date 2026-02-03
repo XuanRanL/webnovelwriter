@@ -255,6 +255,7 @@ class RAGAdapter:
         # 存储到数据库（跳过嵌入失败的 chunk）
         stored = 0
         skipped = 0
+        errors = []
         with self._get_conn() as conn:
             cursor = conn.cursor()
 
@@ -268,7 +269,10 @@ class RAGAdapter:
                             chunk_id = f"ch{int(chunk['chapter']):04d}_summary"
                         else:
                             chunk_id = f"ch{int(chunk['chapter']):04d}_s{int(chunk['scene_index'])}"
-                    self._update_bm25_index(cursor, chunk_id, chunk.get("content", ""))
+                    try:
+                        self._update_bm25_index(cursor, chunk_id, chunk.get("content", ""))
+                    except Exception as e:
+                        errors.append(f"BM25 index failed for {chunk_id}: {e}")
                     continue
 
                 chunk_type = chunk.get("chunk_type") or "scene"
@@ -298,11 +302,28 @@ class RAGAdapter:
                 ))
 
                 # 同时更新 BM25 索引
-                self._update_bm25_index(cursor, chunk_id, chunk.get("content", ""))
+                try:
+                    self._update_bm25_index(cursor, chunk_id, chunk.get("content", ""))
+                except Exception as e:
+                    errors.append(f"BM25 index failed for {chunk_id}: {e}")
 
                 stored += 1
 
-            conn.commit()
+            try:
+                conn.commit()
+            except Exception as e:
+                import sys
+                print(f"[ERROR] SQLite commit failed: {e}", file=sys.stderr)
+                errors.append(f"SQLite commit failed: {e}")
+
+        # 输出警告日志
+        if skipped > 0:
+            import sys
+            print(f"[WARN] Vector embedding: {stored} stored, {skipped} skipped (embedding failed)", file=sys.stderr)
+        if errors:
+            import sys
+            for err in errors[:5]:  # 最多显示5条
+                print(f"[WARN] {err}", file=sys.stderr)
 
         return stored
 
@@ -879,7 +900,12 @@ def main():
             )
 
         stored = asyncio.run(adapter.store_chunks(chunks))
-        emit_success({"stored": stored, "chunks": len(chunks)}, message="indexed")
+        skipped = len(chunks) - stored
+        result = {"stored": stored, "skipped": skipped, "total": len(chunks)}
+        if skipped > 0:
+            emit_success(result, message="indexed_with_warnings")
+        else:
+            emit_success(result, message="indexed")
 
     elif args.command == "search":
         if args.mode == "vector":
@@ -899,4 +925,9 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+    if sys.platform == "win32":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
     main()

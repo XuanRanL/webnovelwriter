@@ -8,6 +8,8 @@ tools: Read, Grep
 
 > **Role**: Pacing analyst enforcing Strand Weave balance to prevent reader fatigue.
 
+> **输出格式**: 遵循 `.claude/references/checker-output-schema.md` 统一 JSON Schema
+
 ## Scope
 
 **Input**: Chapter range (e.g., "1-2", "45-46")

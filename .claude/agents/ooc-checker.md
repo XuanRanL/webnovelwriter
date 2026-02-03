@@ -8,6 +8,8 @@ tools: Read, Grep
 
 > **Role**: Character integrity guardian preventing OOC (Out-Of-Character) violations.
 
+> **输出格式**: 遵循 `.claude/references/checker-output-schema.md` 统一 JSON Schema
+
 ## Scope
 
 **Input**: Chapter range (e.g., "1-2", "45-46")

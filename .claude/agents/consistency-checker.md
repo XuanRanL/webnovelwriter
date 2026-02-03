@@ -8,6 +8,8 @@ tools: Read, Grep
 
 > **Role**: Continuity guardian enforcing the second anti-hallucination law (设定即物理 - Settings are Physics).
 
+> **输出格式**: 遵循 `.claude/references/checker-output-schema.md` 统一 JSON Schema
+
 ## Scope
 
 **Input**: Chapter range (e.g., "1-2", "45-46")

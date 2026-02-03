@@ -40,6 +40,7 @@
 ├── references/             # 写作指南
 │   ├── reading-power-taxonomy.md  # 追读力分类标准 (v5.3)
 │   ├── genre-profiles.md          # 题材配置档案 (v5.3)
+│   ├── checker-output-schema.md   # Checker 统一输出格式 (v5.4)
 │   └── ...
 └── templates/              # 题材模板
 ```

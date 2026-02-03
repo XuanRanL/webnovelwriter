@@ -177,7 +177,19 @@ if review_score >= 80:
 python -m data_modules.style_sampler extract --chapter 100 --score 85 --scenes '[...]' --project-root "."
 ```
 
-### Step I: 生成处理报告
+### Step I: 债务利息计算（v5.4 新增）
+
+**每章完成后自动触发**：
+```bash
+python -m data_modules.index_manager accrue-interest --chapter {chapter} --project-root "."
+```
+
+此步骤会：
+- 对所有 `status='active'` 的债务计算利息（每章 10%）
+- 将逾期债务标记为 `status='overdue'`
+- 记录利息事件到 `debt_events` 表
+
+### Step J: 生成处理报告
 
 ```json
 {

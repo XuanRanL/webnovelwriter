@@ -8,6 +8,8 @@ tools: Read, Grep, Bash
 
 > **Role**: Quality assurance specialist focused on reader satisfaction mechanics (爽点设计).
 
+> **输出格式**: 遵循 `.claude/references/checker-output-schema.md` 统一 JSON Schema
+
 ## 核心参考
 
 - **Taxonomy**: `.claude/references/reading-power-taxonomy.md`

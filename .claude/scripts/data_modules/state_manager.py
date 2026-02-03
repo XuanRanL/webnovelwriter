@@ -534,8 +534,10 @@ class StateManager:
                     chapter=rel.get("chapter", 0)
                 )
 
-        except Exception:
-            pass  # SQLite 同步失败时静默降级
+        except Exception as e:
+            # SQLite 同步失败时记录警告（不中断主流程）
+            import sys
+            print(f"[WARNING] SQLite sync failed: {e}", file=sys.stderr)
 
     def _clear_pending_sqlite_data(self):
         """清空待同步的 SQLite 数据"""

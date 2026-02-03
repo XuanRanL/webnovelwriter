@@ -412,6 +412,12 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.
 5. **向量嵌入**（rag_adapter）
 6. **风格样本评估**（review_score > 80）
 7. **摘要分离存储**：写入 `.webnovel/summaries/ch{NNNN}.md`
+8. **债务利息计算**（自动触发）
+
+**债务利息计算**（Data Agent 完成后自动执行）:
+```bash
+python -m data_modules.index_manager accrue-interest --chapter {chapter_num} --project-root "."
+```
 
 **输出**:
 ```json
