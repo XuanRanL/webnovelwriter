@@ -16,6 +16,15 @@ allowed-tools: Read Write Edit AskUserQuestion Bash
 
 ---
 
+## Project Root Guard（必须先确认）
+
+- 必须在项目根目录执行（需存在 `.webnovel/state.json`）
+- 若当前目录不存在该文件，先询问用户项目路径并 `cd` 进入
+- 进入后设置变量：`$PROJECT_ROOT = (Resolve-Path ".").Path`
+- **禁止**在 `.claude/` 下写入任何项目文件
+
+---
+
 ## Workflow Checklist
 
 ```
@@ -74,8 +83,8 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/outlining/plot-framew
 ### 2.1 加载状态和总纲
 
 ```bash
-cat .webnovel/state.json
-cat 大纲/总纲.md
+cat "$PROJECT_ROOT/.webnovel/state.json"
+cat "$PROJECT_ROOT/大纲/总纲.md"
 ```
 
 ### 2.2 解析总纲卷结构
@@ -93,7 +102,7 @@ cat 大纲/总纲.md
 ### 2.3 检查已有详细大纲
 
 ```bash
-ls 大纲/第*卷*.md 2>/dev/null
+Get-ChildItem "$PROJECT_ROOT/大纲/第*卷*.md" -ErrorAction SilentlyContinue
 ```
 
 ---
@@ -262,7 +271,7 @@ ls 大纲/第*卷*.md 2>/dev/null
 - **爽点**: {类型} - {30字以内}
 - **Strand**: {Quest|Fire|Constellation}
 - **实体**: {新增角色/物品，如有}
-- **钩子类型**: {危机钩/悬念钩/反转钩/期待钩/代价钩}
+- **钩子类型**: {危机钩/悬念钩/情绪钩/选择钩/渴望钩}
 - **钩子内容**: {章末悬念，30字以内}
 - **接住上章**: {如何接住上章钩子，20字以内}
 ```
@@ -275,10 +284,14 @@ ls 大纲/第*卷*.md 2>/dev/null
 
 ```bash
 # 第一批
-echo "{第1-10章内容}" >> 大纲/第{volume_id}卷-详细大纲.md
+@'
+{第1-10章内容}
+'@ | Add-Content -Encoding UTF8 "$PROJECT_ROOT/大纲/第{volume_id}卷-详细大纲.md"
 
 # 第二批
-echo "{第11-20章内容}" >> 大纲/第{volume_id}卷-详细大纲.md
+@'
+{第11-20章内容}
+'@ | Add-Content -Encoding UTF8 "$PROJECT_ROOT/大纲/第{volume_id}卷-详细大纲.md"
 ```
 
 这样即使中途失败，已生成的内容不会丢失。
@@ -321,6 +334,7 @@ echo "{第11-20章内容}" >> 大纲/第{volume_id}卷-详细大纲.md
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT}/scripts/update_state.py" \
+  --project-root "$PROJECT_ROOT" \
   --volume-planned {volume_id} \
   --chapters-range "{start}-{end}"
 ```

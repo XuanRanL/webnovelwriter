@@ -231,11 +231,20 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/creativity/market-pos
 
 ## Phase 7: 生成项目文件
 
+### 7.0 项目目录规则（必须执行）
+
+- 项目目录名 = 书名安全化（去除非法字符 `<>:"/\\|?*`，空格转 `-`，首尾去除 `-`）
+- 若结果为空或以 `.` 开头，前缀 `proj-`
+- **禁止**将项目目录放在 `.claude/` 下
+
+最终得到：
+- `project_root = "./{safe_title}"`
+
 ### 7.1 执行初始化脚本
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py" \
-  "./webnovel-project" \
+  "{project_root}" \
   "{title}" \
   "{genre}" \
   --protagonist-name "{name}" \
@@ -245,21 +254,34 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py" \
   --core-selling-points "{points}"
 ```
 
-### 7.2 生成文件清单（含模板写入）
+### 7.2 进入项目目录（必须执行）
+
+```bash
+cd "{project_root}"
+```
+
+### 7.3 生成文件清单（含模板写入）
 
 | 文件 | 说明 | 生成时机 | 写入路径 |
 |------|------|---------|---------|
 | `.webnovel/state.json` | 运行时状态 | init Phase 7 | `.webnovel/state.json` |
-| `.webnovel/index.db` | 实体索引数据库 | init Phase 7 | `.webnovel/index.db` |
+| `.webnovel/index.db` | 实体索引数据库 | init Phase 7 + 索引初始化 | `.webnovel/index.db` |
 | `设定集/世界观.md` | 世界观设定模板 | init Phase 7 | `设定集/世界观.md` |
 | `设定集/力量体系.md` | 力量体系模板 | init Phase 7 | `设定集/力量体系.md` |
 | `设定集/主角卡.md` | 主角卡模板 | init Phase 7 | `设定集/主角卡.md` |
 | `设定集/金手指设计.md` | 金手指设计模板 | init Phase 7 | `设定集/金手指设计.md` |
 | `大纲/总纲.md` | 总纲模板 | init Phase 7 | `大纲/总纲.md` |
+| `大纲/爽点规划.md` | 爽点规划模板 | init Phase 7 | `大纲/爽点规划.md` |
 
 **模板引用方式**:
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/templates/output/设定集-世界观.md" | 填充变量 > 设定集/世界观.md
+```
+
+### 7.4 初始化索引数据库（推荐）
+
+```bash
+python -m data_modules.index_manager stats --project-root "{project_root}"
 ```
 
 ---
@@ -269,14 +291,14 @@ cat "${CLAUDE_PLUGIN_ROOT}/templates/output/设定集-世界观.md" | 填充变�
 ### 8.1 验证文件
 
 ```bash
-ls -la .webnovel/state.json
-ls -la 设定集/*.md
+ls -la "{project_root}/.webnovel/state.json"
+ls -la "{project_root}/设定集"/*.md
 ```
 
 ### 8.2 初始化 Git（可选）
 
 ```bash
-git init && git add . && git commit -m "初始化网文项目：{title}"
+git -C "{project_root}" init && git -C "{project_root}" add . && git -C "{project_root}" commit -m "初始化网文项目：{title}"
 ```
 
 ### 8.3 输出三大定律提醒

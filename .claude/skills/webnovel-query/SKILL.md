@@ -6,6 +6,13 @@ allowed-tools: Read Grep Bash AskUserQuestion
 
 # Information Query Skill
 
+## Project Root Guard（必须先确认）
+
+- 必须在项目根目录执行（需存在 `.webnovel/state.json`）
+- 若当前目录不存在该文件，先询问用户项目路径并 `cd` 进入
+- 进入后设置变量：`$PROJECT_ROOT = (Resolve-Path ".").Path`
+- **禁止**在 `.claude/` 下读取或写入项目文件
+
 ## Workflow Checklist
 
 Copy and track progress:
@@ -58,7 +65,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/tag-specification.md
 ## Step 3: 加载项目数据
 
 ```bash
-cat .webnovel/state.json
+cat "$PROJECT_ROOT/.webnovel/state.json"
 ```
 
 ## Step 4: 确认上下文充足
@@ -102,7 +109,7 @@ cat .webnovel/state.json
 
 **快速分析**：
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus urgency
+python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus urgency --project-root "$PROJECT_ROOT"
 ```
 
 ### 金手指状态
@@ -119,7 +126,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus urgency
 
 **快速分析**：
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus strand
+python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus strand --project-root "$PROJECT_ROOT"
 ```
 
 **检查警告**：

@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-**Webnovel Writer** 是基于 Claude Code 的长篇网文辅助创作系统（v5.3），解决 AI 写作中的"遗忘"和"幻觉"问题，支持 200 万字量级连载创作。
+**Webnovel Writer** 是基于 Claude Code 的长篇网文辅助创作系统（v5.4.1），解决 AI 写作中的"遗忘"和"幻觉"问题，支持 200 万字量级连载创作。
 
 ## 核心理念
 
@@ -88,13 +88,13 @@
 
 ```
 Step 1: Context Agent 搜集上下文
-        ↓ (输出创作任务书，含追读力设计)
-Step 1.5: 章节设计（开头/钩子/爽点/微兑现）
+        ↓ (输出创作任务书，含追读力策略)
+Step 1.5: 章节设计（按需，开头/钩子/爽点/微兑现）
         ↓
 Step 2A: 生成粗稿
 Step 2B: 风格适配器
         ↓
-Step 3: 6 Agent 并行审查（含 reader-pull-checker）
+Step 3: 默认 4 Agent 审查（关键章扩展到 6）
         ↓
 Step 4: 网文化润色
         ↓
@@ -132,5 +132,5 @@ python -m data_modules.index_manager get-pattern-usage-stats --last-n 20 --proje
 
 1. **不要直接修改 state.json 中的大量数据** - 大数据存 SQLite
 2. **Override Contract 需明确偿还计划** - 每个 Override 产生债务
-3. **债务有利息** - 每章累积 10%，逾期会影响后续章节
+3. **债务利息默认关闭** - 仅在明确开启时计算
 4. **题材 Profile 可覆盖** - 在 state.json 中设置 genre_overrides

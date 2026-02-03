@@ -67,16 +67,16 @@ tools: Read, Write, Bash
 使用 Bash 工具从 index.db 查询已有实体:
 ```bash
 # v5.1: 从 SQLite 获取核心实体
-python -m data_modules.index_manager get-core-entities --project-root "."
+python -m data_modules.index_manager get-core-entities --project-root "{project_root}"
 
 # v5.1: 获取实体别名
-python -m data_modules.index_manager get-aliases --entity "xiaoyan" --project-root "."
+python -m data_modules.index_manager get-aliases --entity "xiaoyan" --project-root "{project_root}"
 
 # 查询最近出场记录
-python -m data_modules.index_manager recent-appearances --limit 20 --project-root "."
+python -m data_modules.index_manager recent-appearances --limit 20 --project-root "{project_root}"
 
 # v5.1: 按别名查找实体（一对多）
-python -m data_modules.index_manager get-by-alias --alias "萧炎" --project-root "."
+python -m data_modules.index_manager get-by-alias --alias "萧炎" --project-root "{project_root}"
 ```
 
 ### Step B: AI 实体提取
@@ -97,15 +97,15 @@ python -m data_modules.index_manager get-by-alias --alias "萧炎" --project-roo
 
 **写入 index.db (实体/别名/状态变化/关系)**:
 ```bash
-python -m data_modules.index_manager upsert-entity --data '{...}' --project-root "."
-python -m data_modules.index_manager register-alias --alias "红衣女子" --entity "hongyi_girl" --type "角色" --project-root "."
-python -m data_modules.index_manager record-state-change --data '{...}' --project-root "."
-python -m data_modules.index_manager upsert-relationship --data '{...}' --project-root "."
+python -m data_modules.index_manager upsert-entity --data '{...}' --project-root "{project_root}"
+python -m data_modules.index_manager register-alias --alias "红衣女子" --entity "hongyi_girl" --type "角色" --project-root "{project_root}"
+python -m data_modules.index_manager record-state-change --data '{...}' --project-root "{project_root}"
+python -m data_modules.index_manager upsert-relationship --data '{...}' --project-root "{project_root}"
 ```
 
 **更新精简版 state.json**:
 ```bash
-python -m data_modules.state_manager process-chapter --chapter 100 --data '{...}' --project-root "."
+python -m data_modules.state_manager process-chapter --chapter 100 --data '{...}' --project-root "{project_root}"
 ```
 
 写入内容 (v5.2 引入):
@@ -156,7 +156,7 @@ python -m data_modules.rag_adapter index-chapter \
   --chapter 100 \
   --scenes '[...]' \
   --summary "本章摘要文本" \
-  --project-root "."
+  --project-root "{project_root}"
 ```
 
 **父子索引规则 (v1.2)**:
@@ -174,14 +174,14 @@ if review_score >= 80:
 ```
 
 ```bash
-python -m data_modules.style_sampler extract --chapter 100 --score 85 --scenes '[...]' --project-root "."
+python -m data_modules.style_sampler extract --chapter 100 --score 85 --scenes '[...]' --project-root "{project_root}"
 ```
 
 ### Step I: 债务利息计算（v5.4 新增）
 
-**每章完成后自动触发**：
+**默认不自动触发**。仅在“开启债务追踪”或用户明确要求时执行：
 ```bash
-python -m data_modules.index_manager accrue-interest --chapter {chapter} --project-root "."
+python -m data_modules.index_manager accrue-interest --chapter {chapter} --project-root "{project_root}"
 ```
 
 此步骤会：

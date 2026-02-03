@@ -52,8 +52,8 @@
 
 **Override Contract 机制**：
 - 违反软建议时需记录理由和偿还计划
-- 每个 Override 产生债务，含利息（默认 10%/章）
-- 逾期债务会影响后续章节评分
+- 每个 Override 产生债务，利息为可选机制（默认不自动计算）
+- 逾期债务会影响后续章节评分（仅在开启追踪时生效）
 
 ### Strand Weave 节奏系统
 
@@ -220,10 +220,10 @@ pip install -r .claude/scripts/requirements.txt
 /webnovel-write 45      # 创作第45章
 ```
 
-**创作流程 (v5.3)**：
+**创作流程 (v5.4.1)**：
 
 ```
-Step 1: Context Agent 搜集上下文 → 创作任务书（含追读力设计）
+Step 1: Context Agent 搜集上下文 → 创作任务书（含追读力策略）
         ↓
 Step 1.5: 章节设计（开头/钩子/爽点/微兑现规划）
         ↓
@@ -231,7 +231,7 @@ Step 2A: 生成粗稿（3000-5000字）
         ↓
 Step 2B: 风格适配器（网文化改写）
         ↓
-Step 3: 6 Agent 并行审查（含 reader-pull-checker）
+Step 3: 默认 4 Agent 审查（关键章扩展到 6）
         ↓
 Step 4: 网文化润色
         ↓
@@ -243,7 +243,7 @@ Step 6: Git 自动提交备份
 **写作模式**：
 - **标准模式**: 完整执行 Step 1-6
 - **快速模式** (`--mode fast`): 跳过 Step 2B
-- **极简模式** (`--mode minimal`): 跳过 Step 2B + 仅 3 个核心审查
+- **极简模式** (`--mode minimal`): 跳过 Step 2B + 仅 3 个核心审查（无追读力数据）
 
 **产出**：
 - `正文/第N章-标题.md`
@@ -313,17 +313,14 @@ Step 6: Git 自动提交备份
 8. 推断角色动机/情绪
 9. 组装**创作任务书**
 
-**输出结构（10个章节）**：
+**输出结构（7个板块）**：
 1. **本章核心任务**（冲突一句话、必须完成、绝对不能）
 2. **接住上章**（上章钩子、读者期待、开头必须）
 3. **出场角色**（状态、动机、情绪底色、说话风格、红线）
 4. **场景与力量约束**（地点、可用能力、禁用能力）
 5. **风格指导**（本章类型、参考样本、最近模式、本章建议）
-6. **伏笔管理**（必须处理、可选提及）
-7. **连贯性检查点**（时间、位置、情绪）
-8. **章末钩子设置**（建议类型、禁止事项）
-9. **追读力设计**（v5.3 引入：钩子策略、微兑现规划、模式差异化）
-10. **债务与Override状态**（v5.3 引入：当前债务、待偿还Override）
+6. **连续性与伏笔**（时间/位置/情绪连贯；必须处理/可选伏笔）
+7. **追读力策略**（钩子类型/强度、微兑现建议、差异化提示；有债务时附带说明）
 
 ---
 
@@ -610,7 +607,7 @@ python -m data_modules.index_manager get-hook-type-stats --last-n 20 --project-r
 # 查看待偿还Override
 python -m data_modules.index_manager get-pending-overrides --project-root "."
 
-# 计算利息（每章调用一次）
+# 计算利息（开启追踪或需要时调用）
 python -m data_modules.index_manager accrue-interest --current-chapter 100 --project-root "."
 ```
 
@@ -672,7 +669,7 @@ git checkout ch0045
 - **追读力债务**：债务追踪、利息计算、逾期管理
 - **题材Profile**：8种内置题材配置（偏好钩子/爽点/微兑现要求）
 - **SQLite新表**：override_contracts、chase_debt、debt_events、chapter_reading_power
-- **Context Agent**：输出扩展至10章节（新增追读力设计、债务状态）
+- **Context Agent**：输出精简为7个板块（含追读力策略，债务状态按需输出）
 - **CLI新命令**：get-debt-summary、get-recent-reading-power、accrue-interest 等
 
 ### v5.2

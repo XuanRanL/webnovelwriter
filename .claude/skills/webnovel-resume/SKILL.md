@@ -6,6 +6,12 @@ allowed-tools: Read Bash AskUserQuestion
 
 # Task Resume Skill
 
+## Project Root Guard（必须先确认）
+
+- 必须在项目根目录执行（需存在 `.webnovel/state.json`）
+- 若当前目录不存在该文件，先询问用户项目路径并 `cd` 进入
+- 进入后设置变量：`$PROJECT_ROOT = (Resolve-Path ".").Path`
+
 ## Workflow Checklist
 
 Copy and track progress:
@@ -114,7 +120,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" clear
 
 **选项 B - Git 回滚**：
 ```bash
-git reset --hard ch{N-1:04d}
+git -C "$PROJECT_ROOT" reset --hard ch{N-1:04d}
 python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" clear
 ```
 

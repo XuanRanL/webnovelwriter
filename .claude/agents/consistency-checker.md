@@ -176,7 +176,7 @@ python -m data_modules.index_manager mark-invalid \
   --reason "{问题描述}" \
   --marked-by consistency-checker \
   --chapter {current_chapter} \
-  --project-root "."
+  --project-root "{PROJECT_ROOT}"
 ```
 
 > 注意：自动标记仅为 `pending`，需用户确认后才生效。

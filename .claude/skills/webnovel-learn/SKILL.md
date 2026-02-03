@@ -6,6 +6,12 @@ allowed-tools: Read Write Bash
 
 # /webnovel-learn
 
+## Project Root Guard（必须先确认）
+
+- 必须在项目根目录执行（需存在 `.webnovel/state.json`）
+- 若当前目录不存在该文件，先询问用户项目路径并 `cd` 进入
+- 进入后设置变量：`$PROJECT_ROOT = (Resolve-Path ".").Path`
+
 ## 目标
 - 提取可复用的写作模式（钩子/节奏/对话/微兑现等）
 - 追加到 `.webnovel/project_memory.json`
@@ -29,8 +35,8 @@ allowed-tools: Read Write Bash
 ```
 
 ## 执行流程
-1. 读取 `.webnovel/state.json`，获取当前章节号（progress.current_chapter）
-2. 读取 `.webnovel/project_memory.json`，若不存在则初始化 `{"patterns": []}`
+1. 读取 `"$PROJECT_ROOT/.webnovel/state.json"`，获取当前章节号（progress.current_chapter）
+2. 读取 `"$PROJECT_ROOT/.webnovel/project_memory.json"`，若不存在则初始化 `{"patterns": []}`
 3. 解析用户输入，归类 pattern_type（hook/pacing/dialogue/payoff/emotion）
 4. 追加记录并写回文件
 
