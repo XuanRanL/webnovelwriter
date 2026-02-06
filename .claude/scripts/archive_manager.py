@@ -39,6 +39,8 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+from runtime_compat import enable_windows_utf8_stdio
+
 # ============================================================================
 # 安全修复：导入安全工具函数（P1 MEDIUM）
 # ============================================================================
@@ -54,10 +56,8 @@ except ImportError:
     from scripts.data_modules.config import get_config
 
 # Windows UTF-8 编码修复
-if sys.platform == 'win32':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+if sys.platform == "win32":
+    enable_windows_utf8_stdio()
 
 
 class ArchiveManager:

@@ -52,6 +52,8 @@ import os
 import sys
 import shutil
 from pathlib import Path
+
+from runtime_compat import enable_windows_utf8_stdio
 from datetime import datetime
 from typing import Optional, List, Tuple
 
@@ -62,10 +64,8 @@ from security_utils import sanitize_commit_message, is_git_available, is_git_rep
 from project_locator import resolve_project_root
 
 # Windows 编码兼容性修复
-if sys.platform == 'win32':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+if sys.platform == "win32":
+    enable_windows_utf8_stdio()
 
 class GitBackupManager:
     """基于 Git 的备份管理器（支持优雅降级）"""

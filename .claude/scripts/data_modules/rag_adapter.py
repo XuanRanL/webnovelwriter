@@ -15,6 +15,8 @@ import sqlite3
 import json
 import math
 from pathlib import Path
+
+from runtime_compat import enable_windows_utf8_stdio
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 from collections import Counter
@@ -26,6 +28,7 @@ import time
 from .config import get_config
 from .api_client import get_client
 from .index_manager import IndexManager
+from .observability import safe_log_tool_call
 
 
 @dataclass
@@ -356,8 +359,10 @@ class RAGAdapter:
                 latency_ms=latency_ms,
                 chapter=chapter,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            import sys
+
+            print(f"[rag_adapter] failed to log rag query: {exc}", file=sys.stderr)
 
     # ==================== BM25 索引 ====================
 
@@ -843,17 +848,17 @@ def main():
 
     def emit_success(data=None, message: str = "ok"):
         print_success(data, message=message)
-        try:
-            adapter.index_manager.log_tool_call(tool_name, True)
-        except Exception:
-            pass
+        safe_log_tool_call(adapter.index_manager, tool_name=tool_name, success=True)
 
     def emit_error(code: str, message: str, suggestion: str | None = None):
         print_error(code, message, suggestion=suggestion)
-        try:
-            adapter.index_manager.log_tool_call(tool_name, False, error_code=code, error_message=message)
-        except Exception:
-            pass
+        safe_log_tool_call(
+            adapter.index_manager,
+            tool_name=tool_name,
+            success=False,
+            error_code=code,
+            error_message=message,
+        )
 
     if args.command == "stats":
         stats = adapter.get_stats()
@@ -927,7 +932,5 @@ def main():
 if __name__ == "__main__":
     import sys
     if sys.platform == "win32":
-        import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+        enable_windows_utf8_stdio()
     main()

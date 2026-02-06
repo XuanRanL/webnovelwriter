@@ -14,6 +14,8 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+
+from runtime_compat import enable_windows_utf8_stdio
 from typing import Any, Dict, Optional, Union
 
 # 尝试导入 filelock（可选依赖）
@@ -576,10 +578,8 @@ def _run_self_tests():
 
 if __name__ == "__main__":
     # Windows UTF-8 编码修复（必须在打印前执行）
-    if sys.platform == 'win32':
-        import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    if sys.platform == "win32":
+        enable_windows_utf8_stdio()
 
     # 运行自检测试
     _run_self_tests()

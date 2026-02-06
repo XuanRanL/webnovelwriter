@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from .config import get_config
 from .index_manager import IndexManager
+from .observability import safe_log_tool_call
 
 
 @dataclass
@@ -221,17 +222,17 @@ def main():
 
     def emit_success(data=None, message: str = "ok"):
         print_success(data, message=message)
-        try:
-            logger.log_tool_call(tool_name, True)
-        except Exception:
-            pass
+        safe_log_tool_call(logger, tool_name=tool_name, success=True)
 
     def emit_error(code: str, message: str, suggestion: str | None = None):
         print_error(code, message, suggestion=suggestion)
-        try:
-            logger.log_tool_call(tool_name, False, error_code=code, error_message=message)
-        except Exception:
-            pass
+        safe_log_tool_call(
+            logger,
+            tool_name=tool_name,
+            success=False,
+            error_code=code,
+            error_message=message,
+        )
 
     if args.command == "register-alias":
         entity_type = getattr(args, "type", "角色")

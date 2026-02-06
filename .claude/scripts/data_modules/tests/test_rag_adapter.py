@@ -185,3 +185,17 @@ def test_rag_adapter_cli(temp_project, monkeypatch, capsys):
     run_cli(["--project-root", root, "search", "--query", "内容", "--mode", "hybrid", "--top-k", "5"])
 
     capsys.readouterr()
+
+
+def test_rag_adapter_log_query_failure_is_reported(temp_project, monkeypatch, capsys):
+    adapter = RAGAdapter(temp_project)
+
+    def _raise_log_error(*args, **kwargs):
+        raise RuntimeError("log write failed")
+
+    monkeypatch.setattr(adapter.index_manager, "log_rag_query", _raise_log_error)
+
+    adapter._log_query("q", "vector", [], 1)
+
+    captured = capsys.readouterr()
+    assert "failed to log rag query" in captured.err

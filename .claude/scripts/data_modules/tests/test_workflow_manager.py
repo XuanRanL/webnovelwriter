@@ -113,3 +113,22 @@ def test_safe_append_call_trace_logs_failure(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "failed to append call trace" in captured.err
     assert "unit_test_event" in captured.err
+
+
+def test_workflow_reentry_does_not_duplicate_history(tmp_path, monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+
+    module.start_task("webnovel-write", {"chapter_num": 20})
+    module.start_task("webnovel-write", {"chapter_num": 20})
+    module.start_task("webnovel-write", {"chapter_num": 20})
+
+    state = module.load_state()
+    assert isinstance(state.get("history"), list)
+    assert len(state.get("history")) == 0
+
+    task = state.get("current_task") or {}
+    assert int(task.get("retry_count", 0)) >= 2

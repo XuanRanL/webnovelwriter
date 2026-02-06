@@ -19,15 +19,13 @@ from typing import Any, Dict, Optional
 
 from chapter_paths import default_chapter_draft_path, find_chapter_file
 from project_locator import resolve_project_root
+from runtime_compat import enable_windows_utf8_stdio
 from security_utils import atomic_write_json, create_secure_directory
 
 
 # UTF-8 output for Windows console (CLI run only, avoid pytest capture issues)
 if sys.platform == "win32" and __name__ == "__main__" and not os.environ.get("PYTEST_CURRENT_TEST"):
-    import io
-
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+    enable_windows_utf8_stdio(skip_in_pytest=True)
 
 
 TASK_STATUS_RUNNING = "running"

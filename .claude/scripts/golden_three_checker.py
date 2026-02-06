@@ -26,6 +26,8 @@ import re
 import json
 import argparse
 from pathlib import Path
+
+from runtime_compat import enable_windows_utf8_stdio
 from typing import Dict, List, Optional, Any
 
 # 导入项目定位和章节路径模块
@@ -33,10 +35,8 @@ from project_locator import resolve_project_root
 from chapter_paths import find_chapter_file
 
 # Windows UTF-8 输出修复
-if sys.platform == 'win32':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+if sys.platform == "win32":
+    enable_windows_utf8_stdio()
 
 
 # ============================================================================

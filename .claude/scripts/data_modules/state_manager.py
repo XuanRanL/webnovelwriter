@@ -17,12 +17,15 @@ import json
 import sys
 from copy import deepcopy
 from pathlib import Path
+
+from runtime_compat import enable_windows_utf8_stdio
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 import filelock
 
 from .config import get_config
+from .observability import safe_log_tool_call
 
 try:
     # 当 scripts 目录在 sys.path 中（常见：从 scripts/ 运行）
@@ -1240,17 +1243,17 @@ def main():
 
     def emit_success(data=None, message: str = "ok"):
         print_success(data, message=message)
-        try:
-            logger.log_tool_call(tool_name, True)
-        except Exception:
-            pass
+        safe_log_tool_call(logger, tool_name=tool_name, success=True)
 
     def emit_error(code: str, message: str, suggestion: str | None = None):
         print_error(code, message, suggestion=suggestion)
-        try:
-            logger.log_tool_call(tool_name, False, error_code=code, error_message=message)
-        except Exception:
-            pass
+        safe_log_tool_call(
+            logger,
+            tool_name=tool_name,
+            success=False,
+            error_code=code,
+            error_message=message,
+        )
 
     if args.command == "get-progress":
         emit_success(manager._state.get("progress", {}), message="progress")
@@ -1304,7 +1307,5 @@ def main():
 
 if __name__ == "__main__":
     if sys.platform == "win32":
-        import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+        enable_windows_utf8_stdio()
     main()

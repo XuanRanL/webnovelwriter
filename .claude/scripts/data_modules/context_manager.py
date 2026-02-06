@@ -9,6 +9,8 @@ import json
 import re
 import sys
 from pathlib import Path
+
+from runtime_compat import enable_windows_utf8_stdio
 from typing import Any, Dict, List, Optional
 
 from .config import get_config
@@ -731,7 +733,5 @@ def main():
 if __name__ == "__main__":
     import sys
     if sys.platform == "win32":
-        import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+        enable_windows_utf8_stdio()
     main()

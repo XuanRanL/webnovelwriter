@@ -49,6 +49,8 @@ import sys
 import argparse
 import shutil
 from pathlib import Path
+
+from runtime_compat import enable_windows_utf8_stdio
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -63,10 +65,8 @@ from data_modules.state_validator import (
 )
 
 # Windows 编码兼容性修复
-if sys.platform == 'win32':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+if sys.platform == "win32":
+    enable_windows_utf8_stdio()
 
 class StateUpdater:
     """state.json 安全更新器"""

@@ -88,6 +88,7 @@ from datetime import datetime
 from collections import defaultdict
 from project_locator import resolve_project_root
 from chapter_paths import extract_chapter_num_from_filename
+from runtime_compat import enable_windows_utf8_stdio
 
 # 导入配置
 try:
@@ -119,22 +120,7 @@ def _is_resolved_foreshadowing_status(raw_status: Any) -> bool:
 
 def _enable_windows_utf8_stdio() -> None:
     """在 Windows 下启用 UTF-8 输出；pytest 环境跳过以避免捕获冲突。"""
-    if sys.platform != "win32":
-        return
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        return
-
-    try:
-        import io
-
-        stdout_buffer = getattr(sys.stdout, "buffer", None)
-        stderr_buffer = getattr(sys.stderr, "buffer", None)
-        if stdout_buffer is not None:
-            sys.stdout = io.TextIOWrapper(stdout_buffer, encoding="utf-8")
-        if stderr_buffer is not None:
-            sys.stderr = io.TextIOWrapper(stderr_buffer, encoding="utf-8")
-    except Exception:
-        pass
+    enable_windows_utf8_stdio(skip_in_pytest=True)
 
 
 class StatusReporter:

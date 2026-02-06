@@ -21,6 +21,8 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+from runtime_compat import enable_windows_utf8_stdio
 from typing import Any, Dict, List
 import re
 
@@ -30,10 +32,7 @@ from security_utils import sanitize_commit_message, atomic_write_json, is_git_av
 
 # Windows 编码兼容性修复
 if sys.platform == "win32":
-    import io
-
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+    enable_windows_utf8_stdio()
 
 
 def _read_text_if_exists(path: Path) -> str:
