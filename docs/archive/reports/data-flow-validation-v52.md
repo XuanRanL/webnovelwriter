@@ -1,4 +1,7 @@
-# 数据流验证：webnovel-plan → context-agent → webnovel-write
+# [Archived] 数据流验证：webnovel-plan → context-agent → webnovel-write
+
+> 归档日期：2026-02-06
+> 归档原因：阶段性验证报告，结论已并入主流程文档，不再作为当前操作基线。
 
 ## 1. 章纲字段映射
 
