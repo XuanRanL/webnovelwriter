@@ -767,6 +767,12 @@ git checkout ch0045
 - 工作流可观测性：`workflow_manager.py` 会写入 `.webnovel/observability/call_trace.jsonl`
 
 参考文档：`.claude/references/context-contract-v2.md`
+
+### Context Contract v2（阶段 B）
+
+- 新增 `reader_signal` 段：自动聚合追读力与审查趋势信号
+- 新增 `genre_profile` 段：自动按题材加载策略参考（支持回退）
+- 目标：让写作阶段更接近网文平台读者偏好（钩子强度、爽点分布、低分补救）
 - **invalid_facts 表**：追踪无效事实，支持 pending/confirmed 状态
 - **父子向量索引**：parent_chunk_id 支持摘要-场景层级检索
 - **Token 预算管理**：ContextManager 实现 40%/35%/25% 优先级分配

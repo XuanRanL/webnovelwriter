@@ -25,6 +25,16 @@
 - `alerts`
   - 优先 `critical/high` 或包含关键风险词的项
 
+## Phase B 扩展段
+- `reader_signal`
+  - 聚合最近章节追读力元数据（钩子/爽点/微兑现）
+  - 聚合最近窗口的模式使用统计（`pattern_usage` / `hook_type_usage`）
+  - 聚合审查趋势与低分区间（`review_trend` / `low_score_ranges`）
+- `genre_profile`
+  - 基于 `state.json -> project.genre` 自动选取题材策略片段
+  - 引用 `.claude/references/genre-profiles.md` 与 `reading-power-taxonomy.md`
+  - 输出 `reference_hints` 供 Writer 快速执行
+
 ## 兼容性约束
 - 不改变既有 key 名和字段语义。
 - 仅重排列表顺序；内容不删改（除已有过滤逻辑）。
@@ -44,3 +54,12 @@
 - `context_ranker_alert_critical_keywords`
 - `context_ranker_debug`
 
+Phase B:
+- `context_reader_signal_enabled`
+- `context_reader_signal_recent_limit`
+- `context_reader_signal_window_chapters`
+- `context_reader_signal_review_window`
+- `context_reader_signal_include_debt`
+- `context_genre_profile_enabled`
+- `context_genre_profile_max_refs`
+- `context_genre_profile_fallback`

@@ -24,8 +24,25 @@ class ContextManager:
         "emotion": {"core": 0.45, "scene": 0.35, "global": 0.20},
         "transition": {"core": 0.50, "scene": 0.25, "global": 0.25},
     }
-    EXTRA_SECTIONS = {"story_skeleton", "memory", "preferences", "alerts"}
-    SECTION_ORDER = ["core", "scene", "global", "story_skeleton", "memory", "preferences", "alerts"]
+    EXTRA_SECTIONS = {
+        "story_skeleton",
+        "memory",
+        "preferences",
+        "alerts",
+        "reader_signal",
+        "genre_profile",
+    }
+    SECTION_ORDER = [
+        "core",
+        "scene",
+        "global",
+        "reader_signal",
+        "genre_profile",
+        "story_skeleton",
+        "memory",
+        "preferences",
+        "alerts",
+    ]
     SUMMARY_SECTION_RE = re.compile(r"##\s*剧情摘要\s*\r?\n(.*?)(?=\r?\n##|\Z)", re.DOTALL)
 
     def __init__(self, config=None, snapshot_manager: Optional[SnapshotManager] = None):
@@ -173,12 +190,16 @@ class ContextManager:
         memory = self._load_json_optional(self.config.webnovel_dir / "project_memory.json")
         story_skeleton = self._load_story_skeleton(chapter)
         alert_slice = max(0, int(self.config.context_alerts_slice))
+        reader_signal = self._load_reader_signal(chapter)
+        genre_profile = self._load_genre_profile(state)
 
         return {
             "meta": {"chapter": chapter},
             "core": core,
             "scene": scene,
             "global": global_ctx,
+            "reader_signal": reader_signal,
+            "genre_profile": genre_profile,
             "story_skeleton": story_skeleton,
             "preferences": preferences,
             "memory": memory,
@@ -191,6 +212,110 @@ class ContextManager:
                 ),
             },
         }
+
+    def _load_reader_signal(self, chapter: int) -> Dict[str, Any]:
+        if not getattr(self.config, "context_reader_signal_enabled", True):
+            return {}
+
+        recent_limit = max(1, int(getattr(self.config, "context_reader_signal_recent_limit", 5)))
+        pattern_window = max(1, int(getattr(self.config, "context_reader_signal_window_chapters", 20)))
+        review_window = max(1, int(getattr(self.config, "context_reader_signal_review_window", 5)))
+        include_debt = bool(getattr(self.config, "context_reader_signal_include_debt", False))
+
+        recent_power = self.index_manager.get_recent_reading_power(limit=recent_limit)
+        pattern_stats = self.index_manager.get_pattern_usage_stats(last_n_chapters=pattern_window)
+        hook_stats = self.index_manager.get_hook_type_stats(last_n_chapters=pattern_window)
+        review_trend = self.index_manager.get_review_trend_stats(last_n=review_window)
+
+        low_score_ranges: List[Dict[str, Any]] = []
+        for row in review_trend.get("recent_ranges", []):
+            score = row.get("overall_score")
+            if isinstance(score, (int, float)) and float(score) < 75:
+                low_score_ranges.append(
+                    {
+                        "start_chapter": row.get("start_chapter"),
+                        "end_chapter": row.get("end_chapter"),
+                        "overall_score": score,
+                    }
+                )
+
+        signal: Dict[str, Any] = {
+            "recent_reading_power": recent_power,
+            "pattern_usage": pattern_stats,
+            "hook_type_usage": hook_stats,
+            "review_trend": review_trend,
+            "low_score_ranges": low_score_ranges,
+            "next_chapter": chapter,
+        }
+
+        if include_debt:
+            signal["debt_summary"] = self.index_manager.get_debt_summary()
+
+        return signal
+
+    def _load_genre_profile(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if not getattr(self.config, "context_genre_profile_enabled", True):
+            return {}
+
+        fallback = str(getattr(self.config, "context_genre_profile_fallback", "shuangwen") or "shuangwen")
+        genre = str((state.get("project") or {}).get("genre") or fallback)
+        profile_path = self.config.project_root / ".claude" / "references" / "genre-profiles.md"
+        taxonomy_path = self.config.project_root / ".claude" / "references" / "reading-power-taxonomy.md"
+
+        profile_text = profile_path.read_text(encoding="utf-8") if profile_path.exists() else ""
+        taxonomy_text = taxonomy_path.read_text(encoding="utf-8") if taxonomy_path.exists() else ""
+
+        profile_excerpt = self._extract_genre_section(profile_text, genre)
+        taxonomy_excerpt = self._extract_genre_section(taxonomy_text, genre)
+        refs = self._extract_markdown_refs(
+            profile_excerpt,
+            max_items=int(getattr(self.config, "context_genre_profile_max_refs", 8)),
+        )
+
+        return {
+            "genre": genre,
+            "profile_excerpt": profile_excerpt,
+            "taxonomy_excerpt": taxonomy_excerpt,
+            "reference_hints": refs,
+        }
+
+    def _extract_genre_section(self, text: str, genre: str) -> str:
+        if not text:
+            return ""
+        lines = text.splitlines()
+        capture: List[str] = []
+        active = False
+        target = genre.strip().lower()
+
+        for line in lines:
+            normalized = line.strip().lower()
+            if normalized.startswith("## "):
+                if active:
+                    break
+                active = target in normalized
+                if active:
+                    capture.append(line)
+                continue
+            if active:
+                capture.append(line)
+
+        if capture:
+            return "\n".join(capture).strip()
+
+        return "\n".join(lines[:80]).strip()
+
+    def _extract_markdown_refs(self, text: str, max_items: int = 8) -> List[str]:
+        if not text:
+            return []
+        refs: List[str] = []
+        for line in text.splitlines():
+            row = line.strip().lstrip("-*").strip()
+            if not row or row.startswith("#"):
+                continue
+            refs.append(row)
+            if len(refs) >= max(1, max_items):
+                break
+        return refs
 
     def _load_state(self) -> Dict[str, Any]:
         path = self.config.state_file

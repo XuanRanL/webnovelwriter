@@ -148,6 +148,14 @@ class DataModulesConfig:
         "断裂",
     )
     context_ranker_debug: bool = False
+    context_reader_signal_enabled: bool = True
+    context_reader_signal_recent_limit: int = 5
+    context_reader_signal_window_chapters: int = 20
+    context_reader_signal_review_window: int = 5
+    context_reader_signal_include_debt: bool = False
+    context_genre_profile_enabled: bool = True
+    context_genre_profile_max_refs: int = 8
+    context_genre_profile_fallback: str = "shuangwen"
 
     export_recent_changes_slice: int = 20
     export_disambiguation_slice: int = 20

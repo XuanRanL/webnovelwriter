@@ -9,7 +9,12 @@ import json
 import pytest
 
 from data_modules.config import DataModulesConfig
-from data_modules.index_manager import IndexManager, EntityMeta
+from data_modules.index_manager import (
+    IndexManager,
+    EntityMeta,
+    ChapterReadingPowerMeta,
+    ReviewMetrics,
+)
 from data_modules.context_manager import ContextManager
 from data_modules.snapshot_manager import SnapshotManager, SnapshotVersionMismatch
 from data_modules.query_router import QueryRouter
@@ -134,3 +139,101 @@ def test_context_manager_applies_ranker_and_contract_meta(temp_project):
     warnings = payload["sections"]["alerts"]["content"]["disambiguation_warnings"]
     if warnings and isinstance(warnings[0], dict):
         assert "critical" in str(warnings[0].get("message", "")) or warnings[0].get("severity") == "high"
+
+
+def test_context_manager_includes_reader_signal_and_genre_profile(temp_project):
+    state = {
+        "project": {"genre": "xuanhuan"},
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    idx = IndexManager(temp_project)
+    idx.save_chapter_reading_power(
+        ChapterReadingPowerMeta(
+            chapter=3,
+            hook_type="悬念钩",
+            hook_strength="strong",
+            coolpoint_patterns=["身份掉马"],
+        )
+    )
+    idx.save_review_metrics(
+        ReviewMetrics(
+            start_chapter=1,
+            end_chapter=3,
+            overall_score=72,
+            dimension_scores={"plot": 72},
+            severity_counts={"high": 1},
+            critical_issues=["节奏拖沓"],
+        )
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(4, use_snapshot=False, save_snapshot=False)
+
+    reader_signal = payload["sections"]["reader_signal"]["content"]
+    assert "recent_reading_power" in reader_signal
+    assert "pattern_usage" in reader_signal
+    assert "hook_type_usage" in reader_signal
+    assert "review_trend" in reader_signal
+    assert isinstance(reader_signal.get("low_score_ranges"), list)
+
+    genre_profile = payload["sections"]["genre_profile"]["content"]
+    assert genre_profile.get("genre") == "xuanhuan"
+    assert "profile_excerpt" in genre_profile
+    assert "taxonomy_excerpt" in genre_profile
+
+
+def test_context_manager_genre_section_and_refs_extraction(temp_project):
+    refs_dir = temp_project.project_root / ".claude" / "references"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+
+    (refs_dir / "genre-profiles.md").write_text(
+        """
+## shuangwen
+- 节奏快
+- 打脸密集
+
+## xuanhuan
+- 升级线清晰
+- 资源争夺
+""".strip(),
+        encoding="utf-8",
+    )
+    (refs_dir / "reading-power-taxonomy.md").write_text(
+        """
+## xuanhuan
+- 钩子强度优先 strong
+- 爽点使用战力跨级
+""".strip(),
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+
+    profile = manager._load_genre_profile({"project": {"genre": "xuanhuan"}})
+    assert profile["genre"] == "xuanhuan"
+    assert "升级线清晰" in profile["profile_excerpt"]
+    assert "钩子强度" in profile["taxonomy_excerpt"]
+    assert isinstance(profile["reference_hints"], list)
+    assert profile["reference_hints"]
+
+    fallback_excerpt = manager._extract_genre_section("## a\n1\n## b\n2", "unknown")
+    assert fallback_excerpt.startswith("## a")
+
+
+def test_context_manager_reader_signal_with_debt_and_disable_switch(temp_project):
+    manager = ContextManager(temp_project)
+    manager.config.context_reader_signal_include_debt = True
+
+    signal = manager._load_reader_signal(chapter=5)
+    assert "debt_summary" in signal
+
+    manager.config.context_reader_signal_enabled = False
+    assert manager._load_reader_signal(chapter=5) == {}
+
+    manager.config.context_genre_profile_enabled = False
+    assert manager._load_genre_profile({"project": {"genre": "xuanhuan"}}) == {}
