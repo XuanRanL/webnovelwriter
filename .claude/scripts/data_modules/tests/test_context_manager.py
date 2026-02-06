@@ -424,6 +424,9 @@ def test_context_manager_genre_aliases_normalized_for_profile_lookup(temp_projec
     assert manager._parse_genre_tokens("电竞文") == ["电竞"]
     assert manager._parse_genre_tokens("直播") == ["直播文"]
     assert manager._parse_genre_tokens("克系") == ["克苏鲁"]
+    assert manager._parse_genre_tokens("修仙/玄幻") == ["修仙"]
+    assert manager._parse_genre_tokens("都市修真") == ["都市异能"]
+    assert manager._parse_genre_tokens("古言脑洞") == ["古言"]
 
     state = {
         "project": {"genre": "电竞文+直播"},
