@@ -93,27 +93,29 @@ from chapter_paths import extract_chapter_num_from_filename
 try:
     from data_modules.config import get_config, DataModulesConfig
     from data_modules.index_manager import IndexManager
+    from data_modules.state_validator import (
+        get_chapter_meta_entry,
+        is_resolved_foreshadowing_status,
+        normalize_foreshadowing_tier,
+        normalize_state_runtime_sections,
+        resolve_chapter_field,
+        to_positive_int,
+    )
 except ImportError:
     from scripts.data_modules.config import get_config, DataModulesConfig
     from scripts.data_modules.index_manager import IndexManager
+    from scripts.data_modules.state_validator import (
+        get_chapter_meta_entry,
+        is_resolved_foreshadowing_status,
+        normalize_foreshadowing_tier,
+        normalize_state_runtime_sections,
+        resolve_chapter_field,
+        to_positive_int,
+    )
 
 def _is_resolved_foreshadowing_status(raw_status: Any) -> bool:
     """判断伏笔是否已回收（兼容历史字段与同义词）。"""
-    if raw_status is None:
-        return False
-
-    status = str(raw_status).strip()
-    if not status:
-        return False
-
-    status_lower = status.lower()
-    if status in {"已回收", "已完成", "已解决", "完成"}:
-        return True
-    if status_lower in {"resolved", "done", "complete"}:
-        return True
-    if "已回收" in status:
-        return True
-    return False
+    return is_resolved_foreshadowing_status(raw_status)
 
 def _enable_windows_utf8_stdio() -> None:
     """在 Windows 下启用 UTF-8 输出；pytest 环境跳过以避免捕获冲突。"""
@@ -172,43 +174,28 @@ class StatusReporter:
         with open(self.state_file, 'r', encoding='utf-8') as f:
             self.state = json.load(f)
 
+        if isinstance(self.state, dict):
+            self.state = normalize_state_runtime_sections(self.state)
+
         return True
 
     def _to_positive_int(self, value: Any) -> Optional[int]:
         """将输入解析为正整数；解析失败返回 None。"""
-        if value is None or isinstance(value, bool):
-            return None
-
-        try:
-            number = int(value)
-            return number if number > 0 else None
-        except (TypeError, ValueError):
-            if isinstance(value, str):
-                match = re.search(r"\d+", value)
-                if match:
-                    number = int(match.group(0))
-                    return number if number > 0 else None
-        return None
+        return to_positive_int(value)
 
     def _normalize_foreshadowing_tier(self, raw_tier: Any) -> Tuple[str, float]:
         """标准化伏笔层级并返回对应权重。"""
-        text = str(raw_tier or "").strip()
-        lower = text.lower()
+        tier = normalize_foreshadowing_tier(raw_tier)
 
-        if text in {"核心", "主线"} or lower in {"core", "main"}:
+        if tier == "核心":
             return "核心", self.config.foreshadowing_tier_weight_core
-        if text in {"装饰", "次要"} or lower in {"decor", "decoration"}:
+        if tier == "装饰":
             return "装饰", self.config.foreshadowing_tier_weight_decor
         return "支线", self.config.foreshadowing_tier_weight_sub
 
     def _resolve_chapter_field(self, item: Dict[str, Any], keys: List[str]) -> Optional[int]:
         """按候选键顺序读取章节号。"""
-        for key in keys:
-            if key in item:
-                chapter = self._to_positive_int(item.get(key))
-                if chapter is not None:
-                    return chapter
-        return None
+        return resolve_chapter_field(item, keys)
 
     def _collect_foreshadowing_records(self) -> List[Dict[str, Any]]:
         """收集未回收伏笔，并基于真实字段构建分析记录。"""
@@ -311,15 +298,7 @@ class StatusReporter:
         """读取指定章节的 chapter_meta（支持 0001/1 两种键）。"""
         if not self.state:
             return {}
-        chapter_meta = self.state.get("chapter_meta", {})
-        if not isinstance(chapter_meta, dict):
-            return {}
-
-        for key in (f"{chapter:04d}", str(chapter)):
-            value = chapter_meta.get(key)
-            if isinstance(value, dict):
-                return value
-        return {}
+        return get_chapter_meta_entry(self.state, chapter)
 
     def _parse_pattern_count(self, raw_value: Any) -> Optional[int]:
         """解析爽点模式数量，解析失败返回 None。"""

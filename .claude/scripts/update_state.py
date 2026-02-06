@@ -57,6 +57,10 @@ from typing import Dict, Any, Optional
 # ============================================================================
 from security_utils import create_secure_directory, atomic_write_json, restore_from_backup
 from project_locator import resolve_state_file
+from data_modules.state_validator import (
+    normalize_foreshadowing_status,
+    normalize_state_runtime_sections,
+)
 
 # Windows 编码兼容性修复
 if sys.platform == 'win32':
@@ -129,6 +133,7 @@ class StateUpdater:
             tracker.setdefault("chapters_since_switch", 0)
             tracker.setdefault("history", [])
 
+        normalize_state_runtime_sections(state)
         return True
 
     def load(self) -> bool:
@@ -261,18 +266,7 @@ class StateUpdater:
                 return
 
         # 归一化状态，避免 "待回收/进行中/active/pending" 等混用导致下游过滤漏掉
-        raw_status = "" if status is None else str(status).strip()
-        raw_status_lower = raw_status.lower()
-        if raw_status in {"已回收", "已完成", "已解决", "完成"} or raw_status_lower in {"resolved", "done", "complete"}:
-            status = "已回收"
-        elif (
-            raw_status in {"未回收", "待回收", "进行中", "未解决"}
-            or raw_status_lower in {"active", "pending"}
-            or not raw_status
-        ):
-            status = "未回收"
-        else:
-            status = "未回收"
+        status = normalize_foreshadowing_status(status)
 
         planted_chapter = int(self.state.get("progress", {}).get("current_chapter", 0) or 0)
         if planted_chapter <= 0:
@@ -302,6 +296,7 @@ class StateUpdater:
                 item["status"] = "已回收"
                 item["resolved_chapter"] = chapter
                 item["resolved_at"] = datetime.now().strftime("%Y-%m-%d")
+                normalize_state_runtime_sections(self.state)
                 print(f"📝 回收伏笔: {content}（第{chapter}章）")
                 return
 
