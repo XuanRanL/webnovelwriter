@@ -80,6 +80,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/core-constraints.md"
   - `references/style-variants.md`
   - `.claude/references/reading-power-taxonomy.md`
   - `.claude/references/genre-profiles.md`
+  - `references/writing/genre-hook-payoff-library.md`（电竞/直播文/克苏鲁优先）
 - 仅当需要模板细节时加载：
   - `references/workflow-details.md`
   - `references/writing/typesetting.md`

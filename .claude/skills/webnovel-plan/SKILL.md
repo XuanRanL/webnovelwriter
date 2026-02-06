@@ -28,6 +28,8 @@ Use progressive disclosure and load only what current step requires:
   - `references/cool-points-guide.md`
 - Before Step 4, load only if需要钩子/节奏细分:
   - `.claude/references/reading-power-taxonomy.md`
+- Before Step 3/4, load only if题材为电竞/直播文/克苏鲁:
+  - `references/outlining/genre-volume-pacing.md`
 
 ## Workflow
 1. Load project data.
@@ -82,6 +84,11 @@ Based on genre profile, distribute chapters:
 - 每 3-5 章切换主导 Strand
 - 高潮章节可多 Strand 交织
 - 卷末 3-5 章集中 Quest Strand
+
+For 电竞/直播文/克苏鲁, apply dedicated volume pacing template:
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/outlining/genre-volume-pacing.md"
+```
 
 ### 爽点密度规划策略
 Based on genre profile:

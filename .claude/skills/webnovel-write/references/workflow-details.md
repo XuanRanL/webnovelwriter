@@ -14,6 +14,7 @@
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/style-variants.md"
 cat "${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md"
 cat "${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md"
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/genre-hook-payoff-library.md"
 ```
 
 **输出结构**:
@@ -28,6 +29,11 @@ cat "${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md"
 - 钩子类型避免与最近3章重复
 - 开头类型避免与最近3章重复
 - 爽点模式避免与最近5章过度重复
+
+**题材快速调用（电竞/直播文/克苏鲁）**:
+- 先从 `genre-hook-payoff-library.md` 选 1 条章末钩子。
+- 再选 1-2 条微兑现，优先与本章核心冲突同方向。
+- 若连续两章使用同类型钩子，必须在“对象/代价/结果”至少变更一项。
 
 如必须重复，记录 Override 理由并给出差异化执行方式。
 
