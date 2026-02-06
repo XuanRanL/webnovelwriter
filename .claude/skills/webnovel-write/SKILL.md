@@ -43,6 +43,15 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 **要求**：创作任务书必须包含“反派层级”（从大纲/章纲提取）。
 
+### Step 1.5: Contract v2 Guidance 注入
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py" --chapter {chapter_num} --project-root "{PROJECT_ROOT}" --format json
+```
+
+- 必须读取：`writing_guidance.guidance_items`
+- 推荐读取：`reader_signal` 与 `genre_profile.reference_hints`
+
 ## Step 2: 写作
 
 - 遵循三大原则：大纲即法律 / 设定即物理 / 新实体需记录。

@@ -779,6 +779,12 @@ git checkout ch0045
 - 新增 `writing_guidance`：按章生成可执行写作建议（低分修复/钩子差异化/题材锚定）
 - 新增紧凑文本策略：超预算 section 使用 `…[TRUNCATED]` 保留头尾关键信息
 - 目标：在有限上下文预算下提升“可写性”和“网文感”
+
+### Context Contract v2（阶段 D）
+
+- `extract_chapter_context.py` 已接入 Contract v2 输出
+- JSON 输出新增：`context_contract_version` / `reader_signal` / `genre_profile` / `writing_guidance`
+- text 输出新增：`写作执行建议` 板块，供 Context Agent / Writer 直接使用
 - **invalid_facts 表**：追踪无效事实，支持 pending/confirmed 状态
 - **父子向量索引**：parent_chunk_id 支持摘要-场景层级检索
 - **Token 预算管理**：ContextManager 实现 40%/35%/25% 优先级分配

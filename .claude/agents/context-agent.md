@@ -80,6 +80,14 @@ tools: Read, Grep, Bash
 python -m data_modules.context_manager --chapter {NNNN} --project-root "{project_root}"
 ```
 
+### Step 0.5: Contract v2 上下文包
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py" --chapter {NNNN} --project-root "{project_root}" --format json
+```
+
+- 必须读取：`writing_guidance.guidance_items`
+- 推荐读取：`reader_signal` 与 `genre_profile.reference_hints`
+
 ### Step 1: 读取大纲与状态
 - 大纲：`大纲/卷N/第XXX章.md` 或 `大纲/第{卷}卷-详细大纲.md`
   - 若大纲含“反派层级”，必须提取并写入任务书
