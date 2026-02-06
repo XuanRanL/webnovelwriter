@@ -278,6 +278,12 @@ def test_context_manager_includes_writing_guidance(temp_project):
     assert isinstance(items, list)
     assert items
     assert guidance.get("signals_used", {}).get("genre") == "xuanhuan"
+    checklist = guidance.get("checklist") or []
+    assert isinstance(checklist, list)
+    assert checklist
+    first_item = checklist[0]
+    assert isinstance(first_item, dict)
+    assert {"id", "label", "weight", "required", "source", "verify_hint"}.issubset(first_item.keys())
 
 
 def test_context_manager_compact_text_truncation(temp_project):

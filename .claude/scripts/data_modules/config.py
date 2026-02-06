@@ -163,6 +163,10 @@ class DataModulesConfig:
     context_writing_guidance_max_items: int = 6
     context_writing_guidance_low_score_threshold: float = 75.0
     context_writing_guidance_hook_diversify: bool = True
+    context_writing_checklist_enabled: bool = True
+    context_writing_checklist_min_items: int = 3
+    context_writing_checklist_max_items: int = 6
+    context_writing_checklist_default_weight: float = 1.0
 
     export_recent_changes_slice: int = 20
     export_disambiguation_slice: int = 20

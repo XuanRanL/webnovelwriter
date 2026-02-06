@@ -89,6 +89,7 @@ def test_build_chapter_context_payload_includes_contract_sections(tmp_path):
     assert payload["context_contract_version"] == "v2"
     assert "writing_guidance" in payload
     assert isinstance(payload["writing_guidance"].get("guidance_items"), list)
+    assert isinstance(payload["writing_guidance"].get("checklist"), list)
     assert payload["genre_profile"].get("genre") == "xuanhuan"
 
 
@@ -107,10 +108,25 @@ def test_render_text_contains_writing_guidance_section(tmp_path):
         "context_contract_version": "v2",
         "reader_signal": {"review_trend": {"overall_avg": 72}, "low_score_ranges": [{"start_chapter": 8, "end_chapter": 9}]},
         "genre_profile": {"genre": "xuanhuan", "reference_hints": ["升级线清晰"]},
-        "writing_guidance": {"guidance_items": ["先修低分", "钩子差异化"]},
+        "writing_guidance": {
+            "guidance_items": ["先修低分", "钩子差异化"],
+            "checklist": [
+                {
+                    "id": "fix_low_score_range",
+                    "label": "修复低分区间问题",
+                    "weight": 1.4,
+                    "required": True,
+                    "source": "reader_signal.low_score_ranges",
+                    "verify_hint": "至少完成1处冲突升级",
+                }
+            ],
+        },
     }
 
     text = _render_text(payload)
     assert "## 写作执行建议" in text
     assert "先修低分" in text
     assert "## Contract (v2)" in text
+    assert "### 执行检查清单（可评分）" in text
+    assert "- 总权重: 1.40" in text
+    assert "[必做][w=1.4] 修复低分区间问题" in text

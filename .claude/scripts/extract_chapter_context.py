@@ -250,11 +250,45 @@ def _render_text(payload: Dict[str, Any]) -> str:
 
     writing_guidance = payload.get("writing_guidance") or {}
     guidance_items = writing_guidance.get("guidance_items") or []
-    if guidance_items:
+    checklist = writing_guidance.get("checklist") or []
+    if guidance_items or checklist:
         lines.append("## 写作执行建议")
         lines.append("")
         for idx, item in enumerate(guidance_items, start=1):
             lines.append(f"{idx}. {item}")
+
+        if checklist:
+            total_weight = 0.0
+            required_count = 0
+            for row in checklist:
+                if isinstance(row, dict):
+                    try:
+                        total_weight += float(row.get("weight") or 0)
+                    except (TypeError, ValueError):
+                        pass
+                    if row.get("required"):
+                        required_count += 1
+
+            lines.append("")
+            lines.append("### 执行检查清单（可评分）")
+            lines.append("")
+            lines.append(f"- 项目数: {len(checklist)}")
+            lines.append(f"- 总权重: {total_weight:.2f}")
+            lines.append(f"- 必做项: {required_count}")
+            lines.append("")
+
+            for idx, row in enumerate(checklist, start=1):
+                if not isinstance(row, dict):
+                    lines.append(f"{idx}. {row}")
+                    continue
+                label = str(row.get("label") or "").strip() or "未命名项"
+                weight = row.get("weight")
+                required_tag = "必做" if row.get("required") else "可选"
+                verify_hint = str(row.get("verify_hint") or "").strip()
+                lines.append(f"{idx}. [{required_tag}][w={weight}] {label}")
+                if verify_hint:
+                    lines.append(f"   - 验收: {verify_hint}")
+
         lines.append("")
 
     reader_signal = payload.get("reader_signal") or {}
@@ -306,4 +340,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
