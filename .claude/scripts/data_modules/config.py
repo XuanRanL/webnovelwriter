@@ -13,6 +13,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 
+from .context_weights import TEMPLATE_WEIGHTS_DYNAMIC_DEFAULT
+
 # 加载 .env 文件
 def _load_dotenv():
     """从项目根目录加载 .env 文件"""
@@ -37,6 +39,16 @@ def _load_dotenv():
             break
 
 _load_dotenv()
+
+
+def _default_context_template_weights_dynamic() -> dict[str, dict[str, dict[str, float]]]:
+    return {
+        stage: {
+            template: dict(weights)
+            for template, weights in templates.items()
+        }
+        for stage, templates in TEMPLATE_WEIGHTS_DYNAMIC_DEFAULT.items()
+    }
 
 
 @dataclass
@@ -177,6 +189,9 @@ class DataModulesConfig:
     context_dynamic_budget_early_scene_bonus: float = 0.04
     context_dynamic_budget_late_global_bonus: float = 0.08
     context_dynamic_budget_late_scene_penalty: float = 0.06
+    context_template_weights_dynamic: dict[str, dict[str, dict[str, float]]] = field(
+        default_factory=_default_context_template_weights_dynamic
+    )
     context_genre_profile_support_composite: bool = True
     context_genre_profile_max_genres: int = 2
     context_genre_profile_separators: tuple[str, ...] = (

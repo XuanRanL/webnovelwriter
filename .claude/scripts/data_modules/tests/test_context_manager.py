@@ -458,3 +458,69 @@ def test_context_manager_compact_text_truncation(temp_project):
     manager.config.context_compact_text_enabled = False
     raw_cut = manager._compact_json_text(content, budget=100)
     assert len(raw_cut) <= 100
+
+
+def test_context_manager_persist_writing_checklist_score_logs_failure(temp_project, monkeypatch, capsys):
+    manager = ContextManager(temp_project)
+
+    def _raise_save_error(_meta):
+        raise RuntimeError("simulated save failure")
+
+    monkeypatch.setattr(manager.index_manager, "save_writing_checklist_score", _raise_save_error)
+
+    manager._persist_writing_checklist_score(
+        {
+            "chapter": 6,
+            "score": 70.0,
+            "total_items": 3,
+            "required_items": 1,
+            "completed_items": 1,
+            "completed_required": 1,
+            "total_weight": 3.0,
+            "completed_weight": 1.0,
+            "completion_rate": 0.33,
+            "pending_items": ["test"],
+        }
+    )
+
+    captured = capsys.readouterr()
+    assert "failed to persist writing checklist score" in captured.err
+
+
+def test_context_manager_composite_genre_boundary_three_plus(temp_project):
+    manager = ContextManager(temp_project)
+    manager.config.context_genre_profile_support_composite = True
+    manager.config.context_genre_profile_max_genres = 3
+
+    genre_raw = "电竞文+直播+克系+修仙/玄幻+电竞文"
+    tokens = manager._parse_genre_tokens(genre_raw)
+    assert tokens[:4] == ["电竞", "直播文", "克苏鲁", "修仙"]
+
+    state = {
+        "project": {"genre": genre_raw},
+        "protagonist_state": {"name": "主角"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+
+    profile = manager._load_genre_profile(state)
+    assert profile.get("composite") is True
+    assert profile.get("genres") == ["电竞", "直播文", "克苏鲁"]
+    assert profile.get("secondary_genres") == ["直播文", "克苏鲁"]
+
+    profile_again = manager._load_genre_profile(state)
+    assert profile_again.get("genres") == profile.get("genres")
+
+
+def test_context_manager_dynamic_weights_from_config_override(temp_project):
+    manager = ContextManager(temp_project)
+    manager.config.context_dynamic_budget_enabled = True
+    manager.config.context_template_weights_dynamic = {
+        "early": {
+            "plot": {"core": 0.60, "scene": 0.20, "global": 0.20},
+        }
+    }
+
+    weights = manager._resolve_template_weights("plot", chapter=1)
+    assert weights == {"core": 0.60, "scene": 0.20, "global": 0.20}

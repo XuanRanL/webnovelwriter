@@ -77,8 +77,8 @@ def append_call_trace(event: str, payload: Optional[Dict[str, Any]] = None):
 def safe_append_call_trace(event: str, payload: Optional[Dict[str, Any]] = None):
     try:
         append_call_trace(event, payload)
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[workflow_manager] failed to append call trace for event '{event}': {exc}", file=sys.stderr)
 
 
 def expected_step_owner(command: str, step_id: str) -> str:

@@ -98,3 +98,18 @@ def test_workflow_step_owner_and_order_violation_trace(tmp_path, monkeypatch):
     step_started = [row for row in lines if row.get("event") == "step_started"]
     assert step_started
     assert step_started[-1].get("payload", {}).get("expected_owner") == "review-agents"
+
+
+def test_safe_append_call_trace_logs_failure(monkeypatch, capsys):
+    module = _load_module()
+
+    def _raise_trace_error(event, payload=None):
+        raise RuntimeError("trace failure")
+
+    monkeypatch.setattr(module, "append_call_trace", _raise_trace_error)
+
+    module.safe_append_call_trace("unit_test_event", {"ok": True})
+
+    captured = capsys.readouterr()
+    assert "failed to append call trace" in captured.err
+    assert "unit_test_event" in captured.err

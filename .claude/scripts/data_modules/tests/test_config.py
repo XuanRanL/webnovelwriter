@@ -40,3 +40,23 @@ def test_load_dotenv(monkeypatch, tmp_path):
     # call loader explicitly
     config_module._load_dotenv()
     assert os.environ.get("EMBED_BASE_URL") == "https://example.com"
+
+
+def test_config_default_context_template_weights_dynamic_is_available(tmp_path):
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    dynamic = cfg.context_template_weights_dynamic
+
+    assert isinstance(dynamic, dict)
+    assert "early" in dynamic
+    assert "mid" in dynamic
+    assert "late" in dynamic
+    assert "plot" in dynamic["early"]
+
+
+def test_config_dynamic_template_weights_are_independent_instances(tmp_path):
+    cfg1 = DataModulesConfig.from_project_root(tmp_path)
+    cfg2 = DataModulesConfig.from_project_root(tmp_path)
+
+    cfg1.context_template_weights_dynamic["early"]["plot"]["core"] = 0.77
+
+    assert cfg2.context_template_weights_dynamic["early"]["plot"]["core"] != 0.77

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -14,37 +15,29 @@ from .config import get_config
 from .index_manager import IndexManager, WritingChecklistScoreMeta
 from .context_ranker import ContextRanker
 from .snapshot_manager import SnapshotManager, SnapshotVersionMismatch
+from .context_weights import (
+    DEFAULT_TEMPLATE as CONTEXT_DEFAULT_TEMPLATE,
+    TEMPLATE_WEIGHTS as CONTEXT_TEMPLATE_WEIGHTS,
+    TEMPLATE_WEIGHTS_DYNAMIC_DEFAULT as CONTEXT_TEMPLATE_WEIGHTS_DYNAMIC_DEFAULT,
+)
+from .genre_aliases import normalize_genre_token
+from .genre_profile_builder import (
+    build_composite_genre_hints,
+    extract_genre_section,
+    extract_markdown_refs,
+    parse_genre_tokens,
+)
+from .writing_guidance_builder import (
+    build_guidance_items,
+    build_writing_checklist,
+    is_checklist_item_completed,
+)
 
 
 class ContextManager:
-    DEFAULT_TEMPLATE = "plot"
-    TEMPLATE_WEIGHTS = {
-        "plot": {"core": 0.40, "scene": 0.35, "global": 0.25},
-        "battle": {"core": 0.35, "scene": 0.45, "global": 0.20},
-        "emotion": {"core": 0.45, "scene": 0.35, "global": 0.20},
-        "transition": {"core": 0.50, "scene": 0.25, "global": 0.25},
-    }
-
-    TEMPLATE_WEIGHTS_DYNAMIC = {
-        "early": {
-            "plot": {"core": 0.48, "scene": 0.39, "global": 0.13},
-            "battle": {"core": 0.42, "scene": 0.50, "global": 0.08},
-            "emotion": {"core": 0.52, "scene": 0.38, "global": 0.10},
-            "transition": {"core": 0.56, "scene": 0.28, "global": 0.16},
-        },
-        "mid": {
-            "plot": {"core": 0.40, "scene": 0.35, "global": 0.25},
-            "battle": {"core": 0.35, "scene": 0.45, "global": 0.20},
-            "emotion": {"core": 0.45, "scene": 0.35, "global": 0.20},
-            "transition": {"core": 0.50, "scene": 0.25, "global": 0.25},
-        },
-        "late": {
-            "plot": {"core": 0.36, "scene": 0.29, "global": 0.35},
-            "battle": {"core": 0.31, "scene": 0.39, "global": 0.30},
-            "emotion": {"core": 0.41, "scene": 0.29, "global": 0.30},
-            "transition": {"core": 0.46, "scene": 0.21, "global": 0.33},
-        },
-    }
+    DEFAULT_TEMPLATE = CONTEXT_DEFAULT_TEMPLATE
+    TEMPLATE_WEIGHTS = CONTEXT_TEMPLATE_WEIGHTS
+    TEMPLATE_WEIGHTS_DYNAMIC = CONTEXT_TEMPLATE_WEIGHTS_DYNAMIC_DEFAULT
     EXTRA_SECTIONS = {
         "story_skeleton",
         "memory",
@@ -341,100 +334,22 @@ class ContextManager:
         if not getattr(self.config, "context_writing_guidance_enabled", True):
             return {}
 
-        guidance: List[str] = []
         limit = max(1, int(getattr(self.config, "context_writing_guidance_max_items", 6)))
         low_score_threshold = float(
             getattr(self.config, "context_writing_guidance_low_score_threshold", 75.0)
         )
 
-        low_ranges = reader_signal.get("low_score_ranges") or []
-        if low_ranges:
-            worst = min(
-                low_ranges,
-                key=lambda row: float(row.get("overall_score", 9999)),
-            )
-            guidance.append(
-                f"第{chapter}章优先修复近期低分段问题：参考{worst.get('start_chapter')}-{worst.get('end_chapter')}章，强化冲突推进与结尾钩子。"
-            )
+        guidance_bundle = build_guidance_items(
+            chapter=chapter,
+            reader_signal=reader_signal,
+            genre_profile=genre_profile,
+            low_score_threshold=low_score_threshold,
+            hook_diversify_enabled=bool(
+                getattr(self.config, "context_writing_guidance_hook_diversify", True)
+            ),
+        )
 
-        hook_usage = reader_signal.get("hook_type_usage") or {}
-        if hook_usage and getattr(self.config, "context_writing_guidance_hook_diversify", True):
-            dominant_hook = max(hook_usage.items(), key=lambda kv: kv[1])[0]
-            guidance.append(
-                f"近期钩子类型“{dominant_hook}”使用偏多，本章建议做钩子差异化，避免连续同构。"
-            )
-
-        pattern_usage = reader_signal.get("pattern_usage") or {}
-        if pattern_usage:
-            top_pattern = max(pattern_usage.items(), key=lambda kv: kv[1])[0]
-            guidance.append(
-                f"爽点模式“{top_pattern}”近期高频，本章可保留主爽点但叠加一个新爽点副轴。"
-            )
-
-        review_trend = reader_signal.get("review_trend") or {}
-        overall_avg = review_trend.get("overall_avg")
-        if isinstance(overall_avg, (int, float)) and float(overall_avg) < low_score_threshold:
-            guidance.append(
-                f"最近审查均分{overall_avg:.1f}低于阈值{low_score_threshold:.1f}，建议先保稳：减少跳场、每段补动作结果闭环。"
-            )
-
-        genre = str(genre_profile.get("genre") or "").strip()
-        refs = genre_profile.get("reference_hints") or []
-        if genre:
-            guidance.append(f"题材锚定：按“{genre}”叙事主线推进，保持题材读者预期稳定兑现。")
-        if refs:
-            guidance.append(f"题材策略可执行提示：{refs[0]}")
-
-        guidance.append("网文节奏基线：章首300字内给出目标与阻力，章末保留未闭合问题。")
-        guidance.append("兑现密度基线：每600-900字给一次微兑现，并确保本章至少1处可量化变化。")
-
-        genre_aliases = {
-            "修仙": "xianxia",
-            "修仙/玄幻": "xianxia",
-            "玄幻": "xianxia",
-            "爽文/系统流": "shuangwen",
-            "高武": "xianxia",
-            "西幻": "xianxia",
-            "都市异能": "urban-power",
-            "都市脑洞": "urban-power",
-            "都市日常": "urban-power",
-            "狗血言情": "romance",
-            "古言": "romance",
-            "青春甜宠": "romance",
-            "替身文": "substitute",
-            "规则怪谈": "rules-mystery",
-            "悬疑脑洞": "mystery",
-            "悬疑灵异": "mystery",
-            "知乎短篇": "zhihu-short",
-            "电竞": "esports",
-            "直播文": "livestream",
-            "克苏鲁": "cosmic-horror",
-        }
-        normalized_genre = genre_aliases.get(genre, genre.lower())
-
-        genre_guidance = {
-            "xianxia": "题材加权：强化升级/对抗结果的可见反馈，术语解释后置。",
-            "shuangwen": "题材加权：维持高爽点密度，主爽点外叠加一个副轴反差。",
-            "urban-power": "题材加权：优先写社会反馈链（他人反应→资源变化→地位变化）。",
-            "romance": "题材加权：每章推进关系位移，避免情绪原地打转。",
-            "mystery": "题材加权：线索必须可回收，优先以规则冲突制造悬念。",
-            "rules-mystery": "题材加权：规则先于解释，代价先于胜利。",
-            "zhihu-short": "题材加权：压缩铺垫，优先反转与高强度结尾钩。",
-            "substitute": "题材加权：强化误解-拉扯-决断链路，避免重复虐点。",
-            "esports": "题材加权：每场对抗至少写清一个战术决策点与其后果。",
-            "livestream": "题材加权：强化“外部反馈→主角反制→数据变化”即时闭环。",
-            "cosmic-horror": "题材加权：恐怖来源于规则与代价，不依赖空泛惊悚形容。",
-        }
-        genre_hint = genre_guidance.get(normalized_genre) or genre_guidance.get(genre)
-        if genre_hint:
-            guidance.append(genre_hint)
-
-        composite_hints = genre_profile.get("composite_hints") or []
-        if composite_hints:
-            guidance.append(f"复合题材协同：{composite_hints[0]}")
-
-        if not guidance:
-            guidance.append("本章执行默认高可读策略：冲突前置、信息后置、段末留钩。")
+        guidance = list(guidance_bundle.get("guidance") or [])
 
         checklist = self._build_writing_checklist(
             chapter=chapter,
@@ -452,6 +367,18 @@ class ContextManager:
         if getattr(self.config, "context_writing_score_persist_enabled", True):
             self._persist_writing_checklist_score(checklist_score)
 
+        low_ranges = guidance_bundle.get("low_ranges") or []
+        hook_usage = guidance_bundle.get("hook_usage") or {}
+        pattern_usage = guidance_bundle.get("pattern_usage") or {}
+        genre = str(guidance_bundle.get("genre") or genre_profile.get("genre") or "").strip()
+
+        hook_types = list(hook_usage.keys())[:3] if isinstance(hook_usage, dict) else []
+        top_patterns = (
+            sorted(pattern_usage, key=pattern_usage.get, reverse=True)[:3]
+            if isinstance(pattern_usage, dict)
+            else []
+        )
+
         return {
             "chapter": chapter,
             "guidance_items": guidance[:limit],
@@ -459,12 +386,8 @@ class ContextManager:
             "checklist_score": checklist_score,
             "signals_used": {
                 "has_low_score_ranges": bool(low_ranges),
-                "hook_types": list(hook_usage.keys())[:3],
-                "top_patterns": sorted(
-                    pattern_usage,
-                    key=pattern_usage.get,
-                    reverse=True,
-                )[:3],
+                "hook_types": hook_types,
+                "top_patterns": top_patterns,
                 "genre": genre,
             },
         }
@@ -533,28 +456,7 @@ class ContextManager:
         }
 
     def _is_checklist_item_completed(self, item: Dict[str, Any], reader_signal: Dict[str, Any]) -> bool:
-        item_id = str(item.get("id") or "")
-        if item_id in {"fix_low_score_range", "readability_loop"}:
-            review_trend = reader_signal.get("review_trend") or {}
-            overall = review_trend.get("overall_avg")
-            return isinstance(overall, (int, float)) and float(overall) >= 75.0
-
-        if item_id == "hook_diversification":
-            hook_usage = reader_signal.get("hook_type_usage") or {}
-            return len(hook_usage) >= 2
-
-        if item_id == "coolpoint_combo":
-            pattern_usage = reader_signal.get("pattern_usage") or {}
-            return len(pattern_usage) >= 2
-
-        if item_id == "genre_anchor_consistency":
-            return True
-
-        source = str(item.get("source") or "")
-        if source.startswith("fallback"):
-            return True
-
-        return False
+        return is_checklist_item_completed(item, reader_signal)
 
     def _persist_writing_checklist_score(self, checklist_score: Dict[str, Any]) -> None:
         if not checklist_score:
@@ -581,8 +483,11 @@ class ContextManager:
                     source="context_manager",
                 )
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            print(
+                f"[context_manager] failed to persist writing checklist score: {exc}",
+                file=sys.stderr,
+            )
 
     def _resolve_context_stage(self, chapter: int) -> str:
         early = max(1, int(getattr(self.config, "context_dynamic_budget_early_chapter", 30)))
@@ -600,81 +505,32 @@ class ContextManager:
             return base
 
         stage = self._resolve_context_stage(chapter)
-        staged = self.TEMPLATE_WEIGHTS_DYNAMIC.get(stage, {}).get(template_key)
-        if staged:
+        dynamic_weights = getattr(self.config, "context_template_weights_dynamic", None)
+        if not isinstance(dynamic_weights, dict):
+            dynamic_weights = self.TEMPLATE_WEIGHTS_DYNAMIC
+
+        stage_weights = dynamic_weights.get(stage, {}) if isinstance(dynamic_weights.get(stage, {}), dict) else {}
+        staged = stage_weights.get(template_key)
+        if isinstance(staged, dict):
             return dict(staged)
 
         return base
 
     def _parse_genre_tokens(self, genre_raw: str) -> List[str]:
-        text = str(genre_raw or "").strip()
-        if not text:
-            return []
-        if not getattr(self.config, "context_genre_profile_support_composite", True):
-            normalized_single = self._normalize_genre_token(text)
-            return [normalized_single] if normalized_single else [text]
-
-        separators = getattr(self.config, "context_genre_profile_separators", ("+", "/", "|", ",", "，", "、"))
-        pattern = "|".join(re.escape(str(token)) for token in separators if str(token))
-        if not pattern:
-            return [text]
-
-        tokens = [chunk.strip() for chunk in re.split(pattern, text) if chunk and chunk.strip()]
-        deduped: List[str] = []
-        seen = set()
-        for token in tokens:
-            normalized_token = self._normalize_genre_token(token)
-            if not normalized_token:
-                continue
-            lower = normalized_token.lower()
-            if lower in seen:
-                continue
-            seen.add(lower)
-            deduped.append(normalized_token)
-        if deduped:
-            return deduped
-
-        fallback_token = self._normalize_genre_token(text)
-        return [fallback_token] if fallback_token else [text]
+        support_composite = bool(getattr(self.config, "context_genre_profile_support_composite", True))
+        separators_raw = getattr(self.config, "context_genre_profile_separators", ("+", "/", "|", ","))
+        separators = tuple(str(token) for token in separators_raw if str(token))
+        return parse_genre_tokens(
+            genre_raw,
+            support_composite=support_composite,
+            separators=separators,
+        )
 
     def _normalize_genre_token(self, token: str) -> str:
-        value = str(token or "").strip()
-        if not value:
-            return ""
-
-        aliases = {
-            "修仙/玄幻": "修仙",
-            "玄幻修仙": "修仙",
-            "玄幻": "修仙",
-            "修真": "修仙",
-            "都市修真": "都市异能",
-            "都市高武": "高武",
-            "都市奇闻": "都市脑洞",
-            "古言脑洞": "古言",
-            "游戏电竞": "电竞",
-            "电竞文": "电竞",
-            "直播": "直播文",
-            "直播带货": "直播文",
-            "主播": "直播文",
-            "克系": "克苏鲁",
-            "克系悬疑": "克苏鲁",
-        }
-        return aliases.get(value, value)
+        return normalize_genre_token(token)
 
     def _build_composite_genre_hints(self, genres: List[str], refs: List[str]) -> List[str]:
-        if len(genres) <= 1:
-            return []
-
-        primary = genres[0]
-        secondaries = genres[1:]
-        hints: List[str] = []
-        hints.append(
-            f"以“{primary}”作为主引擎推进主线，每章至少保留1处“{'/'.join(secondaries)}”特征表达。"
-        )
-        if refs:
-            hints.append(f"复合题材执行参考：{refs[0]}")
-        hints.append("主辅题材冲突时，优先保证主题材读者承诺，辅题材用于制造新鲜感。")
-        return hints
+        return build_composite_genre_hints(genres, refs)
 
     def _build_writing_checklist(
         self,
@@ -683,6 +539,7 @@ class ContextManager:
         reader_signal: Dict[str, Any],
         genre_profile: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
+        _ = chapter
         if not getattr(self.config, "context_writing_checklist_enabled", True):
             return []
 
@@ -692,142 +549,14 @@ class ContextManager:
         if default_weight <= 0:
             default_weight = 1.0
 
-        items: List[Dict[str, Any]] = []
-
-        def _add_item(
-            item_id: str,
-            label: str,
-            *,
-            weight: Optional[float] = None,
-            required: bool = False,
-            source: str = "writing_guidance",
-            verify_hint: str = "",
-        ) -> None:
-            if len(items) >= max_items:
-                return
-            if any(row.get("id") == item_id for row in items):
-                return
-
-            item_weight = float(weight if weight is not None else default_weight)
-            if item_weight <= 0:
-                item_weight = default_weight
-
-            items.append(
-                {
-                    "id": item_id,
-                    "label": label,
-                    "weight": round(item_weight, 2),
-                    "required": bool(required),
-                    "source": source,
-                    "verify_hint": verify_hint,
-                }
-            )
-
-        low_ranges = reader_signal.get("low_score_ranges") or []
-        if low_ranges:
-            worst = min(low_ranges, key=lambda row: float(row.get("overall_score", 9999)))
-            span = f"{worst.get('start_chapter')}-{worst.get('end_chapter')}"
-            _add_item(
-                "fix_low_score_range",
-                f"修复低分区间问题（参考第{span}章）",
-                weight=max(default_weight, 1.4),
-                required=True,
-                source="reader_signal.low_score_ranges",
-                verify_hint="至少完成1处冲突升级，并在段末留下钩子。",
-            )
-
-        hook_usage = reader_signal.get("hook_type_usage") or {}
-        if hook_usage:
-            dominant_hook = max(hook_usage.items(), key=lambda kv: kv[1])[0]
-            _add_item(
-                "hook_diversification",
-                f"钩子差异化（避免继续单一“{dominant_hook}”）",
-                weight=max(default_weight, 1.2),
-                required=True,
-                source="reader_signal.hook_type_usage",
-                verify_hint="结尾钩子类型与近20章主类型至少有一处差异。",
-            )
-
-        pattern_usage = reader_signal.get("pattern_usage") or {}
-        if pattern_usage:
-            top_pattern = max(pattern_usage.items(), key=lambda kv: kv[1])[0]
-            _add_item(
-                "coolpoint_combo",
-                f"主爽点+副爽点组合（主爽点：{top_pattern}）",
-                weight=default_weight,
-                required=False,
-                source="reader_signal.pattern_usage",
-                verify_hint="新增至少1个副爽点，并与主爽点形成因果链。",
-            )
-
-        review_trend = reader_signal.get("review_trend") or {}
-        overall_avg = review_trend.get("overall_avg")
-        if isinstance(overall_avg, (int, float)):
-            _add_item(
-                "readability_loop",
-                "段落可读性闭环（动作→结果→情绪）",
-                weight=max(default_weight, 1.1),
-                required=True,
-                source="reader_signal.review_trend",
-                verify_hint="抽查3段，均包含动作结果闭环。",
-            )
-
-        genre = str(genre_profile.get("genre") or "").strip()
-        if genre:
-            _add_item(
-                "genre_anchor_consistency",
-                f"题材锚定一致性（{genre}）",
-                weight=max(default_weight, 1.1),
-                required=True,
-                source="genre_profile.genre",
-                verify_hint="主冲突与题材核心承诺保持一致。",
-            )
-
-        for idx, text in enumerate(guidance_items, start=1):
-            if len(items) >= max_items:
-                break
-            label = str(text).strip()
-            if not label:
-                continue
-            _add_item(
-                f"guidance_item_{idx}",
-                label,
-                weight=default_weight,
-                required=False,
-                source="writing_guidance.guidance_items",
-                verify_hint="完成后可在正文中定位对应段落。",
-            )
-
-        fallback_items = [
-            (
-                "opening_conflict",
-                "开篇300字内给出冲突触发",
-                "开头段出现明确目标与阻力。",
-            ),
-            (
-                "scene_goal_block",
-                "场景目标与阻力清晰",
-                "每个场景至少有1个可验证目标。",
-            ),
-            (
-                "ending_hook",
-                "段末留钩并引出下一问",
-                "结尾出现未解问题或下一步行动。",
-            ),
-        ]
-        for item_id, label, verify_hint in fallback_items:
-            if len(items) >= min_items or len(items) >= max_items:
-                break
-            _add_item(
-                item_id,
-                label,
-                weight=default_weight,
-                required=False,
-                source="fallback",
-                verify_hint=verify_hint,
-            )
-
-        return items[:max_items]
+        return build_writing_checklist(
+            guidance_items=guidance_items,
+            reader_signal=reader_signal,
+            genre_profile=genre_profile,
+            min_items=min_items,
+            max_items=max_items,
+            default_weight=default_weight,
+        )
 
     def _compact_json_text(self, content: Any, budget: Optional[int]) -> str:
         raw = json.dumps(content, ensure_ascii=False)
@@ -847,42 +576,10 @@ class ContextManager:
         return compact[:budget]
 
     def _extract_genre_section(self, text: str, genre: str) -> str:
-        if not text:
-            return ""
-        lines = text.splitlines()
-        capture: List[str] = []
-        active = False
-        target = genre.strip().lower()
-
-        for line in lines:
-            normalized = line.strip().lower()
-            if normalized.startswith("## ") or normalized.startswith("### "):
-                if active:
-                    break
-                active = target in normalized
-                if active:
-                    capture.append(line)
-                continue
-            if active:
-                capture.append(line)
-
-        if capture:
-            return "\n".join(capture).strip()
-
-        return "\n".join(lines[:80]).strip()
+        return extract_genre_section(text, genre)
 
     def _extract_markdown_refs(self, text: str, max_items: int = 8) -> List[str]:
-        if not text:
-            return []
-        refs: List[str] = []
-        for line in text.splitlines():
-            row = line.strip().lstrip("-*").strip()
-            if not row or row.startswith("#"):
-                continue
-            refs.append(row)
-            if len(refs) >= max(1, max_items):
-                break
-        return refs
+        return extract_markdown_refs(text, max_items=max_items)
 
     def _load_state(self) -> Dict[str, Any]:
         path = self.config.state_file
@@ -1019,16 +716,16 @@ def main():
         print_success(payload, message="context_built")
         try:
             manager.index_manager.log_tool_call("context_manager:build", True, chapter=args.chapter)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[context_manager] failed to log successful tool call: {exc}", file=sys.stderr)
     except Exception as exc:
         print_error("CONTEXT_BUILD_FAILED", str(exc), suggestion="请检查项目结构与依赖文件")
         try:
             manager.index_manager.log_tool_call(
                 "context_manager:build", False, error_code="CONTEXT_BUILD_FAILED", error_message=str(exc), chapter=args.chapter
             )
-        except Exception:
-            pass
+        except Exception as log_exc:
+            print(f"[context_manager] failed to log failed tool call: {log_exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":
