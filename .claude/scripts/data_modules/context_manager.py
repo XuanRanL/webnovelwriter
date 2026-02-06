@@ -31,6 +31,7 @@ class ContextManager:
         "alerts",
         "reader_signal",
         "genre_profile",
+        "writing_guidance",
     }
     SECTION_ORDER = [
         "core",
@@ -38,6 +39,7 @@ class ContextManager:
         "global",
         "reader_signal",
         "genre_profile",
+        "writing_guidance",
         "story_skeleton",
         "memory",
         "preferences",
@@ -123,9 +125,7 @@ class ContextManager:
                 budget = extra_budget
             else:
                 budget = None
-            text = json.dumps(content, ensure_ascii=False)
-            if budget is not None and len(text) > budget:
-                text = text[:budget]
+            text = self._compact_json_text(content, budget)
             assembled["sections"][name] = {"content": content, "text": text, "budget": budget}
 
         assembled["template"] = template
@@ -192,6 +192,7 @@ class ContextManager:
         alert_slice = max(0, int(self.config.context_alerts_slice))
         reader_signal = self._load_reader_signal(chapter)
         genre_profile = self._load_genre_profile(state)
+        writing_guidance = self._build_writing_guidance(chapter, reader_signal, genre_profile)
 
         return {
             "meta": {"chapter": chapter},
@@ -200,6 +201,7 @@ class ContextManager:
             "global": global_ctx,
             "reader_signal": reader_signal,
             "genre_profile": genre_profile,
+            "writing_guidance": writing_guidance,
             "story_skeleton": story_skeleton,
             "preferences": preferences,
             "memory": memory,
@@ -278,6 +280,94 @@ class ContextManager:
             "taxonomy_excerpt": taxonomy_excerpt,
             "reference_hints": refs,
         }
+
+    def _build_writing_guidance(
+        self,
+        chapter: int,
+        reader_signal: Dict[str, Any],
+        genre_profile: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not getattr(self.config, "context_writing_guidance_enabled", True):
+            return {}
+
+        guidance: List[str] = []
+        limit = max(1, int(getattr(self.config, "context_writing_guidance_max_items", 6)))
+        low_score_threshold = float(
+            getattr(self.config, "context_writing_guidance_low_score_threshold", 75.0)
+        )
+
+        low_ranges = reader_signal.get("low_score_ranges") or []
+        if low_ranges:
+            worst = min(
+                low_ranges,
+                key=lambda row: float(row.get("overall_score", 9999)),
+            )
+            guidance.append(
+                f"第{chapter}章优先修复近期低分段问题：参考{worst.get('start_chapter')}-{worst.get('end_chapter')}章，强化冲突推进与结尾钩子。"
+            )
+
+        hook_usage = reader_signal.get("hook_type_usage") or {}
+        if hook_usage and getattr(self.config, "context_writing_guidance_hook_diversify", True):
+            dominant_hook = max(hook_usage.items(), key=lambda kv: kv[1])[0]
+            guidance.append(
+                f"近期钩子类型“{dominant_hook}”使用偏多，本章建议做钩子差异化，避免连续同构。"
+            )
+
+        pattern_usage = reader_signal.get("pattern_usage") or {}
+        if pattern_usage:
+            top_pattern = max(pattern_usage.items(), key=lambda kv: kv[1])[0]
+            guidance.append(
+                f"爽点模式“{top_pattern}”近期高频，本章可保留主爽点但叠加一个新爽点副轴。"
+            )
+
+        review_trend = reader_signal.get("review_trend") or {}
+        overall_avg = review_trend.get("overall_avg")
+        if isinstance(overall_avg, (int, float)) and float(overall_avg) < low_score_threshold:
+            guidance.append(
+                f"最近审查均分{overall_avg:.1f}低于阈值{low_score_threshold:.1f}，建议先保稳：减少跳场、每段补动作结果闭环。"
+            )
+
+        genre = str(genre_profile.get("genre") or "").strip()
+        refs = genre_profile.get("reference_hints") or []
+        if genre:
+            guidance.append(f"题材锚定：按“{genre}”叙事主线推进，保持题材读者预期稳定兑现。")
+        if refs:
+            guidance.append(f"题材策略可执行提示：{refs[0]}")
+
+        if not guidance:
+            guidance.append("本章执行默认高可读策略：冲突前置、信息后置、段末留钩。")
+
+        return {
+            "chapter": chapter,
+            "guidance_items": guidance[:limit],
+            "signals_used": {
+                "has_low_score_ranges": bool(low_ranges),
+                "hook_types": list(hook_usage.keys())[:3],
+                "top_patterns": sorted(
+                    pattern_usage,
+                    key=pattern_usage.get,
+                    reverse=True,
+                )[:3],
+                "genre": genre,
+            },
+        }
+
+    def _compact_json_text(self, content: Any, budget: Optional[int]) -> str:
+        raw = json.dumps(content, ensure_ascii=False)
+        if budget is None or len(raw) <= budget:
+            return raw
+        if not getattr(self.config, "context_compact_text_enabled", True):
+            return raw[:budget]
+
+        min_budget = max(1, int(getattr(self.config, "context_compact_min_budget", 120)))
+        if budget <= min_budget:
+            return raw[:budget]
+
+        head_ratio = float(getattr(self.config, "context_compact_head_ratio", 0.65))
+        head_budget = int(budget * max(0.2, min(0.9, head_ratio)))
+        tail_budget = max(0, budget - head_budget - 10)
+        compact = f"{raw[:head_budget]}…[TRUNCATED]{raw[-tail_budget:] if tail_budget else ''}"
+        return compact[:budget]
 
     def _extract_genre_section(self, text: str, genre: str) -> str:
         if not text:

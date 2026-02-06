@@ -237,3 +237,60 @@ def test_context_manager_reader_signal_with_debt_and_disable_switch(temp_project
 
     manager.config.context_genre_profile_enabled = False
     assert manager._load_genre_profile({"project": {"genre": "xuanhuan"}}) == {}
+
+
+def test_context_manager_includes_writing_guidance(temp_project):
+    state = {
+        "project": {"genre": "xuanhuan"},
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    idx = IndexManager(temp_project)
+    idx.save_chapter_reading_power(
+        ChapterReadingPowerMeta(
+            chapter=3,
+            hook_type="悬念钩",
+            hook_strength="strong",
+            coolpoint_patterns=["身份掉马"],
+        )
+    )
+    idx.save_review_metrics(
+        ReviewMetrics(
+            start_chapter=1,
+            end_chapter=3,
+            overall_score=70,
+            dimension_scores={"plot": 70},
+            severity_counts={"high": 1},
+            critical_issues=["节奏拖沓"],
+        )
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(4, use_snapshot=False, save_snapshot=False)
+
+    guidance = payload["sections"]["writing_guidance"]["content"]
+    assert guidance.get("chapter") == 4
+    items = guidance.get("guidance_items") or []
+    assert isinstance(items, list)
+    assert items
+    assert guidance.get("signals_used", {}).get("genre") == "xuanhuan"
+
+
+def test_context_manager_compact_text_truncation(temp_project):
+    manager = ContextManager(temp_project)
+    manager.config.context_compact_text_enabled = True
+    manager.config.context_compact_min_budget = 80
+    manager.config.context_compact_head_ratio = 0.6
+
+    content = {"a": "x" * 200, "b": "y" * 200}
+    compact = manager._compact_json_text(content, budget=120)
+    assert len(compact) <= 120
+    assert "[TRUNCATED]" in compact
+
+    manager.config.context_compact_text_enabled = False
+    raw_cut = manager._compact_json_text(content, budget=100)
+    assert len(raw_cut) <= 100

@@ -35,6 +35,17 @@
   - 引用 `.claude/references/genre-profiles.md` 与 `reading-power-taxonomy.md`
   - 输出 `reference_hints` 供 Writer 快速执行
 
+## Phase C 扩展段
+- `writing_guidance`
+  - 基于 `reader_signal` + `genre_profile` 生成章节级执行建议
+  - 优先提示低分区间修复、钩子差异化、爽点模式优化、题材锚定
+  - 输出 `guidance_items` 与 `signals_used`
+
+## 紧凑文本策略
+- 当 section 超出预算时，文本采用紧凑截断（头部 + 截断标记 + 尾部）
+- 截断标记固定为 `…[TRUNCATED]`
+- 保留 `content` 原始结构，`text` 用于快速注入模型上下文
+
 ## 兼容性约束
 - 不改变既有 key 名和字段语义。
 - 仅重排列表顺序；内容不删改（除已有过滤逻辑）。
@@ -63,3 +74,12 @@ Phase B:
 - `context_genre_profile_enabled`
 - `context_genre_profile_max_refs`
 - `context_genre_profile_fallback`
+
+Phase C:
+- `context_compact_text_enabled`
+- `context_compact_min_budget`
+- `context_compact_head_ratio`
+- `context_writing_guidance_enabled`
+- `context_writing_guidance_max_items`
+- `context_writing_guidance_low_score_threshold`
+- `context_writing_guidance_hook_diversify`

@@ -156,6 +156,13 @@ class DataModulesConfig:
     context_genre_profile_enabled: bool = True
     context_genre_profile_max_refs: int = 8
     context_genre_profile_fallback: str = "shuangwen"
+    context_compact_text_enabled: bool = True
+    context_compact_min_budget: int = 120
+    context_compact_head_ratio: float = 0.65
+    context_writing_guidance_enabled: bool = True
+    context_writing_guidance_max_items: int = 6
+    context_writing_guidance_low_score_threshold: float = 75.0
+    context_writing_guidance_hook_diversify: bool = True
 
     export_recent_changes_slice: int = 20
     export_disambiguation_slice: int = 20
