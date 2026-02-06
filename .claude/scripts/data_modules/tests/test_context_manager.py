@@ -389,6 +389,58 @@ def test_context_manager_genre_alias_guidance_and_heading_extraction(temp_projec
     assert any("兑现密度基线" in str(text) for text in items)
 
 
+def test_context_manager_genre_aliases_normalized_for_profile_lookup(temp_project):
+    refs_dir = temp_project.project_root / ".claude" / "references"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+    (refs_dir / "genre-profiles.md").write_text(
+        """
+## 电竞
+- 联赛升级
+
+## 直播文
+- 实时反馈
+
+## 克苏鲁
+- 真相代价
+""".strip(),
+        encoding="utf-8",
+    )
+    (refs_dir / "reading-power-taxonomy.md").write_text(
+        """
+## 电竞
+- 决策后果
+
+## 直播文
+- 数据闭环
+
+## 克苏鲁
+- 规则优先
+""".strip(),
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+
+    assert manager._parse_genre_tokens("电竞文") == ["电竞"]
+    assert manager._parse_genre_tokens("直播") == ["直播文"]
+    assert manager._parse_genre_tokens("克系") == ["克苏鲁"]
+
+    state = {
+        "project": {"genre": "电竞文+直播"},
+        "protagonist_state": {"name": "叶修"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    payload = manager.build_context(20, template="plot", use_snapshot=False, save_snapshot=False)
+    profile = payload["sections"]["genre_profile"]["content"]
+
+    assert profile.get("genre") == "电竞"
+    assert "直播文" in (profile.get("genres") or [])
+
+
 def test_context_manager_compact_text_truncation(temp_project):
     manager = ContextManager(temp_project)
     manager.config.context_compact_text_enabled = True

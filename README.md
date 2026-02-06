@@ -742,7 +742,7 @@ git checkout ch0045
 
 ### v5.4.2 (当前)
 - **创意约束系统**：三轴混搭 + 反套路触发器 + 镜像对抗 + 约束继承
-- **题材模板扩展**：从10+扩展到35+种题材模板
+- **题材模板扩展**：从10+扩展到38+种题材模板
 - **复合题材支持**：支持"题材A+题材B"组合（1主1辅）
 - **反套路库**：修仙/玄幻反套路库（20条限制 + 15种非套路爽点）
 - **规则怪谈反套路库**：20条限制 + 20种非套路爽点
@@ -837,7 +837,7 @@ git checkout ch0045
 - **约束分层机制**：Hard Invariants (4条) + Soft Guidance (可Override)
 - **Override Contract**：违反软建议需记录理由和偿还计划
 - **追读力债务**：债务追踪、利息计算、逾期管理
-- **题材Profile**：8种内置题材配置（偏好钩子/爽点/微兑现要求）
+- **题材Profile**：11种内置题材配置（偏好钩子/爽点/微兑现要求）
 - **SQLite新表**：override_contracts、chase_debt、debt_events、chapter_reading_power
 - **Context Agent**：输出精简为7个板块（含追读力策略，债务状态按需输出）
 - **CLI新命令**：get-debt-summary、get-recent-reading-power、accrue-interest 等

@@ -390,7 +390,9 @@ class ContextManager:
 
         genre_aliases = {
             "修仙": "xianxia",
+            "修仙/玄幻": "xianxia",
             "玄幻": "xianxia",
+            "爽文/系统流": "shuangwen",
             "高武": "xianxia",
             "西幻": "xianxia",
             "都市异能": "urban-power",
@@ -609,7 +611,8 @@ class ContextManager:
         if not text:
             return []
         if not getattr(self.config, "context_genre_profile_support_composite", True):
-            return [text]
+            normalized_single = self._normalize_genre_token(text)
+            return [normalized_single] if normalized_single else [text]
 
         separators = getattr(self.config, "context_genre_profile_separators", ("+", "/", "|", ",", "，", "、"))
         pattern = "|".join(re.escape(str(token)) for token in separators if str(token))
@@ -620,12 +623,35 @@ class ContextManager:
         deduped: List[str] = []
         seen = set()
         for token in tokens:
-            lower = token.lower()
+            normalized_token = self._normalize_genre_token(token)
+            if not normalized_token:
+                continue
+            lower = normalized_token.lower()
             if lower in seen:
                 continue
             seen.add(lower)
-            deduped.append(token)
-        return deduped or [text]
+            deduped.append(normalized_token)
+        if deduped:
+            return deduped
+
+        fallback_token = self._normalize_genre_token(text)
+        return [fallback_token] if fallback_token else [text]
+
+    def _normalize_genre_token(self, token: str) -> str:
+        value = str(token or "").strip()
+        if not value:
+            return ""
+
+        aliases = {
+            "游戏电竞": "电竞",
+            "电竞文": "电竞",
+            "直播": "直播文",
+            "直播带货": "直播文",
+            "主播": "直播文",
+            "克系": "克苏鲁",
+            "克系悬疑": "克苏鲁",
+        }
+        return aliases.get(value, value)
 
     def _build_composite_genre_hints(self, genres: List[str], refs: List[str]) -> List[str]:
         if len(genres) <= 1:
