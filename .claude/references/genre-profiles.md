@@ -418,6 +418,138 @@ override_config:
 
 ---
 
+### 2.9 电竞 (esports)
+
+```yaml
+id: esports
+name: 电竞
+description: 赛场博弈，团队磨合，逆风翻盘与冠军追逐
+tags: [esports, competition]
+
+hook_config:
+  preferred_types: [危机钩, 选择钩, 渴望钩]
+  strength_baseline: strong
+  chapter_end_required: true
+  transition_allowance: 1
+
+coolpoint_config:
+  preferred_patterns: [越级反杀, 反派翻车, 迪化误解]
+  density_per_chapter: high
+  combo_interval: 4
+  milestone_interval: 8
+
+micropayoff_config:
+  preferred_types: [信息兑现, 认可兑现, 关系兑现]
+  min_per_chapter: 2
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 2
+  strand_quest_max: 4
+  strand_fire_gap_max: 8
+  transition_max_consecutive: 1
+
+override_config:
+  allowed_rationale_types: [TRANSITIONAL_SETUP, ARC_TIMING, LOGIC_INTEGRITY]
+  debt_multiplier: 1.1
+  payback_window_default: 2
+```
+
+**题材特点**：
+- 比赛章节必须有可追踪的胜负目标与决策节点
+- 逆风局/翻盘局是核心爽点来源
+- 过渡章容忍度低，需保持实时反馈感（比分/舆论/状态）
+
+---
+
+### 2.10 直播文 (livestream)
+
+```yaml
+id: livestream
+name: 直播文
+description: 平台流量博弈，实时反馈驱动，舆论与商业双线并进
+tags: [livestream, urban]
+
+hook_config:
+  preferred_types: [危机钩, 情绪钩, 选择钩]
+  strength_baseline: strong
+  chapter_end_required: true
+  transition_allowance: 1
+
+coolpoint_config:
+  preferred_patterns: [装逼打脸, 反派翻车, 身份掉马]
+  density_per_chapter: high
+  combo_interval: 3
+  milestone_interval: 6
+
+micropayoff_config:
+  preferred_types: [认可兑现, 资源兑现, 信息兑现]
+  min_per_chapter: 2
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 2
+  strand_quest_max: 4
+  strand_fire_gap_max: 6
+  transition_max_consecutive: 1
+
+override_config:
+  allowed_rationale_types: [TRANSITIONAL_SETUP, ARC_TIMING, CHARACTER_CREDIBILITY]
+  debt_multiplier: 1.1
+  payback_window_default: 2
+```
+
+**题材特点**：
+- 每章建议至少一次“外部反馈→主角反应→结果变化”闭环
+- 舆论反转与商业博弈需依赖证据链，不靠口号
+- 数据变化（在线/榜单/转化）可作为高频微兑现
+
+---
+
+### 2.11 克苏鲁 (cosmic-horror)
+
+```yaml
+id: cosmic-horror
+name: 克苏鲁
+description: 规则污染与理性崩塌并行，真相越近代价越高
+tags: [horror, mystery, cosmic]
+
+hook_config:
+  preferred_types: [悬念钩, 危机钩, 选择钩]
+  strength_baseline: strong
+  chapter_end_required: true
+  transition_allowance: 1
+
+coolpoint_config:
+  preferred_patterns: [反派翻车, 迪化误解, 越级反杀]
+  density_per_chapter: medium
+  combo_interval: 6
+  milestone_interval: 10
+
+micropayoff_config:
+  preferred_types: [线索兑现, 信息兑现, 情绪兑现]
+  min_per_chapter: 1
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 2
+  strand_quest_max: 4
+  strand_fire_gap_max: 12
+  transition_max_consecutive: 1
+
+override_config:
+  allowed_rationale_types: [LOGIC_INTEGRITY, WORLD_RULE_CONSTRAINT, ARC_TIMING]
+  debt_multiplier: 1.3
+  payback_window_default: 2
+```
+
+**题材特点**：
+- 恐怖感来自规则和代价，而非纯氛围堆叠
+- 每次推进真相都应绑定明确损失（理智/关系/资源）
+- 高强度钩子优先“未闭合规则问题”而非单纯惊吓
+
+---
+
 ## 三、Profile 加载机制
 
 ### 3.1 加载时机
@@ -468,5 +600,6 @@ override_config:
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v5.4.1 | 2026-02-06 | 新增 3 个内置题材profile：电竞/直播文/克苏鲁 |
 | v5.4 | 2026-02-03 | 版本号对齐，内容不变 |
 | v5.3 | 2026-02-01 | 初版，包含8个内置题材profile |

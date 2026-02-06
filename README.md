@@ -826,6 +826,12 @@ git checkout ch0045
 - 输出新增：`genres/composite/secondary_genres/composite_hints`
 - 写作建议自动加入“复合题材协同”提示
 
+### v5.4.1
+- **题材模板扩展**：新增 3 个题材模板（电竞 / 直播文 / 克苏鲁）
+- **题材映射增强**：init 支持同义输入映射（如“电竞文”“直播”“克系”）
+- **写作建议增强**：新增网文节奏基线与题材加权提示（章首目标阻力、微兑现密度、章末钩子）
+- **参数层同步**：补充 genre profile 与 reading taxonomy 的新题材规则
+
 ### v5.3
 - **追读力分类标准**：钩子5类型、爽点8模式、微兑现7类型
 - **约束分层机制**：Hard Invariants (4条) + Soft Guidance (可Override)
