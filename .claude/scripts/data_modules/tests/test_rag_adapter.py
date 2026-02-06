@@ -35,6 +35,20 @@ class StubClientWithFailures(StubClient):
         return [None, [1.0, 0.0]]
 
 
+class StubEmbedClient401:
+    def __init__(self):
+        self.last_error_status = 401
+        self.last_error_message = "auth failed"
+
+
+class StubClientAuthFailure(StubClient):
+    def __init__(self):
+        self._embed_client = StubEmbedClient401()
+
+    async def embed(self, texts):
+        return None
+
+
 @pytest.fixture
 def temp_project(tmp_path, monkeypatch):
     cfg = DataModulesConfig.from_project_root(tmp_path)
@@ -201,3 +215,22 @@ def test_rag_adapter_log_query_failure_is_reported(temp_project, monkeypatch, ca
 
     message_text = "\n".join(record.getMessage() for record in caplog.records)
     assert "failed to log rag query" in message_text
+
+
+def test_rag_adapter_cli_search_shows_degraded_warning(temp_project, monkeypatch, capsys):
+    monkeypatch.setattr(rag_module, "get_client", lambda config: StubClientAuthFailure())
+
+    def run_cli(args):
+        monkeypatch.setattr(sys, "argv", ["rag_adapter"] + args)
+        rag_module.main()
+
+    root = str(temp_project.project_root)
+    run_cli(["--project-root", root, "search", "--query", "测试", "--mode", "vector", "--top-k", "3"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out.strip().splitlines()[-1])
+    assert payload.get("status") == "success"
+    warnings = payload.get("warnings") or []
+    assert warnings
+    assert warnings[0].get("code") == "DEGRADED_MODE"
+    assert warnings[0].get("reason") == "embedding_auth_failed"

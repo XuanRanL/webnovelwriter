@@ -56,7 +56,19 @@ class RAGAdapter:
         self.config = config or get_config()
         self.api_client = get_client(config)
         self.index_manager = IndexManager(self.config)
+        self._degraded_mode_reason: Optional[str] = None
         self._init_db()
+
+    @property
+    def degraded_mode_reason(self) -> Optional[str]:
+        return self._degraded_mode_reason
+
+    def _update_degraded_mode(self) -> None:
+        self._degraded_mode_reason = None
+        embed_client = getattr(self.api_client, "_embed_client", None)
+        status = getattr(embed_client, "last_error_status", None)
+        if status == 401:
+            self._degraded_mode_reason = "embedding_auth_failed"
 
     def _init_db(self):
         """初始化向量数据库"""
@@ -425,7 +437,10 @@ class RAGAdapter:
         # 获取查询向量
         query_embeddings = await self.api_client.embed([query])
         if not query_embeddings:
+            self._update_degraded_mode()
             return []
+
+        self._degraded_mode_reason = None
 
         query_embedding = query_embeddings[0]
 
@@ -649,7 +664,9 @@ class RAGAdapter:
             )
 
             if not query_embeddings:
+                self._update_degraded_mode()
                 return []
+            self._degraded_mode_reason = None
             query_embedding = query_embeddings[0]
 
             candidate_ids = {r.chunk_id for r in bm25_candidates_results}
@@ -927,7 +944,13 @@ def main():
             results = asyncio.run(adapter.hybrid_search(args.query, args.top_k, args.top_k, args.top_k, chunk_type=args.chunk_type))
 
         payload = [r.__dict__ for r in results]
-        emit_success(payload, message="search_results")
+        degraded_reason = adapter.degraded_mode_reason
+        if degraded_reason:
+            warnings = [{"code": "DEGRADED_MODE", "reason": degraded_reason}]
+            print_success(payload, message="search_results", warnings=warnings)
+            safe_log_tool_call(adapter.index_manager, tool_name=tool_name, success=True)
+        else:
+            emit_success(payload, message="search_results")
 
     else:
         emit_error("UNKNOWN_COMMAND", "未指定有效命令", suggestion="请查看 --help")

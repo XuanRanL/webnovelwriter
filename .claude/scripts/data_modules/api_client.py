@@ -51,6 +51,8 @@ class EmbeddingAPIClient:
         self.stats = APIStats()
         self._warmed_up = False
         self._session: Optional[aiohttp.ClientSession] = None
+        self.last_error_status: Optional[int] = None
+        self.last_error_message: str = ""
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -148,6 +150,8 @@ class EmbeddingAPIClient:
                                 self.stats.total_calls += 1
                                 self.stats.total_time += time.time() - start
                                 self._warmed_up = True
+                                self.last_error_status = None
+                                self.last_error_message = ""
                                 return embeddings
 
                         # 可重试的状态码: 429 (限流), 500, 502, 503, 504
@@ -159,6 +163,8 @@ class EmbeddingAPIClient:
 
                         self.stats.errors += 1
                         err_text = await resp.text()
+                        self.last_error_status = int(resp.status)
+                        self.last_error_message = str(err_text[:200])
                         print(f"[ERR] Embed {resp.status}: {err_text[:200]}")
                         return None
 
@@ -169,6 +175,8 @@ class EmbeddingAPIClient:
                         await asyncio.sleep(delay)
                         continue
                     self.stats.errors += 1
+                    self.last_error_status = None
+                    self.last_error_message = f"Timeout after {max_retries} attempts"
                     print(f"[ERR] Embed: Timeout after {max_retries} attempts")
                     return None
 
@@ -179,6 +187,8 @@ class EmbeddingAPIClient:
                         await asyncio.sleep(delay)
                         continue
                     self.stats.errors += 1
+                    self.last_error_status = None
+                    self.last_error_message = str(e)
                     print(f"[ERR] Embed: {e}")
                     return None
 
