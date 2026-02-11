@@ -73,12 +73,13 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-resume/references/system-data-flow.md
 | Step | 难度 | 恢复策略 |
 |------|------|---------|
 | Step 1 | ⭐ | 直接重新执行 |
-| Step 2 | ⭐⭐ | 删除半成品，重新开始 |
-| Step 3 | ⭐⭐ | 重新运行提取 |
-| Step 4 | ⭐⭐⭐ | 验证 state.json 一致性 |
-| Step 5 | ⭐⭐ | 重新运行 strand 更新 |
-| Step 6 | ⭐⭐⭐⭐⭐ | 成本高 - 5个检查员 ~$0.15 |
-| Step 7 | ⭐ | 重新运行 git 备份 |
+| Step 1.5 | ⭐ | 重新设计 |
+| Step 2A | ⭐⭐ | 删除半成品，重新开始 |
+| Step 2B | ⭐⭐ | 继续适配或回到 2A |
+| Step 3 | ⭐⭐⭐ | 用户决定：重审或跳过 |
+| Step 4 | ⭐⭐ | 继续润色或删除重写 |
+| Step 5 | ⭐⭐ | 重新运行（幂等） |
+| Step 6 | ⭐⭐⭐ | 检查暂存区，决定提交/回滚 |
 
 ## Step 4: 检测中断状态
 

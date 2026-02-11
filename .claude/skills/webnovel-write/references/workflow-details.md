@@ -65,13 +65,15 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/style-adapter.md"
 │ continuity-checker   │ PASS/FAIL │ {N}          │
 │ ooc-checker          │ PASS/FAIL │ {N}          │
 │ reader-pull-checker  │ PASS/FAIL │ {N}          │
-│ high-point-checker   │ PASS/FAIL │ {N}          │
-│ pacing-checker       │ PASS/FAIL │ {N}          │
+│ high-point-checker*  │ PASS/FAIL │ {N}          │
+│ pacing-checker*      │ PASS/FAIL │ {N}          │
 ├──────────────────────┴───────────┴──────────────┤
 │ critical issues: {N}  |  high issues: {N}       │
 │ 是否可进入润色: {是/否}                           │
 └─────────────────────────────────────────────────┘
 ```
+
+`*` 默认流程可不运行，关键章/卷末/用户明确要求时再启用。
 
 **审查指标 JSON**:
 ```json

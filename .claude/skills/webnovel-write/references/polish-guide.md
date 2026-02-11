@@ -9,7 +9,7 @@ version: "5.4"
 
 润色步骤接收两个输入：
 1. 章节正文
-2. 审查报告（来自 6 个 checker agents）
+2. 审查报告（来自 4-6 个 checker agents，默认 4 个，关键章可扩展到 6 个）
 
 **与 Step 2B (style-adapter) 的职责边界**:
 - **Step 2B**: 纯风格转换 —— 句式改写、抽象→具体、长句拆分

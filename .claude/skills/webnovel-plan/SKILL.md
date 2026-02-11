@@ -70,13 +70,13 @@ Extract for current genre:
 
 ### Strand Weave 规划策略
 Based on genre profile, distribute chapters:
-- **Quest Strand** (主线推进): 40-60% 章节
+- **Quest Strand** (主线推进): 55-65% 章节
   - 目标明确、进展可见、有阶段性成果
   - 例：突破境界、完成任务、获得宝物
-- **Fire Strand** (情感/关系): 20-35% 章节
+- **Fire Strand** (情感/关系): 20-30% 章节
   - 人物关系变化、情感冲突、团队动态
   - 例：与女主互动、师徒矛盾、兄弟背叛
-- **Constellation Strand** (世界/谜团): 10-25% 章节
+- **Constellation Strand** (世界/谜团): 10-20% 章节
   - 世界观揭示、伏笔埋设、谜团推进
   - 例：发现古老秘密、揭示反派阴谋、世界真相
 
@@ -228,9 +228,9 @@ Save after each batch:
 
 **2. Strand 比例检查**
 Count chapters by Strand and compare with genre profile:
-- Quest: 应占 40-60%
-- Fire: 应占 20-35%
-- Constellation: 应占 10-25%
+- Quest: 应占 55-65%
+- Fire: 应占 20-30%
+- Constellation: 应占 10-20%
 
 If deviation > 15%, adjust chapter assignments.
 

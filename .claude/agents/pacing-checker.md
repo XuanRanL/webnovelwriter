@@ -38,7 +38,7 @@ tools: Read, Grep, Bash
 **Optional: Use status_reporter for automated analysis**:
 ```bash
 # 获取 Strand Weave 详细分析（推荐）
-python -m scripts.status_reporter --focus strand --project-root "${PROJECT_ROOT}"
+python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus strand --project-root "${PROJECT_ROOT}"
 
 # 输出包含:
 # - Quest/Fire/Constellation 占比统计
