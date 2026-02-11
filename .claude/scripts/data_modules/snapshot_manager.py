@@ -8,10 +8,18 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from filelock import FileLock
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .config import get_config
+
+try:
+    # 当 scripts 目录在 sys.path 中
+    from security_utils import atomic_write_json
+except ImportError:  # pragma: no cover
+    # 当以 python -m scripts.data_modules... 形式运行
+    from scripts.security_utils import atomic_write_json
 
 SNAPSHOT_VERSION = "1.1"
 
@@ -40,6 +48,9 @@ class SnapshotManager:
     def _snapshot_path(self, chapter: int) -> Path:
         return self.snapshot_dir / f"ch{chapter:04d}.json"
 
+    def _snapshot_lock_path(self, chapter: int) -> Path:
+        return self._snapshot_path(chapter).with_suffix(".json.lock")
+
     def save_snapshot(self, chapter: int, payload: Dict[str, Any], meta: Optional[Dict[str, Any]] = None) -> Path:
         data: Dict[str, Any] = {
             "version": self.version,
@@ -51,14 +62,18 @@ class SnapshotManager:
             data["meta"] = meta
 
         path = self._snapshot_path(chapter)
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        lock = FileLock(str(self._snapshot_lock_path(chapter)), timeout=10)
+        with lock:
+            atomic_write_json(path, data, use_lock=False, backup=False)
         return path
 
     def load_snapshot(self, chapter: int) -> Optional[Dict[str, Any]]:
         path = self._snapshot_path(chapter)
-        if not path.exists():
-            return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        lock = FileLock(str(self._snapshot_lock_path(chapter)), timeout=10)
+        with lock:
+            if not path.exists():
+                return None
+            data = json.loads(path.read_text(encoding="utf-8"))
         version = str(data.get("version", ""))
         if version != self.version:
             raise SnapshotVersionMismatch(self.version, version)
@@ -66,9 +81,11 @@ class SnapshotManager:
 
     def delete_snapshot(self, chapter: int) -> bool:
         path = self._snapshot_path(chapter)
-        if path.exists():
-            path.unlink()
-            return True
+        lock = FileLock(str(self._snapshot_lock_path(chapter)), timeout=10)
+        with lock:
+            if path.exists():
+                path.unlink()
+                return True
         return False
 
     def list_snapshots(self) -> list[str]:

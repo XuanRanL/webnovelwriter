@@ -5,6 +5,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def _load_module():
@@ -134,3 +135,61 @@ def test_workflow_reentry_does_not_duplicate_history(tmp_path, monkeypatch):
 
     task = state.get("current_task") or {}
     assert int(task.get("retry_count", 0)) >= 2
+
+
+def test_cleanup_artifacts_requires_confirm(tmp_path, monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+
+    draft_path = module.default_chapter_draft_path(tmp_path, 7)
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    draft_path.write_text("draft", encoding="utf-8")
+
+    git_called = {"count": 0}
+
+    def _fake_run(*args, **kwargs):
+        git_called["count"] += 1
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(module.subprocess, "run", _fake_run)
+
+    preview = module.cleanup_artifacts(7, confirm=False)
+
+    assert draft_path.exists()
+    assert git_called["count"] == 0
+    assert any(item.startswith("[预览]") for item in preview)
+
+
+def test_cleanup_artifacts_confirm_deletes_with_backup(tmp_path, monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+
+    draft_path = module.default_chapter_draft_path(tmp_path, 8)
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    draft_path.write_text("draft", encoding="utf-8")
+
+    git_called = {"count": 0, "cmd": None}
+
+    def _fake_run(cmd, **kwargs):
+        git_called["count"] += 1
+        git_called["cmd"] = cmd
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(module.subprocess, "run", _fake_run)
+
+    cleaned = module.cleanup_artifacts(8, confirm=True)
+
+    assert not draft_path.exists()
+    assert git_called["count"] == 1
+    assert git_called["cmd"] == ["git", "reset", "HEAD", "."]
+    assert any("Git 暂存区已清理" in item for item in cleaned)
+
+    backup_dir = tmp_path / ".webnovel" / "recovery_backups"
+    backups = list(backup_dir.glob("ch0008-*"))
+    assert backups

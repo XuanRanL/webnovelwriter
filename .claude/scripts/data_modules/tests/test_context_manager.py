@@ -44,6 +44,14 @@ def test_snapshot_version_mismatch(temp_project):
         other.load_snapshot(1)
 
 
+def test_snapshot_delete_roundtrip(temp_project):
+    manager = SnapshotManager(temp_project)
+    manager.save_snapshot(2, {"x": 1})
+
+    assert manager.delete_snapshot(2) is True
+    assert manager.load_snapshot(2) is None
+
+
 def test_context_manager_build_and_filter(temp_project):
     state = {
         "protagonist_state": {"name": "萧炎", "location": {"current": "天云宗"}},

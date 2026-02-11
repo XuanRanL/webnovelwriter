@@ -44,7 +44,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" detect
 
 **选项 A（推荐）**: 删除半成品重新开始
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" cleanup --chapter {N}
+python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" cleanup --chapter {N} --confirm
 python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" clear
 /webnovel-write {N}
 ```

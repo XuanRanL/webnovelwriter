@@ -9,3 +9,5 @@ pydantic>=2.0.0         # Schema 校验
 # 可选依赖（开发/测试）
 pytest>=7.0.0           # 单元测试
 pytest-cov>=4.1.0       # 覆盖率统计
+pytest-asyncio>=0.23.0  # 异步测试支持
+pytest-timeout>=2.3.0   # 测试超时保护

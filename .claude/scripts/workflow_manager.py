@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -545,9 +546,22 @@ def analyze_recovery_options(interrupt_info):
     ]
 
 
-def cleanup_artifacts(chapter_num):
+def _backup_chapter_for_cleanup(project_root: Path, chapter_num: int, chapter_path: Path) -> Path:
+    """Backup chapter file before destructive cleanup."""
+    backup_dir = project_root / ".webnovel" / "recovery_backups"
+    create_secure_directory(str(backup_dir))
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_name = f"ch{chapter_num:04d}-{chapter_path.name}.{timestamp}.bak"
+    backup_path = backup_dir / backup_name
+    shutil.copy2(chapter_path, backup_path)
+    return backup_path
+
+
+def cleanup_artifacts(chapter_num, *, confirm: bool = False):
     """Cleanup partial artifacts."""
     artifacts_cleaned = []
+    planned_actions = []
 
     project_root = find_project_root()
 
@@ -558,22 +572,60 @@ def cleanup_artifacts(chapter_num):
             chapter_path = draft_path
 
     if chapter_path and chapter_path.exists():
+        planned_actions.append(f"删除章节文件: {chapter_path.relative_to(project_root)}")
+
+    planned_actions.append("重置 Git 暂存区: git reset HEAD .")
+
+    if not confirm:
+        preview_items = [f"[预览] {action}" for action in planned_actions]
+        safe_append_call_trace(
+            "artifacts_cleanup_preview",
+            {
+                "chapter": chapter_num,
+                "planned_actions": planned_actions,
+                "confirmed": False,
+            },
+        )
+        print("⚠️ 检测到高风险清理操作，当前仅预览。若确认执行，请追加 --confirm。")
+        return preview_items or ["[预览] 无可清理项"]
+
+    if chapter_path and chapter_path.exists():
+        try:
+            backup_path = _backup_chapter_for_cleanup(project_root, chapter_num, chapter_path)
+        except OSError as exc:
+            error_msg = f"❌ 章节备份失败，已取消删除: {exc}"
+            safe_append_call_trace(
+                "artifacts_cleanup_backup_failed",
+                {
+                    "chapter": chapter_num,
+                    "chapter_file": str(chapter_path),
+                    "error": str(exc),
+                },
+            )
+            return [error_msg]
+
         chapter_path.unlink()
         artifacts_cleaned.append(str(chapter_path.relative_to(project_root)))
+        artifacts_cleaned.append(f"章节备份已保存: {backup_path.relative_to(project_root)}")
 
     result = subprocess.run(["git", "reset", "HEAD", "."], cwd=project_root, capture_output=True, text=True)
     if result.returncode == 0:
         artifacts_cleaned.append("Git 暂存区已清理（project）")
+    else:
+        git_error = (result.stderr or "").strip() or "unknown error"
+        artifacts_cleaned.append(f"⚠️ Git 暂存区清理失败: {git_error}")
 
     safe_append_call_trace(
         "artifacts_cleaned",
         {
             "chapter": chapter_num,
             "items": artifacts_cleaned,
+            "planned_actions": planned_actions,
+            "confirmed": True,
             "git_reset_ok": result.returncode == 0,
         },
     )
-    return artifacts_cleaned
+    return artifacts_cleaned or ["无可清理项"]
 
 
 def clear_current_task():
@@ -689,6 +741,7 @@ if __name__ == "__main__":
 
     p_cleanup = subparsers.add_parser("cleanup", help="清理 artifacts")
     p_cleanup.add_argument("--chapter", type=int, required=True, help="章节号")
+    p_cleanup.add_argument("--confirm", action="store_true", help="确认执行删除与 Git 重置（高风险）")
 
     subparsers.add_parser("clear", help="清除中断任务")
 
@@ -715,8 +768,13 @@ if __name__ == "__main__":
         else:
             print("✅ 无中断任务")
     elif args.action == "cleanup":
-        cleaned = cleanup_artifacts(args.chapter)
-        print(f"✅ 已清理: {', '.join(cleaned)}")
+        cleaned = cleanup_artifacts(args.chapter, confirm=args.confirm)
+        if args.confirm:
+            print(f"✅ 已清理: {', '.join(cleaned)}")
+        else:
+            for item in cleaned:
+                print(item)
+            print("⚠️ 以上为预览，未执行实际清理。")
     elif args.action == "clear":
         clear_current_task()
     else:

@@ -126,7 +126,7 @@ B) 回滚到Ch6，放弃Ch7所有进度
 
 **选项 A - 删除重来**（推荐）：
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" cleanup --chapter {N}
+python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" cleanup --chapter {N} --confirm
 python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" clear
 ```
 
