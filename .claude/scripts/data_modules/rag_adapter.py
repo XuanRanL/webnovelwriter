@@ -15,6 +15,7 @@ import sqlite3
 import json
 import math
 import logging
+import shutil
 from pathlib import Path
 
 from runtime_compat import enable_windows_utf8_stdio
@@ -25,6 +26,7 @@ import re
 from contextlib import contextmanager
 import itertools
 import time
+from datetime import datetime
 
 from .config import get_config
 from .api_client import get_client
@@ -33,6 +35,19 @@ from .observability import safe_log_tool_call
 
 
 logger = logging.getLogger(__name__)
+
+RAG_SCHEMA_VERSION = "2"
+VECTOR_REQUIRED_COLUMNS = (
+    "chunk_id",
+    "chapter",
+    "scene_index",
+    "content",
+    "embedding",
+    "parent_chunk_id",
+    "chunk_type",
+    "source_file",
+    "created_at",
+)
 
 
 @dataclass
@@ -73,73 +88,158 @@ class RAGAdapter:
     def _init_db(self):
         """初始化向量数据库"""
         self.config.ensure_dirs()
+        needs_migration, existing_cols = self._inspect_vectors_schema()
+        if needs_migration:
+            backup_path = self._backup_vector_db(reason="schema_migration")
+            try:
+                with self._get_conn() as conn:
+                    cursor = conn.cursor()
+                    self._rebuild_vectors_table(cursor, existing_cols)
+                    conn.commit()
+                logger.warning(
+                    "vectors 表结构已迁移（备份: %s）",
+                    str(backup_path),
+                )
+            except Exception:
+                try:
+                    self._restore_vector_db_from_backup(backup_path)
+                    logger.error("vectors 表迁移失败，已从备份恢复: %s", str(backup_path))
+                except Exception as restore_exc:
+                    logger.exception("vectors 表迁移失败，且恢复备份失败: %s", restore_exc)
+                raise
 
         with self._get_conn() as conn:
             cursor = conn.cursor()
-
-            def _table_columns(table_name: str) -> set[str]:
-                cursor.execute(f"PRAGMA table_info({table_name})")
-                return {row[1] for row in cursor.fetchall()}
-
-            required_cols = {
-                "chunk_id",
-                "chapter",
-                "scene_index",
-                "content",
-                "embedding",
-                "parent_chunk_id",
-                "chunk_type",
-                "source_file",
-                "created_at",
-            }
-
-            if "vectors" in {r[0] for r in cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")}:  # type: ignore
-                cols = _table_columns("vectors")
-                if not required_cols.issubset(cols):
-                    cursor.execute("DROP TABLE IF EXISTS vectors")
-                    cursor.execute("DROP TABLE IF EXISTS bm25_index")
-                    cursor.execute("DROP TABLE IF EXISTS doc_stats")
-
-            # 向量存储表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS vectors (
-                    chunk_id TEXT PRIMARY KEY,
-                    chapter INTEGER,
-                    scene_index INTEGER,
-                    content TEXT,
-                    embedding BLOB,
-                    parent_chunk_id TEXT,
-                    chunk_type TEXT DEFAULT 'scene',
-                    source_file TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # BM25 倒排索引表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS bm25_index (
-                    term TEXT,
-                    chunk_id TEXT,
-                    tf REAL,
-                    PRIMARY KEY (term, chunk_id)
-                )
-            """)
-
-            # 文档统计表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS doc_stats (
-                    chunk_id TEXT PRIMARY KEY,
-                    doc_length INTEGER
-                )
-            """)
-
-            # 创建索引
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_vectors_chapter ON vectors(chapter)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_vectors_parent ON vectors(parent_chunk_id)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_vectors_type ON vectors(chunk_type)")
-            cursor.execute("CREATE INDEX IF NOT EXISTS idx_bm25_term ON bm25_index(term)")
-
+            self._ensure_schema_meta(cursor)
+            self._ensure_tables(cursor)
             conn.commit()
+
+    def _table_exists(self, cursor, table_name: str) -> bool:
+        cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        )
+        return cursor.fetchone() is not None
+
+    def _table_columns(self, cursor, table_name: str) -> set[str]:
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        return {row[1] for row in cursor.fetchall()}
+
+    def _inspect_vectors_schema(self) -> tuple[bool, set[str]]:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            if not self._table_exists(cursor, "vectors"):
+                return False, set()
+            cols = self._table_columns(cursor, "vectors")
+            required_cols = set(VECTOR_REQUIRED_COLUMNS)
+            return (not required_cols.issubset(cols), cols)
+
+    def _backup_vector_db(self, reason: str) -> Path:
+        db_path = Path(self.config.vector_db)
+        if not db_path.exists():
+            raise FileNotFoundError(f"vectors.db 不存在: {db_path}")
+        backup_dir = self.config.webnovel_dir / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = backup_dir / f"vectors.db.{reason}.v{RAG_SCHEMA_VERSION}.{timestamp}.bak"
+        shutil.copy2(db_path, backup_path)
+        return backup_path
+
+    def _restore_vector_db_from_backup(self, backup_path: Path) -> None:
+        db_path = Path(self.config.vector_db)
+        shutil.copy2(backup_path, db_path)
+
+    def _rebuild_vectors_table(self, cursor, existing_cols: set[str]) -> None:
+        if not self._table_exists(cursor, "vectors"):
+            return
+
+        cursor.execute("DROP TABLE IF EXISTS vectors_migrating")
+        cursor.execute("""
+            CREATE TABLE vectors_migrating (
+                chunk_id TEXT PRIMARY KEY,
+                chapter INTEGER,
+                scene_index INTEGER,
+                content TEXT,
+                embedding BLOB,
+                parent_chunk_id TEXT,
+                chunk_type TEXT DEFAULT 'scene',
+                source_file TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        copy_columns = [
+            col
+            for col in VECTOR_REQUIRED_COLUMNS
+            if col in existing_cols
+        ]
+        if copy_columns:
+            cols_sql = ", ".join(copy_columns)
+            cursor.execute(
+                f"INSERT OR REPLACE INTO vectors_migrating ({cols_sql}) SELECT {cols_sql} FROM vectors"
+            )
+
+        cursor.execute("DROP TABLE vectors")
+        cursor.execute("ALTER TABLE vectors_migrating RENAME TO vectors")
+
+    def _ensure_schema_meta(self, cursor) -> None:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rag_schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute(
+            """
+            INSERT INTO rag_schema_meta (key, value, updated_at)
+            VALUES ('schema_version', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (RAG_SCHEMA_VERSION,),
+        )
+
+    def _ensure_tables(self, cursor) -> None:
+        # 向量存储表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS vectors (
+                chunk_id TEXT PRIMARY KEY,
+                chapter INTEGER,
+                scene_index INTEGER,
+                content TEXT,
+                embedding BLOB,
+                parent_chunk_id TEXT,
+                chunk_type TEXT DEFAULT 'scene',
+                source_file TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # BM25 倒排索引表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS bm25_index (
+                term TEXT,
+                chunk_id TEXT,
+                tf REAL,
+                PRIMARY KEY (term, chunk_id)
+            )
+        """)
+
+        # 文档统计表
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS doc_stats (
+                chunk_id TEXT PRIMARY KEY,
+                doc_length INTEGER
+            )
+        """)
+
+        # 创建索引
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_vectors_chapter ON vectors(chapter)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_vectors_parent ON vectors(parent_chunk_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_vectors_type ON vectors(chunk_type)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_bm25_term ON bm25_index(term)")
 
     @contextmanager
     def _get_conn(self):

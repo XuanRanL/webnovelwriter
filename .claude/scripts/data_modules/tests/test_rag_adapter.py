@@ -8,6 +8,7 @@ import sys
 import json
 import asyncio
 import logging
+import sqlite3
 
 import pytest
 
@@ -170,6 +171,53 @@ def test_recent_and_fetch_vectors(temp_project):
     assert adapter._get_recent_chunk_ids(1) == ["ch0001_s1"]
     rows = adapter._fetch_vectors_by_chunk_ids(["ch0001_s1"])
     assert len(rows) == 1
+
+
+def test_init_db_migrates_legacy_vectors_schema(tmp_path, monkeypatch):
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    cfg.ensure_dirs()
+    monkeypatch.setattr(rag_module, "get_client", lambda config: StubClient())
+
+    # 旧结构：缺少 parent_chunk_id/chunk_type/source_file/created_at
+    with sqlite3.connect(str(cfg.vector_db)) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE vectors (
+                chunk_id TEXT PRIMARY KEY,
+                chapter INTEGER,
+                scene_index INTEGER,
+                content TEXT,
+                embedding BLOB
+            )
+            """
+        )
+        cursor.execute(
+            """
+            INSERT INTO vectors (chunk_id, chapter, scene_index, content, embedding)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            ("ch0001_s1", 1, 1, "旧数据", b""),
+        )
+        conn.commit()
+
+    adapter = RAGAdapter(cfg)
+
+    with adapter._get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(vectors)")
+        cols = {row[1] for row in cursor.fetchall()}
+        assert {"parent_chunk_id", "chunk_type", "source_file", "created_at"}.issubset(cols)
+        cursor.execute("SELECT COUNT(*) FROM vectors")
+        assert cursor.fetchone()[0] == 1
+        cursor.execute("SELECT chunk_type FROM vectors WHERE chunk_id = ?", ("ch0001_s1",))
+        row = cursor.fetchone()
+        assert row is not None
+        assert row[0] == "scene"
+
+    backup_dir = cfg.webnovel_dir / "backups"
+    backups = list(backup_dir.glob("vectors.db.schema_migration.v*.bak"))
+    assert backups
 
 
 def test_rag_adapter_cli(temp_project, monkeypatch, capsys):

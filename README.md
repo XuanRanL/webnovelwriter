@@ -698,6 +698,23 @@ python -m data_modules.index_manager get-recent-review-metrics --limit 5 --proje
 python -m data_modules.index_manager get-review-trend-stats --last-n 5 --project-root "."
 ```
 
+### 质量趋势看板（离线报告）
+
+```bash
+# 生成最近20条记录的质量趋势报告
+python .claude/scripts/quality_trend_report.py --project-root "." --limit 20
+```
+
+### 测试入口脚本
+
+```bash
+# 快速回归（推荐）
+pwsh .claude/scripts/run_tests.ps1 -Mode smoke
+
+# 全量 data_modules 测试
+pwsh .claude/scripts/run_tests.ps1 -Mode full
+```
+
 ### 健康报告（status_reporter）
 
 ```bash
@@ -803,7 +820,7 @@ git checkout ch0045
 - **webnovel-learn skill**：从会话提取成功模式写入 project_memory.json
 - **CLI 统一输出**：CLIResponse 标准化 JSON 输出格式
 - **Pydantic Schema**：DataAgentOutput 等结构化验证
-- **不向前兼容**：vectors.db 表结构变更时自动 DROP+CREATE
+- **向量库安全迁移**：vectors.db 表结构变更时自动备份并执行事务迁移，失败可回滚
 
 ### Context Contract v2（阶段 E）
 
