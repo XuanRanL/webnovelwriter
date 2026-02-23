@@ -21,6 +21,8 @@ Thumbs.db
 # Workspace artifacts
 node_modules/
 nul
+.tmp/
+.tmp_outline_check/
 
 # Local research / sibling projects (avoid accidental commit)
 .sisyphus/
