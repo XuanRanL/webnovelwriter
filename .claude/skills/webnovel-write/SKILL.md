@@ -6,30 +6,47 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 # Chapter Writing Skill
 
-## Project Root Guard（必须先确认）
+## 0. 项目根校验（必须）
 
-- 必须在项目根目录执行（需存在 `.webnovel/state.json`）
-- 若当前目录不存在该文件，先询问用户项目路径并 `cd` 进入
-- 进入后设置变量：`$PROJECT_ROOT = (Resolve-Path ".").Path`
+- 必须在项目根目录执行（需存在 `.webnovel/state.json`）。
+- 若当前目录不存在该文件，先询问用户项目路径并切换目录。
+- 进入后设置变量：`$PROJECT_ROOT = (Resolve-Path ".").Path`。
 
-## Default flow
+## 1. 模式定义
 
-1. Context Agent → 创作任务书
-2. 写作 → 3000-5000字正文
-3. 审查 → 核心4个Checker
-4. 润色 → 修复问题
-5. Data Agent → 提取数据
-6. Git → 备份
+| 模式 | 启用步骤 | 说明 |
+|------|---------|------|
+| `/webnovel-write` | Step 1 → 1.5 → 2A → 2B → 3 → 4 → 5 → 6 | 标准流程 |
+| `/webnovel-write --fast` | Step 1 → 1.5 → 2A → 3 → 4 → 5 → 6 | 跳过 Step 2B |
+| `/webnovel-write --minimal` | Step 1 → 1.5 → 2A → 3(仅3个基础审查) → 4 → 5 → 6 | 跳过 Step 2B；不产出追读力数据 |
 
-## Modes
+## 2. 引用加载策略（严格按需）
 
-- `/webnovel-write`：标准流程（含核心4个Checker）
-- `/webnovel-write --fast`：跳过 Step 2B，其余同标准
-- `/webnovel-write --minimal`：跳过 Step 2B，仅运行 consistency + continuity + ooc（不产出追读力数据）
+- L0：不提前加载参考。
+- L1：只加载当前步骤的最小必需文件。
+- L2：仅在触发条件满足时加载扩展参考。
 
-## Step 1: Context Agent
+### L1 最小集合
 
-使用 Task 工具调用 `context-agent`：
+- Step 2A 前：`references/core-constraints.md`
+- Step 4 前：`references/polish-guide.md`
+
+### L2 条件集合
+
+- Step 1.5 需要题材/风格细化时：
+  - `references/style-variants.md`
+  - `.claude/references/reading-power-taxonomy.md`
+  - `.claude/references/genre-profiles.md`
+  - `references/writing/genre-hook-payoff-library.md`（电竞/直播文/克苏鲁优先）
+- 需要执行模板与细则时：
+  - `references/workflow-details.md`
+  - `references/writing/typesetting.md`
+
+## 3. 执行步骤
+
+### Step 1：Context Agent（生成创作任务书）
+
+使用 Task 调用 `context-agent`：
 
 ```
 调用 context-agent，参数：
@@ -39,80 +56,69 @@ allowed-tools: Read Write Edit Grep Bash Task
 - state_file: .webnovel/state.json
 ```
 
-**缺失处理**：大纲或 state.json 不存在时，提示用户先初始化。
+要求：
 
-**要求**：创作任务书必须包含“反派层级”（从大纲/章纲提取）。
+- 大纲或 state 缺失时，明确提示先初始化。
+- 任务书必须包含“反派层级”（无则标注“无”）。
 
-### Step 1.5: Contract v2 Guidance 注入
+### Step 1.5：Contract v2 Guidance 注入
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py" --chapter {chapter_num} --project-root "{PROJECT_ROOT}" --format json
 ```
 
-- 必须读取：`writing_guidance.guidance_items`
-- 推荐读取：`reader_signal` 与 `genre_profile.reference_hints`
+- 必读：`writing_guidance.guidance_items`
+- 选读：`reader_signal`、`genre_profile.reference_hints`
 
-## Step 2: 写作
+### Step 2A：正文起草
 
-- 遵循三大原则：大纲即法律 / 设定即物理 / 新实体需记录。
-- 输出纯正文到 `正文/第{NNNN}章.md`。
-- 章节内容需体现本章“反派层级”要求（无反派层级时标注“无”）。
-- 开写前加载核心约束：
+- 遵循三原则：大纲即法律 / 设定即物理 / 发明需识别。
+- 输出纯正文：`正文/第{NNNN}章.md`
+- 开写前加载：
 
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/core-constraints.md"
 ```
 
-场景写作与风格参考按需加载（见 `references/workflow-details.md`）。
+### Step 2B：风格适配（`--fast` / `--minimal` 跳过）
 
-## Reference Loading Levels (strict, lazy)
+- 仅做风格转译，不改剧情事实。
+- 细则见：`references/workflow-details.md`、`references/style-adapter.md`。
 
-- L0: 不加载额外参考，直到当前 step 明确。
-- L1: 仅加载本 step 的最小必需文件。
-- L2: 仅在触发条件满足时加载扩展参考。
+### Step 3：审查
 
-### L1 (minimum)
-- Step 2 写作前：`references/core-constraints.md`
-- Step 4 润色前：`references/polish-guide.md`
+调用约束：
 
-### L2 (conditional)
-- 仅当 Step 1.5 需要风格/体裁细化时加载：
-  - `references/style-variants.md`
-  - `.claude/references/reading-power-taxonomy.md`
-  - `.claude/references/genre-profiles.md`
-  - `references/writing/genre-hook-payoff-library.md`（电竞/直播文/克苏鲁优先）
-- 仅当需要模板细节时加载：
-  - `references/workflow-details.md`
-  - `references/writing/typesetting.md`
+- 必须使用 `Task` 工具调用各审查 subagent，禁止主流程直接内联“自审”替代。
+- 可并行发起审查 Task，全部返回后统一汇总 `issues/severity/overall_score`。
 
-## Step 3: 审查
+默认核心 4 审查器：
 
-**默认核心4个 Checker**：
 - `consistency-checker`
 - `continuity-checker`
 - `ooc-checker`
-- `reader-pull-checker`（用于写入追读力数据）
+- `reader-pull-checker`
 
-**关键章/卷末/用户明确要求**：额外运行
+关键章/卷末/用户明确要求时追加：
+
 - `high-point-checker`
 - `pacing-checker`
 
-审查汇总表格与审查指标 JSON 模板见 `references/workflow-details.md`。
+`--minimal` 模式仅运行前三个基础审查器，不产出追读力数据。
 
-## Step 4: 润色
-
-加载润色参考：
+### Step 4：润色
 
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.md"
 ```
 
-先修复 critical/high，再处理 medium/low。
+- 先修复 critical/high，再处理 medium/low。
+- 这里执行去AI化与毒点规避规则（见 `polish-guide.md`）。
 
-## Step 5: Data Agent
+### Step 5：Data Agent
 
-使用 Task 工具调用 `data-agent`：
+使用 Task 调用 `data-agent`：
 
 ```
 调用 data-agent，参数：
@@ -124,24 +130,25 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.
 - state_file: .webnovel/state.json
 ```
 
-债务利息计算默认关闭，仅在开启债务追踪或用户明确要求时执行（见 `references/workflow-details.md`）。
+- `review_score` 优先使用 Step 3 的 `overall_score`；若最小模式未产出则传 `0` 并在 notes 标注 `minimal mode`。
+- 债务利息默认关闭，仅在用户明确要求或开启追踪时执行（详见 `references/workflow-details.md`）。
 
-## Step 6: Git 备份
+### Step 6：Git 备份
 
 ```bash
 git add . && git commit -m "Ch{chapter_num}: {title}"
 ```
 
-## 详细流程与模板（按需加载）
+## 4. 最小交付检查
 
-需要以下内容时，读取：
-- `references/workflow-details.md`
-  - Step 1.5 章节设计（钩子/爽点/微兑现/差异化）
-  - 审查汇总表格 + 审查指标 JSON 模板
-  - 润色硬规则 + 检查清单
-  - 债务/Override 处理与利息开关
+- [ ] 正文文件已生成（章节编号正确）。
+- [ ] 审查已执行（模式对应的最小集合）。
+- [ ] 润色已处理 critical/high。
+- [ ] data-agent 已回写状态与索引。
+- [ ] Git 备份成功或已说明失败原因。
 
-Step 1.5 需要时可直接加载（避免深层引用）：
-- `references/style-variants.md`
-- `.claude/references/reading-power-taxonomy.md`
-- `.claude/references/genre-profiles.md`
+## 5. 参考入口
+
+- 执行模板与细节统一以 `references/workflow-details.md` 为准。
+- 写作硬约束以 `references/core-constraints.md` 为准。
+- 润色规则以 `references/polish-guide.md` 为准。

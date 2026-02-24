@@ -52,6 +52,9 @@ tools: Read, Grep, Bash
 **缺失处理**:
 - 若 `chapter_meta` 不存在（如第1章），跳过“接住上章”
 - 最近3章数据不完整时，只用现有数据做差异化检查
+- 若 `plot_threads.foreshadowing` 缺失或非列表：
+  - 视为“当前无结构化伏笔数据”，第 6 板块输出空清单并显式标注“数据缺失，需人工补录”
+  - 禁止静默跳过第 6 板块
 
 **章节编号规则**: 4位数字，如 `0001`, `0099`, `0100`
 
@@ -59,7 +62,7 @@ tools: Read, Grep, Bash
 
 ## 关键数据来源
 
-- `state.json`: 进度、主角状态、strand_tracker、chapter_meta、project.genre
+- `state.json`: 进度、主角状态、strand_tracker、chapter_meta、project.genre、plot_threads.foreshadowing
 - `index.db`: 实体/别名/关系/状态变化/override_contracts/chase_debt/chapter_reading_power
 - `.webnovel/summaries/ch{NNNN}.md`: 章节摘要（含钩子/结束状态）
 - `.webnovel/context_snapshots/`: 上下文快照（优先复用）
@@ -101,11 +104,31 @@ python -m data_modules.index_manager get-hook-type-stats --last-n 20 --project-r
 python -m data_modules.index_manager get-debt-summary --project-root "{project_root}"
 ```
 
-### Step 3: 实体与最近出场
+### Step 3: 实体与最近出场 + 伏笔读取
 ```bash
 python -m data_modules.index_manager get-core-entities --project-root "{project_root}"
 python -m data_modules.index_manager recent-appearances --limit 20 --project-root "{project_root}"
 ```
+
+- 从 `state.json` 读取：
+  - `progress.current_chapter`
+  - `plot_threads.foreshadowing`（主路径）
+- 缺失降级：
+  - 若 `plot_threads.foreshadowing` 不存在或类型错误，置为空数组并打标 `foreshadowing_data_missing=true`
+- 对每条伏笔至少提取：
+  - `content`
+  - `planted_chapter`
+  - `target_chapter`
+  - `resolved_chapter`
+  - `status`
+- 回收判定优先级：
+  - 若 `resolved_chapter` 非空，直接视为已回收并排除（即使 `status` 文案异常）
+  - 否则按 `status` 判定是否已回收
+- 生成排序键：
+  - `remaining = target_chapter - current_chapter`（若缺失则记为 `null`）
+  - 二次排序：`planted_chapter` 升序（更早埋设优先）
+  - 三次排序：`content` 字典序（确保稳定）
+- 输出到第 6 板块时，按 `remaining` 升序列出。
 
 ### Step 4: 摘要与推断补全
 - 优先读取 `.webnovel/summaries/ch{NNNN-1}.md`
@@ -118,6 +141,16 @@ python -m data_modules.index_manager recent-appearances --limit 20 --project-roo
 ### Step 5: 组装任务书
 输出 7 个板块的创作任务书。
 
+- 第 6 板块必须包含“伏笔优先级清单”：
+  - `必须处理（本章优先）`：`remaining <= 5` 或已超期（`remaining < 0`），全部列出不截断
+  - `可选伏笔（可延后）`：最多 5 条
+- 第 6 板块生成规则（统一口径）：
+  - 仅纳入未回收伏笔（见 Step 3 回收判定）
+  - 主排序按 `remaining` 升序，`remaining=null` 放末尾
+  - 若 `必须处理` 超过 3 条：前 3 条标记“最高优先”，其余标记“本章仍需处理”
+  - 若 `可选伏笔` 超过 5 条：展示前 5 条并标注“其余 N 条可选伏笔已省略”
+  - 若 `foreshadowing_data_missing=true`：明确输出“结构化伏笔数据缺失，当前清单仅供占位”
+
 ---
 
 ## 成功标准
@@ -128,3 +161,4 @@ python -m data_modules.index_manager recent-appearances --limit 20 --project-roo
 4. ✅ 最近模式已对比，给出差异化建议
 5. ✅ 章末钩子建议类型明确
 6. ✅ 反派层级已注明（若大纲提供）
+7. ✅ 第 6 板块已基于 `plot_threads.foreshadowing` 按紧急度排序输出

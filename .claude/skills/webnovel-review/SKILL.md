@@ -61,6 +61,10 @@ cat "$PROJECT_ROOT/.webnovel/state.json"
 
 ## Step 3: 并行调用检查员（Task）
 
+**调用约束**:
+- 必须通过 `Task` 工具调用审查 subagent，禁止主流程直接内联审查结论。
+- 各 subagent 结果全部返回后再生成总评与优先级。
+
 **Core**:
 - `consistency-checker`
 - `continuity-checker`

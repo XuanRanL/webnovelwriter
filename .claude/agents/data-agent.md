@@ -181,7 +181,7 @@ python -m data_modules.style_sampler extract --chapter 100 --score 85 --scenes '
 
 **默认不自动触发**。仅在“开启债务追踪”或用户明确要求时执行：
 ```bash
-python -m data_modules.index_manager accrue-interest --chapter {chapter} --project-root "{project_root}"
+python -m data_modules.index_manager accrue-interest --current-chapter {chapter} --project-root "{project_root}"
 ```
 
 此步骤会：
