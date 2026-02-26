@@ -1,10 +1,10 @@
-# 题材配置档案 (Genre Profiles) v5.4
+# 题材配置档案 (Genre Profiles) v5.5
 
 > **定位**：本文档定义各题材的追读力配置参数，供 Step 1.5 / Context Agent / Checkers 读取。
 >
 > **原则**：配置用于"调整权重和建议"，不做硬性裁决。
 >
-> **v5.4**：版本号对齐，内容沿用 v5.3。
+> **v5.5**：基于 xslca.cc 热门榜实证数据扩展，新增 history-travel / game-lit，并更新 shuangwen / xianxia / urban-power 关键参数。
 
 ---
 

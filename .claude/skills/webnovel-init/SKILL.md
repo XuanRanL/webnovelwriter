@@ -38,6 +38,8 @@ Path conventions:
 - Before Wave 4 (constraints):
   - `references/creativity/creativity-constraints.md`
   - `references/creativity/anti-trope-xianxia.md` (修仙/玄幻/高武/西幻)
+  - `references/creativity/anti-trope-urban.md` (都市/历史)
+  - `references/creativity/anti-trope-game.md` (游戏/科幻/末世)
   - `references/creativity/anti-trope-rules-mystery.md` (规则/悬疑/灵异)
 
 ### L3 (optional, explicit only)
@@ -99,7 +101,12 @@ Order is flexible; group by theme.
 
 ### E) 创意约束
 **Generation flow**:
-1. Load anti-trope library based on genre (xianxia or rules-mystery)
+1. Load anti-trope library based on genre mapping:
+   - xianxia: 修仙/玄幻/高武/西幻
+   - urban: 都市/历史
+   - game: 游戏/科幻/末世
+   - rules-mystery: 规则/悬疑/灵异/克苏鲁
+   - mixed genre: load up to 2 most relevant libraries
 2. Generate 2-3 creative packages, each containing:
    - 书名变体（可选）
    - 一句话卖点
