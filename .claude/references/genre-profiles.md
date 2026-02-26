@@ -107,6 +107,8 @@ override_config:
 - 追求高密度爽点，读者期待快节奏
 - 章末必须有明确期待（要突破了/要打脸了/要发财了）
 - 过渡章容忍度低，最多连续2章
+- 数值反馈必须可视化（战力50→战力180，前后对比）
+- 金手指必须有上限/消耗/冷却，不能无限使用
 
 ---
 
@@ -126,8 +128,8 @@ hook_config:
 
 coolpoint_config:
   preferred_patterns: [越级反杀, 扮猪吃虎, 身份掉马, 反派翻车]
-  density_per_chapter: medium
-  combo_interval: 8
+  density_per_chapter: high
+  combo_interval: 5
   milestone_interval: 15
 
 micropayoff_config:
@@ -149,7 +151,8 @@ override_config:
 
 **题材特点**：
 - 需要世界观构建，允许更多铺垫章
-- 境界突破是核心期待
+- 境界突破是核心期待，阶位制必须可视化（8-10级体系，前后对比数值）
+- 资源货币化体系（灵石/丹药/功法）是核心微兑现载体
 - 设定约束可作为合理Override理由
 
 ---
@@ -291,8 +294,8 @@ override_config:
 ```yaml
 id: urban-power
 name: 都市异能
-description: 现代背景，隐藏超能，低调装逼
-tags: [urban, power]
+description: 现代背景，隐藏超能，低调装逼，产业链博弈
+tags: [urban, power, industry]
 
 hook_config:
   preferred_types: [危机钩, 渴望钩, 情绪钩]
@@ -303,7 +306,7 @@ hook_config:
 coolpoint_config:
   preferred_patterns: [扮猪吃虎, 装逼打脸, 身份掉马, 迪化误解]
   density_per_chapter: high
-  combo_interval: 5
+  combo_interval: 3
   milestone_interval: 10
 
 micropayoff_config:
@@ -314,7 +317,7 @@ micropayoff_config:
 pacing_config:
   stagnation_threshold: 3
   strand_quest_max: 5
-  strand_fire_gap_max: 10
+  strand_fire_gap_max: 8
   transition_max_consecutive: 2
 
 override_config:
@@ -327,6 +330,8 @@ override_config:
 - 装逼打脸系列是核心爽点
 - 现代背景要求身份隐藏→掉马的节奏控制
 - 社会地位变化是重要微兑现
+- 娱乐圈/产业链背景热门，感情线权重高（断档容忍度降至8章）
+- 3章一峰节奏：第1章困境，第2章能力初展，第3章小胜+新阻力
 
 ---
 
@@ -548,6 +553,97 @@ override_config:
 - 每次推进真相都应绑定明确损失（理智/关系/资源）
 - 高强度钩子优先“未闭合规则问题”而非单纯惊吓
 
+### 2.12 历史穿越 (history-travel)
+
+```yaml
+id: history-travel
+name: 历史穿越
+description: 现代灵魂穿越古代，知识优势改变历史，种田发家逆袭
+tags: [history, travel, knowledge]
+
+hook_config:
+  preferred_types: [选择钩, 危机钩, 渴望钩]
+  strength_baseline: medium
+  chapter_end_required: true
+  transition_allowance: 2
+
+coolpoint_config:
+  preferred_patterns: [打脸权威, 扮猪吃虎, 反派翻车, 身份掉马]
+  density_per_chapter: medium
+  combo_interval: 3
+  milestone_interval: 10
+
+micropayoff_config:
+  preferred_types: [信息兑现, 资源兑现, 认可兑现]
+  min_per_chapter: 1
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 3
+  strand_quest_max: 5
+  strand_fire_gap_max: 10
+  transition_max_consecutive: 2
+
+override_config:
+  allowed_rationale_types: [WORLD_RULE_CONSTRAINT, CHARACTER_CREDIBILITY, ARC_TIMING]
+  debt_multiplier: 0.9
+  payback_window_default: 4
+```
+
+**题材特点**：
+- 知识优势 > 武力优势，推导过程要展示（不能只说答案）
+- 3章一峰节奏：第1章困境/穿越，第2章知识初展，第3章小胜+新阻力
+- 反派有合理动机（利益冲突），权威人物不轻易被说服（需多次证明）
+- 历史有惯性，改变一件事会引发连锁反应（非线性结果）
+- 女性主角占比上升，种田/发家/行业改革标签热门
+
+---
+
+### 2.13 游戏文 (game-lit)
+
+```yaml
+id: game-lit
+name: 游戏文
+description: 游戏化世界观，系统金手指驱动，数值反馈爽感，极致反差起点
+tags: [game, system, apocalypse]
+
+hook_config:
+  preferred_types: [危机钩, 渴望钩, 选择钩]
+  strength_baseline: strong
+  chapter_end_required: true
+  transition_allowance: 0
+
+coolpoint_config:
+  preferred_patterns: [越级反杀, 装逼打脸, 扮猪吃虎, 反派翻车]
+  density_per_chapter: high
+  combo_interval: 3
+  milestone_interval: 10
+
+micropayoff_config:
+  preferred_types: [能力兑现, 资源兑现, 认可兑现]
+  min_per_chapter: 2
+  transition_min: 1
+
+pacing_config:
+  stagnation_threshold: 2
+  strand_quest_max: 5
+  strand_fire_gap_max: 15
+  transition_max_consecutive: 0
+
+override_config:
+  allowed_rationale_types: [WORLD_RULE_CONSTRAINT, ARC_TIMING]
+  debt_multiplier: 1.1
+  payback_window_default: 2
+```
+
+**题材特点**：
+- 第1章必须出现金手指，不能拖到第2章
+- 数值反馈必须可视化（战力50→战力180，前后对比）
+- 金手指必须有上限/消耗/冷却，不能无限使用
+- 不允许过渡章（每章必须有爽点或数值推进）
+- IP融合（LOL/宝可梦等）是差异化标签，末日生存系兴起
+- 第3章必须出现明确对手（环境/规则/具体反派任选其一）
+
 ---
 
 ## 三、Profile 加载机制
@@ -600,6 +696,7 @@ override_config:
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v5.5 | 2026-02-26 | 基于 xslca.cc 热门榜实证数据更新：新增 history-travel/game-lit profile，强化 xianxia 阶位制/资源货币化，urban-power 3章一峰节奏，shuangwen 数值反馈约束 |
 | v5.4.1 | 2026-02-06 | 新增 3 个内置题材profile：电竞/直播文/克苏鲁 |
 | v5.4 | 2026-02-03 | 版本号对齐，内容不变 |
 | v5.3 | 2026-02-01 | 初版，包含8个内置题材profile |
