@@ -156,9 +156,16 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/update_state.py" --project-root "$PROJECT_
 
 ## Step 7: 处理关键问题
 
-如发现 critical 问题，询问用户：
+如发现 critical 问题（`severity_counts.critical > 0` 或 `critical_issues` 非空），**必须使用 AskUserQuestion** 询问用户：
 - A) 立即修复（推荐）
 - B) 仅保存报告，稍后处理
+
+若用户选择 A：
+- 输出“返工清单”（逐条 critical 问题 → 定位 → 最小修复动作 → 注意事项）
+- 如用户明确授权可直接修改正文文件，则用 `Edit` 对对应章节文件做最小修复，并建议重新运行一次 `/webnovel-review` 验证
+
+若用户选择 B：
+- 不做正文修改，仅保留审查报告与指标记录，结束本次审查
 
 ## Step 8: 收尾（完成任务）
 
