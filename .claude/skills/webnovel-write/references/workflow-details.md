@@ -28,7 +28,12 @@ cat "${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md"
 cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/genre-hook-payoff-library.md"
 ```
 
-输出结构：
+输出结构（必须覆盖 Scene–Sequel 最小闭环）：
+- 目标（20字以内）
+- 阻力（20字以内）
+- 代价（20字以内）
+- 本章变化（30字以内，优先可量化变化：关系/资源/风险/地位/能力）
+- 章末未闭合问题（30字以内；必须与钩子类型/强度一致）
 - 核心冲突一句话
 - 开头类型（冲突/悬疑/动作/对话/氛围）
 - 情绪节奏（低→高/高→低/低→高→低/平稳）

@@ -77,7 +77,8 @@
 **节奏红线**：
 - Quest 连续不超过 5 章
 - Fire 断档不超过 10 章
-- 每章至少包含 2 种 Strand
+- Constellation 断档不超过 15 章
+- 每章声明 1 个主导 Strand（可交织其他 Strand）
 
 ---
 
@@ -222,8 +223,9 @@ export PYTHONPATH=".claude/scripts"
 ```
 
 **产出**：
+- `大纲/第N卷-节拍表.md`（Promise/Catalyst/危机递增/中段反转/最低谷/大兑现+新钩子）
 - `大纲/第N卷-详细大纲.md`
-- 每章目标、爽点设计、Strand 类型
+- 每章：目标/阻力/代价/本章变化/章末未闭合问题/爽点/Strand/钩子/反派层级/关键实体
 - 新增实体预告
 
 ---
@@ -248,7 +250,7 @@ Step 2A: 生成粗稿（3000-5000字）
         ↓
 Step 2B: 风格适配器（网文化改写）
         ↓
-Step 3: 默认 4 Agent 审查（关键章扩展到 6）
+Step 3: 默认 4 Agent 审查（关键章扩展到 6）+ 保存审查指标（review_metrics）
         ↓
 Step 4: 网文化润色
         ↓
@@ -283,6 +285,11 @@ Step 6: Git 自动提交备份
 - 节奏 Strand 分布
 - 人物 OOC 检测
 - 场景连贯性
+
+**产出**：
+- `审查报告/第{start}-{end}章审查报告.md`（审查报告正文）
+- `.webnovel/index.db`：写入 `review_metrics`（用于趋势统计与写作建议）
+- `.webnovel/state.json`：追加 `review_checkpoints`（记录已审查区间与报告路径）
 
 ---
 
@@ -568,7 +575,7 @@ context_max_urgent_foreshadowing = 5  # 最大紧急伏笔数
 
 ## 文档归类
 
-- 当前基线文档：`README.md`、`CLAUDE.md`、`.claude/references/*.md`
+- 当前基线文档：`README.md`、`CLAUDE.md`、`.claude/references/*.md`、`.claude/references/shared/*.md`
 - 历史归档文档：`docs/archive/reports/`
 - 文档状态规则：`docs/doc-lifecycle.md`
 - 本地未跟踪归类：`docs/untracked-classification.md`
@@ -615,10 +622,12 @@ your-novel-project/
 │   │       ├── 黑暗题材.md
 │   │       └── ...
 │   └── references/             # 写作指南
-│       ├── strand-weave.md
-│       ├── cool-points-guide.md
-│       ├── reading-power-taxonomy.md  # 追读力分类标准 (v5.3)
-│       ├── genre-profiles.md          # 题材配置档案 (v5.3)
+│       ├── shared/             # 单一事实源（共享参考）
+│       │   ├── core-constraints.md
+│       │   ├── strand-weave-pattern.md
+│       │   └── cool-points-guide.md
+│       ├── reading-power-taxonomy.md  # 追读力分类标准
+│       ├── genre-profiles.md          # 题材配置档案
 │       └── ...
 ├── .webnovel/                  # 运行时数据
 │   ├── state.json              # 权威状态 (含 chapter_meta)
@@ -632,6 +641,7 @@ your-novel-project/
 │   └── ...
 ├── 大纲/                       # 卷纲/章纲
 │   ├── 总纲.md
+│   ├── 第1卷-节拍表.md
 │   ├── 第1卷-详细大纲.md
 │   └── ...
 └── 设定集/                     # 世界观/角色/力量体系

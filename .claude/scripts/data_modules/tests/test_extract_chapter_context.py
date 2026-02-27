@@ -53,6 +53,55 @@ def test_extract_chapter_outline_supports_hyphen_filename(tmp_path):
     assert "测试大纲" in outline
 
 
+def test_extract_chapter_outline_prefers_state_volume_mapping(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[2]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from extract_chapter_context import extract_chapter_outline
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+    state = {
+        "progress": {
+            "volumes_planned": [
+                {"volume": 1, "chapters_range": "1-10"},
+                {"volume": 2, "chapters_range": "11-20"},
+            ]
+        }
+    }
+    (webnovel_dir / "state.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    outline_dir = tmp_path / "大纲"
+    outline_dir.mkdir(parents=True, exist_ok=True)
+    (outline_dir / "第2卷-详细大纲.md").write_text("### 第12章：V2标题\nV2大纲", encoding="utf-8")
+
+    outline = extract_chapter_outline(tmp_path, 12)
+    assert "### 第12章：V2标题" in outline
+    assert "V2大纲" in outline
+
+
+def test_extract_chapter_outline_falls_back_when_state_has_no_match(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[2]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from extract_chapter_context import extract_chapter_outline
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+    state = {"progress": {"volumes_planned": [{"volume": 1, "chapters_range": "1-10"}]}}
+    (webnovel_dir / "state.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    outline_dir = tmp_path / "大纲"
+    outline_dir.mkdir(parents=True, exist_ok=True)
+    (outline_dir / "第2卷-详细大纲.md").write_text("### 第60章：V2标题\nV2大纲", encoding="utf-8")
+
+    outline = extract_chapter_outline(tmp_path, 60)
+    assert "### 第60章：V2标题" in outline
+    assert "V2大纲" in outline
+
+
 def test_build_chapter_context_payload_includes_contract_sections(tmp_path):
     scripts_dir = Path(__file__).resolve().parents[2]
     if str(scripts_dir) not in sys.path:

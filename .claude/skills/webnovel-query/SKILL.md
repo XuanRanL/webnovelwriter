@@ -36,12 +36,12 @@ Copy and track progress:
 - L2: 仅按查询类型加载对应专题参考。
 
 ### L1 (minimum)
-- `references/system-data-flow.md`
+- [system-data-flow.md](references/system-data-flow.md)
 
 ### L2 (conditional by query type)
-- 伏笔查询：`references/advanced/foreshadowing.md`
-- 节奏查询：`../webnovel-plan/references/strand-weave-pattern.md`
-- 标签格式查询：`references/tag-specification.md`
+- 伏笔查询：[foreshadowing.md](references/advanced/foreshadowing.md)
+- 节奏查询：[strand-weave-pattern.md](../../references/shared/strand-weave-pattern.md)
+- 标签格式查询：[tag-specification.md](references/tag-specification.md)
 
 Do not load two or more L2 files unless the user request clearly spans multiple query types.
 
@@ -70,7 +70,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/advanced/foreshadowi
 
 **节奏查询额外执行**：
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/strand-weave-pattern.md"
+cat "${CLAUDE_PLUGIN_ROOT}/references/shared/strand-weave-pattern.md"
 ```
 
 **标签格式查询额外执行**：

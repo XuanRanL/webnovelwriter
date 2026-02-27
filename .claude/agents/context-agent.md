@@ -13,6 +13,7 @@ tools: Read, Grep, Bash
 
 - **Taxonomy**: `.claude/references/reading-power-taxonomy.md`
 - **Genre Profile**: `.claude/references/genre-profiles.md`
+- **Shared References**: `.claude/references/shared/` 为单一事实源；如需枚举/扫描参考文件，遇到 `<!-- DEPRECATED:` 的文件一律跳过。
 
 ## 输入
 
@@ -27,14 +28,14 @@ tools: Read, Grep, Bash
 
 ## 输出格式：创作任务书（7个板块）
 
-1. **本章核心任务**（冲突一句话、必须完成、绝对不能、反派层级）
+1. **本章核心任务**（目标/阻力/代价、冲突一句话、必须完成、绝对不能、反派层级）
 2. **接住上章**（上章钩子、读者期待、开头必须）
 3. **出场角色**（状态、动机、情绪底色、说话风格、红线）
 4. **场景与力量约束**（地点、可用能力、禁用能力）
 5. **风格指导**（本章类型、参考样本、最近模式、本章建议）
 6. **连续性与伏笔**（时间/位置/情绪连贯；必须处理/可选伏笔）
-7. **追读力策略**（章末钩子类型+强度、微兑现建议、差异化提示）
-   - 如存在债务/Override，仅在此板块补充“债务状态/偿还建议”。
+7. **追读力策略**（章末未闭合问题 + 钩子类型/强度、微兑现建议、差异化提示）
+    - 如存在债务/Override，仅在此板块补充“债务状态/偿还建议”。
 
 ---
 
@@ -93,7 +94,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py" --chapter {NNN
 
 ### Step 1: 读取大纲与状态
 - 大纲：`大纲/卷N/第XXX章.md` 或 `大纲/第{卷}卷-详细大纲.md`
-  - 若大纲含“反派层级”，必须提取并写入任务书
+  - 必须优先提取并写入任务书：目标/阻力/代价/反派层级/本章变化/章末未闭合问题/钩子（若存在）
 - `state.json`：progress / protagonist_state / chapter_meta / project.genre
 
 ### Step 2: 追读力与债务（按需）

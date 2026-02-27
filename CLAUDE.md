@@ -43,6 +43,10 @@
 │       ├── index_manager.py  # SQLite 管理
 │       └── ...
 ├── references/             # 写作指南
+│   ├── shared/             # 单一事实源（共享参考）
+│   │   ├── core-constraints.md
+│   │   ├── strand-weave-pattern.md
+│   │   └── cool-points-guide.md
 │   ├── reading-power-taxonomy.md  # 追读力分类标准
 │   ├── genre-profiles.md          # 题材配置档案
 │   └── ...
@@ -80,6 +84,7 @@
 - **webnovel-init Phase 6.5** - 创意约束生成（Deep 模式）
 - **webnovel-plan Phase 2.5** - 加载创意约束
 - **webnovel-plan Phase 7** - 约束继承检查
+- **webnovel-plan** - 新增卷节拍表产物：`大纲/第N卷-节拍表.md`
 
 ### 3. 新增文件
 - `.webnovel/idea_bank.json` - 创意银行（存储生成的创意包）
@@ -94,7 +99,7 @@ Step 1.5: 章节设计（按需，开头/钩子/爽点/微兑现）
 Step 2A: 生成粗稿
 Step 2B: 风格适配器
         ↓
-Step 3: 默认 4 Agent 审查（关键章扩展到 6）
+Step 3: 默认 4 Agent 审查（关键章扩展到 6）+ 保存审查指标（review_metrics）
         ↓
 Step 4: 网文化润色
         ↓

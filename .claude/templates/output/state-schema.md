@@ -18,7 +18,9 @@
     "last_updated": "",
     "volumes_completed": [],
     "current_volume": 1,
-    "volumes_planned": []
+    "volumes_planned": [
+      {"volume": 1, "chapters_range": "1-100", "planned_at": "2026-02-01"}
+    ]
   },
   "protagonist_state": {
     "name": "",
@@ -32,7 +34,9 @@
     "factions": [],
     "locations": []
   },
-  "review_checkpoints": [],
+  "review_checkpoints": [
+    {"chapters": "1-5", "report": "审查报告/第1-5章审查报告.md", "reviewed_at": "2026-02-26 20:00:00"}
+  ],
   "strand_tracker": {
     "last_quest_chapter": 0,
     "last_fire_chapter": 0,

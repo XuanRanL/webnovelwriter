@@ -22,15 +22,78 @@ from typing import Any, Dict, List
 from runtime_compat import enable_windows_utf8_stdio
 
 try:
-    from chapter_paths import find_chapter_file
+    from chapter_paths import find_chapter_file, volume_num_for_chapter
 except ImportError:  # pragma: no cover
-    from scripts.chapter_paths import find_chapter_file
+    from scripts.chapter_paths import find_chapter_file, volume_num_for_chapter
 
 
 def _ensure_scripts_path():
     scripts_dir = Path(__file__).resolve().parent
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
+
+
+_CHAPTER_RANGE_RE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
+
+
+def _parse_chapters_range(value: Any) -> tuple[int, int] | None:
+    if not isinstance(value, str):
+        return None
+    m = _CHAPTER_RANGE_RE.match(value)
+    if not m:
+        return None
+    try:
+        start = int(m.group(1))
+        end = int(m.group(2))
+    except ValueError:
+        return None
+    if start <= 0 or end <= 0 or start > end:
+        return None
+    return start, end
+
+
+def _volume_num_for_chapter_from_state(project_root: Path, chapter_num: int) -> int | None:
+    """
+    Prefer `.webnovel/state.json.progress.volumes_planned[].chapters_range` mapping.
+
+    Fallback is handled by caller (typically 50 chapters per volume).
+    """
+    state_path = project_root / ".webnovel" / "state.json"
+    if not state_path.exists():
+        return None
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    if not isinstance(state, dict):
+        return None
+
+    progress = state.get("progress")
+    if not isinstance(progress, dict):
+        return None
+
+    volumes_planned = progress.get("volumes_planned")
+    if not isinstance(volumes_planned, list):
+        return None
+
+    best: tuple[int, int] | None = None  # (start, volume) - prefer the latest start if overlaps exist
+    for item in volumes_planned:
+        if not isinstance(item, dict):
+            continue
+        volume = item.get("volume")
+        if not isinstance(volume, int) or volume <= 0:
+            continue
+        parsed = _parse_chapters_range(item.get("chapters_range"))
+        if not parsed:
+            continue
+        start, end = parsed
+        if start <= chapter_num <= end:
+            cand = (start, volume)
+            if best is None or cand[0] > best[0] or (cand[0] == best[0] and cand[1] < best[1]):
+                best = cand
+
+    return best[1] if best else None
 
 
 def find_project_root(start_path: Path | None = None) -> Path:
@@ -53,7 +116,7 @@ def find_project_root(start_path: Path | None = None) -> Path:
 
 def extract_chapter_outline(project_root: Path, chapter_num: int) -> str:
     """Extract chapter outline segment from volume outline file."""
-    volume_num = (chapter_num - 1) // 50 + 1
+    volume_num = _volume_num_for_chapter_from_state(project_root, chapter_num) or volume_num_for_chapter(chapter_num)
     outline_candidates = [
         project_root / "大纲" / f"第{volume_num}卷-详细大纲.md",
         project_root / "大纲" / f"第{volume_num}卷 详细大纲.md",

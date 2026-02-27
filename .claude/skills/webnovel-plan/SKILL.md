@@ -11,32 +11,29 @@ Purpose: refine 总纲 into volume + chapter outlines. Do not redesign the globa
 - Must run inside a project containing `.webnovel/state.json`.
 - If missing, ask for the project path and `cd` into it.
 
+## References（按步骤导航）
+
+- Step 3（必读，节拍表模板）：[大纲-卷节拍表.md](../../templates/output/大纲-卷节拍表.md)
+- Step 4（必读，题材配置）：[genre-profiles.md](../../references/genre-profiles.md)
+- Step 4（必读，Strand 节奏）：[strand-weave-pattern.md](../../references/shared/strand-weave-pattern.md)
+- Step 4（可选，爽点结构需要细化）：[cool-points-guide.md](../../references/shared/cool-points-guide.md)
+- Step 5（可选，需要钩子/节奏细分）：[reading-power-taxonomy.md](../../references/reading-power-taxonomy.md)
+- Step 4/5（可选，电竞/直播文/克苏鲁）：[genre-volume-pacing.md](references/outlining/genre-volume-pacing.md)
+
 ## Reference Loading Levels (strict, lazy)
 
 Use progressive disclosure and load only what current step requires:
 - L0: No references before scope/volume is confirmed.
-- L1: Minimum set for current generation step.
-- L2: Conditional references only if constraints/genre details are needed.
-
-### L1 (step-gated minimum)
-- Before Step 3 (volume skeleton):
-  - `references/strand-weave-pattern.md`
-  - `.claude/references/genre-profiles.md`
-
-### L2 (conditional)
-- Before Step 3, load only if爽点结构需要细化:
-  - `references/cool-points-guide.md`
-- Before Step 4, load only if需要钩子/节奏细分:
-  - `.claude/references/reading-power-taxonomy.md`
-- Before Step 3/4, load only if题材为电竞/直播文/克苏鲁:
-  - `references/outlining/genre-volume-pacing.md`
+- L1: Before each step, load only the "必读" items in **References（按步骤导航）**.
+- L2: Load optional items only when the trigger condition applies.
 
 ## Workflow
 1. Load project data.
 2. Select volume and confirm scope.
-3. Generate volume skeleton.
-4. Generate chapter outlines in batches.
-5. Validate + save + update state.
+3. Generate volume beat sheet (节拍表).
+4. Generate volume skeleton.
+5. Generate chapter outlines in batches.
+6. Validate + save + update state.
 
 ## 1) Load project data
 ```bash
@@ -57,10 +54,45 @@ If 总纲.md lacks volume ranges / core conflict / climax, ask the user to fill 
 - Confirm any special requirement (tone, POV emphasis, romance, etc.).
 If 总纲缺少卷名/章节范围/核心冲突/卷末高潮，先补问并更新总纲，再继续。
 
-## 3) Generate volume skeleton
+## 3) Generate volume beat sheet (节拍表)
+目标：先把本卷“承诺→危机递增→中段反转→最低谷→大兑现+新钩子”钉死，避免卷中段漂移。
+
+Load template:
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/templates/output/大纲-卷节拍表.md"
+```
+
+Must satisfy (hard requirements):
+- **中段反转（必填）**：不得留空；若无，写 `无（理由：...）`
+- **危机链**：至少 3 次递增（表格 1-3 行不得空）
+- **卷末新钩子**：必须能落到“最后一章的章末未闭合问题”
+
+Write output:
+```bash
+@'
+{beat_sheet_content}
+'@ | Set-Content -Encoding UTF8 "$PROJECT_ROOT/大纲/第{volume_id}卷-节拍表.md"
+```
+
+Completion criteria:
+- `大纲/第{volume_id}卷-节拍表.md` 存在且非空
+- Step 4/5 能直接引用 Catalyst / 中段反转 / 最低谷 / 大兑现 / 新钩子来锚定节奏
+
+## 4) Generate volume skeleton
 Load genre profile and apply standards:
 ```bash
-cat ".claude/references/genre-profiles.md"
+cat "${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md"
+cat "${CLAUDE_PLUGIN_ROOT}/references/shared/strand-weave-pattern.md"
+```
+
+Optional (only if爽点结构需要细化):
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/references/shared/cool-points-guide.md"
+```
+
+Load beat sheet (must exist):
+```bash
+cat "$PROJECT_ROOT/大纲/第{volume_id}卷-节拍表.md"
 ```
 
 Extract for current genre:
@@ -148,12 +180,17 @@ Use this template and fill from 总纲 + idea_bank:
 - 硬约束：贯穿全卷
 ```
 
-## 4) Generate chapter outlines (batched)
+## 5) Generate chapter outlines (batched)
 Batching rule:
 - ≤20 章：1 批
 - 21–40 章：2 批
 - 41–60 章：3 批
 - >60 章：4+ 批
+
+Optional (only if需要钩子/节奏细分):
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md"
+```
 
 ### Chapter generation strategy
 For each chapter, determine:
@@ -196,15 +233,21 @@ Chapter format (include 反派层级 for context-agent):
 ```markdown
 ### 第 {N} 章：{标题}
 - 目标: {20字以内}
+- 阻力: {20字以内}
+- 代价: {20字以内}
 - 爽点: {类型} - {30字以内}
 - Strand: {Quest|Fire|Constellation}
 - 反派层级: {无/小/中/大}
 - 视角/主角: {主角A/主角B/女主/群像}
 - 关键实体: {新增或重要出场}
+- 本章变化: {30字以内，优先可量化变化}
+- 章末未闭合问题: {30字以内}
 - 钩子: {类型} - {30字以内}
 ```
 
 **字段说明**：
+- **章末未闭合问题**：本章结尾必须保留的“未闭合决策/问题”，用于驱动读者点下一章。
+  - 规则：必须与 **钩子** 的类型/强度一致；不得出现“钩子很强但问题很虚”的错配。
 - **钩子**：本章应设置的章末钩子（规划用）
   - 例：悬念钩 - 神秘人身份即将揭晓
   - 意思是：本章结尾要设置这个悬念钩子
@@ -218,7 +261,7 @@ Save after each batch:
 '@ | Add-Content -Encoding UTF8 "$PROJECT_ROOT/大纲/第{volume_id}卷-详细大纲.md"
 ```
 
-## 5) Validate + save
+## 6) Validate + save
 ### Validation checks (must pass all)
 
 **1. 爽点密度检查**
@@ -248,11 +291,15 @@ If deviation > 15%, adjust chapter assignments.
 **5. 完整性检查**
 Every chapter must have:
 - 目标（20 字以内）
+- 阻力（20 字以内）
+- 代价（20 字以内）
 - 爽点（类型 + 30 字描述）
 - Strand（Quest/Fire/Constellation）
 - 反派层级（无/小/中/大）
 - 视角/主角
 - 关键实体（至少 1 个）
+- 本章变化（30 字以内）
+- 章末未闭合问题（30 字以内）
 - 钩子（类型 + 30 字描述）
 
 Update state (include chapters range):
@@ -264,13 +311,16 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/update_state.py" \
 ```
 
 Final check:
+- 节拍表文件已写入：`大纲/第{volume_id}卷-节拍表.md`
 - 章纲文件已写入：`大纲/第{volume_id}卷-详细大纲.md`
-- 每章包含：目标/爽点/Strand/反派层级/视角/关键实体/钩子
+- 每章包含：目标/阻力/代价/爽点/Strand/反派层级/视角/关键实体/本章变化/章末未闭合问题/钩子
 - 与总纲冲突/高潮一致，约束触发频率合理（如有 idea_bank）
 
 ### Hard fail conditions (must stop)
+- 节拍表文件不存在或为空
+- 节拍表中段反转缺失（未按“必填/无（理由）”规则填写）
 - 章纲文件不存在或为空
-- 任一章节缺少：目标/爽点/Strand/反派层级/视角/关键实体/钩子
+- 任一章节缺少：目标/阻力/代价/爽点/Strand/反派层级/视角/关键实体/本章变化/章末未闭合问题/钩子
 - 与总纲核心冲突或卷末高潮明显冲突
 - 约束触发频率不足（当 idea_bank 启用时）
 

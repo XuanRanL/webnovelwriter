@@ -12,6 +12,31 @@ allowed-tools: Read Grep Write Edit Bash Task AskUserQuestion
 - 若当前目录不存在该文件，先询问用户项目路径并 `cd` 进入
 - 进入后设置变量：`$PROJECT_ROOT = (Resolve-Path ".").Path`
 
+## 0.5 工作流断点（best-effort，不得阻断主流程）
+
+> 目标：让 `/webnovel-resume` 能基于真实断点恢复。即使 workflow_manager 出错，也**只记录警告**，审查继续。
+
+推荐（bash）：
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" start-task --command webnovel-review --chapter {end} || true
+```
+
+Step 映射（必须与 `workflow_manager.py get_pending_steps("webnovel-review")` 对齐）：
+- Step 1：加载参考
+- Step 2：加载项目状态
+- Step 3：并行调用检查员
+- Step 4：生成审查报告
+- Step 5：保存审查指标到 index.db
+- Step 6：写回审查记录到 state.json
+- Step 7：处理关键问题（AskUserQuestion）
+- Step 8：收尾（完成任务）
+
+Step 记录模板（bash，失败不阻断）：
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" start-step --step-id "Step 1" --step-name "加载参考" || true
+python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" complete-step --step-id "Step 1" --artifacts '{"ok":true}' || true
+```
+
 ## Review depth
 
 - **Core (default)**: consistency / continuity / ooc / reader-pull
@@ -19,32 +44,29 @@ allowed-tools: Read Grep Write Edit Bash Task AskUserQuestion
 
 ## Step 1: 加载参考（按需）
 
+## References（按步骤导航）
+
+- Step 1（必读，硬约束）：[core-constraints.md](../../references/shared/core-constraints.md)
+- Step 1（可选，Full 或节奏/爽点相关问题）：[cool-points-guide.md](../../references/shared/cool-points-guide.md)
+- Step 1（可选，Full 或节奏/爽点相关问题）：[strand-weave-pattern.md](../../references/shared/strand-weave-pattern.md)
+- Step 1（可选，仅在返工建议需要时）：[common-mistakes.md](references/common-mistakes.md)
+- Step 1（可选，仅在返工建议需要时）：[pacing-control.md](references/pacing-control.md)
+
 ## Reference Loading Levels (strict, lazy)
 
 - L0: 先确定审查深度（Core / Full），再加载参考。
-- L1: 每次只加载当前深度的最小文件。
-- L2: 仅在问题定位需要时加载扩展参考。
-
-### L1 (minimum)
-- Core 必读：`references/core-constraints.md`
-
-### L2 (conditional)
-- Full 或节奏/爽点相关问题时加载：
-  - `references/cool-points-guide.md`
-  - `references/strand-weave-pattern.md`
-- 仅在返工建议需要时加载：
-  - `references/common-mistakes.md`
-  - `references/pacing-control.md`
+- L1: 只加载 References 区的“必读”条目。
+- L2: 仅在问题定位需要时加载 References 区的“可选”条目。
 
 **必读**:
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-review/references/core-constraints.md"
+cat "${CLAUDE_PLUGIN_ROOT}/references/shared/core-constraints.md"
 ```
 
 **建议（Full 或需要时）**:
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-review/references/cool-points-guide.md"
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-review/references/strand-weave-pattern.md"
+cat "${CLAUDE_PLUGIN_ROOT}/references/shared/cool-points-guide.md"
+cat "${CLAUDE_PLUGIN_ROOT}/references/shared/strand-weave-pattern.md"
 ```
 
 **可选**:
@@ -117,13 +139,31 @@ cat "$PROJECT_ROOT/.webnovel/state.json"
 }
 ```
 
-保存审查指标：
+注意：此处只生成审查指标 JSON；落库见 Step 5。
+
+## Step 5: 保存审查指标到 index.db（必做）
+
 ```bash
-python -m data_modules.index_manager save-review-metrics --data '{...}' --project-root "."
+python -m data_modules.index_manager save-review-metrics --data '{...}' --project-root "${PROJECT_ROOT}"
 ```
 
-## Step 5: 处理关键问题
+## Step 6: 写回审查记录到 state.json（必做）
+
+将审查报告记录写回 `state.json.review_checkpoints`，用于后续追踪与回溯（依赖 `update_state.py --add-review`）：
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/update_state.py" --project-root "$PROJECT_ROOT" --add-review "{start}-{end}" "审查报告/第{start}-{end}章审查报告.md"
+```
+
+## Step 7: 处理关键问题
 
 如发现 critical 问题，询问用户：
 - A) 立即修复（推荐）
 - B) 仅保存报告，稍后处理
+
+## Step 8: 收尾（完成任务）
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" start-step --step-id "Step 8" --step-name "收尾" || true
+python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" complete-step --step-id "Step 8" --artifacts '{"ok":true}' || true
+python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" complete-task --artifacts '{"ok":true}' || true
+```

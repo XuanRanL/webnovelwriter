@@ -36,10 +36,10 @@ Copy and track progress:
 - L2: 仅在数据一致性检查时加载数据规范。
 
 ### L1 (minimum)
-- `references/workflow-resume.md`
+- [workflow-resume.md](references/workflow-resume.md)
 
 ### L2 (conditional)
-- `references/system-data-flow.md`（仅在需要核对状态字段/恢复策略时）
+- [system-data-flow.md](references/system-data-flow.md)（仅在需要核对状态字段/恢复策略时）
 
 ## Step 1: 加载恢复协议（必须执行）
 

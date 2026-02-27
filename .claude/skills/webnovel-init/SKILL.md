@@ -26,24 +26,24 @@ Do not recursively chase references inside a reference file unless blocked.
 
 Path conventions:
 - `references/...` → relative to this skill directory (i.e. `.claude/skills/webnovel-init/references/...`)
-- `@templates/...` → relative to `.claude/templates/...` (project-level shared templates)
+- `templates/...` → relative to plugin root `.claude/templates/...`（建议用下方 Markdown 链接导航）
 
 ### L1 (minimum, wave-gated)
-- Before Wave 1: `references/genre-tropes.md`
+- Before Wave 1: [genre-tropes.md](references/genre-tropes.md)
 
 ### L2 (conditional)
-- After genre selection: `@templates/genres/{genre}.md` (only for selected genres in A+B)
-- Before Wave 3 (golden finger): `@templates/golden-finger-templates.md`
-- Before Wave 4 (world): `references/worldbuilding/faction-systems.md`
+- After genre selection: `templates/genres/{genre}.md` (only for selected genres in A+B)
+- Before Wave 3 (golden finger): [golden-finger-templates.md](../../templates/golden-finger-templates.md)
+- Before Wave 4 (world): [faction-systems.md](references/worldbuilding/faction-systems.md)
 - Before Wave 4 (constraints):
-  - `references/creativity/creativity-constraints.md`
-  - `references/creativity/anti-trope-xianxia.md` (修仙/玄幻/高武/西幻)
-  - `references/creativity/anti-trope-urban.md` (都市/历史)
-  - `references/creativity/anti-trope-game.md` (游戏/科幻/末世)
-  - `references/creativity/anti-trope-rules-mystery.md` (规则/悬疑/灵异)
+  - [creativity-constraints.md](references/creativity/creativity-constraints.md)
+  - [anti-trope-xianxia.md](references/creativity/anti-trope-xianxia.md) (修仙/玄幻/高武/西幻)
+  - [anti-trope-urban.md](references/creativity/anti-trope-urban.md) (都市/历史)
+  - [anti-trope-game.md](references/creativity/anti-trope-game.md) (游戏/科幻/末世)
+  - [anti-trope-rules-mystery.md](references/creativity/anti-trope-rules-mystery.md) (规则/悬疑/灵异)
 
 ### L3 (optional, explicit only)
-- `references/creativity/market-trends-2026.md`
+- [market-trends-2026.md](references/creativity/market-trends-2026.md)
 - If used, explicitly mark it as time-sensitive and verify freshness before relying on it.
 
 ## Questioning style

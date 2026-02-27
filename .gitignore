@@ -20,6 +20,7 @@ Thumbs.db
 
 # Workspace artifacts
 node_modules/
+.npm-cache/
 nul
 .tmp/
 .tmp_outline_check/
