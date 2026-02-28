@@ -22,6 +22,7 @@
 - [项目结构](#项目结构)
 - [故障恢复](#故障恢复)
 - [版本历史（精简）](#版本历史精简)
+- [Star 趋势](#star-趋势)
 - [License](#license)
 
 ---
@@ -795,6 +796,12 @@ git checkout ch0045
 | **v5.1-v5.0** | 双 Agent 基础架构 + SQLite 索引化（state 精简、实体/别名/状态变化入库） |
 
 详细阶段性变更请参考提交历史与 `.claude/references/` 下对应规范文档。
+
+---
+
+## Star 趋势
+
+[![Star History Chart](https://api.star-history.com/svg?repos=lingfengQAQ/webnovel-writer&type=Date)](https://star-history.com/#lingfengQAQ/webnovel-writer&Date)
 
 ---
 
