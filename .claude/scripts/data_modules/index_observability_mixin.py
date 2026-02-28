@@ -177,6 +177,9 @@ class IndexObservabilityMixin:
             cursor.execute("SELECT COUNT(*) FROM relationships")
             relationships = cursor.fetchone()[0]
 
+            cursor.execute("SELECT COUNT(*) FROM relationship_events")
+            relationship_events = cursor.fetchone()[0]
+
             # v5.3 引入统计
             cursor.execute("SELECT COUNT(*) FROM override_contracts")
             override_contracts = cursor.fetchone()[0]
@@ -211,6 +214,7 @@ class IndexObservabilityMixin:
                 "aliases": aliases,
                 "state_changes": state_changes,
                 "relationships": relationships,
+                "relationship_events": relationship_events,
                 # v5.3 引入
                 "override_contracts": override_contracts,
                 "pending_overrides": pending_overrides,

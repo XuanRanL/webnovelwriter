@@ -21,6 +21,7 @@
 - [配置说明](#配置说明)
 - [项目结构](#项目结构)
 - [故障恢复](#故障恢复)
+- [版本历史（精简）](#版本历史精简)
 - [License](#license)
 
 ---
@@ -437,12 +438,13 @@ Step 6: Git 自动提交备份
 
 ## RAG 检索系统
 
-混合检索系统，支持语义搜索历史场景：
+混合检索系统，支持语义搜索历史场景与关系证据召回。
 
 ### 架构
 
 ```
-查询 → [向量检索] + [BM25关键词] → RRF融合 → Rerank排序 → Top-K结果
+查询 → QueryRouter(auto) → vector / bm25 / hybrid / graph_hybrid
+                         └→ RRF 融合 + Rerank → Top-K 结果
 ```
 
 ### 配置
@@ -472,7 +474,9 @@ RERANK_API_KEY=jina_xxx
 
 ### 使用方式
 
-- **Context Agent** 自动调用 RAG 检索相关历史场景
+- **Context Agent** 在 Step 0.5 读取 `extract_chapter_context.py` 的 `rag_assist`
+  - 仅当大纲命中关系/伏笔/地点等触发词时才检索（避免无效召回）
+  - 优先 `auto` 策略（可走 `graph_hybrid`），失败或无 Embedding Key 时自动回退 BM25
 - **Data Agent** 自动将章节场景向量化存入数据库
 - 支持失败重试（指数退避，最多3次）
 
@@ -569,6 +573,12 @@ extraction_confidence_medium = 0.5 # 中置信度阈值（待确认）
 context_recent_summaries_window = 3   # 最近摘要数量
 context_max_appearing_characters = 10 # 最大出场角色数
 context_max_urgent_foreshadowing = 5  # 最大紧急伏笔数
+
+# 智能 RAG 辅助（Step 0.5）
+context_rag_assist_enabled = True          # 是否启用按需检索
+context_rag_assist_top_k = 4               # 召回条数
+context_rag_assist_min_outline_chars = 40  # 大纲最小触发长度
+context_rag_assist_max_query_chars = 120   # 查询截断长度
 ```
 
 ---
@@ -774,130 +784,17 @@ git checkout ch0045
 
 ---
 
-## 版本历史
+## 版本历史（精简）
 
-### v5.4.2 (当前)
-- **创意约束系统**：三轴混搭 + 反套路触发器 + 镜像对抗 + 约束继承
-- **题材模板扩展**：从10+扩展到37+种题材模板
-- **复合题材支持**：支持"题材A+题材B"组合（1主1辅）
-- **反套路库**：修仙/玄幻反套路库（20条限制 + 15种非套路爽点）
-- **规则怪谈反套路库**：20条限制 + 20种非套路爽点
-- **创意银行**：idea_bank.json 存储生成的创意包
-- **人物设定扩展**：女主卡、主角组、反派设计模板
-- **世界构建扩展**：货币体系、境界链模板、社会阶层、资源分配
-- **webnovel-init 升级**：Phase 6.5 创意约束生成
-- **webnovel-plan 升级**：Phase 2.5 加载创意约束 + Phase 7 约束继承检查
+| 版本 | 里程碑 |
+|------|--------|
+| **v5.4.3 (当前)** | 智能 RAG 辅助上下文（按需触发 `auto/graph_hybrid`，失败回退 BM25）；关系事件图谱与 Graph-RAG 链路完善 |
+| **v5.4.x** | Context Contract v2 完成（reader_signal / genre_profile / writing_guidance / checklist_score / 动态预算）；审查趋势与调用可观测性 |
+| **v5.3** | 追读力系统落地（Hook/Cool-point/微兑现分类、Hard/Soft 约束、Override Contract、债务追踪） |
+| **v5.2** | 写作流程升级（Step 1.5 章节设计、reader-pull-checker、摘要分离到 `.webnovel/summaries/`） |
+| **v5.1-v5.0** | 双 Agent 基础架构 + SQLite 索引化（state 精简、实体/别名/状态变化入库） |
 
-### v5.4.1
-- **Checker分层**：审查Agent输出结构化报告
-- **Context精简**：创作任务书优化
-
-### v5.4
-- **审查指标追踪**：review_metrics 表记录每次审查的评分/维度/问题数
-- **审查趋势统计**：get-review-trend-stats 查询近期审查均值和短板
-- **故事骨架采样**：context_manager 每 N 章采样历史摘要，构建长篇感知
-- **上下文工程升级**：基于 Context Engineering Guide 优化
-
-### Context Contract v2（阶段 A）
-
-- 上下文契约升级为 v2：新增 `meta.context_contract_version = "v2"`
-- 新增上下文排序器：`data_modules/context_ranker.py`
-- 排序策略：近期优先 + 频次稳定 + 钩子/风险信号加权
-- 工作流可观测性：`workflow_manager.py` 会写入 `.webnovel/observability/call_trace.jsonl`
-
-参考文档：`.claude/references/context-contract-v2.md`
-
-### Context Contract v2（阶段 B）
-
-- 新增 `reader_signal` 段：自动聚合追读力与审查趋势信号
-- 新增 `genre_profile` 段：自动按题材加载策略参考（支持回退）
-- 目标：让写作阶段更接近网文平台读者偏好（钩子强度、爽点分布、低分补救）
-
-### Context Contract v2（阶段 C）
-
-- 新增 `writing_guidance`：按章生成可执行写作建议（低分修复/钩子差异化/题材锚定）
-- 新增紧凑文本策略：超预算 section 使用 `…[TRUNCATED]` 保留头尾关键信息
-- 目标：在有限上下文预算下提升“可写性”和“网文感”
-
-### Context Contract v2（阶段 D）
-
-- `extract_chapter_context.py` 已接入 Contract v2 输出
-- JSON 输出新增：`context_contract_version` / `reader_signal` / `genre_profile` / `writing_guidance`
-- text 输出新增：`写作执行建议` 板块，供 Context Agent / Writer 直接使用
-- **invalid_facts 表**：追踪无效事实，支持 pending/confirmed 状态
-- **父子向量索引**：parent_chunk_id 支持摘要-场景层级检索
-- **Token 预算管理**：ContextManager 实现 40%/35%/25% 优先级分配
-- **webnovel-learn skill**：从会话提取成功模式写入 project_memory.json
-- **CLI 统一输出**：CLIResponse 标准化 JSON 输出格式
-- **Pydantic Schema**：DataAgentOutput 等结构化验证
-- **向量库安全迁移**：vectors.db 表结构变更时自动备份并执行事务迁移，失败可回滚
-
-### Context Contract v2（阶段 E）
-
-- `writing_guidance` 新增 `checklist`：可执行、可验收、可加权
-- checklist 项包含：`id/label/weight/required/source/verify_hint`
-- `extract_chapter_context.py` 文本输出新增“执行检查清单（可评分）”
-
-### Context Contract v2（阶段 F）
-
-- 新增 `writing_guidance.checklist_score`：章节执行评分与完成率
-- `index.db` 新增 `writing_checklist_scores` 持久化评分记录
-- 支持趋势查询：最近评分、评分均值、完成率均值
-
-### Context Contract v2（阶段 G）
-
-- `workflow_manager.py` 新增 Step 调用方标注（expected owner）
-- 新增步骤顺序违规追踪事件 `step_order_violation`
-- `call_trace.jsonl` 可用于定位“谁在何时调用了哪一步”
-
-### Context Contract v2（阶段 H）
-
-- 新增动态上下文预算：按章节阶段 early/mid/late 调整权重
-- `meta.context_weight_stage` 公开当前权重阶段
-- 目标：开篇重冲突与角色、中后期重世界与线索收束
-
-### Context Contract v2（阶段 I）
-
-- `genre_profile` 支持复合题材（如 `xuanhuan+realistic`）
-- 输出新增：`genres/composite/secondary_genres/composite_hints`
-- 写作建议自动加入“复合题材协同”提示
-
-### v5.4.1
-- **题材模板扩展**：新增 3 个题材模板（电竞 / 直播文 / 克苏鲁）
-- **题材映射增强**：init 支持同义输入映射（如“电竞文”“直播”“克系”）
-- **写作建议增强**：新增网文节奏基线与题材加权提示（章首目标阻力、微兑现密度、章末钩子）
-- **参数层同步**：补充 genre profile 与 reading taxonomy 的新题材规则
-
-### v5.3
-- **追读力分类标准**：钩子5类型、爽点8模式、微兑现7类型
-- **约束分层机制**：Hard Invariants (4条) + Soft Guidance (可Override)
-- **Override Contract**：违反软建议需记录理由和偿还计划
-- **追读力债务**：债务追踪、利息计算、逾期管理
-- **题材Profile**：11种内置题材配置（偏好钩子/爽点/微兑现要求）
-- **SQLite新表**：override_contracts、chase_debt、debt_events、chapter_reading_power
-- **Context Agent**：输出精简为7个板块（含追读力策略，债务状态按需输出）
-- **CLI新命令**：get-debt-summary、get-recent-reading-power、accrue-interest 等
-
-### v5.2
-- 创作任务书：Context Agent 输出人话版 8 章节格式（替代 JSON）
-- 追读力检查：新增 reader-pull-checker（第 6 个审查 Agent）
-- 章节设计：Step 1.5 选择开头/钩子/爽点模式，避免重复
-- 风格适配器：Step 2A/2B 拆分，先写剧情后网文化
-- 摘要分离：章节摘要存入 `.webnovel/summaries/ch{NNNN}.md`
-- chapter_meta：记录钩子/模式/结束状态到 state.json
-- 轻量模式：支持 `--fast` / `--minimal` 加速写作
-- 输出模板：7 个标准模板文件（state/index schema、设定集、大纲）
-
-### v5.1
-- SQLite 存储：entities/aliases/state_changes 迁移到 index.db
-- state.json 精简至 < 5KB
-- API 重试机制（指数退避）
-- 6 种爽点执行模式
-
-### v5.0
-- 双 Agent 架构 (Context + Data)
-- 纯正文写作，无需 XML 标签
-- 5 维并行审查
+详细阶段性变更请参考提交历史与 `.claude/references/` 下对应规范文档。
 
 ---
 

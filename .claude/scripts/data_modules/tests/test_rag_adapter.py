@@ -9,12 +9,14 @@ import json
 import asyncio
 import logging
 import sqlite3
+from contextlib import closing
 
 import pytest
 
 import data_modules.rag_adapter as rag_module
 from data_modules.rag_adapter import RAGAdapter
 from data_modules.config import DataModulesConfig
+from data_modules.index_manager import EntityMeta, RelationshipMeta
 
 
 class StubClient:
@@ -122,6 +124,124 @@ async def test_hybrid_search_prefilter(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_search_respects_chapter_filter_across_strategies(tmp_path, monkeypatch):
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    cfg.ensure_dirs()
+    cfg.vector_full_scan_max_vectors = 0  # 强制走预筛选分支
+    monkeypatch.setattr(rag_module, "get_client", lambda config: StubClient())
+    adapter = RAGAdapter(cfg)
+    await adapter.store_chunks(
+        [
+            {"chapter": 1, "scene_index": 1, "content": "前文线索，尚未涉及关键宝物"},
+            {"chapter": 2, "scene_index": 1, "content": "秘宝现世，引发争夺"},
+            {"chapter": 3, "scene_index": 1, "content": "秘宝大战彻底爆发"},
+        ]
+    )
+
+    vector_results = await adapter.vector_search("秘宝", top_k=5, chapter=1)
+    assert vector_results
+    assert all((r.chapter or 0) <= 1 for r in vector_results)
+
+    bm25_results = adapter.bm25_search("秘宝", top_k=5, chapter=1)
+    assert bm25_results
+    assert all((r.chapter or 0) <= 1 for r in bm25_results)
+
+    hybrid_results = await adapter.hybrid_search(
+        "秘宝",
+        vector_top_k=5,
+        bm25_top_k=5,
+        rerank_top_n=3,
+        chapter=1,
+    )
+    assert hybrid_results
+    assert all((r.chapter or 0) <= 1 for r in hybrid_results)
+
+
+@pytest.mark.asyncio
+async def test_graph_hybrid_search_with_entity_expansion(tmp_path, monkeypatch):
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    cfg.ensure_dirs()
+    cfg.graph_rag_enabled = True
+    monkeypatch.setattr(rag_module, "get_client", lambda config: StubClient())
+    adapter = RAGAdapter(cfg)
+
+    adapter.index_manager.upsert_entity(
+        EntityMeta(
+            id="xiaoyan",
+            type="角色",
+            canonical_name="萧炎",
+            current={},
+            first_appearance=1,
+            last_appearance=2,
+        )
+    )
+    adapter.index_manager.upsert_entity(
+        EntityMeta(
+            id="yaolao",
+            type="角色",
+            canonical_name="药老",
+            current={},
+            first_appearance=1,
+            last_appearance=2,
+        )
+    )
+    adapter.index_manager.register_alias("萧炎", "xiaoyan", "角色")
+    adapter.index_manager.register_alias("药老", "yaolao", "角色")
+    adapter.index_manager.upsert_relationship(
+        RelationshipMeta(
+            from_entity="xiaoyan",
+            to_entity="yaolao",
+            type="师徒",
+            description="收徒",
+            chapter=1,
+        )
+    )
+
+    await adapter.store_chunks(
+        [
+            {"chapter": 1, "scene_index": 1, "content": "萧炎拜药老为师，正式成为师徒"},
+            {"chapter": 2, "scene_index": 1, "content": "萧炎在天云宗修炼斗气"},
+        ]
+    )
+
+    results = await adapter.graph_hybrid_search(
+        "萧炎和药老关系",
+        top_k=2,
+        center_entities=["萧炎", "药老"],
+    )
+    assert results
+    assert any("药老" in r.content for r in results)
+    assert all(r.source == "graph_hybrid" for r in results)
+
+
+@pytest.mark.asyncio
+async def test_search_auto_uses_graph_strategy_when_enabled(tmp_path, monkeypatch):
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    cfg.ensure_dirs()
+    cfg.graph_rag_enabled = True
+    monkeypatch.setattr(rag_module, "get_client", lambda config: StubClient())
+    adapter = RAGAdapter(cfg)
+    adapter.index_manager.upsert_entity(
+        EntityMeta(
+            id="xiaoyan",
+            type="角色",
+            canonical_name="萧炎",
+            current={},
+            first_appearance=1,
+            last_appearance=1,
+        )
+    )
+    adapter.index_manager.register_alias("萧炎", "xiaoyan", "角色")
+    await adapter.store_chunks(
+        [{"chapter": 1, "scene_index": 1, "content": "萧炎突破斗师"}]
+    )
+
+    results = await adapter.search("萧炎关系", top_k=1, strategy="auto")
+    assert results
+    assert results[0].source in {"graph_hybrid", "hybrid"}
+
+
+@pytest.mark.asyncio
 async def test_search_with_backtrack(temp_project):
     adapter = RAGAdapter(temp_project)
     chunks = [
@@ -165,10 +285,15 @@ def test_recent_and_fetch_vectors(temp_project):
             "INSERT INTO vectors (chunk_id, chapter, scene_index, content, embedding, parent_chunk_id, chunk_type, source_file) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             ("ch0001_s1", 1, 1, "内容", b"", None, "scene", "正文/第0001章.md#scene_1"),
         )
+        cursor.execute(
+            "INSERT INTO vectors (chunk_id, chapter, scene_index, content, embedding, parent_chunk_id, chunk_type, source_file) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("ch0002_s1", 2, 1, "后文内容", b"", None, "scene", "正文/第0002章.md#scene_1"),
+        )
         conn.commit()
 
-    assert adapter._get_vectors_count() == 1
-    assert adapter._get_recent_chunk_ids(1) == ["ch0001_s1"]
+    assert adapter._get_vectors_count() == 2
+    assert adapter._get_recent_chunk_ids(1) == ["ch0002_s1"]
+    assert adapter._get_recent_chunk_ids(10, chapter=1) == ["ch0001_s1"]
     rows = adapter._fetch_vectors_by_chunk_ids(["ch0001_s1"])
     assert len(rows) == 1
 
@@ -179,7 +304,7 @@ def test_init_db_migrates_legacy_vectors_schema(tmp_path, monkeypatch):
     monkeypatch.setattr(rag_module, "get_client", lambda config: StubClient())
 
     # 旧结构：缺少 parent_chunk_id/chunk_type/source_file/created_at
-    with sqlite3.connect(str(cfg.vector_db)) as conn:
+    with closing(sqlite3.connect(str(cfg.vector_db))) as conn:
         cursor = conn.cursor()
         cursor.execute(
             """
@@ -246,6 +371,7 @@ def test_rag_adapter_cli(temp_project, monkeypatch, capsys):
     run_cli(["--project-root", root, "search", "--query", "内容", "--mode", "bm25", "--top-k", "5"])
     run_cli(["--project-root", root, "search", "--query", "内容", "--mode", "vector", "--top-k", "5"])
     run_cli(["--project-root", root, "search", "--query", "内容", "--mode", "hybrid", "--top-k", "5"])
+    run_cli(["--project-root", root, "search", "--query", "内容", "--mode", "auto", "--top-k", "5"])
 
     capsys.readouterr()
 

@@ -116,6 +116,23 @@ class RelationshipMeta:
 
 
 @dataclass
+class RelationshipEventMeta:
+    """关系事件记录 (v5.5 引入)"""
+
+    from_entity: str
+    to_entity: str
+    type: str
+    chapter: int
+    action: str = "update"  # create/update/decay/remove
+    polarity: int = 0  # -1/0/1
+    strength: float = 0.5  # 0~1
+    description: str = ""
+    scene_index: int = 0
+    evidence: str = ""
+    confidence: float = 1.0
+
+
+@dataclass
 class OverrideContractMeta:
     """Override Contract (v5.3 引入)"""
 
@@ -361,6 +378,37 @@ class IndexManager(IndexChapterMixin, IndexEntityMixin, IndexDebtMixin, IndexRea
             )
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_relationships_chapter ON relationships(chapter)"
+            )
+
+            # 关系事件表 (v5.5 引入，用于时序回放/图谱分析)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS relationship_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_entity TEXT NOT NULL,
+                    to_entity TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    action TEXT NOT NULL DEFAULT 'update',
+                    polarity INTEGER DEFAULT 0,
+                    strength REAL DEFAULT 0.5,
+                    description TEXT,
+                    chapter INTEGER NOT NULL,
+                    scene_index INTEGER DEFAULT 0,
+                    evidence TEXT,
+                    confidence REAL DEFAULT 1.0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_relationship_events_from_chapter ON relationship_events(from_entity, chapter)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_relationship_events_to_chapter ON relationship_events(to_entity, chapter)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_relationship_events_chapter ON relationship_events(chapter)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_relationship_events_type_chapter ON relationship_events(type, chapter)"
             )
 
             # ==================== v5.3 引入表：追读力债务管理 ====================
@@ -664,6 +712,34 @@ def main():
         "--direction", choices=["from", "to", "both"], default="both"
     )
 
+    # 获取关系事件
+    rel_events_parser = subparsers.add_parser("get-relationship-events")
+    rel_events_parser.add_argument("--entity", required=True)
+    rel_events_parser.add_argument("--direction", choices=["from", "to", "both"], default="both")
+    rel_events_parser.add_argument("--from-chapter", type=int, default=None)
+    rel_events_parser.add_argument("--to-chapter", type=int, default=None)
+    rel_events_parser.add_argument("--limit", type=int, default=100)
+
+    # 获取关系图谱
+    rel_graph_parser = subparsers.add_parser("get-relationship-graph")
+    rel_graph_parser.add_argument("--center", required=True, help="中心实体 ID")
+    rel_graph_parser.add_argument("--depth", type=int, default=2)
+    rel_graph_parser.add_argument("--chapter", type=int, default=None)
+    rel_graph_parser.add_argument("--top-edges", type=int, default=50)
+    rel_graph_parser.add_argument("--format", choices=["json", "mermaid"], default="json")
+
+    # 获取关系时间线
+    rel_timeline_parser = subparsers.add_parser("get-relationship-timeline")
+    rel_timeline_parser.add_argument("--a", required=True, help="实体 A")
+    rel_timeline_parser.add_argument("--b", required=True, help="实体 B")
+    rel_timeline_parser.add_argument("--from-chapter", type=int, default=None)
+    rel_timeline_parser.add_argument("--to-chapter", type=int, default=None)
+    rel_timeline_parser.add_argument("--limit", type=int, default=100)
+
+    # 写入关系事件
+    rel_event_record_parser = subparsers.add_parser("record-relationship-event")
+    rel_event_record_parser.add_argument("--data", required=True, help="JSON 格式的关系事件数据")
+
     # 获取状态变化
     changes_parser = subparsers.add_parser("get-state-changes")
     changes_parser.add_argument("--entity", required=True)
@@ -901,9 +977,66 @@ def main():
         rels = manager.get_entity_relationships(args.entity, args.direction)
         emit_success(rels, message="relationships")
 
+    elif args.command == "get-relationship-events":
+        events = manager.get_relationship_events(
+            entity_id=args.entity,
+            direction=args.direction,
+            from_chapter=args.from_chapter,
+            to_chapter=args.to_chapter,
+            limit=args.limit,
+        )
+        emit_success(events, message="relationship_events")
+
+    elif args.command == "get-relationship-graph":
+        graph = manager.build_relationship_subgraph(
+            center_entity=args.center,
+            depth=args.depth,
+            chapter=args.chapter,
+            top_edges=args.top_edges,
+        )
+        if args.format == "mermaid":
+            emit_success({"mermaid": manager.render_relationship_subgraph_mermaid(graph)}, message="relationship_graph")
+        else:
+            emit_success(graph, message="relationship_graph")
+
+    elif args.command == "get-relationship-timeline":
+        timeline = manager.get_relationship_timeline(
+            entity1=args.a,
+            entity2=args.b,
+            from_chapter=args.from_chapter,
+            to_chapter=args.to_chapter,
+            limit=args.limit,
+        )
+        emit_success(timeline, message="relationship_timeline")
+
     elif args.command == "get-state-changes":
         changes = manager.get_entity_state_changes(args.entity, args.limit)
         emit_success(changes, message="state_changes")
+
+    elif args.command == "record-relationship-event":
+        try:
+            data = json.loads(args.data)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            emit_error("INVALID_RELATIONSHIP_EVENT", "关系事件 JSON 无效")
+        else:
+            event = RelationshipEventMeta(
+                from_entity=data.get("from_entity", ""),
+                to_entity=data.get("to_entity", ""),
+                type=data.get("type", ""),
+                chapter=data.get("chapter", 0),
+                action=data.get("action", "update"),
+                polarity=data.get("polarity", 0),
+                strength=data.get("strength", 0.5),
+                description=data.get("description", ""),
+                scene_index=data.get("scene_index", 0),
+                evidence=data.get("evidence", ""),
+                confidence=data.get("confidence", 1.0),
+            )
+            event_id = manager.record_relationship_event(event)
+            if event_id > 0:
+                emit_success({"id": event_id}, message="relationship_event_recorded")
+            else:
+                emit_error("INVALID_RELATIONSHIP_EVENT", "关系事件参数无效，未写入")
 
     elif args.command == "upsert-entity":
         data = json.loads(args.data)

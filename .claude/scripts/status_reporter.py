@@ -737,11 +737,59 @@ class StatusReporter:
         else:
             return "偏低⚠️"
 
+    def _resolve_protagonist_entity_id(self) -> Optional[str]:
+        """解析主角实体 ID（优先 index.db）。"""
+        protagonist = self._index_manager.get_protagonist()
+        if protagonist and protagonist.get("id"):
+            return str(protagonist["id"])
+
+        if not self.state:
+            return None
+        name = str(self.state.get("protagonist_state", {}).get("name", "") or "").strip()
+        if not name:
+            return None
+        hits = self._index_manager.get_entities_by_alias(name)
+        if hits:
+            return str(hits[0].get("id") or "")
+        return None
+
+    def _generate_relationship_graph_from_index(self) -> str:
+        """基于 index.db 生成关系图。"""
+        protagonist_id = self._resolve_protagonist_entity_id()
+        if not protagonist_id:
+            return ""
+
+        current_chapter = 0
+        if self.state:
+            current_chapter = int(self.state.get("progress", {}).get("current_chapter", 0) or 0)
+        chapter = current_chapter if current_chapter > 0 else None
+
+        graph = self._index_manager.build_relationship_subgraph(
+            center_entity=protagonist_id,
+            depth=2,
+            chapter=chapter,
+            top_edges=40,
+        )
+        if not graph.get("nodes"):
+            return ""
+        return self._index_manager.render_relationship_subgraph_mermaid(graph)
+
     def generate_relationship_graph(self) -> str:
         """生成人际关系 Mermaid 图"""
         if not self.state:
             return ""
 
+        # v5.5: 优先使用 index.db 关系图谱（可通过配置关闭）
+        if bool(getattr(self.config, "relationship_graph_from_index_enabled", True)):
+            try:
+                graph = self._generate_relationship_graph_from_index()
+                if graph:
+                    return graph
+            except Exception:
+                # 回退老逻辑，避免报告生成中断
+                pass
+
+        # 兼容旧版 state.json relationships 结构
         relationships = self.state.get("relationships", {})
         protagonist_name = self.state.get("protagonist_state", {}).get("name", "主角")
 

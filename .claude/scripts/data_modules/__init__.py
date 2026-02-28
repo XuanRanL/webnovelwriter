@@ -16,7 +16,13 @@ from .config import DataModulesConfig, get_config, set_project_root
 from .api_client import ModalAPIClient, get_client
 from .entity_linker import EntityLinker, DisambiguationResult
 from .state_manager import StateManager, EntityState, Relationship, StateChange
-from .index_manager import IndexManager, ChapterMeta, SceneMeta, ReviewMetrics
+from .index_manager import (
+    IndexManager,
+    ChapterMeta,
+    SceneMeta,
+    ReviewMetrics,
+    RelationshipEventMeta,
+)
 from .rag_adapter import RAGAdapter, SearchResult
 from .context_manager import ContextManager
 from .context_ranker import ContextRanker
@@ -45,6 +51,7 @@ __all__ = [
     "ChapterMeta",
     "SceneMeta",
     "ReviewMetrics",
+    "RelationshipEventMeta",
     # RAG Adapter
     "RAGAdapter",
     "SearchResult",

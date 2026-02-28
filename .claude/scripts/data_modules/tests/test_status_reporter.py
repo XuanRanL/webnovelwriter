@@ -5,7 +5,13 @@ import json
 import tempfile
 
 from data_modules.config import DataModulesConfig
-from data_modules.index_manager import IndexManager, ChapterReadingPowerMeta
+from data_modules.index_manager import (
+    IndexManager,
+    ChapterReadingPowerMeta,
+    EntityMeta,
+    RelationshipMeta,
+    RelationshipEventMeta,
+)
 from status_reporter import StatusReporter
 
 
@@ -160,3 +166,70 @@ def test_pacing_analysis_marks_missing_data_instead_of_assuming_one_point_per_ch
         assert seg["rating"] == "数据不足"
         assert seg["missing_chapters"] == 1
 
+
+def test_relationship_graph_prefers_index_db_data():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = DataModulesConfig.from_project_root(tmpdir)
+        config.ensure_dirs()
+        project_root = config.project_root
+
+        state = {
+            "progress": {"current_chapter": 12, "total_words": 24000},
+            "protagonist_state": {"name": "萧炎"},
+            "relationships": {"allies": [{"name": "旧盟友", "relation": "友好"}], "enemies": []},
+        }
+        _write_state(project_root, state)
+
+        idx = IndexManager(config)
+        idx.upsert_entity(
+            EntityMeta(
+                id="xiaoyan",
+                type="角色",
+                canonical_name="萧炎",
+                tier="核心",
+                current={},
+                first_appearance=1,
+                last_appearance=12,
+                is_protagonist=True,
+            )
+        )
+        idx.upsert_entity(
+            EntityMeta(
+                id="yaolao",
+                type="角色",
+                canonical_name="药老",
+                tier="重要",
+                current={},
+                first_appearance=1,
+                last_appearance=12,
+            )
+        )
+        idx.upsert_relationship(
+            RelationshipMeta(
+                from_entity="xiaoyan",
+                to_entity="yaolao",
+                type="师徒",
+                description="师徒关系",
+                chapter=10,
+            )
+        )
+        idx.record_relationship_event(
+            RelationshipEventMeta(
+                from_entity="xiaoyan",
+                to_entity="yaolao",
+                type="师徒",
+                chapter=10,
+                action="create",
+                polarity=1,
+                strength=0.9,
+                description="拜师",
+                evidence="萧炎拜药老为师",
+            )
+        )
+
+        reporter = StatusReporter(str(project_root))
+        assert reporter.load_state() is True
+        graph = reporter.generate_relationship_graph()
+        assert "mermaid" in graph
+        assert "药老" in graph
+        assert "师徒" in graph

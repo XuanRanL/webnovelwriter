@@ -158,6 +158,9 @@ def test_build_chapter_context_payload_includes_contract_sections(tmp_path):
     assert isinstance(payload["writing_guidance"].get("checklist"), list)
     assert isinstance(payload["writing_guidance"].get("checklist_score"), dict)
     assert payload["genre_profile"].get("genre") == "xuanhuan"
+    assert "rag_assist" in payload
+    assert isinstance(payload["rag_assist"], dict)
+    assert payload["rag_assist"].get("invoked") is False
 
 
 def test_render_text_contains_writing_guidance_section(tmp_path):
@@ -212,3 +215,43 @@ def test_render_text_contains_writing_guidance_section(tmp_path):
     assert "### 执行评分" in text
     assert "- 评分: 81.5" in text
     assert "- 复合题材: xuanhuan + realistic" in text
+
+
+def test_render_text_contains_rag_assist_section_when_hits_exist(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[2]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from extract_chapter_context import _render_text
+
+    payload = {
+        "chapter": 12,
+        "outline": "测试大纲",
+        "previous_summaries": [],
+        "state_summary": "状态",
+        "context_contract_version": "v2",
+        "reader_signal": {},
+        "genre_profile": {},
+        "writing_guidance": {},
+        "rag_assist": {
+            "invoked": True,
+            "mode": "auto",
+            "intent": "relationship",
+            "query": "第12章 人物关系与动机：萧炎与药老发生冲突",
+            "hits": [
+                {
+                    "chapter": 9,
+                    "scene_index": 2,
+                    "source": "graph_hybrid",
+                    "score": 0.91,
+                    "content": "萧炎与药老在修炼方向上发生分歧。",
+                }
+            ],
+        },
+    }
+
+    text = _render_text(payload)
+    assert "## RAG 检索线索" in text
+    assert "- 模式: auto" in text
+    assert "[graph_hybrid]" in text
+    assert "萧炎与药老" in text

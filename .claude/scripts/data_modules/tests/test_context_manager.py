@@ -101,6 +101,14 @@ def test_query_router():
     router = QueryRouter()
     assert router.route("角色是谁") == "entity"
     assert router.route("发生了什么剧情") == "plot"
+    intent = router.route_intent("第10-20章萧炎和药老关系图谱")
+    assert intent["intent"] == "relationship"
+    assert intent["needs_graph"] is True
+    assert intent["time_scope"]["from_chapter"] == 10
+    assert intent["time_scope"]["to_chapter"] == 20
+    plans = router.plan_subqueries(intent)
+    assert plans
+    assert plans[0]["strategy"] in {"graph_lookup", "graph_hybrid"}
     assert "A" in router.split("A, B；C")
 
 

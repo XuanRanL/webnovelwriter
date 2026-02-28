@@ -21,7 +21,8 @@ from .index_manager import (
     IndexManager,
     EntityMeta,
     StateChangeMeta,
-    RelationshipMeta
+    RelationshipMeta,
+    RelationshipEventMeta,
 )
 from .config import get_config
 from .observability import safe_log_tool_call
@@ -384,12 +385,31 @@ class SQLStateManager:
             to_entity = rel.get("to", rel.get("to_entity"))
             if not from_entity or not to_entity:
                 continue
+            rel_type = rel.get("type", "相识")
+            description = rel.get("description", "")
+
+            # v5.5: 先记录关系事件，再更新关系快照
+            self._index_manager.record_relationship_event(
+                RelationshipEventMeta(
+                    from_entity=from_entity,
+                    to_entity=to_entity,
+                    type=rel_type,
+                    chapter=chapter,
+                    action=rel.get("action", "update"),
+                    polarity=rel.get("polarity", 0),
+                    strength=rel.get("strength", 0.5),
+                    description=description,
+                    scene_index=rel.get("scene_index", 0),
+                    evidence=rel.get("evidence", ""),
+                    confidence=rel.get("confidence", 1.0),
+                )
+            )
 
             self.upsert_relationship(
                 from_entity=from_entity,
                 to_entity=to_entity,
-                type=rel.get("type", "相识"),
-                description=rel.get("description", ""),
+                type=rel_type,
+                description=description,
                 chapter=chapter
             )
             stats["relationships"] += 1

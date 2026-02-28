@@ -13,6 +13,7 @@ Features:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import re
 import sys
@@ -34,6 +35,22 @@ def _ensure_scripts_path():
 
 
 _CHAPTER_RANGE_RE = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*$")
+_RAG_TRIGGER_KEYWORDS = (
+    "关系",
+    "恩怨",
+    "冲突",
+    "敌对",
+    "同盟",
+    "师徒",
+    "身份",
+    "线索",
+    "伏笔",
+    "回收",
+    "地点",
+    "势力",
+    "真相",
+    "来历",
+)
 
 
 def _parse_chapters_range(value: Any) -> tuple[int, int] | None:
@@ -238,6 +255,136 @@ def extract_state_summary(project_root: Path) -> str:
     return "\n".join(summary_parts)
 
 
+def _normalize_outline_text(outline: str) -> str:
+    text = str(outline or "")
+    if not text or text.startswith("⚠️"):
+        return ""
+    text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _build_rag_query(outline: str, chapter_num: int, min_chars: int, max_chars: int) -> str:
+    plain = _normalize_outline_text(outline)
+    if not plain or len(plain) < min_chars:
+        return ""
+
+    if not any(keyword in plain for keyword in _RAG_TRIGGER_KEYWORDS):
+        return ""
+
+    if "关系" in plain or "师徒" in plain or "敌对" in plain or "同盟" in plain:
+        topic = "人物关系与动机"
+    elif "地点" in plain or "势力" in plain:
+        topic = "地点势力与场景约束"
+    elif "伏笔" in plain or "线索" in plain or "回收" in plain:
+        topic = "伏笔与线索"
+    else:
+        topic = "剧情关键线索"
+
+    clean_max = max(40, int(max_chars))
+    return f"第{chapter_num}章 {topic}：{plain[:clean_max]}"
+
+
+def _search_with_rag(
+    project_root: Path,
+    chapter_num: int,
+    query: str,
+    top_k: int,
+) -> Dict[str, Any]:
+    _ensure_scripts_path()
+    from data_modules.config import DataModulesConfig
+    from data_modules.rag_adapter import RAGAdapter
+
+    config = DataModulesConfig.from_project_root(project_root)
+    adapter = RAGAdapter(config)
+    intent_payload = adapter.query_router.route_intent(query)
+    center_entities = list(intent_payload.get("entities") or [])
+
+    results = []
+    mode = "auto"
+    fallback_reason = ""
+    has_embed_key = bool(str(getattr(config, "embed_api_key", "") or "").strip())
+    if has_embed_key:
+        try:
+            results = asyncio.run(
+                adapter.search(
+                    query=query,
+                    top_k=top_k,
+                    strategy="auto",
+                    chapter=chapter_num,
+                    center_entities=center_entities,
+                )
+            )
+        except Exception as exc:
+            fallback_reason = f"auto_failed:{exc.__class__.__name__}"
+            mode = "bm25_fallback"
+            results = adapter.bm25_search(query=query, top_k=top_k, chapter=chapter_num)
+    else:
+        mode = "bm25_fallback"
+        fallback_reason = "missing_embed_api_key"
+        results = adapter.bm25_search(query=query, top_k=top_k, chapter=chapter_num)
+
+    hits: List[Dict[str, Any]] = []
+    for row in results:
+        content = re.sub(r"\s+", " ", str(getattr(row, "content", "") or "")).strip()
+        hits.append(
+            {
+                "chunk_id": str(getattr(row, "chunk_id", "") or ""),
+                "chapter": int(getattr(row, "chapter", 0) or 0),
+                "scene_index": int(getattr(row, "scene_index", 0) or 0),
+                "score": round(float(getattr(row, "score", 0.0) or 0.0), 6),
+                "source": str(getattr(row, "source", "") or mode),
+                "source_file": str(getattr(row, "source_file", "") or ""),
+                "content": content[:180],
+            }
+        )
+
+    return {
+        "invoked": True,
+        "query": query,
+        "mode": mode,
+        "reason": fallback_reason or ("ok" if hits else "no_hit"),
+        "intent": intent_payload.get("intent"),
+        "needs_graph": bool(intent_payload.get("needs_graph")),
+        "center_entities": center_entities,
+        "hits": hits,
+    }
+
+
+def _load_rag_assist(project_root: Path, chapter_num: int, outline: str) -> Dict[str, Any]:
+    _ensure_scripts_path()
+    from data_modules.config import DataModulesConfig
+
+    config = DataModulesConfig.from_project_root(project_root)
+    enabled = bool(getattr(config, "context_rag_assist_enabled", True))
+    top_k = max(1, int(getattr(config, "context_rag_assist_top_k", 4)))
+    min_chars = max(20, int(getattr(config, "context_rag_assist_min_outline_chars", 40)))
+    max_chars = max(40, int(getattr(config, "context_rag_assist_max_query_chars", 120)))
+    base_payload = {"enabled": enabled, "invoked": False, "reason": "", "query": "", "hits": []}
+
+    if not enabled:
+        base_payload["reason"] = "disabled_by_config"
+        return base_payload
+
+    query = _build_rag_query(outline, chapter_num=chapter_num, min_chars=min_chars, max_chars=max_chars)
+    if not query:
+        base_payload["reason"] = "outline_not_actionable"
+        return base_payload
+
+    vector_db = config.vector_db
+    if not vector_db.exists() or vector_db.stat().st_size <= 0:
+        base_payload["reason"] = "vector_db_missing_or_empty"
+        return base_payload
+
+    try:
+        rag_payload = _search_with_rag(project_root=project_root, chapter_num=chapter_num, query=query, top_k=top_k)
+        rag_payload["enabled"] = True
+        return rag_payload
+    except Exception as exc:
+        base_payload["reason"] = f"rag_error:{exc.__class__.__name__}"
+        return base_payload
+
+
 def _load_contract_context(project_root: Path, chapter_num: int) -> Dict[str, Any]:
     """Build context via ContextManager and return selected sections."""
     _ensure_scripts_path()
@@ -275,6 +422,7 @@ def build_chapter_context_payload(project_root: Path, chapter_num: int) -> Dict[
 
     state_summary = extract_state_summary(project_root)
     contract_context = _load_contract_context(project_root, chapter_num)
+    rag_assist = _load_rag_assist(project_root, chapter_num, outline)
 
     return {
         "chapter": chapter_num,
@@ -286,6 +434,7 @@ def build_chapter_context_payload(project_root: Path, chapter_num: int) -> Dict[
         "reader_signal": contract_context.get("reader_signal", {}),
         "genre_profile": contract_context.get("genre_profile", {}),
         "writing_guidance": contract_context.get("writing_guidance", {}),
+        "rag_assist": rag_assist,
     }
 
 
@@ -403,6 +552,24 @@ def _render_text(payload: Dict[str, Any]) -> str:
         refs = genre_profile.get("reference_hints") or []
         for row in refs[:3]:
             lines.append(f"- {row}")
+        lines.append("")
+
+    rag_assist = payload.get("rag_assist") or {}
+    hits = rag_assist.get("hits") or []
+    if rag_assist.get("invoked") and hits:
+        lines.append("## RAG 检索线索")
+        lines.append("")
+        lines.append(f"- 模式: {rag_assist.get('mode')}")
+        lines.append(f"- 意图: {rag_assist.get('intent')}")
+        lines.append(f"- 查询: {rag_assist.get('query')}")
+        lines.append("")
+        for idx, row in enumerate(hits[:5], start=1):
+            chapter = row.get("chapter", "?")
+            scene_index = row.get("scene_index", "?")
+            score = row.get("score", 0)
+            source = row.get("source", "unknown")
+            content = row.get("content", "")
+            lines.append(f"{idx}. [Ch{chapter}-S{scene_index}][{source}][score={score}] {content}")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"

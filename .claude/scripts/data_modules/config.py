@@ -128,6 +128,17 @@ class DataModulesConfig:
     vector_prefilter_bm25_candidates: int = 200
     vector_prefilter_recent_candidates: int = 200
 
+    # ================= Graph-RAG 配置 =================
+    graph_rag_enabled: bool = False
+    graph_rag_expand_hops: int = 1
+    graph_rag_max_expanded_entities: int = 30
+    graph_rag_candidate_limit: int = 150
+    graph_rag_boost_same_entity: float = 0.2
+    graph_rag_boost_related_entity: float = 0.1
+    graph_rag_boost_recency: float = 0.05
+
+    relationship_graph_from_index_enabled: bool = True
+
     # ================= 实体提取配置 =================
     extraction_confidence_high: float = 0.8
     extraction_confidence_medium: float = 0.5
@@ -182,6 +193,10 @@ class DataModulesConfig:
     context_writing_score_persist_enabled: bool = True
     context_writing_score_include_reader_trend: bool = True
     context_writing_score_trend_window: int = 10
+    context_rag_assist_enabled: bool = True
+    context_rag_assist_top_k: int = 4
+    context_rag_assist_min_outline_chars: int = 40
+    context_rag_assist_max_query_chars: int = 120
     context_dynamic_budget_enabled: bool = True
     context_dynamic_budget_early_chapter: int = 30
     context_dynamic_budget_late_chapter: int = 120

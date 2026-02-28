@@ -84,6 +84,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py" --chapter {cha
 
 - 必读：`writing_guidance.guidance_items`
 - 选读：`reader_signal`、`genre_profile.reference_hints`
+- 条件必读：`rag_assist`（当 `invoked=true` 且 `hits` 非空，必须把检索命中转成可执行写作约束）
 
 ### Step 2A：正文起草
 

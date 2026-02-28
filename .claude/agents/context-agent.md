@@ -91,6 +91,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py" --chapter {NNN
 
 - 必须读取：`writing_guidance.guidance_items`
 - 推荐读取：`reader_signal` 与 `genre_profile.reference_hints`
+- 条件读取：`rag_assist`（当 `invoked=true` 且 `hits` 非空时，优先提炼为“接住上章/角色动机/场景约束”的证据）
 
 ### Step 1: 读取大纲与状态
 - 大纲：`大纲/卷N/第XXX章.md` 或 `大纲/第{卷}卷-详细大纲.md`

@@ -105,6 +105,8 @@ def test_sql_state_manager_process_chapter_entities_and_exports(temp_project):
     )
     assert stats["entities_created"] >= 1
     assert stats["relationships"] == 1
+    rel_events = manager._index_manager.get_relationship_events("xiaoyan", direction="both")
+    assert len(rel_events) >= 1
 
     entities_v3 = manager.export_to_entities_v3_format()
     assert "角色" in entities_v3
