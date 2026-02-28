@@ -1,10 +1,10 @@
 ---
 name: reader-pull-checker
-description: 追读力检查器 v5.4，评估钩子/微兑现/约束分层，支持 Override Contract
+description: 追读力检查器 v5.5，评估钩子/微兑现/约束分层，支持 Override Contract
 tools: Read, Grep, Bash
 ---
 
-# reader-pull-checker (追读力检查器) v5.4
+# reader-pull-checker (追读力检查器) v5.5
 
 > **Role**: 审查"读者为什么会点下一章"，执行 Hard/Soft 约束分层。
 
@@ -21,7 +21,7 @@ tools: Read, Grep, Bash
 - 题材 Profile（从 `state.json → project.genre`）
 - 是否为过渡章标记
 
-## 输出格式（v5.3 引入，v5.4 沿用）
+## 输出格式（v5.3 引入，v5.5 更新）
 
 ```json
 {
@@ -92,11 +92,14 @@ tools: Read, Grep, Bash
 
 | ID | 约束名称 | 默认期望 | 可Override |
 |----|---------|---------|-----------|
+| SOFT_NEXT_REASON | 下章动机 | 读者能明确“为何点下一章” | ✓ |
+| SOFT_HOOK_ANCHOR | 期待锚点有效性 | 有未闭合问题或明确期待（章末/后段均可） | ✓ |
 | SOFT_HOOK_STRENGTH | 钩子强度 | 题材profile baseline | ✓ |
 | SOFT_HOOK_TYPE | 钩子类型 | 匹配题材偏好 | ✓ |
 | SOFT_MICROPAYOFF | 微兑现数量 | ≥ profile.min_per_chapter | ✓ |
 | SOFT_PATTERN_REPEAT | 模式重复 | 避免连续3章同型 | ✓ |
 | SOFT_EXPECTATION_OVERLOAD | 期待过载 | 新增期待 ≤ 2 | ✓ |
+| SOFT_RHYTHM_NATURALNESS | 节奏自然性 | 避免固定字距机械打点 | ✓ |
 
 **Soft Suggestion 输出**:
 ```json
@@ -224,9 +227,9 @@ tools: Read, Grep, Bash
 **任何 Hard Violation → 立即标记 MUST_FIX**
 
 ### Step 3: 钩子分析
-1. 识别章末钩子类型
-2. 评估钩子强度
-3. 对比题材偏好
+1. 识别本章期待锚点（优先章末，允许后段）
+2. 评估钩子强度与有效性
+3. 对比题材偏好与章节类型
 
 ### Step 4: 微兑现扫描
 1. 识别章内微兑现
@@ -269,12 +272,14 @@ tools: Read, Grep, Bash
 
 | 检查项 | 权重 | 问题类型 |
 |--------|------|----------|
-| 章末钩子存在 | 25% | NO_HOOK |
-| 钩子强度适当 | 15% | WEAK_HOOK |
+| 下章动机清晰 | 20% | NEXT_REASON_WEAK |
+| 期待锚点有效（章末/后段） | 15% | WEAK_HOOK_ANCHOR |
+| 钩子强度适当 | 10% | WEAK_HOOK |
 | 微兑现达标 | 20% | LOW_MICROPAYOFF |
 | 模式不重复 | 15% | PATTERN_REPEAT |
 | 新增期待≤2个 | 10% | EXPECTATION_OVERLOAD |
-| 钩子类型匹配题材 | 15% | TYPE_MISMATCH |
+| 钩子类型匹配题材 | 5% | TYPE_MISMATCH |
+| 节奏自然性（非机械打点） | 5% | MECHANICAL_PACING |
 
 ---
 
@@ -304,7 +309,7 @@ tools: Read, Grep, Bash
 
 - [ ] 无 Hard Violations
 - [ ] Soft Score ≥ 70（或有有效Override）
-- [ ] 章末钩子存在且类型明确
+- [ ] 存在可感知的未闭合问题/期待锚点（章末或后段）
 - [ ] 微兑现数量达标（或有Override）
 - [ ] 无连续3章以上同型
 - [ ] 输出清晰的"下章动机"

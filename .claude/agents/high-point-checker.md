@@ -1,10 +1,10 @@
 ---
 name: high-point-checker
-description: 爽点密度检查 v5.4，支持迪化误解/身份掉马模式，输出结构化报告
+description: 爽点密度检查 v5.5，支持迪化误解/身份掉马模式，输出结构化报告
 tools: Read, Grep, Bash
 ---
 
-# high-point-checker (爽点检查器) v5.4
+# high-point-checker (爽点检查器) v5.5
 
 > **Role**: Quality assurance specialist focused on reader satisfaction mechanics (爽点设计).
 
@@ -81,14 +81,14 @@ Scan for the **8 standard execution modes** (执行模式):
 
 ### Step 3: Density Check
 
-**Required Baseline**:
-- **Every chapter**: ≥ 1 小爽点（单一模式）
-- **Every 5 chapters**: ≥ 1 组合爽点（2种模式叠加）
-- **Every 10-15 chapters**: ≥ 1 里程碑爽点（改变主角地位）
+**Recommended Baseline (rolling windows)**:
+- **Per chapter**: 优先有爽点或同等兑现；允许过渡章低密度
+- **Every 5 chapters**: 建议 ≥ 1 组合爽点（2种模式叠加）
+- **Every 10-15 chapters**: 建议 ≥ 1 里程碑爽点（改变主角地位）
 
 **Output**:
 ```
-Chapter X: [✓ 2 cool-points] or [✗ 0 cool-points - VIOLATION]
+Chapter X: [✓ 2 cool-points] or [△ 0 cool-points - warning if consecutive]
 ```
 
 ### Step 4: Type Diversity Check
@@ -119,7 +119,7 @@ For each identified cool-point, check:
 1. **Setup sufficiency**: Was there adequate build-up (至少1-2章伏笔)?
 2. **Reversal impact**: Is the twist unexpected yet logical?
 3. **Emotional payoff**: Did it deliver catharsis (读者情绪释放)?
-4. **30/40/30 Formula**: Does the cool-point follow the standard structure?
+4. **30/40/30 Heuristic**: Is the structure clear enough (no rigid ratio required)?
    - 30% Setup/Buildup (铺垫)
    - 40% Delivery/Execution (兑现)
    - 30% Twist/Aftermath (微反转)
@@ -129,7 +129,7 @@ For each identified cool-point, check:
    - 虐恋文: 压7扬3
 
 **Quality Grades**:
-- **A (优秀)**: All criteria met, strong execution, follows 30/40/30
+- **A (优秀)**: All criteria met, strong execution, structure clear
 - **B (良好)**: Most criteria met, may have minor ratio issues
 - **C (及格)**: Basic criteria met but structure weak
 - **F (失败)**: Sudden cool-point without setup, or logically inconsistent
@@ -144,9 +144,9 @@ Chapters {N} - {M}
 
 ## 密度检查 (Density)
 - Chapter {N}: ✓ 2 cool-points (装逼打脸 + 越级反杀)
-- Chapter {M}: ✗ 0 cool-points **[VIOLATION - 需要补充]**
+- Chapter {M}: △ 0 cool-points **[WARNING - 连续出现时需补强]**
 
-**Verdict**: {PASS/FAIL} ({X}/{Y} chapters meet baseline)
+**Verdict**: {PASS/WARNING/FAIL} (rolling-window based)
 
 ## 类型分布 (Mode Diversity)
 - 装逼打脸 (Flex & Counter): {count} ({percent}%)
@@ -167,10 +167,10 @@ Chapters {N} - {M}
 **Verdict**: Average grade = {X}
 
 ## 建议 (Recommendations)
-- [If density violation] Chapter {M} 缺少爽点，建议添加{mode}型爽点
+- [If density warning] Chapter {M} 低密度，建议补{mode}型爽点或同等兑现
 - [If monotony] 过度依赖{mode}型，建议增加{other_modes}
 - [If quality issue] Chapter {M} 的爽点执行不足，需要补充{missing_element}
-- [If 30/40/30 violation] 爽点结构失衡，建议调整铺垫/兑现/微反转比例
+- [If structural weakness] 爽点结构偏弱，建议补铺垫/兑现/余波中的缺项
 - [If pressure/relief violation] 压扬比例不符合{genre}类型，建议调整为{ratio}
 
 ## 综合评分
@@ -179,7 +179,7 @@ Chapters {N} - {M}
 
 ## Anti-Patterns (Forbidden)
 
-❌ Accepting chapters with 0 cool-points without flagging
+❌ Ignoring consecutive low-density chapters without warning
 ❌ Ignoring sudden cool-points without setup
 ❌ Approving 5+ consecutive chapters of the same type
 ❌ 迪化误解中配角智商明显下线
@@ -187,14 +187,14 @@ Chapters {N} - {M}
 
 ## Success Criteria
 
-- All chapters have ≥ 1 cool-point
+- Rolling window density stays healthy (not continuously low)
 - Type distribution shows variety (no single type > 80%)
 - Average quality grade ≥ B
 - 迪化误解的脑补需合理
 - 身份掉马需有铺垫
 - Report includes actionable recommendations
 
-## v5.3 输出格式增强（v5.4 沿用）
+## v5.3 输出格式增强（v5.5 沿用）
 
 ```json
 {
