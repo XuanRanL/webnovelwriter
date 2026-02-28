@@ -201,6 +201,19 @@ def test_render_text_contains_writing_guidance_section(tmp_path):
                 "completion_rate": 0.66,
                 "required_completion_rate": 0.75,
             },
+            "methodology": {
+                "enabled": True,
+                "framework": "digital-serial-v1",
+                "pilot": "xianxia",
+                "genre_profile_key": "xianxia",
+                "chapter_stage": "confront",
+                "observability": {
+                    "next_reason_clarity": 78.0,
+                    "anchor_effectiveness": 74.0,
+                    "rhythm_naturalness": 72.0,
+                },
+                "signals": {"risk_flags": ["pattern_overuse_watch"]},
+            },
         },
     }
 
@@ -215,6 +228,9 @@ def test_render_text_contains_writing_guidance_section(tmp_path):
     assert "### 执行评分" in text
     assert "- 评分: 81.5" in text
     assert "- 复合题材: xuanhuan + realistic" in text
+    assert "## 长篇方法论策略" in text
+    assert "- 适用题材: xianxia" in text
+    assert "next_reason=78.0" in text
 
 
 def test_render_text_contains_rag_assist_section_when_hits_exist(tmp_path):

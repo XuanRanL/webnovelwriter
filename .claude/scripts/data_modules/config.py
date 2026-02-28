@@ -186,6 +186,9 @@ class DataModulesConfig:
     context_writing_guidance_max_items: int = 6
     context_writing_guidance_low_score_threshold: float = 75.0
     context_writing_guidance_hook_diversify: bool = True
+    context_methodology_enabled: bool = True
+    context_methodology_genre_whitelist: tuple[str, ...] = ("*",)
+    context_methodology_label: str = "digital-serial-v1"
     context_writing_checklist_enabled: bool = True
     context_writing_checklist_min_items: int = 3
     context_writing_checklist_max_items: int = 6

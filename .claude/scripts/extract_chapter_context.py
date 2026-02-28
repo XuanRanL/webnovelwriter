@@ -478,6 +478,7 @@ def _render_text(payload: Dict[str, Any]) -> str:
     guidance_items = writing_guidance.get("guidance_items") or []
     checklist = writing_guidance.get("checklist") or []
     checklist_score = writing_guidance.get("checklist_score") or {}
+    methodology = writing_guidance.get("methodology") or {}
     if guidance_items or checklist:
         lines.append("## 写作执行建议")
         lines.append("")
@@ -524,6 +525,27 @@ def _render_text(payload: Dict[str, Any]) -> str:
             lines.append(f"- 完成率: {checklist_score.get('completion_rate')}")
             lines.append(f"- 必做完成率: {checklist_score.get('required_completion_rate')}")
 
+        lines.append("")
+
+    if isinstance(methodology, dict) and methodology.get("enabled"):
+        lines.append("## 长篇方法论策略")
+        lines.append("")
+        lines.append(f"- 框架: {methodology.get('framework')}")
+        methodology_scope = methodology.get("genre_profile_key") or methodology.get("pilot") or "general"
+        lines.append(f"- 适用题材: {methodology_scope}")
+        lines.append(f"- 章节阶段: {methodology.get('chapter_stage')}")
+        observability = methodology.get("observability") or {}
+        if observability:
+            lines.append(
+                "- 指标: "
+                f"next_reason={observability.get('next_reason_clarity')}, "
+                f"anchor={observability.get('anchor_effectiveness')}, "
+                f"rhythm={observability.get('rhythm_naturalness')}"
+            )
+        signals = methodology.get("signals") or {}
+        risk_flags = list(signals.get("risk_flags") or [])
+        if risk_flags:
+            lines.append(f"- 风险标记: {', '.join(str(flag) for flag in risk_flags)}")
         lines.append("")
 
     reader_signal = payload.get("reader_signal") or {}

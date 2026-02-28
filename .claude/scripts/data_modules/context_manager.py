@@ -23,7 +23,7 @@ from .context_weights import (
     TEMPLATE_WEIGHTS as CONTEXT_TEMPLATE_WEIGHTS,
     TEMPLATE_WEIGHTS_DYNAMIC_DEFAULT as CONTEXT_TEMPLATE_WEIGHTS_DYNAMIC_DEFAULT,
 )
-from .genre_aliases import normalize_genre_token
+from .genre_aliases import normalize_genre_token, to_profile_key
 from .genre_profile_builder import (
     build_composite_genre_hints,
     extract_genre_section,
@@ -31,6 +31,8 @@ from .genre_profile_builder import (
     parse_genre_tokens,
 )
 from .writing_guidance_builder import (
+    build_methodology_guidance_items,
+    build_methodology_strategy_card,
     build_guidance_items,
     build_writing_checklist,
     is_checklist_item_completed,
@@ -358,12 +360,23 @@ class ContextManager:
         )
 
         guidance = list(guidance_bundle.get("guidance") or [])
+        methodology_strategy: Dict[str, Any] = {}
+
+        if self._is_methodology_enabled_for_genre(genre_profile):
+            methodology_strategy = build_methodology_strategy_card(
+                chapter=chapter,
+                reader_signal=reader_signal,
+                genre_profile=genre_profile,
+                label=str(getattr(self.config, "context_methodology_label", "digital-serial-v1")),
+            )
+            guidance.extend(build_methodology_guidance_items(methodology_strategy))
 
         checklist = self._build_writing_checklist(
             chapter=chapter,
             guidance_items=guidance,
             reader_signal=reader_signal,
             genre_profile=genre_profile,
+            strategy_card=methodology_strategy,
         )
 
         checklist_score = self._compute_writing_checklist_score(
@@ -392,11 +405,13 @@ class ContextManager:
             "guidance_items": guidance[:limit],
             "checklist": checklist,
             "checklist_score": checklist_score,
+            "methodology": methodology_strategy,
             "signals_used": {
                 "has_low_score_ranges": bool(low_ranges),
                 "hook_types": hook_types,
                 "top_patterns": top_patterns,
                 "genre": genre,
+                "methodology_enabled": bool(methodology_strategy.get("enabled")),
             },
         }
 
@@ -543,6 +558,7 @@ class ContextManager:
         guidance_items: List[str],
         reader_signal: Dict[str, Any],
         genre_profile: Dict[str, Any],
+        strategy_card: Dict[str, Any] | None = None,
     ) -> List[Dict[str, Any]]:
         _ = chapter
         if not getattr(self.config, "context_writing_checklist_enabled", True):
@@ -558,10 +574,34 @@ class ContextManager:
             guidance_items=guidance_items,
             reader_signal=reader_signal,
             genre_profile=genre_profile,
+            strategy_card=strategy_card,
             min_items=min_items,
             max_items=max_items,
             default_weight=default_weight,
         )
+
+    def _is_methodology_enabled_for_genre(self, genre_profile: Dict[str, Any]) -> bool:
+        if not bool(getattr(self.config, "context_methodology_enabled", False)):
+            return False
+
+        whitelist_raw = getattr(self.config, "context_methodology_genre_whitelist", ("*",))
+        if isinstance(whitelist_raw, str):
+            whitelist_iter = [whitelist_raw]
+        else:
+            whitelist_iter = list(whitelist_raw or [])
+
+        whitelist = {str(token).strip().lower() for token in whitelist_iter if str(token).strip()}
+        if not whitelist:
+            return True
+        if "*" in whitelist or "all" in whitelist:
+            return True
+
+        genre = str((genre_profile or {}).get("genre") or "").strip()
+        if not genre:
+            return False
+
+        profile_key = to_profile_key(genre)
+        return profile_key in whitelist
 
     def _compact_json_text(self, content: Any, budget: Optional[int]) -> str:
         raw = json.dumps(content, ensure_ascii=False)

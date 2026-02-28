@@ -461,6 +461,69 @@ def test_context_manager_genre_aliases_normalized_for_profile_lookup(temp_projec
     assert "直播文" in (profile.get("genres") or [])
 
 
+def test_context_manager_enables_methodology_for_xianxia(temp_project):
+    state = {
+        "project": {"genre": "修仙"},
+        "protagonist_state": {"name": "韩立"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    manager = ContextManager(temp_project)
+    manager.config.context_writing_checklist_max_items = 8
+    payload = manager.build_context(21, template="plot", use_snapshot=False, save_snapshot=False)
+
+    guidance = payload["sections"]["writing_guidance"]["content"]
+    strategy = guidance.get("methodology") or {}
+    assert strategy.get("enabled") is True
+    assert strategy.get("pilot") == "xianxia"
+    assert strategy.get("genre_profile_key") == "xianxia"
+    assert guidance.get("signals_used", {}).get("methodology_enabled") is True
+    assert isinstance(strategy.get("observability"), dict)
+
+
+def test_context_manager_enables_methodology_for_non_xianxia_by_default(temp_project):
+    state = {
+        "project": {"genre": "xuanhuan"},
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(21, template="plot", use_snapshot=False, save_snapshot=False)
+
+    guidance = payload["sections"]["writing_guidance"]["content"]
+    strategy = guidance.get("methodology") or {}
+    assert strategy.get("enabled") is True
+    assert strategy.get("genre_profile_key") == "xuanhuan"
+    assert guidance.get("signals_used", {}).get("methodology_enabled") is True
+
+
+def test_context_manager_allows_methodology_whitelist_restriction(temp_project):
+    state = {
+        "project": {"genre": "直播文"},
+        "protagonist_state": {"name": "林默"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    manager = ContextManager(temp_project)
+    manager.config.context_methodology_genre_whitelist = ("xianxia",)
+    payload = manager.build_context(21, template="plot", use_snapshot=False, save_snapshot=False)
+
+    guidance = payload["sections"]["writing_guidance"]["content"]
+    strategy = guidance.get("methodology") or {}
+    assert strategy == {}
+    assert guidance.get("signals_used", {}).get("methodology_enabled") is False
+
+
 def test_context_manager_compact_text_truncation(temp_project):
     manager = ContextManager(temp_project)
     manager.config.context_compact_text_enabled = True

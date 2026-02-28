@@ -26,6 +26,183 @@ GENRE_GUIDANCE_TEXT: dict[str, str] = {
 }
 
 
+GENRE_METHOD_ANCHORS: dict[str, dict[str, str]] = {
+    "xianxia": {
+        "pressure_source": "资源争夺/境界压制",
+        "release_target": "主角主动破局并拿到可见收益",
+    },
+    "urban-power": {
+        "pressure_source": "阶层卡位/权力压制",
+        "release_target": "主角通过资源博弈拿到地位与回报",
+    },
+    "romance": {
+        "pressure_source": "关系误解/情感拉扯",
+        "release_target": "关系位移落地并形成下一步承诺",
+    },
+    "mystery": {
+        "pressure_source": "线索缺失/规则冲突",
+        "release_target": "给出可验证的新线索并保留未知区",
+    },
+    "rules-mystery": {
+        "pressure_source": "规则反噬/代价递增",
+        "release_target": "用代价换突破并留下更高阶规则问题",
+    },
+    "zhihu-short": {
+        "pressure_source": "信息落差/立场对撞",
+        "release_target": "反转兑现并形成高强度尾钩",
+    },
+    "substitute": {
+        "pressure_source": "身份误读/情绪对峙",
+        "release_target": "误解链推进到明确决断",
+    },
+    "esports": {
+        "pressure_source": "战术压制/节奏失衡",
+        "release_target": "关键决策生效并转化为局势优势",
+    },
+    "livestream": {
+        "pressure_source": "舆论波动/数据下滑",
+        "release_target": "当场反制形成可见数据回弹",
+    },
+    "cosmic-horror": {
+        "pressure_source": "认知失真/规则侵蚀",
+        "release_target": "以明确代价换阶段性生存窗口",
+    },
+    "history-travel": {
+        "pressure_source": "历史惯性/礼教阻力",
+        "release_target": "知识优势兑现并引发新的连锁反应",
+    },
+    "game-lit": {
+        "pressure_source": "系统规则限制/资源稀缺",
+        "release_target": "数值突破并暴露更高层级威胁",
+    },
+}
+
+
+def build_methodology_strategy_card(
+    *,
+    chapter: int,
+    reader_signal: Dict[str, Any],
+    genre_profile: Dict[str, Any],
+    label: str = "digital-serial-v1",
+) -> Dict[str, Any]:
+    genre = str(genre_profile.get("genre") or "").strip()
+    profile_key = to_profile_key(genre) or "general"
+
+    hook_usage = reader_signal.get("hook_type_usage") or {}
+    pattern_usage = reader_signal.get("pattern_usage") or {}
+    review_trend = reader_signal.get("review_trend") or {}
+    low_ranges = reader_signal.get("low_score_ranges") or []
+
+    dominant_hook = ""
+    if isinstance(hook_usage, dict) and hook_usage:
+        dominant_hook = max(hook_usage.items(), key=lambda kv: kv[1])[0]
+
+    dominant_pattern = ""
+    if isinstance(pattern_usage, dict) and pattern_usage:
+        dominant_pattern = max(pattern_usage.items(), key=lambda kv: kv[1])[0]
+
+    overall_avg = float(review_trend.get("overall_avg") or 0.0)
+    has_low_range = bool(low_ranges)
+    hook_variety = len(hook_usage) if isinstance(hook_usage, dict) else 0
+    pattern_variety = len(pattern_usage) if isinstance(pattern_usage, dict) else 0
+
+    next_reason_clarity = 70.0 + (4.0 if has_low_range else 8.0)
+    anchor_effectiveness = 68.0 + (6.0 if dominant_hook else 0.0) + (4.0 if overall_avg >= 75 else -4.0)
+    rhythm_naturalness = 65.0 + min(10.0, float(hook_variety + pattern_variety) * 2.0)
+
+    risk_flags: List[str] = []
+    if has_low_range:
+        risk_flags.append("low_score_recency")
+    if dominant_pattern:
+        risk_flags.append("pattern_overuse_watch")
+    if overall_avg > 0 and overall_avg < 75:
+        risk_flags.append("readability_guard")
+
+    stage_mod = chapter % 5
+    if stage_mod in {1, 2}:
+        stage = "build_up"
+    elif stage_mod in {3, 4}:
+        stage = "confront"
+    else:
+        stage = "release"
+
+    anchor_preset = GENRE_METHOD_ANCHORS.get(
+        profile_key,
+        {
+            "pressure_source": "生存目标/资源竞争",
+            "release_target": "主角完成阶段目标并留下新的行动理由",
+        },
+    )
+
+    return {
+        "enabled": True,
+        "framework": label,
+        "pilot": profile_key,
+        "genre_profile_key": profile_key,
+        "chapter_stage": stage,
+        "emotion_anchor": {
+            "pressure_source": anchor_preset["pressure_source"],
+            "release_target": anchor_preset["release_target"],
+            "position_hint": "前段设压，中后段释放，避免固定字位打点",
+        },
+        "long_arc_controls": {
+            "map_transition": "阶段切换承接既有资产与关系账本，避免能力与收益归零",
+            "power_guard": "关键胜利必须给机制理由（信息/资源/代价/策略）",
+            "antagonist_model": "反派需具备目标-手段-代价三要素，避免工具人推进",
+        },
+        "serialization_ops": {
+            "next_reason": "章末或后段给出可复述的下一章动机句",
+            "interaction_note": "保留一个可讨论分歧点，便于连载互动反馈",
+        },
+        "observability": {
+            "next_reason_clarity": round(max(0.0, min(100.0, next_reason_clarity)), 2),
+            "anchor_effectiveness": round(max(0.0, min(100.0, anchor_effectiveness)), 2),
+            "rhythm_naturalness": round(max(0.0, min(100.0, rhythm_naturalness)), 2),
+        },
+        "signals": {
+            "dominant_hook": dominant_hook,
+            "dominant_pattern": dominant_pattern,
+            "risk_flags": risk_flags,
+        },
+    }
+
+
+def build_methodology_guidance_items(strategy_card: Dict[str, Any]) -> List[str]:
+    if not isinstance(strategy_card, dict) or not strategy_card.get("enabled"):
+        return []
+
+    observability = strategy_card.get("observability") or {}
+    signals = strategy_card.get("signals") or {}
+    risk_flags = list(signals.get("risk_flags") or [])
+    stage = str(strategy_card.get("chapter_stage") or "build_up")
+    genre_key = str(strategy_card.get("genre_profile_key") or strategy_card.get("pilot") or "general")
+
+    stage_text = {
+        "build_up": "本章以铺压为主，优先做威胁与代价的可感知铺垫。",
+        "confront": "本章以正面对抗为主，确保破局路径清晰可复盘。",
+        "release": "本章以释放与余波为主，给出实质收益并引出下一问。",
+    }.get(stage, "本章保持压力-破局-余波的完整链路。")
+
+    items = [
+        f"方法论策略（通用/{genre_key}）：{stage_text}",
+        "长线控制：换图承接旧资产，避免主角进入新地图后能力与资源归零。",
+        "机制控制：关键胜利必须写出机制理由与代价，不用纯光环碾压。",
+        (
+            "连载互动：保留一个可讨论分歧点，强化下章追更动机。"
+            f"（next_reason={observability.get('next_reason_clarity')}）"
+        ),
+    ]
+
+    if "pattern_overuse_watch" in risk_flags:
+        dominant_pattern = str(signals.get("dominant_pattern") or "").strip()
+        if dominant_pattern:
+            items.append(f"风险修正：近期“{dominant_pattern}”偏高频，本章补一个异质副轴避免疲劳。")
+    if "readability_guard" in risk_flags:
+        items.append("风险修正：近期审查均分偏低，本章优先保证段落动作-结果闭环与可读性。")
+
+    return items
+
+
 def build_guidance_items(
     *,
     chapter: int,
@@ -103,6 +280,7 @@ def build_writing_checklist(
     guidance_items: List[str],
     reader_signal: Dict[str, Any],
     genre_profile: Dict[str, Any],
+    strategy_card: Dict[str, Any] | None = None,
     min_items: int,
     max_items: int,
     default_weight: float,
@@ -198,6 +376,32 @@ def build_writing_checklist(
             verify_hint="主冲突与题材核心承诺保持一致。",
         )
 
+    if isinstance(strategy_card, dict) and strategy_card.get("enabled"):
+        _add_item(
+            "methodology_next_reason",
+            "方法论：下章动机需可复述（章末或后段均可）",
+            weight=default_weight,
+            required=False,
+            source="methodology.next_reason",
+            verify_hint="提炼一句“为什么要点下一章”的动机句。",
+        )
+        _add_item(
+            "methodology_power_guard",
+            "方法论：越级与破局给出机制理由与代价",
+            weight=default_weight,
+            required=False,
+            source="methodology.power_guard",
+            verify_hint="至少写清1个机制理由与1个代价。"
+        )
+        _add_item(
+            "methodology_antagonist_pressure",
+            "方法论：反派行动具备目标-手段-代价",
+            weight=default_weight,
+            required=False,
+            source="methodology.antagonist",
+            verify_hint="反派不是工具人推进，需有可解释行动逻辑。",
+        )
+
     for idx, text in enumerate(guidance_items, start=1):
         if len(items) >= max_items:
             break
@@ -267,5 +471,8 @@ def is_checklist_item_completed(item: Dict[str, Any], reader_signal: Dict[str, A
     if source.startswith("fallback"):
         return True
 
-    return False
+    if source.startswith("methodology."):
+        # 方法论条目当前作为软提示，仅做观察与引导，不参与扣分。
+        return True
 
+    return False
