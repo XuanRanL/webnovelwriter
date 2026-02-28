@@ -1124,6 +1124,10 @@ class RAGAdapter:
             else:
                 strategy = "hybrid"
 
+        if strategy not in {"vector", "bm25", "backtrack", "graph_hybrid", "hybrid"}:
+            # 未知策略统一降级 hybrid，避免调用方传错参数导致中断。
+            strategy = "hybrid"
+
         if strategy == "vector":
             return await self.vector_search(query, top_k=top_k, chunk_type=chunk_type, chapter=chapter)
         if strategy == "bm25":

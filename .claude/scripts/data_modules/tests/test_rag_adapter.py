@@ -52,6 +52,11 @@ class StubClientAuthFailure(StubClient):
         return None
 
 
+class StubClientRerankFailure(StubClient):
+    async def rerank(self, query, documents, top_n=None):
+        return []
+
+
 @pytest.fixture
 def temp_project(tmp_path, monkeypatch):
     cfg = DataModulesConfig.from_project_root(tmp_path)
@@ -239,6 +244,104 @@ async def test_search_auto_uses_graph_strategy_when_enabled(tmp_path, monkeypatc
     results = await adapter.search("萧炎关系", top_k=1, strategy="auto")
     assert results
     assert results[0].source in {"graph_hybrid", "hybrid"}
+
+
+@pytest.mark.asyncio
+async def test_graph_hybrid_search_fallback_when_graph_disabled(tmp_path, monkeypatch):
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    cfg.ensure_dirs()
+    cfg.graph_rag_enabled = False
+    monkeypatch.setattr(rag_module, "get_client", lambda config: StubClient())
+    adapter = RAGAdapter(cfg)
+    await adapter.store_chunks(
+        [{"chapter": 1, "scene_index": 1, "content": "萧炎在天云宗修炼斗气"}]
+    )
+
+    modes = []
+
+    def _record_log(query, mode, results, latency_ms, chapter=None):
+        modes.append(mode)
+
+    monkeypatch.setattr(adapter, "_log_query", _record_log)
+    results = await adapter.graph_hybrid_search("萧炎关系", top_k=1)
+
+    assert results
+    assert modes
+    assert modes[-1] == "graph_hybrid_fallback"
+    assert all(r.source == "hybrid" for r in results)
+
+
+@pytest.mark.asyncio
+async def test_graph_hybrid_search_rerank_failure_uses_candidates(tmp_path, monkeypatch):
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    cfg.ensure_dirs()
+    cfg.graph_rag_enabled = True
+    monkeypatch.setattr(rag_module, "get_client", lambda config: StubClientRerankFailure())
+    adapter = RAGAdapter(cfg)
+
+    adapter.index_manager.upsert_entity(
+        EntityMeta(
+            id="xiaoyan",
+            type="角色",
+            canonical_name="萧炎",
+            current={},
+            first_appearance=1,
+            last_appearance=2,
+        )
+    )
+    adapter.index_manager.upsert_entity(
+        EntityMeta(
+            id="yaolao",
+            type="角色",
+            canonical_name="药老",
+            current={},
+            first_appearance=1,
+            last_appearance=2,
+        )
+    )
+    adapter.index_manager.register_alias("萧炎", "xiaoyan", "角色")
+    adapter.index_manager.register_alias("药老", "yaolao", "角色")
+    adapter.index_manager.upsert_relationship(
+        RelationshipMeta(
+            from_entity="xiaoyan",
+            to_entity="yaolao",
+            type="师徒",
+            description="收徒",
+            chapter=1,
+        )
+    )
+
+    await adapter.store_chunks(
+        [
+            {"chapter": 1, "scene_index": 1, "content": "萧炎拜药老为师，正式成为师徒"},
+            {"chapter": 2, "scene_index": 1, "content": "萧炎在天云宗修炼斗气"},
+        ]
+    )
+
+    results = await adapter.graph_hybrid_search(
+        "萧炎和药老关系",
+        top_k=2,
+        center_entities=["萧炎", "药老"],
+    )
+
+    assert results
+    assert len(results) <= 2
+    assert all(r.source == "graph_hybrid" for r in results)
+
+
+@pytest.mark.asyncio
+async def test_search_unknown_strategy_falls_back_to_hybrid(tmp_path, monkeypatch):
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    cfg.ensure_dirs()
+    monkeypatch.setattr(rag_module, "get_client", lambda config: StubClient())
+    adapter = RAGAdapter(cfg)
+    await adapter.store_chunks(
+        [{"chapter": 1, "scene_index": 1, "content": "萧炎在天云宗修炼斗气"}]
+    )
+
+    results = await adapter.search("萧炎", top_k=1, strategy="not_exists")
+    assert results
+    assert all(r.source == "hybrid" for r in results)
 
 
 @pytest.mark.asyncio
