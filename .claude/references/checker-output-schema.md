@@ -2,6 +2,11 @@
 
 所有审查 Agent 应遵循此统一输出格式，便于自动化汇总和趋势分析。
 
+说明：
+- 单章写作场景默认使用 `chapter` 字段。
+- 若需要兼容区间统计，可在聚合层补充 `start_chapter/end_chapter`，不要求单个 checker 必填。
+- 允许扩展字段，但不得删除或替代本文件定义的必填字段。
+
 ## 标准 JSON Schema
 
 ```json
@@ -37,6 +42,10 @@
 | `issues` | array | ✅ | 问题列表 |
 | `metrics` | object | ✅ | Agent 特定指标 |
 | `summary` | string | ✅ | 简短总结 |
+
+扩展字段约定（可选）：
+- 可附加 checker 私有字段（如 `hard_violations`、`soft_suggestions`、`override_eligible`）。
+- 私有字段用于增强解释，不用于替代 `issues`。
 
 ## 问题严重度定义
 

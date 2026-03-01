@@ -17,7 +17,7 @@ tools: Read, Grep, Bash
 
 ## Scope
 
-**Input**: Chapter range (e.g., "1-2", "45-46")
+**Input**: Single chapter or chapter range (e.g., `45` / `"45-46"`)
 
 **Output**: Structured report on cool-point density, type coverage, and execution quality.
 
@@ -199,32 +199,18 @@ Chapters {N} - {M}
 ```json
 {
   "agent": "high-point-checker",
-  "chapters": [45, 46],
-  "overall_pass": true,
-  "density": {
-    "total_coolpoints": 4,
-    "per_chapter_avg": 2.0,
-    "meets_baseline": true
-  },
-  "diversity": {
-    "distribution": {
-      "装逼打脸": 1,
-      "迪化误解": 2,
-      "身份掉马": 1
-    },
-    "dominant_type": null,
+  "chapter": 45,
+  "overall_score": 86,
+  "pass": true,
+  "issues": [],
+  "metrics": {
+    "cool_point_count": 2,
+    "cool_point_types": ["迪化误解", "身份掉马"],
+    "density_score": 8,
+    "type_diversity": 0.9,
+    "milestone_present": false,
     "monotony_risk": false
   },
-  "coolpoints": [
-    {
-      "chapter": 45,
-      "description": "主角随口评价被当做高人指点",
-      "mode": "迪化误解",
-      "grade": "A",
-      "structure_30_40_30": true,
-      "pressure_relief_ratio": "压3扬7"
-    }
-  ],
-  "recommendations": []
+  "summary": "爽点密度达标，类型分布健康，执行质量稳定。"
 }
 ```

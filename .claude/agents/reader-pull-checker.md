@@ -29,6 +29,7 @@ tools: Read, Grep, Bash
   "chapter": 100,
   "overall_score": 85,
   "pass": true,
+  "issues": [],
   "hard_violations": [],
   "soft_suggestions": [
     {
@@ -41,7 +42,6 @@ tools: Read, Grep, Bash
       "allowed_rationales": ["TRANSITIONAL_SETUP", "CHARACTER_CREDIBILITY"]
     }
   ],
-  "issues": [],
   "metrics": {
     "hook_present": true,
     "hook_type": "渴望钩",
@@ -55,6 +55,7 @@ tools: Read, Grep, Bash
     "next_chapter_reason": "读者想知道云芝找萧炎什么事",
     "debt_balance": 0.0
   },
+  "summary": "硬约束通过，钩子强度偏弱，建议增强章末期待。",
   "override_eligible": true
 }
 ```

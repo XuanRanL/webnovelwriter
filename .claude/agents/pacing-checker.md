@@ -12,7 +12,7 @@ tools: Read, Grep, Bash
 
 ## Scope
 
-**Input**: Chapter range (e.g., "1-2", "45-46")
+**Input**: Single chapter or chapter range (e.g., `45` / `"45-46"`)
 
 **Output**: Strand distribution analysis, balance warnings, and pacing recommendations.
 

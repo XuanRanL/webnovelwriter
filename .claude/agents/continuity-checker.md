@@ -12,7 +12,7 @@ tools: Read, Grep
 
 ## Scope
 
-**Input**: Chapter range (e.g., "1-2", "45-46")
+**Input**: Single chapter or chapter range (e.g., `45` / `"45-46"`)
 
 **Output**: Continuity analysis covering scene transitions, plot threads, foreshadowing, and logical flow.
 
