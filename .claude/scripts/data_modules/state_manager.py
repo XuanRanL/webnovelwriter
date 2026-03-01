@@ -16,6 +16,7 @@ v5.1 变更（v5.4 沿用）:
 import json
 import logging
 import sys
+import time
 from copy import deepcopy
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from datetime import datetime
 import filelock
 
 from .config import get_config
-from .observability import safe_log_tool_call
+from .observability import safe_append_perf_timing, safe_log_tool_call
 
 
 logger = logging.getLogger(__name__)
@@ -1234,6 +1235,7 @@ def main():
     process_parser.add_argument("--data", required=True, help="JSON 格式的处理结果")
 
     args = parser.parse_args()
+    command_started_at = time.perf_counter()
 
     # 初始化
     config = None
@@ -1245,11 +1247,24 @@ def main():
     logger = IndexManager(config)
     tool_name = f"state_manager:{args.command or 'unknown'}"
 
-    def emit_success(data=None, message: str = "ok"):
+    def _append_timing(success: bool, *, error_code: str | None = None, error_message: str | None = None, chapter: int | None = None):
+        elapsed_ms = int((time.perf_counter() - command_started_at) * 1000)
+        safe_append_perf_timing(
+            manager.config.project_root,
+            tool_name=tool_name,
+            success=success,
+            elapsed_ms=elapsed_ms,
+            chapter=chapter,
+            error_code=error_code,
+            error_message=error_message,
+        )
+
+    def emit_success(data=None, message: str = "ok", chapter: int | None = None):
         print_success(data, message=message)
         safe_log_tool_call(logger, tool_name=tool_name, success=True)
+        _append_timing(True, chapter=chapter)
 
-    def emit_error(code: str, message: str, suggestion: str | None = None):
+    def emit_error(code: str, message: str, suggestion: str | None = None, chapter: int | None = None):
         print_error(code, message, suggestion=suggestion)
         safe_log_tool_call(
             logger,
@@ -1258,6 +1273,7 @@ def main():
             error_code=code,
             error_message=message,
         )
+        _append_timing(False, error_code=code, error_message=message, chapter=chapter)
 
     if args.command == "get-progress":
         emit_success(manager._state.get("progress", {}), message="progress")
@@ -1303,7 +1319,7 @@ def main():
 
         warnings = manager.process_chapter_result(args.chapter, validated.model_dump(by_alias=True))
         manager.save_state()
-        emit_success({"chapter": args.chapter, "warnings": warnings}, message="chapter_processed")
+        emit_success({"chapter": args.chapter, "warnings": warnings}, message="chapter_processed", chapter=args.chapter)
 
     else:
         emit_error("UNKNOWN_COMMAND", "未指定有效命令", suggestion="请查看 --help")

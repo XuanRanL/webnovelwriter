@@ -11,6 +11,7 @@ Style Sampler - 风格样本管理模块
 
 import json
 import sqlite3
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
@@ -19,7 +20,7 @@ from enum import Enum
 from contextlib import contextmanager
 
 from .config import get_config
-from .observability import safe_log_tool_call
+from .observability import safe_append_perf_timing, safe_log_tool_call
 
 
 class SceneType(Enum):
@@ -337,6 +338,7 @@ def main():
     select_parser.add_argument("--max", type=int, default=3)
 
     args = parser.parse_args()
+    command_started_at = time.perf_counter()
 
     # 初始化
     config = None
@@ -348,11 +350,24 @@ def main():
     logger = IndexManager(config)
     tool_name = f"style_sampler:{args.command or 'unknown'}"
 
-    def emit_success(data=None, message: str = "ok"):
+    def _append_timing(success: bool, *, error_code: str | None = None, error_message: str | None = None, chapter: int | None = None):
+        elapsed_ms = int((time.perf_counter() - command_started_at) * 1000)
+        safe_append_perf_timing(
+            sampler.config.project_root,
+            tool_name=tool_name,
+            success=success,
+            elapsed_ms=elapsed_ms,
+            chapter=chapter,
+            error_code=error_code,
+            error_message=error_message,
+        )
+
+    def emit_success(data=None, message: str = "ok", chapter: int | None = None):
         print_success(data, message=message)
         safe_log_tool_call(logger, tool_name=tool_name, success=True)
+        _append_timing(True, chapter=chapter)
 
-    def emit_error(code: str, message: str, suggestion: str | None = None):
+    def emit_error(code: str, message: str, suggestion: str | None = None, chapter: int | None = None):
         print_error(code, message, suggestion=suggestion)
         safe_log_tool_call(
             logger,
@@ -361,6 +376,7 @@ def main():
             error_code=code,
             error_message=message,
         )
+        _append_timing(False, error_code=code, error_message=message, chapter=chapter)
 
     if args.command == "stats":
         stats = sampler.get_stats()
@@ -389,7 +405,7 @@ def main():
                 added.append(c.id)
             else:
                 skipped.append(c.id)
-        emit_success({"added": added, "skipped": skipped}, message="extracted")
+        emit_success({"added": added, "skipped": skipped}, message="extracted", chapter=args.chapter)
 
     elif args.command == "select":
         samples = sampler.select_samples_for_chapter(args.outline, max_samples=args.max)

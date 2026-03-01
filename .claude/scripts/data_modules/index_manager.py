@@ -34,6 +34,7 @@ v5.1 变更:
 
 import sqlite3
 import json
+import time
 from pathlib import Path
 
 from runtime_compat import enable_windows_utf8_stdio
@@ -48,7 +49,7 @@ from .index_entity_mixin import IndexEntityMixin
 from .index_debt_mixin import IndexDebtMixin
 from .index_reading_mixin import IndexReadingMixin
 from .index_observability_mixin import IndexObservabilityMixin
-from .observability import safe_log_tool_call
+from .observability import safe_append_perf_timing, safe_log_tool_call
 
 
 @dataclass
@@ -864,6 +865,7 @@ def main():
     )
 
     args = parser.parse_args()
+    command_started_at = time.perf_counter()
 
     # 初始化
     config = None
@@ -875,9 +877,28 @@ def main():
     manager = IndexManager(config)
     tool_name = f"index_manager:{args.command or 'unknown'}"
 
+    def _append_timing(
+        success: bool,
+        *,
+        error_code: Optional[str] = None,
+        error_message: Optional[str] = None,
+        chapter: Optional[int] = None,
+    ):
+        elapsed_ms = int((time.perf_counter() - command_started_at) * 1000)
+        safe_append_perf_timing(
+            manager.config.project_root,
+            tool_name=tool_name,
+            success=success,
+            elapsed_ms=elapsed_ms,
+            chapter=chapter,
+            error_code=error_code,
+            error_message=error_message,
+        )
+
     def emit_success(data=None, message: str = "ok", chapter: Optional[int] = None):
         print_success(data, message=message)
         safe_log_tool_call(manager, tool_name=tool_name, success=True, chapter=chapter)
+        _append_timing(True, chapter=chapter)
 
     def emit_error(code: str, message: str, suggestion: Optional[str] = None, chapter: Optional[int] = None):
         print_error(code, message, suggestion=suggestion)
@@ -889,6 +910,7 @@ def main():
             error_message=message,
             chapter=chapter,
         )
+        _append_timing(False, error_code=code, error_message=message, chapter=chapter)
 
     if args.command == "stats":
         emit_success(manager.get_stats(), message="stats")

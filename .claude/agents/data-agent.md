@@ -189,7 +189,24 @@ python -m data_modules.index_manager accrue-interest --current-chapter {chapter}
 - 将逾期债务标记为 `status='overdue'`
 - 记录利息事件到 `debt_events` 表
 
-### Step J: 生成处理报告
+### Step J: 生成处理报告（含性能日志）
+
+**必须记录分步耗时**（用于定位慢点）：
+- A 加载上下文
+- B AI 实体提取
+- C 实体消歧
+- D 写入 state/index
+- E 写入章节摘要
+- F AI 场景切片
+- G RAG 向量索引
+- H 风格样本评估（若跳过写 0）
+- I 债务利息（若跳过写 0）
+- TOTAL 总耗时
+
+**性能日志落盘（新增，必做）**：
+- 脚本自动写入：`.webnovel/observability/data_agent_timing.jsonl`
+- Data Agent 报告中仍需返回：`timing_ms` + `bottlenecks_top3`
+- 规则：`bottlenecks_top3` 始终按耗时降序返回；当 `TOTAL > 30000ms` 时，需在报告文字部分附加原因说明。
 
 ```json
 {
@@ -205,7 +222,24 @@ python -m data_modules.index_manager accrue-interest --current-chapter {chapter}
   "warnings": [
     "中置信度匹配: 那位前辈 → yaolao (confidence: 0.6)"
   ],
-  "errors": []
+  "errors": [],
+  "timing_ms": {
+    "A_load_context": 120,
+    "B_entity_extract": 18500,
+    "C_disambiguation": 210,
+    "D_state_index_write": 430,
+    "E_summary_write": 90,
+    "F_scene_chunking": 6200,
+    "G_rag_index": 2800,
+    "H_style_sample": 150,
+    "I_debt_interest": 0,
+    "TOTAL": 28500
+  },
+  "bottlenecks_top3": [
+    {"step": "B_entity_extract", "elapsed_ms": 18500, "ratio": 64.9},
+    {"step": "F_scene_chunking", "elapsed_ms": 6200, "ratio": 21.8},
+    {"step": "G_rag_index", "elapsed_ms": 2800, "ratio": 9.8}
+  ]
 }
 ```
 

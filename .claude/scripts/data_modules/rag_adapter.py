@@ -32,7 +32,7 @@ from .config import get_config
 from .api_client import get_client
 from .index_manager import IndexManager
 from .query_router import QueryRouter
-from .observability import safe_log_tool_call
+from .observability import safe_append_perf_timing, safe_log_tool_call
 
 
 logger = logging.getLogger(__name__)
@@ -1423,6 +1423,7 @@ def main():
     )
 
     args = parser.parse_args()
+    command_started_at = time.perf_counter()
 
     # 初始化
     config = None
@@ -1434,11 +1435,24 @@ def main():
     adapter = RAGAdapter(config)
     tool_name = f"rag_adapter:{args.command or 'unknown'}"
 
-    def emit_success(data=None, message: str = "ok"):
+    def _append_timing(success: bool, *, error_code: str | None = None, error_message: str | None = None, chapter: int | None = None):
+        elapsed_ms = int((time.perf_counter() - command_started_at) * 1000)
+        safe_append_perf_timing(
+            adapter.config.project_root,
+            tool_name=tool_name,
+            success=success,
+            elapsed_ms=elapsed_ms,
+            chapter=chapter,
+            error_code=error_code,
+            error_message=error_message,
+        )
+
+    def emit_success(data=None, message: str = "ok", chapter: int | None = None):
         print_success(data, message=message)
         safe_log_tool_call(adapter.index_manager, tool_name=tool_name, success=True)
+        _append_timing(True, chapter=chapter)
 
-    def emit_error(code: str, message: str, suggestion: str | None = None):
+    def emit_error(code: str, message: str, suggestion: str | None = None, chapter: int | None = None):
         print_error(code, message, suggestion=suggestion)
         safe_log_tool_call(
             adapter.index_manager,
@@ -1447,6 +1461,7 @@ def main():
             error_code=code,
             error_message=message,
         )
+        _append_timing(False, error_code=code, error_message=message, chapter=chapter)
 
     if args.command == "stats":
         stats = adapter.get_stats()
@@ -1496,9 +1511,9 @@ def main():
         skipped = len(chunks) - stored
         result = {"stored": stored, "skipped": skipped, "total": len(chunks)}
         if skipped > 0:
-            emit_success(result, message="indexed_with_warnings")
+            emit_success(result, message="indexed_with_warnings", chapter=args.chapter)
         else:
-            emit_success(result, message="indexed")
+            emit_success(result, message="indexed", chapter=args.chapter)
 
     elif args.command == "search":
         center_entities: List[str] | None = None
@@ -1546,6 +1561,7 @@ def main():
             warnings = [{"code": "DEGRADED_MODE", "reason": degraded_reason}]
             print_success(payload, message="search_results", warnings=warnings)
             safe_log_tool_call(adapter.index_manager, tool_name=tool_name, success=True)
+            _append_timing(True)
         else:
             emit_success(payload, message="search_results")
 
