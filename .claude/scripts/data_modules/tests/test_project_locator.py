@@ -64,3 +64,43 @@ def test_resolve_project_root_finds_default_subdir_within_git_root(tmp_path):
     resolved = resolve_project_root(cwd=nested)
     assert resolved == default_project.resolve()
 
+
+def test_resolve_project_root_uses_workspace_pointer(tmp_path):
+    _ensure_scripts_on_path()
+
+    from project_locator import resolve_project_root, write_current_project_pointer
+
+    workspace = tmp_path / "workspace"
+    (workspace / ".claude").mkdir(parents=True, exist_ok=True)
+
+    project_root = workspace / "凡人资本论"
+    (project_root / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (project_root / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
+
+    pointer_file = write_current_project_pointer(project_root, workspace_root=workspace)
+    assert pointer_file is not None
+    assert pointer_file.is_file()
+
+    resolved = resolve_project_root(cwd=workspace)
+    assert resolved == project_root.resolve()
+
+
+def test_resolve_project_root_ignores_stale_pointer_and_fallbacks(tmp_path):
+    _ensure_scripts_on_path()
+
+    from project_locator import resolve_project_root
+
+    workspace = tmp_path / "workspace"
+    (workspace / ".claude").mkdir(parents=True, exist_ok=True)
+    # stale pointer
+    (workspace / ".claude" / ".webnovel-current-project").write_text(
+        str(workspace / "missing-project"), encoding="utf-8"
+    )
+
+    default_project = workspace / "webnovel-project"
+    (default_project / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (default_project / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
+
+    resolved = resolve_project_root(cwd=workspace)
+    assert resolved == default_project.resolve()
+

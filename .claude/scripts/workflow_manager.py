@@ -47,19 +47,29 @@ def now_iso() -> str:
     return datetime.now().isoformat()
 
 
-def find_project_root() -> Path:
-    """Resolve project root (containing .webnovel/state.json)."""
+def find_project_root(override: Optional[Path] = None) -> Path:
+    """Resolve project root (containing .webnovel/state.json).
+
+    Args:
+        override: If provided, use this path directly instead of auto-detecting.
+    """
+    if override is not None:
+        return Path(override).resolve()
     return resolve_project_root()
+
+
+# Global variable to hold CLI-provided project root
+_cli_project_root: Optional[Path] = None
 
 
 def get_workflow_state_path() -> Path:
     """Absolute path to workflow_state.json."""
-    project_root = find_project_root()
+    project_root = find_project_root(_cli_project_root)
     return project_root / ".webnovel" / "workflow_state.json"
 
 
 def get_call_trace_path() -> Path:
-    project_root = find_project_root()
+    project_root = find_project_root(_cli_project_root)
     return project_root / ".webnovel" / "observability" / "call_trace.jsonl"
 
 
@@ -716,36 +726,58 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="工作流状态管理")
+    parser.add_argument(
+        "--project-root",
+        dest="global_project_root",
+        help="项目根目录（可选，默认自动检测）",
+    )
     subparsers = parser.add_subparsers(dest="action", help="操作类型")
 
+    def add_project_root_arg(subparser):
+        """Allow --project-root after subcommand for compatibility."""
+        subparser.add_argument("--project-root", help="项目根目录（可选，默认自动检测）")
+
     p_start_task = subparsers.add_parser("start-task", help="开始新任务")
+    add_project_root_arg(p_start_task)
     p_start_task.add_argument("--command", required=True, help="命令名称")
     p_start_task.add_argument("--chapter", type=int, help="章节号")
 
     p_start_step = subparsers.add_parser("start-step", help="开始 Step")
+    add_project_root_arg(p_start_step)
     p_start_step.add_argument("--step-id", required=True, help="Step ID")
     p_start_step.add_argument("--step-name", required=True, help="Step 名称")
     p_start_step.add_argument("--note", help="进度备注")
 
     p_complete_step = subparsers.add_parser("complete-step", help="完成 Step")
+    add_project_root_arg(p_complete_step)
     p_complete_step.add_argument("--step-id", required=True, help="Step ID")
     p_complete_step.add_argument("--artifacts", help="Artifacts JSON")
 
     p_complete_task = subparsers.add_parser("complete-task", help="完成任务")
+    add_project_root_arg(p_complete_task)
     p_complete_task.add_argument("--artifacts", help="Final artifacts JSON")
 
     p_fail_task = subparsers.add_parser("fail-task", help="标记任务失败")
+    add_project_root_arg(p_fail_task)
     p_fail_task.add_argument("--reason", default="manual_fail", help="失败原因")
 
-    subparsers.add_parser("detect", help="检测中断")
+    p_detect = subparsers.add_parser("detect", help="检测中断")
+    add_project_root_arg(p_detect)
 
     p_cleanup = subparsers.add_parser("cleanup", help="清理 artifacts")
+    add_project_root_arg(p_cleanup)
     p_cleanup.add_argument("--chapter", type=int, required=True, help="章节号")
     p_cleanup.add_argument("--confirm", action="store_true", help="确认执行删除与 Git 重置（高风险）")
 
-    subparsers.add_parser("clear", help="清除中断任务")
+    p_clear = subparsers.add_parser("clear", help="清除中断任务")
+    add_project_root_arg(p_clear)
 
     args = parser.parse_args()
+
+    # Set global project root if provided (support both before/after subcommand).
+    project_root_arg = getattr(args, "project_root", None) or getattr(args, "global_project_root", None)
+    if project_root_arg:
+        _cli_project_root = Path(project_root_arg)
 
     if args.action == "start-task":
         start_task(args.command, {"chapter_num": args.chapter})

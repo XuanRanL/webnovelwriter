@@ -18,6 +18,7 @@ from typing import Iterable, Optional
 
 
 DEFAULT_PROJECT_DIR_NAMES: tuple[str, ...] = ("webnovel-project",)
+CURRENT_PROJECT_POINTER_REL: Path = Path(".claude") / ".webnovel-current-project"
 
 
 def _find_git_root(cwd: Path) -> Optional[Path]:
@@ -43,6 +44,66 @@ def _candidate_roots(cwd: Path, *, stop_at: Optional[Path] = None) -> Iterable[P
 
 def _is_project_root(path: Path) -> bool:
     return (path / ".webnovel" / "state.json").is_file()
+
+
+def _pointer_candidates(cwd: Path, *, stop_at: Optional[Path] = None) -> Iterable[Path]:
+    """Yield candidate pointer files from cwd up to parents (bounded by stop_at when provided)."""
+    for candidate in (cwd, *cwd.parents):
+        yield candidate / CURRENT_PROJECT_POINTER_REL
+        if stop_at is not None and candidate == stop_at:
+            break
+
+
+def _resolve_project_root_from_pointer(cwd: Path, *, stop_at: Optional[Path] = None) -> Optional[Path]:
+    """
+    Resolve project root from workspace pointer file.
+
+    Pointer file format:
+    - plain text absolute path, one line.
+    - relative path is also supported (resolved relative to pointer's `.claude/` dir).
+    """
+    for pointer_file in _pointer_candidates(cwd, stop_at=stop_at):
+        if not pointer_file.is_file():
+            continue
+        raw = pointer_file.read_text(encoding="utf-8").strip()
+        if not raw:
+            continue
+        target = Path(raw).expanduser()
+        if not target.is_absolute():
+            target = (pointer_file.parent / target).resolve()
+        if _is_project_root(target):
+            return target.resolve()
+    return None
+
+
+def _find_workspace_root_with_claude(start: Path) -> Optional[Path]:
+    """Find nearest ancestor containing `.claude/`."""
+    for candidate in (start, *start.parents):
+        if (candidate / ".claude").is_dir():
+            return candidate
+    return None
+
+
+def write_current_project_pointer(project_root: Path, *, workspace_root: Optional[Path] = None) -> Optional[Path]:
+    """
+    Write workspace-level current project pointer and return pointer file path.
+
+    If no workspace root with `.claude/` can be found, returns None (non-fatal).
+    """
+    root = Path(project_root).expanduser().resolve()
+    if not _is_project_root(root):
+        raise FileNotFoundError(f"Not a webnovel project root (missing .webnovel/state.json): {root}")
+
+    ws_root = Path(workspace_root).expanduser().resolve() if workspace_root else _find_workspace_root_with_claude(root)
+    if ws_root is None:
+        ws_root = _find_workspace_root_with_claude(Path.cwd().resolve())
+    if ws_root is None:
+        return None
+
+    pointer_file = ws_root / CURRENT_PROJECT_POINTER_REL
+    pointer_file.parent.mkdir(parents=True, exist_ok=True)
+    pointer_file.write_text(str(root), encoding="utf-8")
+    return pointer_file
 
 
 def resolve_project_root(explicit_project_root: Optional[str] = None, *, cwd: Optional[Path] = None) -> Path:
@@ -76,6 +137,12 @@ def resolve_project_root(explicit_project_root: Optional[str] = None, *, cwd: Op
 
     base = (cwd or Path.cwd()).resolve()
     git_root = _find_git_root(base)
+
+    # Workspace pointer fallback (for layouts where `.claude` is in workspace root and projects are subdirs).
+    pointer_root = _resolve_project_root_from_pointer(base, stop_at=git_root)
+    if pointer_root is not None:
+        return pointer_root
+
     for candidate in _candidate_roots(base, stop_at=git_root):
         if _is_project_root(candidate):
             return candidate.resolve()

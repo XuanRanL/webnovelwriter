@@ -6,6 +6,7 @@ description: Builds volume and chapter outlines from the total outline, inherits
 # Outline Planning
 
 Purpose: refine 总纲 into volume + chapter outlines. Do not redesign the global story.
+Setting policy: 先基于 init 产出的总纲+世界观补齐设定集基线；再在卷纲完成后，直接对现有设定集做增量补充。
 
 ## Project Root Guard
 - Must run inside a project containing `.webnovel/state.json`.
@@ -17,8 +18,11 @@ Purpose: refine 总纲 into volume + chapter outlines. Do not redesign the globa
 - Step 4（必读，题材配置）：[genre-profiles.md](../../references/genre-profiles.md)
 - Step 4（必读，Strand 节奏）：[strand-weave-pattern.md](../../references/shared/strand-weave-pattern.md)
 - Step 4（可选，爽点结构需要细化）：[cool-points-guide.md](../../references/shared/cool-points-guide.md)
+- Step 5/6（可选，冲突强度分层）：[conflict-design.md](references/outlining/conflict-design.md)
 - Step 5（可选，需要钩子/节奏细分）：[reading-power-taxonomy.md](../../references/reading-power-taxonomy.md)
+- Step 6（可选，章节微结构细化）：[chapter-planning.md](references/outlining/chapter-planning.md)
 - Step 4/5（可选，电竞/直播文/克苏鲁）：[genre-volume-pacing.md](references/outlining/genre-volume-pacing.md)
+- 归档（不进主流程）：`references/outlining/outline-structure.md`、`references/outlining/plot-frameworks.md`
 
 ## Reference Loading Levels (strict, lazy)
 
@@ -29,11 +33,13 @@ Use progressive disclosure and load only what current step requires:
 
 ## Workflow
 1. Load project data.
-2. Select volume and confirm scope.
-3. Generate volume beat sheet (节拍表).
-4. Generate volume skeleton.
-5. Generate chapter outlines in batches.
-6. Validate + save + update state.
+2. Build setting baseline from 总纲 + 世界观 (in-place incremental).
+3. Select volume and confirm scope.
+4. Generate volume beat sheet (节拍表).
+5. Generate volume skeleton.
+6. Generate chapter outlines in batches.
+7. Enrich existing setting files from volume outline (in-place incremental).
+8. Validate + save + update state.
 
 ## 1) Load project data
 ```bash
@@ -45,16 +51,40 @@ Optional (only if they exist):
 - `设定集/主角组.md`
 - `设定集/女主卡.md`
 - `设定集/反派设计.md`
+- `设定集/世界观.md`
+- `设定集/力量体系.md`
+- `设定集/主角卡.md`
 - `.webnovel/idea_bank.json` (inherit constraints)
 
 If 总纲.md lacks volume ranges / core conflict / climax, ask the user to fill those before proceeding.
 
-## 2) Select volume
+## 2) Build setting baseline from 总纲 + 世界观
+目标：在不推翻现有内容的前提下，让设定集从“骨架模板”进入“可规划可写作”的基线状态。
+
+输入来源：
+- `大纲/总纲.md`
+- `设定集/世界观.md`
+- `设定集/力量体系.md`
+- `设定集/主角卡.md`
+- `设定集/反派设计.md`
+
+执行规则（必须）：
+- 只做增量补齐，不清空、不重写整文件。
+- 优先补齐“可执行字段”：角色定位、势力关系、能力边界、代价规则、反派层级映射。
+- 若总纲与现有设定冲突，先列冲突并阻断，等待用户裁决后再改。
+
+基线补齐最小要求：
+- `设定集/世界观.md`：世界规则边界、社会结构、关键地点用途。
+- `设定集/力量体系.md`：境界链/能力限制/代价与冷却。
+- `设定集/主角卡.md`：欲望、缺陷、初始资源与限制。
+- `设定集/反派设计.md`：小/中/大反派层级与主角镜像关系。
+
+## 3) Select volume
 - Offer choices from 总纲.md (卷名 + 章节范围).
 - Confirm any special requirement (tone, POV emphasis, romance, etc.).
 If 总纲缺少卷名/章节范围/核心冲突/卷末高潮，先补问并更新总纲，再继续。
 
-## 3) Generate volume beat sheet (节拍表)
+## 4) Generate volume beat sheet (节拍表)
 目标：先把本卷“承诺→危机递增→中段反转→最低谷→大兑现+新钩子”钉死，避免卷中段漂移。
 
 Load template:
@@ -78,7 +108,7 @@ Completion criteria:
 - `大纲/第{volume_id}卷-节拍表.md` 存在且非空
 - Step 4/5 能直接引用 Catalyst / 中段反转 / 最低谷 / 大兑现 / 新钩子来锚定节奏
 
-## 4) Generate volume skeleton
+## 5) Generate volume skeleton
 Load genre profile and apply standards:
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md"
@@ -88,6 +118,11 @@ cat "${CLAUDE_PLUGIN_ROOT}/references/shared/strand-weave-pattern.md"
 Optional (only if爽点结构需要细化):
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/references/shared/cool-points-guide.md"
+```
+
+Optional (only if需要补强卷级冲突链与强度分层):
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/outlining/conflict-design.md"
 ```
 
 Load beat sheet (must exist):
@@ -180,7 +215,7 @@ Use this template and fill from 总纲 + idea_bank:
 - 硬约束：贯穿全卷
 ```
 
-## 5) Generate chapter outlines (batched)
+## 6) Generate chapter outlines (batched)
 Batching rule:
 - ≤20 章：1 批
 - 21–40 章：2 批
@@ -190,6 +225,11 @@ Batching rule:
 Optional (only if需要钩子/节奏细分):
 ```bash
 cat "${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md"
+```
+
+Optional (only if需要章节微结构/标题策略细化):
+```bash
+cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-plan/references/outlining/chapter-planning.md"
 ```
 
 ### Chapter generation strategy
@@ -261,7 +301,25 @@ Save after each batch:
 '@ | Add-Content -Encoding UTF8 "$PROJECT_ROOT/大纲/第{volume_id}卷-详细大纲.md"
 ```
 
-## 6) Validate + save
+## 7) Enrich existing setting files from volume outline
+目标：卷纲写完后，把本卷新增事实写回“现有设定集文件”，确保后续写作可直接读取。
+
+输入来源：
+- `大纲/第{volume_id}卷-节拍表.md`
+- `大纲/第{volume_id}卷-详细大纲.md`
+- 现有设定集文件（世界观/力量体系/主角卡/主角组/女主卡/反派设计）
+
+写回策略（必须）：
+- 仅增量补充相关段落，不覆盖整文件。
+- 新增角色：写入对应角色卡或角色组条目（含首次出场章、关系、红线）。
+- 新增势力/地点/规则：写入世界观或力量体系对应章节。
+- 新增反派层级信息：写入反派设计并保持小/中/大层级一致。
+
+冲突处理（硬规则）：
+- 若卷纲新增信息与总纲或已确认设定冲突，标记 `BLOCKER` 并停止 state 更新。
+- 只有冲突裁决完成后，才允许继续更新设定并进入保存步骤。
+
+## 8) Validate + save
 ### Validation checks (must pass all)
 
 **1. 爽点密度检查**
@@ -302,6 +360,11 @@ Every chapter must have:
 - 章末未闭合问题（30 字以内）
 - 钩子（类型 + 30 字描述）
 
+**6. 设定补全检查（新增）**
+- 本卷涉及的新角色/势力/规则已回写到现有设定集文件
+- 所有新增条目可回溯到本卷章纲章节
+- `BLOCKER` 数量为 0；若 >0，必须先裁决，不得进入 state 更新
+
 Update state (include chapters range):
 ```bash
 python "${CLAUDE_PLUGIN_ROOT}/scripts/update_state.py" \
@@ -313,6 +376,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/update_state.py" \
 Final check:
 - 节拍表文件已写入：`大纲/第{volume_id}卷-节拍表.md`
 - 章纲文件已写入：`大纲/第{volume_id}卷-详细大纲.md`
+- 设定集已完成基线补齐与本卷增量补充（原文件内可见）
 - 每章包含：目标/阻力/代价/爽点/Strand/反派层级/视角/关键实体/本章变化/章末未闭合问题/钩子
 - 与总纲冲突/高潮一致，约束触发频率合理（如有 idea_bank）
 
@@ -322,6 +386,8 @@ Final check:
 - 章纲文件不存在或为空
 - 任一章节缺少：目标/阻力/代价/爽点/Strand/反派层级/视角/关键实体/本章变化/章末未闭合问题/钩子
 - 与总纲核心冲突或卷末高潮明显冲突
+- 设定集基线未补齐，或本卷增量未回写到现有设定集
+- 存在 `BLOCKER` 未裁决
 - 约束触发频率不足（当 idea_bank 启用时）
 
 ### Rollback / recovery

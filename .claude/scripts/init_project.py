@@ -28,6 +28,7 @@ import re
 
 # 安全修复：导入安全工具函数
 from security_utils import sanitize_commit_message, atomic_write_json, is_git_available
+from project_locator import write_current_project_pointer
 
 
 # Windows 编码兼容性修复
@@ -705,6 +706,14 @@ __pycache__/
                 print("Git initialized.")
             except subprocess.CalledProcessError as e:
                 print(f"Git init failed (non-fatal): {e}")
+
+    # 记录工作区默认项目指针（非阻断）
+    try:
+        pointer_file = write_current_project_pointer(project_path)
+        if pointer_file is not None:
+            print(f"Default project pointer updated: {pointer_file}")
+    except Exception as e:
+        print(f"Default project pointer update failed (non-fatal): {e}")
 
     print(f"\nProject initialized at: {project_path}")
     print("Key files:")

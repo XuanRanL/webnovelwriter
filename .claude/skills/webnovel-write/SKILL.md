@@ -105,9 +105,39 @@ allowed-tools: Read Write Edit Grep Bash Task
 - 校验项目根：`.webnovel/state.json` 存在。
 - 校验核心输入：`大纲/总纲.md`、`.claude/scripts/extract_chapter_context.py` 存在。
 - 规范化变量：
-  - `PROJECT_ROOT`：当前项目绝对路径
+  - `PROJECT_ROOT`：当前项目绝对路径（必须是用户小说项目，如 `/path/to/凡人资本论`）
+  - `SKILL_ROOT`：skill 所在目录（即本 SKILL.md 所在的 `.claude/skills/webnovel-write`）
+  - `SCRIPTS_DIR`：脚本目录（按存在性自动探测，优先项目内 `.claude/scripts`，其次上级目录，再次 `${CLAUDE_PLUGIN_ROOT}/scripts`）
   - `chapter_num`：当前章号（整数）
   - `chapter_padded`：四位章号（如 `0007`）
+
+环境设置（bash 命令执行前）：
+```bash
+# 示例：假设 PROJECT_ROOT=/d/wk/xiaoshuo/凡人资本论
+export PROJECT_ROOT="/d/wk/xiaoshuo/凡人资本论"
+
+if [ -d "${PROJECT_ROOT}/.claude/skills/webnovel-write" ]; then
+  export SKILL_ROOT="${PROJECT_ROOT}/.claude/skills/webnovel-write"
+elif [ -d "${PROJECT_ROOT}/../.claude/skills/webnovel-write" ]; then
+  export SKILL_ROOT="${PROJECT_ROOT}/../.claude/skills/webnovel-write"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write" ]; then
+  export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write"
+else
+  echo "ERROR: 未找到 webnovel-write skill 目录" >&2
+  exit 1
+fi
+
+if [ -d "${PROJECT_ROOT}/.claude/scripts" ]; then
+  export SCRIPTS_DIR="${PROJECT_ROOT}/.claude/scripts"
+elif [ -d "${PROJECT_ROOT}/../.claude/scripts" ]; then
+  export SCRIPTS_DIR="${PROJECT_ROOT}/../.claude/scripts"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+else
+  echo "ERROR: 未找到 scripts 目录" >&2
+  exit 1
+fi
+```
 
 输出：
 - “已就绪输入”与“缺失输入”清单；缺失则阻断并提示先补齐。
@@ -115,17 +145,18 @@ allowed-tools: Read Write Edit Grep Bash Task
 ### Step 0.5：工作流断点记录（best-effort，不阻断）
 
 ```bash
+# workflow_manager 必须传 --project-root 参数
 # 开始整条任务
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" start-task --command webnovel-write --chapter {chapter_num} || true
+python "${SCRIPTS_DIR}/workflow_manager.py" --project-root "${PROJECT_ROOT}" start-task --command webnovel-write --chapter {chapter_num} || true
 
 # 进入某一步（示例：Step 1）
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" start-step --step-id "Step 1" --step-name "Context Agent" || true
+python "${SCRIPTS_DIR}/workflow_manager.py" --project-root "${PROJECT_ROOT}" start-step --step-id "Step 1" --step-name "Context Agent" || true
 
 # Step 1 完成后记录（每个 Step 结束都要调用）
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" complete-step --step-id "Step 1" --artifacts '{"ok":true}' || true
+python "${SCRIPTS_DIR}/workflow_manager.py" --project-root "${PROJECT_ROOT}" complete-step --step-id "Step 1" --artifacts '{"ok":true}' || true
 
 # 全部 Step 结束后，再结束整条任务
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" complete-task --artifacts '{"ok":true}' || true
+python "${SCRIPTS_DIR}/workflow_manager.py" --project-root "${PROJECT_ROOT}" complete-task --artifacts '{"ok":true}' || true
 ```
 
 要求：
@@ -156,7 +187,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" complete-task --artif
 
 执行前必须加载：
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/references/shared/core-constraints.md"
+cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 ```
 
 硬要求：
@@ -172,7 +203,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/references/shared/core-constraints.md"
 
 执行前加载：
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/style-adapter.md"
+cat "${SKILL_ROOT}/references/style-adapter.md"
 ```
 
 硬要求：
@@ -186,7 +217,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/style-adapter.md"
 
 执行前加载：
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/step-3-review-gate.md"
+cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 ```
 
 调用约束：
@@ -210,7 +241,8 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/step-3-review-gate.m
 
 审查指标落库（必做）：
 ```bash
-python -m data_modules.index_manager save-review-metrics --data '{...}' --project-root "${PROJECT_ROOT}"
+# 必须先 cd 到脚本目录，否则 Python 找不到 data_modules
+cd "${SCRIPTS_DIR}" && python -m data_modules.index_manager --project-root "${PROJECT_ROOT}" save-review-metrics --data '{...}'
 ```
 
 硬要求：
@@ -221,8 +253,8 @@ python -m data_modules.index_manager save-review-metrics --data '{...}' --projec
 
 执行前必须加载：
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/polish-guide.md"
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/typesetting.md"
+cat "${SKILL_ROOT}/references/polish-guide.md"
+cat "${SKILL_ROOT}/references/writing/typesetting.md"
 ```
 
 执行顺序：
@@ -284,11 +316,11 @@ git commit -m "Ch{chapter_num}: {title}"
 执行检查：
 
 ```bash
-test -f ".webnovel/state.json"
-test -f "正文/第{chapter_padded}章.md"
-test -f ".webnovel/summaries/ch{chapter_padded}.md"
-python -m data_modules.index_manager get-recent-review-metrics --limit 1 --project-root "${PROJECT_ROOT}"
-tail -n 1 ".webnovel/observability/data_agent_timing.jsonl" || true
+test -f "${PROJECT_ROOT}/.webnovel/state.json"
+test -f "${PROJECT_ROOT}/正文/第${chapter_padded}章.md"
+test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md"
+cd "${SCRIPTS_DIR}" && python -m data_modules.index_manager --project-root "${PROJECT_ROOT}" get-recent-review-metrics --limit 1
+tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || true
 ```
 
 成功标准：
