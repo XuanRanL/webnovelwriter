@@ -129,6 +129,7 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
 - 确认当前目录可写。
 - 确认插件脚本存在：`.claude/scripts/init_project.py`。
 - 加载最小参考：
+  - `references/system-data-flow.md`（用于校对 init 产物与 plan/write 输入链路）
   - `references/genre-tropes.md`
   - `templates/genres/`（仅在用户选定题材后按需读取）
 
@@ -212,7 +213,8 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
    - 为什么这题材必须这么写？
    - 换成常规主角会不会塌？
    - 卖点能否一句话讲清且不撞模板？
-4. 用户选择最终方案，或拒绝并给出原因。
+4. 展示五维评分（详见 `references/creativity/creativity-constraints.md` 的 `8.1 五维评分`），辅助用户决策。
+5. 用户选择最终方案，或拒绝并给出原因。
 
 备注：
 - 若用户要求“贴近当下市场”，可触发外部检索并标注时间戳。
@@ -389,10 +391,10 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py" \
 执行检查：
 
 ```bash
-Get-Item "{project_root}/.webnovel/state.json"
-Get-ChildItem "{project_root}/设定集" -Filter *.md
-Get-Item "{project_root}/大纲/总纲.md"
-Get-Item "{project_root}/.webnovel/idea_bank.json"
+test -f "{project_root}/.webnovel/state.json"
+find "{project_root}/设定集" -maxdepth 1 -type f -name "*.md"
+test -f "{project_root}/大纲/总纲.md"
+test -f "{project_root}/.webnovel/idea_bank.json"
 ```
 
 成功标准：
