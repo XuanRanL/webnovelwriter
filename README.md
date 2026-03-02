@@ -140,17 +140,16 @@ git clone https://github.com/lingfengQAQ/webnovel-writer.git .claude
 pip install -r .claude/scripts/requirements.txt
 ```
 
-可选（推荐）：设置 `data_modules` 模块路径，便于在项目根目录直接执行 `python -m data_modules.*`。
-
-```powershell
-# Windows PowerShell
-$env:PYTHONPATH = ".claude/scripts"
-```
+推荐：统一使用 `.claude/scripts/webnovel.py` 作为 CLI 入口，避免 `PYTHONPATH` / `cd` / 参数顺序导致的报错。
 
 ```bash
-# macOS / Linux
-export PYTHONPATH=".claude/scripts"
+# 推荐：先解析真实项目根（支持把工作区根传进去）
+export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+export SCRIPTS_DIR="${WORKSPACE_ROOT}/.claude/scripts"
+export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
 ```
+
+若你需要直接调试底层模块（不推荐），再临时设置 `PYTHONPATH=.claude/scripts`。
 
 **Python 依赖说明**：
 
@@ -475,7 +474,7 @@ RERANK_API_KEY=jina_xxx
 
 ### 使用方式
 
-- **Context Agent** 在 Step 0.5 读取 `extract_chapter_context.py` 的 `rag_assist`
+- **Context Agent** 在 Step 0.5 通过 `webnovel.py extract-context` 读取 `rag_assist`
   - 仅当大纲命中关系/伏笔/地点等触发词时才检索（避免无效召回）
   - 优先 `auto` 策略（可走 `graph_hybrid`），失败或无 Embedding Key 时自动回退 BM25
 - **Data Agent** 自动将章节场景向量化存入数据库
@@ -670,61 +669,67 @@ your-novel-project/
 
 当 `index.db` 损坏或与实际数据不一致时：
 
-先确保当前 shell 能找到 `data_modules`（二选一）：
-- 设置环境变量：`PYTHONPATH=.claude/scripts`
-- 或先执行：`cd .claude/scripts`
+建议先统一设置（后续命令复用）：
+
+```bash
+export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+export SCRIPTS_DIR="${WORKSPACE_ROOT}/.claude/scripts"
+export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
+```
 
 ```bash
 # 重新处理单章
-python -m data_modules.index_manager process-chapter --chapter 1 --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index process-chapter --chapter 1
 
 # 批量重新处理
 for i in $(seq 1 50); do
-  python -m data_modules.index_manager process-chapter --chapter $i --project-root "."
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index process-chapter --chapter $i
 done
 
 # 查看索引统计
-python -m data_modules.index_manager stats --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index stats
 ```
 
 ### 追读力数据查询 (v5.3 引入)
 
 ```bash
 # 查看债务汇总
-python -m data_modules.index_manager get-debt-summary --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-debt-summary
 
 # 查看最近章节追读力元数据
-python -m data_modules.index_manager get-recent-reading-power --limit 10 --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-reading-power --limit 10
 
 # 查看爽点模式使用统计
-python -m data_modules.index_manager get-pattern-usage-stats --last-n 20 --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-pattern-usage-stats --last-n 20
 
 # 查看钩子类型使用统计
-python -m data_modules.index_manager get-hook-type-stats --last-n 20 --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-hook-type-stats --last-n 20
 
 # 查看待偿还Override
-python -m data_modules.index_manager get-pending-overrides --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-pending-overrides
 
 # 计算利息（开启追踪或需要时调用）
-python -m data_modules.index_manager accrue-interest --current-chapter 100 --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index accrue-interest --current-chapter 100
 ```
 
 ### 审查趋势查询 (v5.4 引入)
 
 ```bash
 # 查看最近审查记录
-python -m data_modules.index_manager get-recent-review-metrics --limit 5 --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 5
 
 # 查看审查趋势统计（均值/短板分析）
-python -m data_modules.index_manager get-review-trend-stats --last-n 5 --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-review-trend-stats --last-n 5
 ```
 
 ### 质量趋势看板（离线报告）
 
 ```bash
 # 生成最近20条记录的质量趋势报告
-python .claude/scripts/quality_trend_report.py --project-root "." --limit 20
+python "${SCRIPTS_DIR}/quality_trend_report.py" --project-root "${WORKSPACE_ROOT}" --limit 20
 ```
+
+说明：`quality_trend_report.py` 支持传入工作区根，会自动解析到真实书项目根后写入 `.webnovel/`。
 
 ### 测试入口脚本
 
@@ -740,13 +745,13 @@ pwsh .claude/scripts/run_tests.ps1 -Mode full
 
 ```bash
 # 全量健康报告
-python .claude/scripts/status_reporter.py --focus all --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status --focus all
 
 # 仅看伏笔紧急度
-python .claude/scripts/status_reporter.py --focus urgency --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status --focus urgency
 
 # 仅看爽点节奏
-python .claude/scripts/status_reporter.py --focus pacing --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status --focus pacing
 ```
 
 说明：
@@ -765,10 +770,10 @@ python .claude/scripts/status_reporter.py --focus pacing --project-root "."
 
 ```bash
 # 重新索引单章
-python -m data_modules.rag_adapter index-chapter --chapter 1 --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" rag index-chapter --chapter 1
 
 # 查看向量统计
-python -m data_modules.rag_adapter stats --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" rag stats
 ```
 
 ### Git 回滚
