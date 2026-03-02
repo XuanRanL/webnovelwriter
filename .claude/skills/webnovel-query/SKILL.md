@@ -8,10 +8,42 @@ allowed-tools: Read Grep Bash AskUserQuestion
 
 ## Project Root Guard（必须先确认）
 
-- 必须在项目根目录执行（需存在 `.webnovel/state.json`）
-- 若当前目录不存在该文件，先询问用户项目路径并 `cd` 进入
-- 进入后设置变量：`$PROJECT_ROOT = (Resolve-Path ".").Path`
+- Claude Code 的“工作区根目录”不一定等于“书项目根目录”。常见结构：工作区为 `D:\wk\xiaoshuo`，书项目为 `D:\wk\xiaoshuo\凡人资本论`。
+- 必须先解析真实书项目根（必须包含 `.webnovel/state.json`），后续所有读写路径都以该目录为准。
 - **禁止**在 `.claude/` 下读取或写入项目文件
+
+环境设置（bash 命令执行前）：
+```bash
+export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+if [ -d "${WORKSPACE_ROOT}/.claude/skills/webnovel-query" ]; then
+  export SKILL_ROOT="${WORKSPACE_ROOT}/.claude/skills/webnovel-query"
+elif [ -d "${WORKSPACE_ROOT}/../.claude/skills/webnovel-query" ]; then
+  export SKILL_ROOT="${WORKSPACE_ROOT}/../.claude/skills/webnovel-query"
+elif [ -d "${HOME}/.claude/skills/webnovel-query" ]; then
+  export SKILL_ROOT="${HOME}/.claude/skills/webnovel-query"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query" ]; then
+  export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query"
+else
+  echo "ERROR: 未找到 webnovel-query skill 目录" >&2
+  exit 1
+fi
+
+if [ -d "${WORKSPACE_ROOT}/.claude/scripts" ]; then
+  export SCRIPTS_DIR="${WORKSPACE_ROOT}/.claude/scripts"
+elif [ -d "${WORKSPACE_ROOT}/../.claude/scripts" ]; then
+  export SCRIPTS_DIR="${WORKSPACE_ROOT}/../.claude/scripts"
+elif [ -d "${HOME}/.claude/scripts" ]; then
+  export SCRIPTS_DIR="${HOME}/.claude/scripts"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+else
+  echo "ERROR: 未找到 scripts 目录" >&2
+  exit 1
+fi
+
+export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
+```
 
 ## Workflow Checklist
 
@@ -60,22 +92,22 @@ Do not load two or more L2 files unless the user request clearly spans multiple 
 
 **所有查询必须执行**：
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/system-data-flow.md"
+cat "${SKILL_ROOT}/references/system-data-flow.md"
 ```
 
 **伏笔查询额外执行**：
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/advanced/foreshadowing.md"
+cat "${SKILL_ROOT}/references/advanced/foreshadowing.md"
 ```
 
 **节奏查询额外执行**：
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/references/shared/strand-weave-pattern.md"
+cat "${SKILL_ROOT}/../../references/shared/strand-weave-pattern.md"
 ```
 
 **标签格式查询额外执行**：
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/tag-specification.md"
+cat "${SKILL_ROOT}/references/tag-specification.md"
 ```
 
 ## Step 3: 加载项目数据
@@ -125,7 +157,7 @@ cat "$PROJECT_ROOT/.webnovel/state.json"
 
 **快速分析**：
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus urgency --project-root "$PROJECT_ROOT"
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" status --focus urgency
 ```
 
 ### 金手指状态
@@ -142,7 +174,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus urgency --proj
 
 **快速分析**：
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus strand --project-root "$PROJECT_ROOT"
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" status --focus strand
 ```
 
 **检查警告**：

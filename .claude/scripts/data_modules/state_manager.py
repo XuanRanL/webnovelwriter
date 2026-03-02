@@ -759,47 +759,60 @@ class StateManager:
 
     def update_entity(self, entity_id: str, updates: Dict[str, Any], entity_type: str = None) -> bool:
         """更新实体属性（v5.0 引入，v5.4 沿用）"""
-        # 查找实体
-        if entity_type:
-            if entity_id not in self._state.get("entities_v3", {}).get(entity_type, {}):
-                return False
-            entity = self._state["entities_v3"][entity_type][entity_id]
-        else:
-            entity_type = self.get_entity_type(entity_id)
-            if not entity_type:
-                return False
-            entity = self._state["entities_v3"][entity_type][entity_id]
+        # v5.1+ SQLite-first:
+        # - entity_type 可能来自 SQLite（entities 表），但 state.json 不再持久化 entities_v3。
+        # - 因此不能假设 self._state["entities_v3"][type][id] 一定存在（issues7 日志曾 KeyError）。
+        resolved_type = entity_type or self.get_entity_type(entity_id)
+        if not resolved_type:
+            return False
+        if resolved_type not in self.ENTITY_TYPES:
+            resolved_type = "角色"
 
+        # 仅在内存存在 v3 实体时才更新内存快照（不强行创建，避免 state.json 再膨胀）
+        entities_v3 = self._state.get("entities_v3")
+        entity = None
+        if isinstance(entities_v3, dict):
+            bucket = entities_v3.get(resolved_type)
+            if isinstance(bucket, dict):
+                entity = bucket.get(entity_id)
+
+        # SQLite 启用时，即使内存实体缺失，也要记录 patch，确保 current 能增量写回 index.db
+        patch = None
+        if self._sql_state_manager:
+            patch = self._pending_entity_patches.get((resolved_type, entity_id))
+            if patch is None:
+                patch = _EntityPatch(entity_type=resolved_type, entity_id=entity_id)
+                self._pending_entity_patches[(resolved_type, entity_id)] = patch
+
+        if entity is None and patch is None:
+            return False
+
+        did_any = False
         for key, value in updates.items():
             if key == "attributes" and isinstance(value, dict):
-                # v5.0 引入: attributes 存在 current 字段
-                if "current" not in entity:
-                    entity["current"] = {}
-                entity["current"].update(value)
-                # 记录补丁（current 增量）
-                patch = self._pending_entity_patches.get((entity_type, entity_id))
-                if patch is None:
-                    patch = _EntityPatch(entity_type=entity_type, entity_id=entity_id)
-                    self._pending_entity_patches[(entity_type, entity_id)] = patch
-                patch.current_updates.update(value)
+                if entity is not None:
+                    if "current" not in entity:
+                        entity["current"] = {}
+                    entity["current"].update(value)
+                if patch is not None:
+                    patch.current_updates.update(value)
+                did_any = True
             elif key == "current" and isinstance(value, dict):
-                if "current" not in entity:
-                    entity["current"] = {}
-                entity["current"].update(value)
-                patch = self._pending_entity_patches.get((entity_type, entity_id))
-                if patch is None:
-                    patch = _EntityPatch(entity_type=entity_type, entity_id=entity_id)
-                    self._pending_entity_patches[(entity_type, entity_id)] = patch
-                patch.current_updates.update(value)
+                if entity is not None:
+                    if "current" not in entity:
+                        entity["current"] = {}
+                    entity["current"].update(value)
+                if patch is not None:
+                    patch.current_updates.update(value)
+                did_any = True
             else:
-                entity[key] = value
-                patch = self._pending_entity_patches.get((entity_type, entity_id))
-                if patch is None:
-                    patch = _EntityPatch(entity_type=entity_type, entity_id=entity_id)
-                    self._pending_entity_patches[(entity_type, entity_id)] = patch
-                patch.top_updates[key] = value
+                if entity is not None:
+                    entity[key] = value
+                if patch is not None:
+                    patch.top_updates[key] = value
+                did_any = True
 
-        return True
+        return did_any
 
     def update_entity_appearance(self, entity_id: str, chapter: int, entity_type: str = None):
         """更新实体出场章节"""
@@ -1207,8 +1220,10 @@ class StateManager:
 
 def main():
     import argparse
+    import sys
     from pydantic import ValidationError
     from .cli_output import print_success, print_error
+    from .cli_args import normalize_global_project_root, load_json_arg
     from .schemas import validate_data_agent_output, format_validation_error, normalize_data_agent_output
     from .index_manager import IndexManager
 
@@ -1234,14 +1249,19 @@ def main():
     process_parser.add_argument("--chapter", type=int, required=True, help="章节号")
     process_parser.add_argument("--data", required=True, help="JSON 格式的处理结果")
 
-    args = parser.parse_args()
+    argv = normalize_global_project_root(sys.argv[1:])
+    args = parser.parse_args(argv)
     command_started_at = time.perf_counter()
 
     # 初始化
     config = None
     if args.project_root:
+        # 允许传入“工作区根目录”，统一解析到真正的 book project_root（必须包含 .webnovel/state.json）
+        from project_locator import resolve_project_root
         from .config import DataModulesConfig
-        config = DataModulesConfig.from_project_root(args.project_root)
+
+        resolved_root = resolve_project_root(args.project_root)
+        config = DataModulesConfig.from_project_root(resolved_root)
 
     manager = StateManager(config)
     logger = IndexManager(config)
@@ -1297,7 +1317,7 @@ def main():
         emit_success(payload, message="entities")
 
     elif args.command == "process-chapter":
-        data = json.loads(args.data)
+        data = load_json_arg(args.data)
         validated = None
         last_exc = None
         for _ in range(3):

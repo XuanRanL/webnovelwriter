@@ -125,9 +125,31 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
 
 ### Step 0：预检与上下文加载
 
+环境设置（bash 命令执行前）：
+```bash
+export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+if [ -d "${WORKSPACE_ROOT}/.claude/scripts" ]; then
+  export SCRIPTS_DIR="${WORKSPACE_ROOT}/.claude/scripts"
+elif [ -d "${WORKSPACE_ROOT}/../.claude/scripts" ]; then
+  export SCRIPTS_DIR="${WORKSPACE_ROOT}/../.claude/scripts"
+elif [ -d "${HOME}/.claude/scripts" ]; then
+  export SCRIPTS_DIR="${HOME}/.claude/scripts"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+else
+  echo "ERROR: 未找到 scripts 目录" >&2
+  exit 1
+fi
+```
+
 必须做：
 - 确认当前目录可写。
-- 确认插件脚本存在：`.claude/scripts/init_project.py`。
+- 解析脚本目录并确认入口存在（优先工作区，其次用户目录，其次插件目录）：
+  - 优先级：`${WORKSPACE_ROOT}/.claude/scripts` → `${HOME}/.claude/scripts` → `${CLAUDE_PLUGIN_ROOT}/scripts`
+  - 入口脚本：`${SCRIPTS_DIR}/webnovel.py`
+- 建议先打印解析结果，避免写到错误目录：
+  - `python "${SCRIPTS_DIR}/webnovel.py" where --project-root "${WORKSPACE_ROOT}"`
 - 加载最小参考：
   - `references/system-data-flow.md`（用于校对 init 产物与 plan/write 输入链路）
   - `references/genre-tropes.md`
@@ -317,7 +339,7 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
 ### 1) 运行初始化脚本
 
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/init_project.py" \
+python "${SCRIPTS_DIR}/webnovel.py" init \
   "{project_root}" \
   "{title}" \
   "{genre}" \

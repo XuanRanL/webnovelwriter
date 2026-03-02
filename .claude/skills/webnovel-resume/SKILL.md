@@ -8,9 +8,41 @@ allowed-tools: Read Bash AskUserQuestion
 
 ## Project Root Guard（必须先确认）
 
-- 必须在项目根目录执行（需存在 `.webnovel/state.json`）
-- 若当前目录不存在该文件，先询问用户项目路径并 `cd` 进入
-- 进入后设置变量：`$PROJECT_ROOT = (Resolve-Path ".").Path`
+- Claude Code 的“工作区根目录”不一定等于“书项目根目录”。常见结构：工作区为 `D:\wk\xiaoshuo`，书项目为 `D:\wk\xiaoshuo\凡人资本论`。
+- 必须先解析真实书项目根（必须包含 `.webnovel/state.json`），后续所有读写路径都以该目录为准。
+
+环境设置（bash 命令执行前）：
+```bash
+export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+if [ -d "${WORKSPACE_ROOT}/.claude/skills/webnovel-resume" ]; then
+  export SKILL_ROOT="${WORKSPACE_ROOT}/.claude/skills/webnovel-resume"
+elif [ -d "${WORKSPACE_ROOT}/../.claude/skills/webnovel-resume" ]; then
+  export SKILL_ROOT="${WORKSPACE_ROOT}/../.claude/skills/webnovel-resume"
+elif [ -d "${HOME}/.claude/skills/webnovel-resume" ]; then
+  export SKILL_ROOT="${HOME}/.claude/skills/webnovel-resume"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-resume" ]; then
+  export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT}/skills/webnovel-resume"
+else
+  echo "ERROR: 未找到 webnovel-resume skill 目录" >&2
+  exit 1
+fi
+
+if [ -d "${WORKSPACE_ROOT}/.claude/scripts" ]; then
+  export SCRIPTS_DIR="${WORKSPACE_ROOT}/.claude/scripts"
+elif [ -d "${WORKSPACE_ROOT}/../.claude/scripts" ]; then
+  export SCRIPTS_DIR="${WORKSPACE_ROOT}/../.claude/scripts"
+elif [ -d "${HOME}/.claude/scripts" ]; then
+  export SCRIPTS_DIR="${HOME}/.claude/scripts"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+else
+  echo "ERROR: 未找到 scripts 目录" >&2
+  exit 1
+fi
+
+export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
+```
 
 ## Workflow Checklist
 
@@ -18,8 +50,8 @@ Copy and track progress:
 
 ```
 任务恢复进度：
-- [ ] Step 1: 加载恢复协议 (cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-resume/references/workflow-resume.md")
-- [ ] Step 2: 加载数据规范 (cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-resume/references/system-data-flow.md")
+- [ ] Step 1: 加载恢复协议 (cat "${SKILL_ROOT}/references/workflow-resume.md")
+- [ ] Step 2: 加载数据规范 (cat "${SKILL_ROOT}/references/system-data-flow.md")
 - [ ] Step 3: 确认上下文充足
 - [ ] Step 4: 检测中断状态
 - [ ] Step 5: 展示恢复选项 (AskUserQuestion)
@@ -44,7 +76,7 @@ Copy and track progress:
 ## Step 1: 加载恢复协议（必须执行）
 
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-resume/references/workflow-resume.md"
+cat "${SKILL_ROOT}/references/workflow-resume.md"
 ```
 
 **核心原则**（读取后应用）：
@@ -55,7 +87,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-resume/references/workflow-resume.md"
 ## Step 2: 加载数据规范
 
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-resume/references/system-data-flow.md"
+cat "${SKILL_ROOT}/references/system-data-flow.md"
 ```
 
 ## Step 3: 确认上下文充足
@@ -84,7 +116,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-resume/references/system-data-flow.md
 ## Step 4: 检测中断状态
 
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" detect
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow detect
 ```
 
 **输出情况**：
@@ -127,14 +159,14 @@ B) 回滚到Ch6，放弃Ch7所有进度
 
 **选项 A - 删除重来**（推荐）：
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" cleanup --chapter {N} --confirm
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" clear
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow cleanup --chapter {N} --confirm
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow clear
 ```
 
 **选项 B - Git 回滚**：
 ```bash
 git -C "$PROJECT_ROOT" reset --hard ch{N-1:04d}
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" clear
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow clear
 ```
 
 ## Step 7: 继续任务（可选）

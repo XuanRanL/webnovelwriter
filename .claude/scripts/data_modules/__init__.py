@@ -1,34 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Data Modules - 数据链模块包
+Data Modules - 数据链模块包。
 
-用于 webnovel-writer 的数据处理：
-- 实体消歧 (entity_linker)
-- 状态管理 (state_manager)
-- 索引管理 (index_manager)
-- RAG 检索 (rag_adapter)
-- 风格样本 (style_sampler)
-- API 客户端 (api_client) - 只有 Embed + Rerank
+注意：
+- 这里采用延迟导入（lazy import），避免在执行 `python -m data_modules.xxx` 时，
+  因包级 __init__ 提前导入子模块而触发 runpy 的 RuntimeWarning。
+- 推荐用法永远安全：
+    from data_modules.index_manager import IndexManager
+  但为了兼容历史代码，也保留：
+    from data_modules import IndexManager
 """
 
-from .config import DataModulesConfig, get_config, set_project_root
-from .api_client import ModalAPIClient, get_client
-from .entity_linker import EntityLinker, DisambiguationResult
-from .state_manager import StateManager, EntityState, Relationship, StateChange
-from .index_manager import (
-    IndexManager,
-    ChapterMeta,
-    SceneMeta,
-    ReviewMetrics,
-    RelationshipEventMeta,
-)
-from .rag_adapter import RAGAdapter, SearchResult
-from .context_manager import ContextManager
-from .context_ranker import ContextRanker
-from .snapshot_manager import SnapshotManager
-from .query_router import QueryRouter
-from .style_sampler import StyleSampler, StyleSample, SceneType
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
 
 __all__ = [
     # Config
@@ -64,3 +52,55 @@ __all__ = [
     "StyleSample",
     "SceneType",
 ]
+
+
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    # Config
+    "DataModulesConfig": (".config", "DataModulesConfig"),
+    "get_config": (".config", "get_config"),
+    "set_project_root": (".config", "set_project_root"),
+    # API Client
+    "ModalAPIClient": (".api_client", "ModalAPIClient"),
+    "get_client": (".api_client", "get_client"),
+    # Entity Linker
+    "EntityLinker": (".entity_linker", "EntityLinker"),
+    "DisambiguationResult": (".entity_linker", "DisambiguationResult"),
+    # State Manager
+    "StateManager": (".state_manager", "StateManager"),
+    "EntityState": (".state_manager", "EntityState"),
+    "Relationship": (".state_manager", "Relationship"),
+    "StateChange": (".state_manager", "StateChange"),
+    # Index Manager
+    "IndexManager": (".index_manager", "IndexManager"),
+    "ChapterMeta": (".index_manager", "ChapterMeta"),
+    "SceneMeta": (".index_manager", "SceneMeta"),
+    "ReviewMetrics": (".index_manager", "ReviewMetrics"),
+    "RelationshipEventMeta": (".index_manager", "RelationshipEventMeta"),
+    # RAG Adapter
+    "RAGAdapter": (".rag_adapter", "RAGAdapter"),
+    "SearchResult": (".rag_adapter", "SearchResult"),
+    "ContextManager": (".context_manager", "ContextManager"),
+    "ContextRanker": (".context_ranker", "ContextRanker"),
+    "SnapshotManager": (".snapshot_manager", "SnapshotManager"),
+    "QueryRouter": (".query_router", "QueryRouter"),
+    # Style Sampler
+    "StyleSampler": (".style_sampler", "StyleSampler"),
+    "StyleSample": (".style_sampler", "StyleSample"),
+    "SceneType": (".style_sampler", "SceneType"),
+}
+
+
+def __getattr__(name: str) -> Any:  # pragma: no cover
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(name)
+
+    module_path, attr = _LAZY_EXPORTS[name]
+    module = import_module(module_path, __name__)
+    value = getattr(module, attr)
+    globals()[name] = value  # cache
+    return value
+
+
+def __dir__() -> list[str]:  # pragma: no cover
+    return sorted(set(list(globals().keys()) + list(_LAZY_EXPORTS.keys())))
+

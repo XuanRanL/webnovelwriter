@@ -213,7 +213,8 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.project_root:
-        project_root = Path(args.project_root).expanduser().resolve()
+        # 允许传入“工作区根目录”，统一解析到真正的 book project_root
+        project_root = resolve_project_root(args.project_root)
     else:
         project_root = resolve_project_root()
 

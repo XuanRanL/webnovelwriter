@@ -38,7 +38,21 @@ tools: Read, Grep, Bash
 **Optional: Use status_reporter for automated analysis**:
 ```bash
 # 获取 Strand Weave 详细分析（推荐）
-python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus strand --project-root "${PROJECT_ROOT}"
+# 解析脚本目录（优先项目内，其次父目录工作区，其次用户目录，其次插件目录）
+if [ -d "${PROJECT_ROOT}/.claude/scripts" ]; then
+  SCRIPTS_DIR="${PROJECT_ROOT}/.claude/scripts"
+elif [ -d "${PROJECT_ROOT}/../.claude/scripts" ]; then
+  SCRIPTS_DIR="${PROJECT_ROOT}/../.claude/scripts"
+elif [ -d "${HOME}/.claude/scripts" ]; then
+  SCRIPTS_DIR="${HOME}/.claude/scripts"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+else
+  echo "ERROR: 未找到 scripts 目录（.claude/scripts）" >&2
+  exit 1
+fi
+
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status --focus strand
 
 # 输出包含:
 # - Quest/Fire/Constellation 占比统计

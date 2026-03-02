@@ -137,19 +137,19 @@ index.db 更新完成
 
 ```bash
 # 查询实体
-python -m data_modules.index_manager get-entity --id "xiaoyan" --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-entity --id "xiaoyan"
 
 # 查询核心实体
-python -m data_modules.index_manager get-core-entities --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-core-entities
 
 # 通过别名查找
-python -m data_modules.index_manager get-by-alias --alias "萧炎" --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-by-alias --alias "萧炎"
 
 # 查询状态变化历史
-python -m data_modules.index_manager get-state-changes --entity "xiaoyan" --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-state-changes --entity "xiaoyan"
 
 # 查询关系
-python -m data_modules.index_manager get-relationships --entity "xiaoyan" --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-relationships --entity "xiaoyan"
 ```
 
 ---
@@ -265,10 +265,10 @@ v5.1 允许 **aliases 一对多**：同一别名可以指向多个实体。
 
 ```bash
 # 运行迁移脚本
-python -m data_modules.migrate_state_to_sqlite --project-root "." --backup
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" migrate --backup
 
 # 验证迁移结果
-python -m data_modules.index_manager stats --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index stats
 ```
 
 迁移后：

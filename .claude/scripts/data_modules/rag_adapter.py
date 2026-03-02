@@ -1390,7 +1390,9 @@ class RAGAdapter:
 
 def main():
     import argparse
+    import sys
     from .cli_output import print_success, print_error
+    from .cli_args import normalize_global_project_root, load_json_arg
 
     parser = argparse.ArgumentParser(description="RAG Adapter CLI")
     parser.add_argument("--project-root", type=str, help="项目根目录")
@@ -1422,15 +1424,19 @@ def main():
         help="中心实体列表（JSON 数组或逗号分隔）",
     )
 
-    args = parser.parse_args()
+    argv = normalize_global_project_root(sys.argv[1:])
+    args = parser.parse_args(argv)
     command_started_at = time.perf_counter()
 
     # 初始化
     config = None
     if args.project_root:
+        # 允许传入“工作区根目录”，统一解析到真正的 book project_root（必须包含 .webnovel/state.json）
+        from project_locator import resolve_project_root
         from .config import DataModulesConfig
 
-        config = DataModulesConfig.from_project_root(args.project_root)
+        resolved_root = resolve_project_root(args.project_root)
+        config = DataModulesConfig.from_project_root(resolved_root)
 
     adapter = RAGAdapter(config)
     tool_name = f"rag_adapter:{args.command or 'unknown'}"
@@ -1468,7 +1474,7 @@ def main():
         emit_success(stats, message="stats")
 
     elif args.command == "index-chapter":
-        scenes = json.loads(args.scenes)
+        scenes = load_json_arg(args.scenes)
         chunks = []
 
         # summary chunk

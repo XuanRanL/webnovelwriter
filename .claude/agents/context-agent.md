@@ -98,14 +98,38 @@ tools: Read, Grep, Bash
 
 ## 执行流程（精简版）
 
+### Step -1: CLI 入口与脚本目录探测（必做）
+
+为避免 `PYTHONPATH` / `cd` / 参数顺序导致的隐性失败，所有 CLI 调用统一走：
+- `${SCRIPTS_DIR}/webnovel.py`
+
+```bash
+# 解析脚本目录（优先项目内，其次父目录工作区，其次用户目录，其次插件目录）
+if [ -d "{project_root}/.claude/scripts" ]; then
+  SCRIPTS_DIR="{project_root}/.claude/scripts"
+elif [ -d "{project_root}/../.claude/scripts" ]; then
+  SCRIPTS_DIR="{project_root}/../.claude/scripts"
+elif [ -d "${HOME}/.claude/scripts" ]; then
+  SCRIPTS_DIR="${HOME}/.claude/scripts"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+else
+  echo "ERROR: 未找到 scripts 目录（.claude/scripts）" >&2
+  exit 1
+fi
+
+# 建议先确认解析出的 project_root，避免写到错误目录
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" where
+```
+
 ### Step 0: ContextManager 快照优先
 ```bash
-python -m data_modules.context_manager --chapter {NNNN} --project-root "{project_root}"
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" context --chapter {NNNN}
 ```
 
 ### Step 0.5: Contract v2 上下文包（内置）
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py" --chapter {NNNN} --project-root "{project_root}" --format json
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" extract-context --chapter {NNNN} --format json
 ```
 
 - 必须读取：`writing_guidance.guidance_items`
@@ -119,16 +143,16 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py" --chapter {NNN
 
 ### Step 2: 追读力与债务（按需）
 ```bash
-python -m data_modules.index_manager get-recent-reading-power --limit 5 --project-root "{project_root}"
-python -m data_modules.index_manager get-pattern-usage-stats --last-n 20 --project-root "{project_root}"
-python -m data_modules.index_manager get-hook-type-stats --last-n 20 --project-root "{project_root}"
-python -m data_modules.index_manager get-debt-summary --project-root "{project_root}"
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-recent-reading-power --limit 5
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-pattern-usage-stats --last-n 20
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-hook-type-stats --last-n 20
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-debt-summary
 ```
 
 ### Step 3: 实体与最近出场 + 伏笔读取
 ```bash
-python -m data_modules.index_manager get-core-entities --project-root "{project_root}"
-python -m data_modules.index_manager recent-appearances --limit 20 --project-root "{project_root}"
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-core-entities
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index recent-appearances --limit 20
 ```
 
 - 从 `state.json` 读取：

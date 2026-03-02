@@ -25,3 +25,11 @@ Thumbs.db
 *.tmp
 *.temp
 .ace-tool/
+
+# Workspace pointer (local only)
+.webnovel-current-project
+
+# Local test scratch (do not commit)
+scripts/.tmp_pytest/
+scripts/.tmp_pytest_manual/
+scripts/zzz_test.db*

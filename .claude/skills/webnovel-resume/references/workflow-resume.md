@@ -29,7 +29,7 @@ v5.4：版本号对齐，内容沿用 v5.2。
 ### Phase 1: 检测中断状态
 
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" detect
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow detect
 ```
 
 ### Phase 2: 询问用户
@@ -44,15 +44,15 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" detect
 
 **选项 A（推荐）**: 删除半成品重新开始
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" cleanup --chapter {N} --confirm
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" clear
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow cleanup --chapter {N} --confirm
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow clear
 /webnovel-write {N}
 ```
 
 **选项 B**: 回滚到上一章
 ```bash
 git reset --hard ch{N-1:04d}
-python "${CLAUDE_PLUGIN_ROOT}/scripts/workflow_manager.py" clear
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow clear
 ```
 
 ## 为什么删除而不续写？

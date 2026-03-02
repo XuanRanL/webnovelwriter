@@ -657,6 +657,29 @@ def init_project(
         ),
     )
 
+    # 生成环境变量模板（不写入真实密钥）
+    _write_text_if_missing(
+        project_path / ".env.example",
+        "\n".join(
+            [
+                "# Webnovel Writer 配置示例（复制为 .env 后填写）",
+                "# 注意：请勿将包含真实 API_KEY 的 .env 提交到版本库。",
+                "",
+                "# Embedding",
+                "EMBED_BASE_URL=https://api-inference.modelscope.cn/v1",
+                "EMBED_MODEL=Qwen/Qwen3-Embedding-8B",
+                "EMBED_API_KEY=",
+                "",
+                "# Rerank",
+                "RERANK_BASE_URL=https://api.jina.ai/v1",
+                "RERANK_MODEL=jina-reranker-v3",
+                "RERANK_API_KEY=",
+                "",
+            ]
+        )
+        + "\n",
+    )
+
     # Git 初始化（仅当项目目录内尚无 .git 且 Git 可用）
     git_dir = project_path / ".git"
     if not git_dir.exists():
@@ -675,6 +698,11 @@ def init_project(
 __pycache__/
 *.py[cod]
 *.so
+
+# Env (keep .env.example)
+.env
+.env.*
+!.env.example
 
 # Temporary files
 *.tmp

@@ -86,7 +86,7 @@ parallel Task(agent, {chapter, chapter_file, project_root}) for agent in selecte
 ## 审查指标落库（必做）
 
 ```bash
-python -m data_modules.index_manager save-review-metrics --data '{...}' --project-root "${PROJECT_ROOT}"
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics --data '@review_metrics.json'
 ```
 
 ## 进入 Step 4 前闸门

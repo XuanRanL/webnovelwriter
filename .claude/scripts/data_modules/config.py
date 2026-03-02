@@ -13,30 +13,66 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional
 
+from runtime_compat import normalize_windows_path
+
 from .context_weights import TEMPLATE_WEIGHTS_DYNAMIC_DEFAULT
 
-# 加载 .env 文件
-def _load_dotenv():
-    """从项目根目录加载 .env 文件"""
-    # 尝试多个可能的位置
-    possible_paths = [
-        Path.cwd() / ".env",
-        Path(__file__).parent.parent.parent.parent / ".env",  # .claude/scripts/data_modules -> 项目根目录
-    ]
+def _get_user_claude_root() -> Path:
+    raw = os.environ.get("WEBNOVEL_CLAUDE_HOME") or os.environ.get("CLAUDE_HOME")
+    if raw:
+        try:
+            return normalize_windows_path(raw).expanduser().resolve()
+        except Exception:
+            return normalize_windows_path(raw).expanduser()
+    return (Path.home() / ".claude").resolve()
 
-    for env_path in possible_paths:
-        if env_path.exists():
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        key, _, value = line.partition("=")
-                        key = key.strip()
-                        value = value.strip()
-                        # 只在环境变量未设置时才从 .env 加载
-                        if key and key not in os.environ:
-                            os.environ[key] = value
-            break
+
+def _load_dotenv_file(env_path: Path, *, override: bool = False) -> bool:
+    if not env_path.exists():
+        return False
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip()
+                    if not key:
+                        continue
+                    # 默认不覆盖已有环境变量（保持“显式 > .env”优先级）
+                    if override or key not in os.environ:
+                        os.environ[key] = value
+        return True
+    except Exception:
+        return False
+
+
+def _load_dotenv():
+    """
+    加载 .env 文件（best-effort）。
+
+    约定：
+    - 项目级 `.env`（当前工作目录下）优先；
+    - 全局 `.env` 作为兜底：`~/.claude/webnovel-writer/.env`
+    """
+    # 1) 当前目录（常见：用户从项目根目录执行）
+    _load_dotenv_file(Path.cwd() / ".env", override=False)
+
+    # 2) 用户级全局（常见：skills/agents 全局安装，API key 放这里最省心）
+    global_env = _get_user_claude_root() / "webnovel-writer" / ".env"
+    _load_dotenv_file(global_env, override=False)
+
+
+def _load_project_dotenv(project_root: Path) -> None:
+    """
+    加载某个项目根目录下的 `.env`（best-effort）。
+    注意：不覆盖已存在环境变量，避免意外串台。
+    """
+    try:
+        _load_dotenv_file(Path(project_root) / ".env", override=False)
+    except Exception:
+        return
 
 _load_dotenv()
 
@@ -281,7 +317,10 @@ class DataModulesConfig:
 
     @classmethod
     def from_project_root(cls, project_root: str | Path) -> "DataModulesConfig":
-        return cls(project_root=Path(project_root))
+        root = normalize_windows_path(project_root).expanduser().resolve()
+        # 在构造配置前加载项目级 `.env`，以确保 EMBED_*/RERANK_* 等字段可生效
+        _load_project_dotenv(root)
+        return cls(project_root=root)
 
 
 _default_config: Optional[DataModulesConfig] = None
@@ -292,7 +331,15 @@ def get_config(project_root: Optional[Path] = None) -> DataModulesConfig:
     if project_root is not None:
         return DataModulesConfig.from_project_root(project_root)
     if _default_config is None:
-        _default_config = DataModulesConfig()
+        # 默认不要盲目以 CWD 作为 project_root（很容易写到错误目录）。
+        # 使用统一的 project_locator 自动探测：
+        # - 支持 WEBNOVEL_PROJECT_ROOT
+        # - 支持 `.claude/.webnovel-current-project` 指针文件
+        # - 支持从当前目录/父目录寻找 `.webnovel/state.json`
+        from project_locator import resolve_project_root
+
+        root = resolve_project_root()
+        _default_config = DataModulesConfig.from_project_root(root)
     return _default_config
 
 

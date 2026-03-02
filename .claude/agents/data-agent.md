@@ -59,25 +59,49 @@ tools: Read, Write, Bash
 
 ## 执行流程
 
+### Step -1: CLI 入口与脚本目录探测（必做）
+
+为避免 `PYTHONPATH` / `cd` / 参数顺序导致的隐性失败，所有 CLI 调用统一走：
+- `${SCRIPTS_DIR}/webnovel.py`
+
+```bash
+# 解析脚本目录（优先项目内，其次父目录工作区，其次用户目录，其次插件目录）
+if [ -d "{project_root}/.claude/scripts" ]; then
+  SCRIPTS_DIR="{project_root}/.claude/scripts"
+elif [ -d "{project_root}/../.claude/scripts" ]; then
+  SCRIPTS_DIR="{project_root}/../.claude/scripts"
+elif [ -d "${HOME}/.claude/scripts" ]; then
+  SCRIPTS_DIR="${HOME}/.claude/scripts"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+else
+  echo "ERROR: 未找到 scripts 目录（.claude/scripts）" >&2
+  exit 1
+fi
+
+# 建议先确认解析出的 project_root，避免写到错误目录
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" where
+```
+
 ### Step A: 加载上下文 (v5.1 SQL 查询)
 
 使用 Read 工具读取章节正文:
 - 章节正文: `正文/第0100章.md`
 
 使用 Bash 工具从 index.db 查询已有实体:
-```bash
-# v5.1: 从 SQLite 获取核心实体
-python -m data_modules.index_manager get-core-entities --project-root "{project_root}"
-
-# v5.1: 获取实体别名
-python -m data_modules.index_manager get-aliases --entity "xiaoyan" --project-root "{project_root}"
-
-# 查询最近出场记录
-python -m data_modules.index_manager recent-appearances --limit 20 --project-root "{project_root}"
-
-# v5.1: 按别名查找实体（一对多）
-python -m data_modules.index_manager get-by-alias --alias "萧炎" --project-root "{project_root}"
-```
+ ```bash
+  # v5.1: 从 SQLite 获取核心实体
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-core-entities
+  
+  # v5.1: 获取实体别名
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-aliases --entity "xiaoyan"
+  
+  # 查询最近出场记录
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index recent-appearances --limit 20
+  
+  # v5.1: 按别名查找实体（一对多）
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-by-alias --alias "萧炎"
+  ```
 
 ### Step B: AI 实体提取
 
@@ -95,18 +119,18 @@ python -m data_modules.index_manager get-by-alias --alias "萧炎" --project-roo
 
 ### Step D: 写入存储 (v5.2 引入)
 
-**写入 index.db (实体/别名/状态变化/关系)**:
-```bash
-python -m data_modules.index_manager upsert-entity --data '{...}' --project-root "{project_root}"
-python -m data_modules.index_manager register-alias --alias "红衣女子" --entity "hongyi_girl" --type "角色" --project-root "{project_root}"
-python -m data_modules.index_manager record-state-change --data '{...}' --project-root "{project_root}"
-python -m data_modules.index_manager upsert-relationship --data '{...}' --project-root "{project_root}"
-```
+ **写入 index.db (实体/别名/状态变化/关系)**:
+ ```bash
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index upsert-entity --data '{...}'
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index register-alias --alias "红衣女子" --entity "hongyi_girl" --type "角色"
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index record-state-change --data '{...}'
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index upsert-relationship --data '{...}'
+ ```
 
-**更新精简版 state.json**:
-```bash
-python -m data_modules.state_manager process-chapter --chapter 100 --data '{...}' --project-root "{project_root}"
-```
+ **更新精简版 state.json**:
+ ```bash
+  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state process-chapter --chapter 100 --data '{...}'
+ ```
 
 写入内容 (v5.2 引入):
 - 更新 `progress.current_chapter`
@@ -152,11 +176,10 @@ hook_strength: "strong"
 ### Step G: 向量嵌入
 
 ```bash
-python -m data_modules.rag_adapter index-chapter \
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" rag index-chapter \
   --chapter 100 \
   --scenes '[...]' \
-  --summary "本章摘要文本" \
-  --project-root "{project_root}"
+  --summary "本章摘要文本"
 ```
 
 **父子索引规则 (v1.2)**:
@@ -174,15 +197,15 @@ if review_score >= 80:
 ```
 
 ```bash
-python -m data_modules.style_sampler extract --chapter 100 --score 85 --scenes '[...]' --project-root "{project_root}"
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" style extract --chapter 100 --score 85 --scenes '[...]'
 ```
 
 ### Step I: 债务利息计算（v5.4 新增）
 
 **默认不自动触发**。仅在“开启债务追踪”或用户明确要求时执行：
-```bash
-python -m data_modules.index_manager accrue-interest --current-chapter {chapter} --project-root "{project_root}"
-```
+ ```bash
+ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index accrue-interest --current-chapter {chapter}
+ ```
 
 此步骤会：
 - 对所有 `status='active'` 的债务计算利息（每章 10%）

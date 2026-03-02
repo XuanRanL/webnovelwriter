@@ -336,7 +336,11 @@ def main():
 
     args = parser.parse_args()
 
-    config = DataModulesConfig.from_project_root(args.project_root)
+    # 允许传入“工作区根目录”，统一解析到真正的 book project_root（必须包含 .webnovel/state.json）
+    from project_locator import resolve_project_root
+
+    resolved_root = resolve_project_root(args.project_root)
+    config = DataModulesConfig.from_project_root(resolved_root)
     backup = not args.no_backup
     logger = IndexManager(config)
     tool_name = "migrate_state_to_sqlite"

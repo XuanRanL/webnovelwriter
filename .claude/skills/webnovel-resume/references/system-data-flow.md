@@ -12,12 +12,12 @@ v5.4：版本号对齐，权威版本已更新。
 
 ## 权威版本位置
 
-`${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/system-data-flow.md` (v5.4)
+`../webnovel-query/references/system-data-flow.md` (v5.4)
 
 ## 加载方式
 
 ```bash
-cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/system-data-flow.md"
+cat "${SKILL_ROOT}/../webnovel-query/references/system-data-flow.md"
 ```
 
 ## 快速参考

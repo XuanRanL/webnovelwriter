@@ -261,10 +261,10 @@ cat .webnovel/state.json | jq '.progress'
 <input>v5.1: 查询实体（SQL）</input>
 <output>
 ```bash
-python -m data_modules.index_manager get-entity --id "xiaoyan" --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-entity --id "xiaoyan"
 # 输出: {"id": "xiaoyan", "type": "角色", "canonical_name": "萧炎", ...}
 
-python -m data_modules.index_manager get-core-entities --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-core-entities
 # 输出: 所有核心实体（主角 + tier=核心/重要）
 ```
 </output>
@@ -274,7 +274,7 @@ python -m data_modules.index_manager get-core-entities --project-root "."
 <input>v5.1: 按别名查找实体（一对多）</input>
 <output>
 ```bash
-python -m data_modules.index_manager get-by-alias --alias "天云宗" --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-by-alias --alias "天云宗"
 # 输出: [{"id": "loc_tianyunzong", "type": "地点"}, {"id": "faction_tianyunzong", "type": "势力"}]
 ```
 </output>
@@ -284,7 +284,7 @@ python -m data_modules.index_manager get-by-alias --alias "天云宗" --project-
 <input>v5.1: 查询状态变化</input>
 <output>
 ```bash
-python -m data_modules.index_manager get-state-changes --entity "xiaoyan" --limit 10 --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-state-changes --entity "xiaoyan" --limit 10
 # 输出: [{entity_id, field, old_value, new_value, reason, chapter}, ...]
 ```
 </output>
@@ -294,7 +294,7 @@ python -m data_modules.index_manager get-state-changes --entity "xiaoyan" --limi
 <input>v5.1: 查询关系</input>
 <output>
 ```bash
-python -m data_modules.index_manager get-relationships --entity "xiaoyan" --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-relationships --entity "xiaoyan"
 # 输出: [{from_entity, to_entity, type, description, chapter}, ...]
 ```
 </output>
@@ -304,7 +304,7 @@ python -m data_modules.index_manager get-relationships --entity "xiaoyan" --proj
 <input>检查伏笔紧急度</input>
 <output>
 ```bash
-python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus urgency
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" status --focus urgency
 ```
 </output>
 </example>
@@ -313,7 +313,7 @@ python "${CLAUDE_PLUGIN_ROOT}/scripts/status_reporter.py" --focus urgency
 <input>查询实体出场记录</input>
 <output>
 ```bash
-python -m data_modules.index_manager entity-appearances --entity "lintian" --project-root "."
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index entity-appearances --entity "lintian"
 ```
 </output>
 </example>
@@ -322,7 +322,7 @@ python -m data_modules.index_manager entity-appearances --entity "lintian" --pro
 <input>v5.1: 迁移旧 state.json 到 SQLite</input>
 <output>
 ```bash
-python -m data_modules.migrate_state_to_sqlite --project-root "." --backup
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" migrate --backup
 # 自动备份 state.json，迁移数据到 index.db，精简 state.json
 ```
 </output>
@@ -339,5 +339,5 @@ python -m data_modules.migrate_state_to_sqlite --project-root "." --backup
 ❌ 使用旧版 data_modules.state_manager schema → ✅ 统一使用 entities_v3 结构
 ❌ v5.1 仍从 state.json 读取 entities_v3 → ✅ 改用 SQL 查询 index.db
 ❌ v5.1 仍写入 state.json 大数据 → ✅ 改用 SQLite 增量写入
-❌ v5.1 state.json 膨胀 → ✅ 运行迁移脚本: `python -m data_modules.migrate_state_to_sqlite`
+❌ v5.1 state.json 膨胀 → ✅ 运行迁移脚本: `python "${SCRIPTS_DIR}/webnovel.py" migrate`
 </errors>

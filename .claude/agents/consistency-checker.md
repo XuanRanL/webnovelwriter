@@ -170,13 +170,26 @@ Chapters {N} - {M}
 对于发现的 **CRITICAL** 级别问题，自动标记到 invalid_facts（pending）：
 
 ```bash
-python -m data_modules.index_manager mark-invalid \
+# 解析脚本目录（优先项目内，其次父目录工作区，其次用户目录，其次插件目录）
+if [ -d "{PROJECT_ROOT}/.claude/scripts" ]; then
+  SCRIPTS_DIR="{PROJECT_ROOT}/.claude/scripts"
+elif [ -d "{PROJECT_ROOT}/../.claude/scripts" ]; then
+  SCRIPTS_DIR="{PROJECT_ROOT}/../.claude/scripts"
+elif [ -d "${HOME}/.claude/scripts" ]; then
+  SCRIPTS_DIR="${HOME}/.claude/scripts"
+elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+else
+  echo "ERROR: 未找到 scripts 目录（.claude/scripts）" >&2
+  exit 1
+fi
+
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "{PROJECT_ROOT}" index mark-invalid \
   --source-type entity \
   --source-id {entity_id} \
   --reason "{问题描述}" \
   --marked-by consistency-checker \
-  --chapter {current_chapter} \
-  --project-root "{PROJECT_ROOT}"
+  --chapter {current_chapter}
 ```
 
 > 注意：自动标记仅为 `pending`，需用户确认后才生效。

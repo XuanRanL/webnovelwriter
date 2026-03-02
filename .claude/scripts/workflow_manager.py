@@ -21,7 +21,7 @@ from typing import Any, Dict, Optional
 
 from chapter_paths import default_chapter_draft_path, find_chapter_file
 from project_locator import resolve_project_root
-from runtime_compat import enable_windows_utf8_stdio
+from runtime_compat import enable_windows_utf8_stdio, normalize_windows_path
 from security_utils import atomic_write_json, create_secure_directory
 
 
@@ -54,7 +54,8 @@ def find_project_root(override: Optional[Path] = None) -> Path:
         override: If provided, use this path directly instead of auto-detecting.
     """
     if override is not None:
-        return Path(override).resolve()
+        # 允许传入“工作区根目录”，统一解析到真正的 book project_root（必须包含 .webnovel/state.json）
+        return resolve_project_root(str(override))
     return resolve_project_root()
 
 
@@ -706,7 +707,8 @@ def save_state(state):
 def get_pending_steps(command):
     """Get command pending step list."""
     if command == "webnovel-write":
-        return ["Step 1", "Step 1.5", "Step 2A", "Step 2B", "Step 3", "Step 4", "Step 5", "Step 6"]
+        # v2: Step 1 内置 Contract v2，不再单独记录 Step 1.5，避免产生 step_order_violation 噪声。
+        return ["Step 1", "Step 2A", "Step 2B", "Step 3", "Step 4", "Step 5", "Step 6"]
     if command == "webnovel-review":
         return ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6", "Step 7", "Step 8"]
     return []
@@ -777,7 +779,7 @@ if __name__ == "__main__":
     # Set global project root if provided (support both before/after subcommand).
     project_root_arg = getattr(args, "project_root", None) or getattr(args, "global_project_root", None)
     if project_root_arg:
-        _cli_project_root = Path(project_root_arg)
+        _cli_project_root = normalize_windows_path(project_root_arg)
 
     if args.action == "start-task":
         start_task(args.command, {"chapter_num": args.chapter})

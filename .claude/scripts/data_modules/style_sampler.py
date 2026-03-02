@@ -310,7 +310,9 @@ class StyleSampler:
 
 def main():
     import argparse
+    import sys
     from .cli_output import print_success, print_error
+    from .cli_args import normalize_global_project_root, load_json_arg
     from .index_manager import IndexManager
 
     parser = argparse.ArgumentParser(description="Style Sampler CLI")
@@ -337,14 +339,19 @@ def main():
     select_parser.add_argument("--outline", required=True, help="章节大纲")
     select_parser.add_argument("--max", type=int, default=3)
 
-    args = parser.parse_args()
+    argv = normalize_global_project_root(sys.argv[1:])
+    args = parser.parse_args(argv)
     command_started_at = time.perf_counter()
 
     # 初始化
     config = None
     if args.project_root:
+        # 允许传入“工作区根目录”，统一解析到真正的 book project_root（必须包含 .webnovel/state.json）
+        from project_locator import resolve_project_root
         from .config import DataModulesConfig
-        config = DataModulesConfig.from_project_root(args.project_root)
+
+        resolved_root = resolve_project_root(args.project_root)
+        config = DataModulesConfig.from_project_root(resolved_root)
 
     sampler = StyleSampler(config)
     logger = IndexManager(config)
@@ -390,7 +397,7 @@ def main():
         emit_success([s.__dict__ for s in samples], message="samples")
 
     elif args.command == "extract":
-        scenes = json.loads(args.scenes)
+        scenes = load_json_arg(args.scenes)
         candidates = sampler.extract_candidates(
             chapter=args.chapter,
             content="",

@@ -543,13 +543,12 @@ def main():
 
     args = parser.parse_args()
 
-    # 创建管理器（支持从仓库根目录运行）
-    project_root = args.project_root
-    if project_root is None and not (Path.cwd() / ".webnovel" / "state.json").exists():
-        try:
-            project_root = str(resolve_project_root())
-        except FileNotFoundError:
-            project_root = None
+    # 解析项目根目录（允许传入“工作区根目录”，统一解析到真正的 book project_root）
+    try:
+        project_root = str(resolve_project_root(args.project_root) if args.project_root else resolve_project_root())
+    except FileNotFoundError as exc:
+        print(f"❌ 无法定位项目根目录（需要包含 .webnovel/state.json）: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     manager = ArchiveManager(project_root=project_root)
 

@@ -491,7 +491,9 @@ class SQLStateManager:
 
 def main():
     import argparse
+    import sys
     from .cli_output import print_success, print_error
+    from .cli_args import normalize_global_project_root, load_json_arg
     from .index_manager import IndexManager
 
     parser = argparse.ArgumentParser(description="SQL State Manager CLI (v5.4)")
@@ -519,13 +521,18 @@ def main():
     process_parser.add_argument("--chapter", type=int, required=True)
     process_parser.add_argument("--data", required=True, help="JSON 格式的章节数据")
 
-    args = parser.parse_args()
+    argv = normalize_global_project_root(sys.argv[1:])
+    args = parser.parse_args(argv)
 
     # 初始化
     config = None
     if args.project_root:
+        # 允许传入“工作区根目录”，统一解析到真正的 book project_root（必须包含 .webnovel/state.json）
+        from project_locator import resolve_project_root
         from .config import DataModulesConfig
-        config = DataModulesConfig.from_project_root(args.project_root)
+
+        resolved_root = resolve_project_root(args.project_root)
+        config = DataModulesConfig.from_project_root(resolved_root)
 
     manager = SQLStateManager(config)
     logger = IndexManager(config)
@@ -569,7 +576,7 @@ def main():
         emit_success(data, message="alias_index")
 
     elif args.command == "process-chapter":
-        data = json.loads(args.data)
+        data = load_json_arg(args.data)
         stats = manager.process_chapter_entities(
             chapter=args.chapter,
             entities_appeared=data.get("entities_appeared", []),

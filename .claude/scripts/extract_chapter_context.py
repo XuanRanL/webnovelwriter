@@ -114,21 +114,12 @@ def _volume_num_for_chapter_from_state(project_root: Path, chapter_num: int) -> 
 
 
 def find_project_root(start_path: Path | None = None) -> Path:
-    """Find project root containing `.webnovel` directory."""
+    """解析真实书项目根（包含 `.webnovel/state.json` 的目录）。"""
+    from project_locator import resolve_project_root
+
     if start_path is None:
-        start_path = Path.cwd()
-
-    search_paths = [
-        start_path,
-        start_path / "webnovel-project",
-        start_path.parent,
-    ]
-
-    for path in search_paths:
-        if (path / ".webnovel").exists():
-            return path
-
-    raise FileNotFoundError("未找到 .webnovel 目录，请确认项目路径")
+        return resolve_project_root()
+    return resolve_project_root(str(start_path))
 
 
 def extract_chapter_outline(project_root: Path, chapter_num: int) -> str:
@@ -606,7 +597,11 @@ def main():
     args = parser.parse_args()
 
     try:
-        project_root = Path(args.project_root) if args.project_root else find_project_root()
+        project_root = (
+            find_project_root(Path(args.project_root))
+            if args.project_root
+            else find_project_root()
+        )
         payload = build_chapter_context_payload(project_root, args.chapter)
 
         if args.format == "json":

@@ -158,8 +158,12 @@ def create_secure_directory(path: str, mode: int = 0o700) -> Path:
     """
     path_obj = Path(path)
 
-    # 创建目录（设置安全权限）
-    os.makedirs(path, mode=mode, exist_ok=True)
+    # Windows 上传入 mode 会触发不可预期的 ACL 行为（实测会导致目录创建后立刻无法访问）。
+    # 因此在 Windows 下不传 mode，保持默认继承权限；在类 Unix 系统才使用 mode。
+    if os.name == 'nt':
+        os.makedirs(path, exist_ok=True)
+    else:
+        os.makedirs(path, mode=mode, exist_ok=True)
 
     # 双重保险：显式设置权限（某些系统可能忽略makedirs的mode参数）
     if os.name != 'nt':  # Unix系统（Linux/macOS）

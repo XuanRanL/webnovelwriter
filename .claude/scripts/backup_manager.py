@@ -433,14 +433,12 @@ def main():
 
     args = parser.parse_args()
 
-    # 解析项目根目录（支持从仓库根目录运行）
-    project_root = args.project_root
-    if project_root == '.' and not (Path('.') / '.webnovel' / 'state.json').exists():
-        try:
-            project_root = str(resolve_project_root())
-        except FileNotFoundError:
-            # 维持向后兼容：仍然使用用户提供的 cwd
-            project_root = args.project_root
+    # 解析项目根目录（允许传入“工作区根目录”，统一解析到真正的 book project_root）
+    try:
+        project_root = str(resolve_project_root(args.project_root))
+    except FileNotFoundError as exc:
+        print(f"❌ 无法定位项目根目录（需要包含 .webnovel/state.json）: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # 创建管理器
     manager = GitBackupManager(project_root)

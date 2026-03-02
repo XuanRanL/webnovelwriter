@@ -745,9 +745,12 @@ def main():
 
     config = None
     if args.project_root:
+        # 允许传入“工作区根目录”，统一解析到真正的 book project_root（必须包含 .webnovel/state.json）
+        from project_locator import resolve_project_root
         from .config import DataModulesConfig
 
-        config = DataModulesConfig.from_project_root(args.project_root)
+        resolved_root = resolve_project_root(args.project_root)
+        config = DataModulesConfig.from_project_root(resolved_root)
 
     manager = ContextManager(config)
     try:

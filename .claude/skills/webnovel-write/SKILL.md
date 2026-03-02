@@ -102,24 +102,27 @@ allowed-tools: Read Write Edit Grep Bash Task
 ### Step 0：预检与上下文最小加载
 
 必须做：
-- 校验项目根：`.webnovel/state.json` 存在。
+- 解析真实书项目根（book project_root）：必须包含 `.webnovel/state.json`。
 - 校验核心输入：`大纲/总纲.md`、`.claude/scripts/extract_chapter_context.py` 存在。
 - 规范化变量：
-  - `PROJECT_ROOT`：当前项目绝对路径（必须是用户小说项目，如 `/path/to/凡人资本论`）
+  - `WORKSPACE_ROOT`：Claude Code 打开的工作区根目录（可能是书项目的父目录，例如 `D:\wk\xiaoshuo`）
+  - `PROJECT_ROOT`：真实书项目根目录（必须包含 `.webnovel/state.json`，例如 `D:\wk\xiaoshuo\凡人资本论`）
   - `SKILL_ROOT`：skill 所在目录（即本 SKILL.md 所在的 `.claude/skills/webnovel-write`）
-  - `SCRIPTS_DIR`：脚本目录（按存在性自动探测，优先项目内 `.claude/scripts`，其次上级目录，再次 `${CLAUDE_PLUGIN_ROOT}/scripts`）
+  - `SCRIPTS_DIR`：脚本目录（按存在性自动探测：工作区内 `.claude/scripts` → 用户目录 `~/.claude/scripts` → `${CLAUDE_PLUGIN_ROOT}/scripts`）
   - `chapter_num`：当前章号（整数）
   - `chapter_padded`：四位章号（如 `0007`）
 
 环境设置（bash 命令执行前）：
 ```bash
-# 示例：假设 PROJECT_ROOT=/d/wk/xiaoshuo/凡人资本论
-export PROJECT_ROOT="/d/wk/xiaoshuo/凡人资本论"
+# WORKSPACE_ROOT：Claude Code 的工作区根（通常等于 $CLAUDE_PROJECT_DIR）
+export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 
-if [ -d "${PROJECT_ROOT}/.claude/skills/webnovel-write" ]; then
-  export SKILL_ROOT="${PROJECT_ROOT}/.claude/skills/webnovel-write"
-elif [ -d "${PROJECT_ROOT}/../.claude/skills/webnovel-write" ]; then
-  export SKILL_ROOT="${PROJECT_ROOT}/../.claude/skills/webnovel-write"
+if [ -d "${WORKSPACE_ROOT}/.claude/skills/webnovel-write" ]; then
+  export SKILL_ROOT="${WORKSPACE_ROOT}/.claude/skills/webnovel-write"
+elif [ -d "${WORKSPACE_ROOT}/../.claude/skills/webnovel-write" ]; then
+  export SKILL_ROOT="${WORKSPACE_ROOT}/../.claude/skills/webnovel-write"
+elif [ -d "${HOME}/.claude/skills/webnovel-write" ]; then
+  export SKILL_ROOT="${HOME}/.claude/skills/webnovel-write"
 elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write" ]; then
   export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write"
 else
@@ -127,16 +130,21 @@ else
   exit 1
 fi
 
-if [ -d "${PROJECT_ROOT}/.claude/scripts" ]; then
-  export SCRIPTS_DIR="${PROJECT_ROOT}/.claude/scripts"
-elif [ -d "${PROJECT_ROOT}/../.claude/scripts" ]; then
-  export SCRIPTS_DIR="${PROJECT_ROOT}/../.claude/scripts"
+if [ -d "${WORKSPACE_ROOT}/.claude/scripts" ]; then
+  export SCRIPTS_DIR="${WORKSPACE_ROOT}/.claude/scripts"
+elif [ -d "${WORKSPACE_ROOT}/../.claude/scripts" ]; then
+  export SCRIPTS_DIR="${WORKSPACE_ROOT}/../.claude/scripts"
+elif [ -d "${HOME}/.claude/scripts" ]; then
+  export SCRIPTS_DIR="${HOME}/.claude/scripts"
 elif [ -n "${CLAUDE_PLUGIN_ROOT}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
   export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 else
   echo "ERROR: 未找到 scripts 目录" >&2
   exit 1
 fi
+
+# 解析真实书项目根（后续所有 Read/Write 路径都必须以 $PROJECT_ROOT 为前缀，避免写到工作区根目录）
+export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
 ```
 
 输出：
@@ -145,18 +153,17 @@ fi
 ### Step 0.5：工作流断点记录（best-effort，不阻断）
 
 ```bash
-# workflow_manager 必须传 --project-root 参数
 # 开始整条任务
-python "${SCRIPTS_DIR}/workflow_manager.py" --project-root "${PROJECT_ROOT}" start-task --command webnovel-write --chapter {chapter_num} || true
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-task --command webnovel-write --chapter {chapter_num} || true
 
 # 进入某一步（示例：Step 1）
-python "${SCRIPTS_DIR}/workflow_manager.py" --project-root "${PROJECT_ROOT}" start-step --step-id "Step 1" --step-name "Context Agent" || true
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 1" --step-name "Context Agent" || true
 
 # Step 1 完成后记录（每个 Step 结束都要调用）
-python "${SCRIPTS_DIR}/workflow_manager.py" --project-root "${PROJECT_ROOT}" complete-step --step-id "Step 1" --artifacts '{"ok":true}' || true
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 1" --artifacts '{"ok":true}' || true
 
 # 全部 Step 结束后，再结束整条任务
-python "${SCRIPTS_DIR}/workflow_manager.py" --project-root "${PROJECT_ROOT}" complete-task --artifacts '{"ok":true}' || true
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-task --artifacts '{"ok":true}' || true
 ```
 
 要求：
@@ -241,8 +248,8 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 
 审查指标落库（必做）：
 ```bash
-# 必须先 cd 到脚本目录，否则 Python 找不到 data_modules
-cd "${SCRIPTS_DIR}" && python -m data_modules.index_manager --project-root "${PROJECT_ROOT}" save-review-metrics --data '{...}'
+# 统一入口 webnovel.py：无需 cd / PYTHONPATH，且自动注入 --project-root
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics --data '@review_metrics.json'
 ```
 
 硬要求：
@@ -319,7 +326,7 @@ git commit -m "Ch{chapter_num}: {title}"
 test -f "${PROJECT_ROOT}/.webnovel/state.json"
 test -f "${PROJECT_ROOT}/正文/第${chapter_padded}章.md"
 test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md"
-cd "${SCRIPTS_DIR}" && python -m data_modules.index_manager --project-root "${PROJECT_ROOT}" get-recent-review-metrics --limit 1
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 1
 tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || true
 ```
 
