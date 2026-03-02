@@ -127,29 +127,38 @@
 | Claude Code | 最新版 | Anthropic 官方 CLI 工具 |
 | Git | 任意版本 | 版本控制和章节备份 |
 
-### 1. 安装
+### 1. 通过 Marketplace 安装插件（推荐）
 
 ```bash
-# 进入你的小说项目目录
-cd your-novel-project
+# 添加 GitHub 仓库为 marketplace（用户级，全局可用）
+claude plugin marketplace add lingfengQAQ/webnovel-writer --scope user
 
-# 克隆插件到 .claude 目录
-git clone https://github.com/lingfengQAQ/webnovel-writer.git .claude
+# 安装插件（指定 marketplace，避免重名冲突）
+claude plugin install webnovel-writer@webnovel-writer-marketplace --scope user
 
-# 安装 Python 依赖
-pip install -r .claude/scripts/requirements.txt
+# 安装 Python 依赖（必做）
+python -m pip install -r https://raw.githubusercontent.com/lingfengQAQ/webnovel-writer/HEAD/webnovel-writer/scripts/requirements.txt
+
+# 可选：确认安装状态
+claude plugin list
 ```
 
-推荐：统一使用 `.claude/scripts/webnovel.py` 作为 CLI 入口，避免 `PYTHONPATH` / `cd` / 参数顺序导致的报错。
+> 若你只想当前项目生效：在项目目录执行，并把 `--scope user` 改为 `--scope project`。
 
-```bash
-# 推荐：先解析真实项目根（支持把工作区根传进去）
-export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-export SCRIPTS_DIR="${WORKSPACE_ROOT}/.claude/scripts"
-export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
+PowerShell 同样可用（命令一致）：
+
+```powershell
+claude plugin marketplace add lingfengQAQ/webnovel-writer --scope user
+claude plugin install webnovel-writer@webnovel-writer-marketplace --scope user
+python -m pip install -r https://raw.githubusercontent.com/lingfengQAQ/webnovel-writer/HEAD/webnovel-writer/scripts/requirements.txt
 ```
 
-若你需要直接调试底层模块（不推荐），再临时设置 `PYTHONPATH=.claude/scripts`。
+**官方插件机制说明**：
+- Marketplace 清单位于仓库根目录 `.claude-plugin/marketplace.json`。
+- 插件清单位于 `webnovel-writer/.claude-plugin/plugin.json`。
+- 运行时 Skills/Agents 统一通过 `CLAUDE_PLUGIN_ROOT` 定位资源，不再依赖旧的 `.claude/scripts` 路径探测。
+
+推荐：统一使用 `webnovel.py` 作为 CLI 入口，避免 `PYTHONPATH` / `cd` / 参数顺序导致的报错。
 
 **Python 依赖说明**：
 
@@ -173,22 +182,75 @@ export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WOR
 - 选择题材类型
 - 设计金手指/核心卖点
 - 生成项目结构和设定模板
+- 自动写入当前项目绑定（workspace pointer + 全局 registry）
 
-### 3. 规划大纲
+> 说明：如果你只使用 `/webnovel-*` 命令，**不需要手动解析 PROJECT_ROOT**。
+> 只有在你要手动执行 Python CLI 时，才需要下面这一步。
+
+### 3. （可选）手动 CLI 时解析项目根
+
+```bash
+export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+
+if [ -z "${CLAUDE_PLUGIN_ROOT}" ] || [ ! -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  echo "ERROR: 未设置 CLAUDE_PLUGIN_ROOT 或缺少目录: ${CLAUDE_PLUGIN_ROOT}/scripts" >&2
+  exit 1
+fi
+export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+
+# 把“工作区根”解析为“真实书项目根”
+export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
+echo "${PROJECT_ROOT}"
+```
+
+### 4. 配置 RAG 环境（必做）
+
+```bash
+# 进入书项目根目录
+cd "${PROJECT_ROOT}"
+
+# 复制模板并填写 API Key（/webnovel-init 会生成 .env.example）
+cp .env.example .env
+```
+
+PowerShell 可用：
+
+```powershell
+Set-Location $env:PROJECT_ROOT
+Copy-Item .env.example .env -Force
+```
+
+`.env` 至少配置以下字段（建议全部配置）：
+
+```bash
+EMBED_BASE_URL=https://api-inference.modelscope.cn/v1
+EMBED_MODEL=Qwen/Qwen3-Embedding-8B
+EMBED_API_KEY=your_embed_api_key
+
+RERANK_BASE_URL=https://api.jina.ai/v1
+RERANK_MODEL=jina-reranker-v3
+RERANK_API_KEY=your_rerank_api_key
+```
+
+说明：
+- 若未配置 Embedding Key，RAG 语义检索会降级为 BM25。
+- 支持用户级全局配置文件：`~/.claude/webnovel-writer/.env`（项目级 `.env` 优先）。
+
+### 5. 规划大纲
 
 ```bash
 # 规划第1卷大纲
 /webnovel-plan 1
 ```
 
-### 4. 开始创作
+### 6. 开始创作
 
 ```bash
 # 创作第1章
 /webnovel-write 1
 ```
 
-### 5. 质量审查（可选）
+### 7. 质量审查（可选）
 
 ```bash
 # 审查第1-5章
@@ -546,6 +608,16 @@ RERANK_API_KEY=jina_xxx
 
 ## 配置说明
 
+### 环境变量加载顺序（重要）
+
+RAG 相关环境变量（`EMBED_*` / `RERANK_*`）按以下顺序加载：
+
+1. 进程已设置的环境变量（最高优先级）
+2. 书项目根目录下的 `.env`
+3. 用户级全局：`~/.claude/webnovel-writer/.env`
+
+建议优先把项目专属配置写在 `${PROJECT_ROOT}/.env`，避免多项目串台。
+
 ### 核心配置 (`config.py`)
 
 ```python
@@ -585,7 +657,7 @@ context_rag_assist_max_query_chars = 120   # 查询截断长度
 
 ## 文档归类
 
-- 当前基线文档：`README.md`、`CLAUDE.md`、`.claude/references/*.md`、`.claude/references/shared/*.md`
+- 当前基线文档：`README.md`、`CLAUDE.md`、`webnovel-writer/references/*.md`、`webnovel-writer/references/shared/*.md`
 - 历史归档文档：`docs/archive/reports/`
 - 文档状态规则：`docs/doc-lifecycle.md`
 - 本地未跟踪归类：`docs/untracked-classification.md`
@@ -594,9 +666,12 @@ context_rag_assist_max_query_chars = 120   # 查询截断长度
 
 ## 项目结构
 
+> Marketplace 安装模式下，插件文件位于 Claude 插件缓存目录（不在项目内）。
+> 下方目录树展示的是“本地拷贝 `webnovel-writer` 到项目内”的形态，便于理解完整结构。
+
 ```
 your-novel-project/
-├── .claude/                    # 插件目录
+├── webnovel-writer/            # 插件目录
 │   ├── agents/                 # 8 个专职 Agent
 │   │   ├── context-agent.md    # 创作任务书工程师
 │   │   ├── data-agent.md       # 数据链工程师
@@ -673,7 +748,11 @@ your-novel-project/
 
 ```bash
 export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-export SCRIPTS_DIR="${WORKSPACE_ROOT}/.claude/scripts"
+if [ -z "${CLAUDE_PLUGIN_ROOT}" ] || [ ! -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
+  echo "ERROR: 未设置 CLAUDE_PLUGIN_ROOT 或缺少目录: ${CLAUDE_PLUGIN_ROOT}/scripts" >&2
+  exit 1
+fi
+export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
 ```
 
@@ -726,32 +805,32 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-r
 
 ```bash
 # 生成最近20条记录的质量趋势报告
-python "${SCRIPTS_DIR}/quality_trend_report.py" --project-root "${WORKSPACE_ROOT}" --limit 20
+python "${SCRIPTS_DIR}/quality_trend_report.py" --project-root "${PROJECT_ROOT}" --limit 20
 ```
 
-说明：`quality_trend_report.py` 支持传入工作区根，会自动解析到真实书项目根后写入 `.webnovel/`。
+说明：`quality_trend_report.py` 支持直接传入真实书项目根并写入 `.webnovel/`。
 
 ### 测试入口脚本
 
 ```bash
 # 快速回归（推荐）
-pwsh .claude/scripts/run_tests.ps1 -Mode smoke
+pwsh webnovel-writer/scripts/run_tests.ps1 -Mode smoke
 
 # 全量 data_modules 测试
-pwsh .claude/scripts/run_tests.ps1 -Mode full
+pwsh webnovel-writer/scripts/run_tests.ps1 -Mode full
 ```
 
 ### 健康报告（status_reporter）
 
 ```bash
 # 全量健康报告
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status --focus all
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status -- --focus all
 
 # 仅看伏笔紧急度
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status --focus urgency
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status -- --focus urgency
 
 # 仅看爽点节奏
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status --focus pacing
+python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status -- --focus pacing
 ```
 
 说明：
@@ -762,7 +841,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status --fo
 ### Claude Code 调用责任（重要）
 
 - 本项目脚本默认由 Claude Code 的 Skill/Agent 在流程节点自动触发，不以人工手动调用为主。
-- 详细“谁调用、何时调用、调用什么”见：`.claude/references/claude-code-call-matrix.md`。
+- 详细“谁调用、何时调用、调用什么”见：`webnovel-writer/references/claude-code-call-matrix.md`。
 
 ### 向量重建
 
@@ -794,13 +873,14 @@ git checkout ch0045
 
 | 版本 | 里程碑 |
 |------|--------|
-| **v5.4.3 (当前)** | 智能 RAG 辅助上下文（按需触发 `auto/graph_hybrid`，失败回退 BM25）；关系事件图谱与 Graph-RAG 链路完善 |
+| **v5.4.4 (当前)** | 引入官方 Claude Code Plugin Marketplace 安装机制（仓库可直接安装）；统一修复 Skills/Agents/References 的 CLI 调用（`CLAUDE_PLUGIN_ROOT` 单路径，`status/context/update-state/migrate` 透传统一使用 `--` 分隔） |
+| **v5.4.3** | 智能 RAG 辅助上下文（按需触发 `auto/graph_hybrid`，失败回退 BM25）；关系事件图谱与 Graph-RAG 链路完善 |
 | **v5.4.x** | Context Contract v2 完成（reader_signal / genre_profile / writing_guidance / checklist_score / 动态预算）；审查趋势与调用可观测性 |
 | **v5.3** | 追读力系统落地（Hook/Cool-point/微兑现分类、Hard/Soft 约束、Override Contract、债务追踪） |
 | **v5.2** | 写作流程升级（Step 1.5 章节设计、reader-pull-checker、摘要分离到 `.webnovel/summaries/`） |
 | **v5.1-v5.0** | 双 Agent 基础架构 + SQLite 索引化（state 精简、实体/别名/状态变化入库） |
 
-详细阶段性变更请参考提交历史与 `.claude/references/` 下对应规范文档。
+详细阶段性变更请参考提交历史与 `webnovel-writer/references/` 下对应规范文档。
 
 ---
 

@@ -21,8 +21,10 @@ Thumbs.db
 # Workspace artifacts
 node_modules/
 .npm-cache/
+dist/
 nul
 .tmp/
+.tmp_*
 .tmp_outline_check/
 
 # Local research / sibling projects (avoid accidental commit)
