@@ -31,8 +31,10 @@ claude plugin install webnovel-writer@webnovel-writer-marketplace --scope user
 ### 2) 安装 Python 依赖
 
 ```bash
-python -m pip install -r https://raw.githubusercontent.com/lingfengQAQ/webnovel-writer/HEAD/webnovel-writer/scripts/requirements.txt
+python -m pip install -r https://raw.githubusercontent.com/lingfengQAQ/webnovel-writer/HEAD/requirements.txt
 ```
+
+说明：该入口会同时安装核心写作链路与 Dashboard 依赖。
 
 ### 3) 初始化小说项目
 
