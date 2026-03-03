@@ -2,6 +2,7 @@
 name: reader-pull-checker
 description: 追读力检查器 v5.5，评估钩子/微兑现/约束分层，支持 Override Contract
 tools: Read, Grep, Bash
+model: inherit
 ---
 
 # reader-pull-checker (追读力检查器) v5.5

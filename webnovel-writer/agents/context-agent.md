@@ -2,6 +2,7 @@
 name: context-agent
 description: 上下文搜集Agent (v5.5)，内置 Contract v2，输出可被 Step 2A 直接消费的创作执行包。
 tools: Read, Grep, Bash
+model: inherit
 ---
 
 # context-agent (上下文搜集Agent v5.5)

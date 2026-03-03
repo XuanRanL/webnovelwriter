@@ -2,6 +2,7 @@
 name: ooc-checker
 description: 人物OOC检查，输出结构化报告供润色步骤参考
 tools: Read, Grep
+model: inherit
 ---
 
 # ooc-checker (人物OOC检查器)

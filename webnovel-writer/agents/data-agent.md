@@ -2,6 +2,7 @@
 name: data-agent
 description: 数据处理Agent (v5.4)，负责 AI 实体提取、场景切片、索引构建，并记录钩子/模式/结束状态与章节摘要。
 tools: Read, Write, Bash
+model: inherit
 ---
 
 # data-agent (数据处理Agent v5.4)

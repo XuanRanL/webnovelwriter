@@ -84,6 +84,29 @@ RERANK_API_KEY=your_rerank_api_key
 - Dashboard 为只读面板（项目状态、实体图谱、章节/大纲浏览、追读力查看）。
 - 前端构建产物已随插件发布，使用者无需本地 `npm build`。
 
+### 7) Agent 模型设置（可选）
+
+本项目所有内置 Agent 默认配置为：
+
+```yaml
+model: inherit
+```
+
+表示子 Agent 继承当前 Claude 会话所用模型。
+
+如果要单独给某个 Agent 指定模型，编辑对应文件（`webnovel-writer/agents/*.md`）的 frontmatter，例如：
+
+```yaml
+---
+name: context-agent
+description: ...
+tools: Read, Grep, Bash
+model: sonnet
+---
+```
+
+常见可选值：`inherit` / `sonnet` / `opus` / `haiku`（以 Claude Code 当前支持为准）。
+
 ## 更新简介
 
 | 版本 | 说明 |

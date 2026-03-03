@@ -2,6 +2,7 @@
 name: consistency-checker
 description: 设定一致性检查，输出结构化报告供润色步骤参考
 tools: Read, Grep, Bash
+model: inherit
 ---
 
 # consistency-checker (设定一致性检查器)

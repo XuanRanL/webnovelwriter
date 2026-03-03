@@ -2,6 +2,7 @@
 name: continuity-checker
 description: 连贯性检查，输出结构化报告供润色步骤参考
 tools: Read, Grep
+model: inherit
 ---
 
 # continuity-checker (连贯性检查器)
