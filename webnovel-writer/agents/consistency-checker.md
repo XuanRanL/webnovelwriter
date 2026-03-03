@@ -89,16 +89,42 @@ model: inherit
 - Event sequence is chronologically logical
 - Time-sensitive elements (deadlines, age, seasonal events) align
 - Flashbacks are clearly marked
+- Chapter time anchors match volume timeline
+
+**Severity Classification** (时间问题分级):
+| 问题类型 | Severity | 说明 |
+|---------|----------|------|
+| 倒计时算术错误 | **critical** | D-5 直接跳到 D-2，必须修复 |
+| 事件先后矛盾 | **high** | 先发生的事情后写，逻辑混乱 |
+| 年龄/修炼时长冲突 | **high** | 算术错误，如15岁修炼5年却10岁入门 |
+| 时间回跳无标注 | **high** | 非闪回章节却出现时间倒退 |
+| 大跨度无过渡 | **high** | 跨度>3天却无过渡说明 |
+| 时间锚点缺失 | **medium** | 无法确定章节时间，但不影响逻辑 |
+| 轻微时间模糊 | **low** | 时段不明确但不影响剧情 |
+
+> 输出 JSON 时，`issues[].severity` 必须使用小写枚举：`critical|high|medium|low`。
 
 **Red Flags** (TIMELINE_ISSUE):
 ```
-❌ 第10章提到"三天后的宗门大比"，第11章描述大比结束（中间无时间流逝）
+❌ [critical] 第10章物资耗尽倒计时 D-5，第11章直接变成 D-2（跳过3天）
+   → Setup: D-5 | Next chapter: D-2 | Missing: 3 days
+   → VIOLATION: Countdown arithmetic error (MUST FIX)
+
+❌ [high] 第10章提到"三天后的宗门大比"，第11章描述大比结束（中间无时间流逝）
    → Setup: 3 days until event | Next chapter: Event concluded
    → VIOLATION: Missing time passage
 
-❌ 主角15岁修炼5年，推算应该10岁开始，但设定集记录"12岁入门"
+❌ [high] 主角15岁修炼5年，推算应该10岁开始，但设定集记录"12岁入门"
    → Age: 15 | Cultivation years: 5 | Start age: 10 | Record: 12
    → VIOLATION: Timeline arithmetic error
+
+❌ [high] 第一章末世降临，第二章就建立帮派（无时间过渡）
+   → Chapter 1: 末世第1天 | Chapter 2: 建帮派火拼
+   → VIOLATION: Major event without reasonable time progression
+
+❌ [high] 本章时间锚点"末世第3天"，上章是"末世第5天"（时间回跳）
+   → Previous: 末世第5天 | Current: 末世第3天
+   → VIOLATION: Time regression without flashback marker
 ```
 
 ### Step 3: Entity Consistency Check
@@ -127,23 +153,25 @@ Chapters {N} - {M}
 | Chapter | Issue | Severity | Details |
 |---------|-------|----------|---------|
 | {N} | ✓ No violations | - | - |
-| {M} | ✗ POWER_CONFLICT | High | 主角筑基3层使用金丹期技能"破空斩" |
+| {M} | ✗ POWER_CONFLICT | high | 主角筑基3层使用金丹期技能"破空斩" |
 
 **Verdict**: {X} violations found
 
 ## 地点/角色一致性 (Location & Character)
 | Chapter | Type | Issue | Severity |
 |---------|------|-------|----------|
-| {M} | Location | ✗ LOCATION_ERROR | Medium | 未描述移动过程，从天云宗跳跃到血煞秘境 |
+| {M} | Location | ✗ LOCATION_ERROR | medium | 未描述移动过程，从天云宗跳跃到血煞秘境 |
 
 **Verdict**: {Y} violations found
 
 ## 时间线一致性 (Timeline)
 | Chapter | Issue | Severity | Details |
 |---------|-------|----------|---------|
-| {M} | ✗ TIMELINE_ISSUE | Low | 大比倒计时逻辑不一致 |
+| {M} | ✗ TIMELINE_ISSUE | critical | 倒计时从 D-5 跳到 D-2 |
+| {M} | ✗ TIMELINE_ISSUE | high | 大比倒计时逻辑不一致 |
 
 **Verdict**: {Z} violations found
+**Critical Timeline Issues**: {count} (MUST FIX before continuing)
 
 ## 新实体一致性检查 (Entity Consistency)
 - ✓ All new entities consistent with world-building: {count}
@@ -193,10 +221,13 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{PROJECT_ROOT}" index mark-i
 ❌ Approving chapters with POWER_CONFLICT (战力崩坏)
 ❌ Ignoring untagged new entities
 ❌ Accepting teleportation without in-world explanation
+❌ **Downgrading TIMELINE_ISSUE severity** (时间问题不得降级)
+❌ **Approving critical/high timeline issues without fix** (严重时间问题必须修复)
 
 ## Success Criteria
 
-- 0 critical violations (power conflicts, unexplained character changes)
+- 0 critical violations (power conflicts, unexplained character changes, **timeline arithmetic errors**)
+- 0 high-severity timeline issues (**countdown errors, time regression, major events without time progression**)
 - All new entities consistent with existing world-building
 - Location and timeline transitions are logical
 - Report provides specific fix recommendations for polish step

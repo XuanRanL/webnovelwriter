@@ -94,3 +94,34 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-
 - `overall_score` 已生成。
 - `save-review-metrics` 已成功。
 - 审查报告中的 `issues`、`severity_counts` 可被 Step 4 直接消费。
+- **时间线闸门（新增）**：若存在 `TIMELINE_ISSUE` 且 `severity >= high`，禁止进入 Step 4/5，必须先修复。
+
+### 时间线闸门规则
+
+**Hard Block（必须修复才能继续）**：
+- `TIMELINE_ISSUE` + `severity = critical`（倒计时算术错误）
+- `TIMELINE_ISSUE` + `severity = high`（事件先后矛盾/年龄冲突/时间回跳/大跨度无过渡）
+
+**Soft Warning（建议修复但可继续）**：
+- `TIMELINE_ISSUE` + `severity = medium`（时间锚点缺失）
+- `TIMELINE_ISSUE` + `severity = low`（轻微时间模糊）
+
+**闸门判定逻辑**：
+```text
+timeline_issues = filter(issues, type="TIMELINE_ISSUE")
+critical_timeline = filter(timeline_issues, severity in ["critical", "high"])
+
+if len(critical_timeline) > 0:
+    BLOCK: "存在 {len(critical_timeline)} 个严重时间线问题，必须修复后才能进入润色步骤"
+    for issue in critical_timeline:
+        print(f"- 第{issue.chapter}章: {issue.description}")
+    return BLOCKED
+else:
+    PASS: "时间线检查通过"
+```
+
+**修复指引**：
+- 倒计时错误 → 修正倒计时推进，确保 D-N → D-(N-1) 连续
+- 时间回跳 → 添加闪回标记，或调整时间锚点
+- 大跨度无过渡 → 添加时间过渡句/段，或插入过渡章
+- 事件先后矛盾 → 调整事件发生顺序或添加时间跳跃说明

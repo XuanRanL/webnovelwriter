@@ -34,6 +34,7 @@ export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WOR
 ## References（按步骤导航）
 
 - Step 3（必读，节拍表模板）：[大纲-卷节拍表.md](../../templates/output/大纲-卷节拍表.md)
+- Step 4.5（必读，时间线模板）：[大纲-卷时间线.md](../../templates/output/大纲-卷时间线.md)
 - Step 4（必读，题材配置）：[genre-profiles.md](../../references/genre-profiles.md)
 - Step 4（必读，Strand 节奏）：[strand-weave-pattern.md](../../references/shared/strand-weave-pattern.md)
 - Step 4（可选，爽点结构需要细化）：[cool-points-guide.md](../../references/shared/cool-points-guide.md)
@@ -55,6 +56,7 @@ Use progressive disclosure and load only what current step requires:
 2. Build setting baseline from 总纲 + 世界观 (in-place incremental).
 3. Select volume and confirm scope.
 4. Generate volume beat sheet (节拍表).
+4.5. Generate volume timeline (时间线表).
 5. Generate volume skeleton.
 6. Generate chapter outlines in batches.
 7. Enrich existing setting files from volume outline (in-place incremental).
@@ -126,6 +128,32 @@ Write output:
 Completion criteria:
 - `大纲/第{volume_id}卷-节拍表.md` 存在且非空
 - Step 4/5 能直接引用 Catalyst / 中段反转 / 最低谷 / 大兑现 / 新钩子来锚定节奏
+
+## 4.5) Generate volume timeline (时间线表)
+
+目标：为本卷建立时间轴基准，确保章节间时间推进逻辑自洽，避免"第一章灾变第二章火拼"的时间跳跃问题。
+
+Load template:
+```bash
+cat "${SKILL_ROOT}/../../templates/output/大纲-卷时间线.md"
+```
+
+Must satisfy (hard requirements):
+- **时间基准（必填）**：明确本卷使用的时间体系（末世第X天/仙历年月/现代日期）
+- **本卷时间跨度（必填）**：本卷覆盖的时间范围
+- **关键倒计时事件**：若有时限性事件（物资耗尽/大比开始/截止日期），必须列出并标注 D-N
+
+Write output:
+```bash
+@'
+{timeline_content}
+'@ | Set-Content -Encoding UTF8 "$PROJECT_ROOT/大纲/第{volume_id}卷-时间线.md"
+```
+
+Completion criteria:
+- `大纲/第{volume_id}卷-时间线.md` 存在且非空
+- 时间基准和本卷跨度已明确
+- 若存在倒计时事件，已在表中列出
 
 ## 5) Generate volume skeleton
 Load genre profile and apply standards:
@@ -294,6 +322,10 @@ Chapter format (include 反派层级 for context-agent):
 - 目标: {20字以内}
 - 阻力: {20字以内}
 - 代价: {20字以内}
+- 时间锚点: {末世第X天 时段/仙历X年X月X日/具体日期+时段}
+- 章内时间跨度: {如 3小时/半天/1天}
+- 与上章时间差: {如 紧接/6小时/1天/跨夜}
+- 倒计时状态: {事件A D-3 -> D-2 / 无}
 - 爽点: {类型} - {30字以内}
 - Strand: {Quest|Fire|Constellation}
 - 反派层级: {无/小/中/大}
@@ -303,6 +335,15 @@ Chapter format (include 反派层级 for context-agent):
 - 章末未闭合问题: {30字以内}
 - 钩子: {类型} - {30字以内}
 ```
+
+**时间字段说明**：
+- **时间锚点**：本章发生的具体时间点，必须与时间线表一致
+- **章内时间跨度**：本章内容覆盖的时间长度
+- **与上章时间差**：与上一章结束时间的间隔
+  - 紧接：无时间间隔，直接承接
+  - 跨夜：过夜但不超过 12 小时
+  - 具体时长：如 6小时、1天、3天
+- **倒计时状态**：若存在倒计时事件，标注推进情况（D-N → D-(N-1)）
 
 **字段说明**：
 - **章末未闭合问题**：本章结尾必须保留的“未闭合决策/问题”，用于驱动读者点下一章。
@@ -370,6 +411,10 @@ Every chapter must have:
 - 目标（20 字以内）
 - 阻力（20 字以内）
 - 代价（20 字以内）
+- 时间锚点（必填）
+- 章内时间跨度（必填）
+- 与上章时间差（必填）
+- 倒计时状态（若有倒计时事件则必填）
 - 爽点（类型 + 30 字描述）
 - Strand（Quest/Fire/Constellation）
 - 反派层级（无/小/中/大）
@@ -379,7 +424,14 @@ Every chapter must have:
 - 章末未闭合问题（30 字以内）
 - 钩子（类型 + 30 字描述）
 
-**6. 设定补全检查（新增）**
+**6. 时间线一致性检查（新增）**
+- 时间线表文件存在：`大纲/第{volume_id}卷-时间线.md`
+- 所有章节时间锚点已填写
+- 时间单调递增（不得回跳，除非明确标注为闪回）
+- 倒计时推进正确（D-5 → D-4 → D-3，不得跳跃）
+- 大跨度时间跳跃（>3天）必须有过渡章说明或明确标注
+
+**7. 设定补全检查**
 - 本卷涉及的新角色/势力/规则已回写到现有设定集文件
 - 所有新增条目可回溯到本卷章纲章节
 - `BLOCKER` 数量为 0；若 >0，必须先裁决，不得进入 state 更新
@@ -393,16 +445,23 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" update-state 
 
 Final check:
 - 节拍表文件已写入：`大纲/第{volume_id}卷-节拍表.md`
+- 时间线表文件已写入：`大纲/第{volume_id}卷-时间线.md`
 - 章纲文件已写入：`大纲/第{volume_id}卷-详细大纲.md`
 - 设定集已完成基线补齐与本卷增量补充（原文件内可见）
-- 每章包含：目标/阻力/代价/爽点/Strand/反派层级/视角/关键实体/本章变化/章末未闭合问题/钩子
+- 每章包含：目标/阻力/代价/时间锚点/章内时间跨度/与上章时间差/爽点/Strand/反派层级/视角/关键实体/本章变化/章末未闭合问题/钩子
+- 时间线单调递增，倒计时推进正确
 - 与总纲冲突/高潮一致，约束触发频率合理（如有 idea_bank）
 
 ### Hard fail conditions (must stop)
 - 节拍表文件不存在或为空
 - 节拍表中段反转缺失（未按“必填/无（理由）”规则填写）
+- **时间线表文件不存在或为空**
 - 章纲文件不存在或为空
-- 任一章节缺少：目标/阻力/代价/爽点/Strand/反派层级/视角/关键实体/本章变化/章末未闭合问题/钩子
+- 任一章节缺少：目标/阻力/代价/时间锚点/章内时间跨度/与上章时间差/爽点/Strand/反派层级/视角/关键实体/本章变化/章末未闭合问题/钩子
+- **任一章节时间字段（时间锚点/章内时间跨度/与上章时间差）缺失**
+- **时间回跳且未标注为闪回**
+- **倒计时算术冲突（如 D-5 直接跳到 D-2）**
+- **重大事件发生时间与前章间隔不足且无合理解释（如末世第1天建帮派）**
 - 与总纲核心冲突或卷末高潮明显冲突
 - 设定集基线未补齐，或本卷增量未回写到现有设定集
 - 存在 `BLOCKER` 未裁决
