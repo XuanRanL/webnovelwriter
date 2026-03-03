@@ -91,6 +91,16 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
         conn.row_factory = sqlite3.Row
         return conn
 
+    def _fetchall_safe(conn: sqlite3.Connection, query: str, params: tuple = ()) -> list[dict]:
+        """执行只读查询；若目标表不存在（旧库），返回空列表。"""
+        try:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc).lower():
+                return []
+            raise HTTPException(status_code=500, detail=f"数据库查询失败: {exc}") from exc
+
     @app.get("/api/entities")
     def list_entities(
         entity_type: Optional[str] = Query(None, alias="type"),
@@ -221,6 +231,109 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
             else:
                 rows = conn.execute("SELECT * FROM aliases").fetchall()
             return [dict(r) for r in rows]
+
+    # ===========================================================
+    # API：扩展表（v5.3+ / v5.4+）
+    # ===========================================================
+
+    @app.get("/api/overrides")
+    def list_overrides(status: Optional[str] = None, limit: int = 100):
+        with closing(_get_db()) as conn:
+            if status:
+                return _fetchall_safe(
+                    conn,
+                    "SELECT * FROM override_contracts WHERE status = ? ORDER BY chapter DESC LIMIT ?",
+                    (status, limit),
+                )
+            return _fetchall_safe(
+                conn,
+                "SELECT * FROM override_contracts ORDER BY chapter DESC LIMIT ?",
+                (limit,),
+            )
+
+    @app.get("/api/debts")
+    def list_debts(status: Optional[str] = None, limit: int = 100):
+        with closing(_get_db()) as conn:
+            if status:
+                return _fetchall_safe(
+                    conn,
+                    "SELECT * FROM chase_debt WHERE status = ? ORDER BY updated_at DESC LIMIT ?",
+                    (status, limit),
+                )
+            return _fetchall_safe(
+                conn,
+                "SELECT * FROM chase_debt ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            )
+
+    @app.get("/api/debt-events")
+    def list_debt_events(debt_id: Optional[int] = None, limit: int = 200):
+        with closing(_get_db()) as conn:
+            if debt_id is not None:
+                return _fetchall_safe(
+                    conn,
+                    "SELECT * FROM debt_events WHERE debt_id = ? ORDER BY chapter DESC, id DESC LIMIT ?",
+                    (debt_id, limit),
+                )
+            return _fetchall_safe(
+                conn,
+                "SELECT * FROM debt_events ORDER BY chapter DESC, id DESC LIMIT ?",
+                (limit,),
+            )
+
+    @app.get("/api/invalid-facts")
+    def list_invalid_facts(status: Optional[str] = None, limit: int = 100):
+        with closing(_get_db()) as conn:
+            if status:
+                return _fetchall_safe(
+                    conn,
+                    "SELECT * FROM invalid_facts WHERE status = ? ORDER BY marked_at DESC LIMIT ?",
+                    (status, limit),
+                )
+            return _fetchall_safe(
+                conn,
+                "SELECT * FROM invalid_facts ORDER BY marked_at DESC LIMIT ?",
+                (limit,),
+            )
+
+    @app.get("/api/rag-queries")
+    def list_rag_queries(query_type: Optional[str] = None, limit: int = 100):
+        with closing(_get_db()) as conn:
+            if query_type:
+                return _fetchall_safe(
+                    conn,
+                    "SELECT * FROM rag_query_log WHERE query_type = ? ORDER BY created_at DESC LIMIT ?",
+                    (query_type, limit),
+                )
+            return _fetchall_safe(
+                conn,
+                "SELECT * FROM rag_query_log ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+
+    @app.get("/api/tool-stats")
+    def list_tool_stats(tool_name: Optional[str] = None, limit: int = 200):
+        with closing(_get_db()) as conn:
+            if tool_name:
+                return _fetchall_safe(
+                    conn,
+                    "SELECT * FROM tool_call_stats WHERE tool_name = ? ORDER BY created_at DESC LIMIT ?",
+                    (tool_name, limit),
+                )
+            return _fetchall_safe(
+                conn,
+                "SELECT * FROM tool_call_stats ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+
+    @app.get("/api/checklist-scores")
+    def list_checklist_scores(limit: int = 100):
+        with closing(_get_db()) as conn:
+            return _fetchall_safe(
+                conn,
+                "SELECT * FROM writing_checklist_scores ORDER BY chapter DESC LIMIT ?",
+                (limit,),
+            )
 
     # ===========================================================
     # API：文档浏览（正文/大纲/设定集 —— 只读）
