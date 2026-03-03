@@ -22,6 +22,8 @@ Thumbs.db
 node_modules/
 .npm-cache/
 dist/
+!webnovel-writer/dashboard/frontend/dist/
+!webnovel-writer/dashboard/frontend/dist/**
 nul
 .tmp/
 .tmp_*

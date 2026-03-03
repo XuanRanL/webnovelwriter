@@ -72,11 +72,22 @@ RERANK_API_KEY=your_rerank_api_key
 /webnovel-review 1-5
 ```
 
+### 6) 启动可视化面板（可选）
+
+```bash
+/webnovel-dashboard
+```
+
+说明：
+- Dashboard 为只读面板（项目状态、实体图谱、章节/大纲浏览、追读力查看）。
+- 前端构建产物已随插件发布，使用者无需本地 `npm build`。
+
 ## 更新简介
 
 | 版本 | 说明 |
 |------|------|
-| **v5.4.4 (当前)** | 引入官方 Plugin Marketplace 安装机制；统一修复 Skills/Agents/References 的 CLI 调用（`CLAUDE_PLUGIN_ROOT` 单路径，透传命令统一 `--`） |
+| **v5.5.0 (当前)** | 新增只读可视化 Dashboard Skill（`/webnovel-dashboard`）与实时刷新能力；支持插件目录启动与预构建前端分发 |
+| **v5.4.4** | 引入官方 Plugin Marketplace 安装机制；统一修复 Skills/Agents/References 的 CLI 调用（`CLAUDE_PLUGIN_ROOT` 单路径，透传命令统一 `--`） |
 | **v5.4.3** | 增强智能 RAG 上下文辅助（`auto/graph_hybrid` 回退 BM25） |
 | **v5.3** | 引入追读力系统（Hook / Cool-point / 微兑现 / 债务追踪） |
 
