@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { fetchJSON, subscribeSSE } from './api.js'
 import ForceGraph3D from 'react-force-graph-3d'
 
@@ -22,10 +22,15 @@ export default function App() {
 
     // SSE 订阅
     useEffect(() => {
-        setConnected(true)
-        const unsub = subscribeSSE(() => {
-            setRefreshKey(k => k + 1)
-        })
+        const unsub = subscribeSSE(
+            () => {
+                setRefreshKey(k => k + 1)
+            },
+            {
+                onOpen: () => setConnected(true),
+                onError: () => setConnected(false),
+            },
+        )
         return () => { unsub(); setConnected(false) }
     }, [])
 
@@ -569,141 +574,4 @@ function formatJSON(str) {
     } catch {
         return str
     }
-}
-
-
-// ====================================================================
-// 辅助：Canvas 力导图绘制
-// ====================================================================
-
-function drawGraph(canvas, entities, relationships) {
-    const ctx = canvas.getContext('2d')
-    const dpr = window.devicePixelRatio || 1
-    const rect = canvas.parentElement.getBoundingClientRect()
-    canvas.width = rect.width * dpr
-    canvas.height = rect.height * dpr
-    canvas.style.width = rect.width + 'px'
-    canvas.style.height = rect.height + 'px'
-    ctx.scale(dpr, dpr)
-
-    const W = rect.width, H = rect.height
-
-    // 构建节点集合（仅出现在关系中的实体）
-    const relatedIds = new Set()
-    relationships.forEach(r => { relatedIds.add(r.from_entity); relatedIds.add(r.to_entity) })
-
-    const entityMap = {}
-    entities.forEach(e => { entityMap[e.id] = e })
-
-    const nodeIds = [...relatedIds].slice(0, 80)
-    const nodes = nodeIds.map((id, i) => {
-        const angle = (2 * Math.PI * i) / nodeIds.length
-        const r = Math.min(W, H) * 0.35
-        return {
-            id,
-            label: entityMap[id]?.canonical_name || id,
-            type: entityMap[id]?.type || '未知',
-            x: W / 2 + r * Math.cos(angle) + (Math.random() - 0.5) * 40,
-            y: H / 2 + r * Math.sin(angle) + (Math.random() - 0.5) * 40,
-            vx: 0, vy: 0,
-        }
-    })
-
-    const nodeMap = {}
-    nodes.forEach(n => { nodeMap[n.id] = n })
-
-    const edges = relationships
-        .filter(r => nodeMap[r.from_entity] && nodeMap[r.to_entity])
-        .map(r => ({ source: nodeMap[r.from_entity], target: nodeMap[r.to_entity], type: r.type }))
-
-    // 简易力模拟（50 轮）
-    for (let iter = 0; iter < 50; iter++) {
-        // 排斥力
-        for (let i = 0; i < nodes.length; i++) {
-            for (let j = i + 1; j < nodes.length; j++) {
-                let dx = nodes[j].x - nodes[i].x
-                let dy = nodes[j].y - nodes[i].y
-                let d = Math.sqrt(dx * dx + dy * dy) || 1
-                let force = 5000 / (d * d)
-                let fx = (dx / d) * force
-                let fy = (dy / d) * force
-                nodes[i].vx -= fx; nodes[i].vy -= fy
-                nodes[j].vx += fx; nodes[j].vy += fy
-            }
-        }
-        // 吸引力
-        edges.forEach(e => {
-            let dx = e.target.x - e.source.x
-            let dy = e.target.y - e.source.y
-            let d = Math.sqrt(dx * dx + dy * dy) || 1
-            let force = (d - 120) * 0.01
-            let fx = (dx / d) * force
-            let fy = (dy / d) * force
-            e.source.vx += fx; e.source.vy += fy
-            e.target.vx -= fx; e.target.vy -= fy
-        })
-        // 向心力
-        nodes.forEach(n => {
-            n.vx += (W / 2 - n.x) * 0.001
-            n.vy += (H / 2 - n.y) * 0.001
-            n.x += n.vx * 0.5
-            n.y += n.vy * 0.5
-            n.vx *= 0.8
-            n.vy *= 0.8
-            n.x = Math.max(40, Math.min(W - 40, n.x))
-            n.y = Math.max(40, Math.min(H - 40, n.y))
-        })
-    }
-
-    // 绘制
-    ctx.clearRect(0, 0, W, H)
-
-    // 边（带渐变发光）
-    edges.forEach(e => {
-        const grad = ctx.createLinearGradient(e.source.x, e.source.y, e.target.x, e.target.y)
-        grad.addColorStop(0, 'rgba(139, 92, 246, 0.3)')
-        grad.addColorStop(1, 'rgba(79, 143, 247, 0.15)')
-        ctx.beginPath()
-        ctx.moveTo(e.source.x, e.source.y)
-        ctx.lineTo(e.target.x, e.target.y)
-        ctx.strokeStyle = grad
-        ctx.lineWidth = 1.2
-        ctx.stroke()
-    })
-
-    // 节点（带发光晕）
-    const typeColors = {
-        '角色': '#4f8ff7', '地点': '#34d399', '物品': '#f59e0b',
-        '势力': '#8b5cf6', '招式': '#ef4444',
-    }
-    nodes.forEach(n => {
-        const color = typeColors[n.type] || '#5c6078'
-
-        // 外发光
-        ctx.beginPath()
-        ctx.arc(n.x, n.y, 16, 0, Math.PI * 2)
-        const glow = ctx.createRadialGradient(n.x, n.y, 4, n.x, n.y, 16)
-        glow.addColorStop(0, color + '40')
-        glow.addColorStop(1, 'transparent')
-        ctx.fillStyle = glow
-        ctx.fill()
-
-        // 实心节点
-        ctx.beginPath()
-        ctx.arc(n.x, n.y, 7, 0, Math.PI * 2)
-        ctx.fillStyle = color
-        ctx.fill()
-        ctx.strokeStyle = 'rgba(255,255,255,0.2)'
-        ctx.lineWidth = 1.5
-        ctx.stroke()
-
-        // 标签（带阴影）
-        ctx.fillStyle = '#eaf0ff'
-        ctx.font = '500 11px Inter, Noto Sans SC, sans-serif'
-        ctx.textAlign = 'center'
-        ctx.shadowColor = 'rgba(0,0,0,0.6)'
-        ctx.shadowBlur = 4
-        ctx.fillText(n.label, n.x, n.y - 14)
-        ctx.shadowBlur = 0
-    })
 }

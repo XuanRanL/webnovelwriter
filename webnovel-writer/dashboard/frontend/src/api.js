@@ -17,17 +17,23 @@ export async function fetchJSON(path, params = {}) {
 /**
  * 订阅 SSE 实时事件流
  * @param {function} onMessage  收到 data 时回调
+ * @param {{onOpen?: function, onError?: function}} handlers 连接状态回调
  * @returns {function} 取消订阅函数
  */
-export function subscribeSSE(onMessage) {
+export function subscribeSSE(onMessage, handlers = {}) {
+    const { onOpen, onError } = handlers
     const es = new EventSource(`${BASE}/api/events`);
+    es.onopen = () => {
+        if (onOpen) onOpen()
+    };
     es.onmessage = (e) => {
         try {
             onMessage(JSON.parse(e.data));
         } catch { /* ignore parse errors */ }
     };
-    es.onerror = () => {
-        // 自动重连由 EventSource 处理
+    es.onerror = (e) => {
+        // EventSource 会自动重连，这里只更新连接状态
+        if (onError) onError(e)
     };
     return () => es.close();
 }

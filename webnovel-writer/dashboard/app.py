@@ -6,8 +6,8 @@ Webnovel Dashboard - FastAPI 主应用
 
 import asyncio
 import json
-import os
 import sqlite3
+from contextlib import asynccontextmanager, closing
 from pathlib import Path
 from typing import Optional
 
@@ -48,7 +48,17 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
     if project_root:
         _project_root = Path(project_root).resolve()
 
-    app = FastAPI(title="Webnovel Dashboard", version="0.1.0")
+    @asynccontextmanager
+    async def _lifespan(_: FastAPI):
+        webnovel = _webnovel_dir()
+        if webnovel.is_dir():
+            _watcher.start(webnovel, asyncio.get_running_loop())
+        try:
+            yield
+        finally:
+            _watcher.stop()
+
+    app = FastAPI(title="Webnovel Dashboard", version="0.1.0", lifespan=_lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -56,17 +66,6 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
         allow_methods=["GET"],
         allow_headers=["*"],
     )
-
-    # --- 生命周期 ---
-    @app.on_event("startup")
-    async def _startup():
-        webnovel = _webnovel_dir()
-        if webnovel.is_dir():
-            _watcher.start(webnovel, asyncio.get_event_loop())
-
-    @app.on_event("shutdown")
-    async def _shutdown():
-        _watcher.stop()
 
     # ===========================================================
     # API：项目元信息
@@ -98,8 +97,7 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
         include_archived: bool = False,
     ):
         """列出所有实体（可按类型过滤）。"""
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             q = "SELECT * FROM entities"
             params: list = []
             clauses: list[str] = []
@@ -113,24 +111,18 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
             q += " ORDER BY last_appearance DESC"
             rows = conn.execute(q, params).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     @app.get("/api/entities/{entity_id}")
     def get_entity(entity_id: str):
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             row = conn.execute("SELECT * FROM entities WHERE id = ?", (entity_id,)).fetchone()
             if not row:
                 raise HTTPException(404, "实体不存在")
             return dict(row)
-        finally:
-            conn.close()
 
     @app.get("/api/relationships")
     def list_relationships(entity: Optional[str] = None, limit: int = 200):
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             if entity:
                 rows = conn.execute(
                     "SELECT * FROM relationships WHERE from_entity = ? OR to_entity = ? ORDER BY chapter DESC LIMIT ?",
@@ -142,8 +134,6 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
                     (limit,),
                 ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     @app.get("/api/relationship-events")
     def list_relationship_events(
@@ -152,8 +142,7 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
         to_chapter: Optional[int] = None,
         limit: int = 200,
     ):
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             q = "SELECT * FROM relationship_events"
             params: list = []
             clauses: list[str] = []
@@ -172,22 +161,16 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
             params.append(limit)
             rows = conn.execute(q, params).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     @app.get("/api/chapters")
     def list_chapters():
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             rows = conn.execute("SELECT * FROM chapters ORDER BY chapter ASC").fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     @app.get("/api/scenes")
     def list_scenes(chapter: Optional[int] = None, limit: int = 500):
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             if chapter is not None:
                 rows = conn.execute(
                     "SELECT * FROM scenes WHERE chapter = ? ORDER BY scene_index ASC", (chapter,)
@@ -197,35 +180,26 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
                     "SELECT * FROM scenes ORDER BY chapter ASC, scene_index ASC LIMIT ?", (limit,)
                 ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     @app.get("/api/reading-power")
     def list_reading_power(limit: int = 50):
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             rows = conn.execute(
                 "SELECT * FROM chapter_reading_power ORDER BY chapter DESC LIMIT ?", (limit,)
             ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     @app.get("/api/review-metrics")
     def list_review_metrics(limit: int = 20):
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             rows = conn.execute(
                 "SELECT * FROM review_metrics ORDER BY end_chapter DESC LIMIT ?", (limit,)
             ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     @app.get("/api/state-changes")
     def list_state_changes(entity: Optional[str] = None, limit: int = 100):
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             if entity:
                 rows = conn.execute(
                     "SELECT * FROM state_changes WHERE entity_id = ? ORDER BY chapter DESC LIMIT ?",
@@ -236,13 +210,10 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
                     "SELECT * FROM state_changes ORDER BY chapter DESC LIMIT ?", (limit,)
                 ).fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     @app.get("/api/aliases")
     def list_aliases(entity: Optional[str] = None):
-        conn = _get_db()
-        try:
+        with closing(_get_db()) as conn:
             if entity:
                 rows = conn.execute(
                     "SELECT * FROM aliases WHERE entity_id = ?", (entity,)
@@ -250,8 +221,6 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
             else:
                 rows = conn.execute("SELECT * FROM aliases").fetchall()
             return [dict(r) for r in rows]
-        finally:
-            conn.close()
 
     # ===========================================================
     # API：文档浏览（正文/大纲/设定集 —— 只读）
