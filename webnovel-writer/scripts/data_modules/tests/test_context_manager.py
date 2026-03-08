@@ -97,6 +97,33 @@ def test_context_manager_build_and_filter(temp_project):
     assert payload["sections"]["preferences"]["content"].get("tone") == "热血"
 
 
+def test_context_manager_loads_volume_outline_file(temp_project):
+    state = {
+        "progress": {
+            "volumes_planned": [
+                {"volume": 1, "chapters_range": "1-10"},
+            ]
+        },
+        "protagonist_state": {},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temp_project.outline_dir.mkdir(parents=True, exist_ok=True)
+    (temp_project.outline_dir / "第1卷-详细大纲.md").write_text(
+        "### 第2章：测试标题\n测试大纲\n\n### 第3章：下一章",
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(2, use_snapshot=False, save_snapshot=False)
+
+    outline = payload["sections"]["core"]["content"]["chapter_outline"]
+    assert "### 第2章：测试标题" in outline
+    assert "测试大纲" in outline
+
+
 def test_query_router():
     router = QueryRouter()
     assert router.route("角色是谁") == "entity"

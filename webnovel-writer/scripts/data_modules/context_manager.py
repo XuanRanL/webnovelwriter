@@ -14,6 +14,11 @@ from pathlib import Path
 from runtime_compat import enable_windows_utf8_stdio
 from typing import Any, Dict, List, Optional
 
+try:
+    from chapter_outline_loader import load_chapter_outline
+except ImportError:  # pragma: no cover
+    from scripts.chapter_outline_loader import load_chapter_outline
+
 from .config import get_config
 from .index_manager import IndexManager, WritingChecklistScoreMeta
 from .context_ranker import ContextRanker
@@ -633,18 +638,7 @@ class ContextManager:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def _load_outline(self, chapter: int) -> str:
-        outline_dir = self.config.outline_dir
-        patterns = [
-            f"第{chapter}章*.md",
-            f"第{chapter:02d}章*.md",
-            f"第{chapter:03d}章*.md",
-            f"第{chapter:04d}章*.md",
-        ]
-        for pattern in patterns:
-            matches = list(outline_dir.glob(pattern))
-            if matches:
-                return matches[0].read_text(encoding="utf-8")
-        return f"[大纲未找到: 第{chapter}章]"
+        return load_chapter_outline(self.config.project_root, chapter, max_chars=1500)
 
     def _load_recent_summaries(self, chapter: int, window: int = 3) -> List[Dict[str, Any]]:
         summaries = []
