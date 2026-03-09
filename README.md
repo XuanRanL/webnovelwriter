@@ -117,6 +117,20 @@ model: sonnet
 | **v5.4.3** | 增强智能 RAG 上下文辅助（`auto/graph_hybrid` 回退 BM25） |
 | **v5.3** | 引入追读力系统（Hook / Cool-point / 微兑现 / 债务追踪） |
 
+## 插件发版
+
+推荐使用 GitHub Actions 的 `Plugin Release` 工作流统一发版：
+
+1. 打开仓库的 Actions 页面，选择 `Plugin Release`。
+2. 输入 `version`（例如 `5.5.2`）和 `release_notes`。
+3. 工作流会自动完成以下动作：
+   - 同步 `plugin.json`、`marketplace.json` 与 README 当前版本
+   - 提交版本变更
+   - 创建并推送 `vX.Y.Z` Tag
+   - 创建同名 GitHub Release
+
+日常开发中，`Plugin Version Check` 会在 Push / PR 时自动校验版本信息是否一致。
+
 ## 开源协议
 本项目使用 `GPL v3` 协议，详见 `LICENSE`。
 

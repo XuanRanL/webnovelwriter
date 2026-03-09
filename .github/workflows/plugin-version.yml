@@ -1,0 +1,32 @@
+﻿name: Plugin Version Check
+
+on:
+  push:
+    paths:
+      - '.claude-plugin/marketplace.json'
+      - 'webnovel-writer/.claude-plugin/plugin.json'
+      - 'webnovel-writer/scripts/sync_plugin_version.py'
+      - 'README.md'
+      - '.github/workflows/plugin-version.yml'
+  pull_request:
+    paths:
+      - '.claude-plugin/marketplace.json'
+      - 'webnovel-writer/.claude-plugin/plugin.json'
+      - 'webnovel-writer/scripts/sync_plugin_version.py'
+      - 'README.md'
+      - '.github/workflows/plugin-version.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check release metadata consistency
+        run: python webnovel-writer/scripts/sync_plugin_version.py --check

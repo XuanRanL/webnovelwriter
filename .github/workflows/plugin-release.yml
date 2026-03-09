@@ -1,0 +1,64 @@
+﻿name: Plugin Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Plugin version to release, for example 5.5.2'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes used in README and GitHub Release'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_NOTES: ${{ inputs.release_notes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Update release metadata
+        run: |
+          python webnovel-writer/scripts/sync_plugin_version.py \
+            --version "$RELEASE_VERSION" \
+            --release-notes "$RELEASE_NOTES"
+
+      - name: Commit release metadata
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions[bot]@users.noreply.github.com
+          git add README.md webnovel-writer/.claude-plugin/plugin.json .claude-plugin/marketplace.json
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: release v$RELEASE_VERSION"
+          git push origin HEAD
+
+      - name: Create and push tag
+        run: |
+          if git rev-parse "v$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo "Tag v$RELEASE_VERSION already exists"
+            exit 1
+          fi
+          git tag "v$RELEASE_VERSION"
+          git push origin "v$RELEASE_VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          body: ${{ inputs.release_notes }}
