@@ -8,7 +8,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 ## 目标
 
-- 以稳定流程产出可发布章节：`正文/第{NNNN}章.md`。
+- 以稳定流程产出可发布章节：优先使用 `正文/第{NNNN}章-{title_safe}.md`，无标题时回退 `正文/第{NNNN}章.md`。
 - 默认章节字数目标：2000-2500（用户或大纲明确覆盖时从其约定）。
 - 保证审查、润色、数据回写完整闭环，避免“写完即丢上下文”。
 - 输出直接可被后续章节消费的结构化数据：`review_metrics`、`summaries`、`chapter_meta`。
@@ -28,7 +28,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 - `/webnovel-write --minimal`：Step 1 → 2A → 3（仅3个基础审查）→ 4 → 5 → 6
 
 最小产物（所有模式）：
-- `正文/第{NNNN}章.md`
+- `正文/第{NNNN}章-{title_safe}.md` 或 `正文/第{NNNN}章.md`
 - `index.db.review_metrics` 新纪录（含 `overall_score`）
 - `.webnovel/summaries/ch{NNNN}.md`
 - `.webnovel/state.json` 的进度与 `chapter_meta` 更新

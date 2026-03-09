@@ -20,13 +20,15 @@ model: inherit
 ```json
 {
   "chapter": 100,
-  "chapter_file": "正文/第0100章.md",
+  "chapter_file": "正文/第0100章-章节标题.md",
   "review_score": 85,
   "project_root": "D:/wk/斗破苍穹",
   "storage_path": ".webnovel/",
   "state_file": ".webnovel/state.json"
 }
 ```
+
+`chapter_file` 必须传入实际章节文件路径。若详细大纲已有章节名，优先使用带标题文件名；旧的 `正文/第0100章.md` 仍兼容。
 
 **重要**: 所有数据写入 `{project_root}/.webnovel/` 目录：
 - index.db → 实体、别名、状态变化、关系、章节索引 (SQLite)
@@ -80,7 +82,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" where
 ### Step A: 加载上下文 (v5.1 SQL 查询)
 
 使用 Read 工具读取章节正文:
-- 章节正文: `正文/第0100章.md`
+- 章节正文: 实际章节文件路径（优先 `正文/第0100章-章节标题.md`，旧格式 `正文/第0100章.md` 仍兼容）
 
 使用 Bash 工具从 index.db 查询已有实体:
  ```bash
@@ -181,7 +183,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" rag index-ch
 - 子块: `chunk_type='scene'`, `chunk_id='ch0100_s{scene_index}'`, `parent_chunk_id='ch0100_summary'`
 - `source_file`:
   - summary: `summaries/ch0100.md`
-  - scene: `正文/第0100章.md#scene_{scene_index}`
+  - scene: `{chapter_file}#scene_{scene_index}`
 
 ### Step H: 风格样本评估
 

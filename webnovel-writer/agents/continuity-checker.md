@@ -27,9 +27,11 @@ model: inherit
   "project_root": "{PROJECT_ROOT}",
   "storage_path": ".webnovel/",
   "state_file": ".webnovel/state.json",
-  "chapter_file": "正文/第{NNNN}章.md"
+  "chapter_file": "正文/第{NNNN}章-{title_safe}.md"
 }
 ```
+
+`chapter_file` 应传实际章节文件路径；若当前项目仍使用旧格式 `正文/第{NNNN}章.md`，同样允许。
 
 **Parallel reads**:
 1. Target chapters from `正文/`
