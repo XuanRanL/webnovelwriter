@@ -189,7 +189,7 @@ cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 ```
 
 硬要求：
-- 只输出纯正文到 `正文/第{chapter_padded}章.md`。
+- 只输出纯正文到章节正文文件；若详细大纲已有章节名，优先使用 `正文/第{chapter_padded}章-{title_safe}.md`，否则回退为 `正文/第{chapter_padded}章.md`。
 - 默认按 2000-2500 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
 - 禁止占位符正文（如 `[TODO]`、`[待补充]`）。
 - 保留承接关系：若上章有明确钩子，本章必须回应（可部分兑现）。
@@ -269,7 +269,7 @@ cat "${SKILL_ROOT}/references/writing/typesetting.md"
 
 使用 Task 调用 `data-agent`，参数：
 - `chapter`
-- `chapter_file="正文/第{chapter_padded}章.md"`
+- `chapter_file` 必须传入实际章节文件路径；若详细大纲已有章节名，优先传 `正文/第{chapter_padded}章-{title_safe}.md`，否则传 `正文/第{chapter_padded}章.md`
 - `review_score=Step 3 overall_score`
 - `project_root`
 - `storage_path=.webnovel/`
@@ -302,7 +302,7 @@ git commit -m "Ch{chapter_num}: {title}"
 
 未满足以下条件前，不得结束流程：
 
-1. 章节正文文件存在且非空：`正文/第{chapter_padded}章.md`
+1. 章节正文文件存在且非空：`正文/第{chapter_padded}章-{title_safe}.md` 或 `正文/第{chapter_padded}章.md`
 2. Step 3 已产出 `overall_score` 且 `review_metrics` 成功落库
 3. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
 4. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）

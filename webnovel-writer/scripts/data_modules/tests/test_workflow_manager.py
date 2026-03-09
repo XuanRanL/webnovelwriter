@@ -118,6 +118,15 @@ def test_safe_append_call_trace_logs_failure(monkeypatch, caplog):
     assert "unit_test_event" in message_text
 
 
+def test_get_workflow_paths_support_zero_arg_find_project_root(tmp_path, monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "_cli_project_root", None)
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+
+    assert module.get_workflow_state_path() == tmp_path / ".webnovel" / "workflow_state.json"
+    assert module.get_call_trace_path() == tmp_path / ".webnovel" / "observability" / "call_trace.jsonl"
+
+
 def test_workflow_reentry_does_not_duplicate_history(tmp_path, monkeypatch):
     module = _load_module()
     monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)

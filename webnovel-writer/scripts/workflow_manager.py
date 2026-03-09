@@ -63,14 +63,21 @@ def find_project_root(override: Optional[Path] = None) -> Path:
 _cli_project_root: Optional[Path] = None
 
 
+def _get_active_project_root() -> Path:
+    """Resolve workflow paths while兼容测试中无参 monkeypatch。"""
+    if _cli_project_root is not None:
+        return find_project_root(_cli_project_root)
+    return find_project_root()
+
+
 def get_workflow_state_path() -> Path:
     """Absolute path to workflow_state.json."""
-    project_root = find_project_root(_cli_project_root)
+    project_root = _get_active_project_root()
     return project_root / ".webnovel" / "workflow_state.json"
 
 
 def get_call_trace_path() -> Path:
-    project_root = find_project_root(_cli_project_root)
+    project_root = _get_active_project_root()
     return project_root / ".webnovel" / "observability" / "call_trace.jsonl"
 
 
