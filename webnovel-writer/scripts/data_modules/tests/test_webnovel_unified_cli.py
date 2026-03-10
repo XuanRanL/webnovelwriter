@@ -92,6 +92,46 @@ def test_extract_context_forwards_with_resolved_project_root(monkeypatch, tmp_pa
     ]
 
 
+def test_preflight_succeeds_for_valid_project_root(monkeypatch, tmp_path, capsys):
+    module = _load_webnovel_module()
+
+    project_root = tmp_path / "book"
+    (project_root / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (project_root / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["webnovel", "--project-root", str(project_root), "preflight"])
+
+    with pytest.raises(SystemExit) as exc:
+        module.main()
+
+    captured = capsys.readouterr()
+    assert int(exc.value.code or 0) == 0
+    assert "OK project_root" in captured.out
+    assert str(project_root.resolve()) in captured.out
+
+
+def test_preflight_fails_when_required_scripts_are_missing(monkeypatch, tmp_path, capsys):
+    module = _load_webnovel_module()
+
+    project_root = tmp_path / "book"
+    (project_root / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (project_root / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
+
+    fake_scripts_dir = tmp_path / "fake-scripts"
+    fake_scripts_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(module, "_scripts_dir", lambda: fake_scripts_dir)
+    monkeypatch.setattr(sys, "argv", ["webnovel", "--project-root", str(project_root), "preflight", "--format", "json"])
+
+    with pytest.raises(SystemExit) as exc:
+        module.main()
+
+    captured = capsys.readouterr()
+    assert int(exc.value.code or 0) == 1
+    assert '"ok": false' in captured.out
+    assert '"name": "entry_script"' in captured.out
+
+
 def test_quality_trend_report_writes_to_book_root_when_input_is_workspace_root(tmp_path, monkeypatch):
     _ensure_scripts_on_path()
     import quality_trend_report as quality_trend_report_module

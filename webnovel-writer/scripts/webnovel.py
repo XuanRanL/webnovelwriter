@@ -4,6 +4,7 @@
 webnovel 统一入口脚本（无须 `cd`）
 
 用法示例：
+  python "<SCRIPTS_DIR>/webnovel.py" preflight
   python "<SCRIPTS_DIR>/webnovel.py" where
   python "<SCRIPTS_DIR>/webnovel.py" index stats
 
@@ -33,4 +34,3 @@ def main() -> None:
 if __name__ == "__main__":
     enable_windows_utf8_stdio(skip_in_pytest=True)
     main()
-

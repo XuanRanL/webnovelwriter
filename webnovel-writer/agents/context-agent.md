@@ -1,11 +1,11 @@
 ---
 name: context-agent
-description: 上下文搜集Agent (v5.5)，内置 Contract v2，输出可被 Step 2A 直接消费的创作执行包。
+description: 上下文搜集Agent，内置 Context Contract，输出可被 Step 2A 直接消费的创作执行包。
 tools: Read, Grep, Bash
 model: inherit
 ---
 
-# context-agent (上下文搜集Agent v5.5)
+# context-agent (上下文搜集Agent)
 
 > **Role**: 创作执行包生成器。目标是“能直接开写”，不堆信息。
 > **Philosophy**: 按需召回 + 推断补全，确保接住上章、场景清晰、留出钩子。
@@ -14,7 +14,7 @@ model: inherit
 
 - **Taxonomy**: `${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md`
 - **Genre Profile**: `${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md`
-- **Contract v2**: `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/step-1.5-contract.md`
+- **Context Contract**: `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/step-1.5-contract.md`
 - **Shared References**: `${CLAUDE_PLUGIN_ROOT}/references/shared/` 为单一事实源；如需枚举/扫描参考文件，遇到 `<!-- DEPRECATED:` 的文件一律跳过。
 
 ## 输入
@@ -42,7 +42,7 @@ model: inherit
 - 连续性与伏笔（时间/位置/情绪连贯；必须处理/可选伏笔）
 - 追读力策略（未闭合问题 + 钩子类型/强度、微兑现建议、差异化提示）
 
-2. **Contract v2（内置 Step 1.5）**
+2. **Context Contract（内置 Step 1.5）**
 - 目标、阻力、代价、本章变化、未闭合问题、核心冲突一句话
 - 开头类型、情绪节奏、信息密度
 - 是否过渡章（必须按大纲判定，禁止按字数判定）
@@ -122,7 +122,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" where
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" context -- --chapter {NNNN}
 ```
 
-### Step 0.5: Contract v2 上下文包（内置）
+### Step 0.5: Context Contract 上下文包（内置）
 ```bash
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" extract-context --chapter {NNNN} --format json
 ```
@@ -215,7 +215,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index recent
   - 情绪底色 = 上章结束情绪 + 事件走向
   - 可用能力 = 当前境界 + 近期获得 + 设定禁用项
 
-### Step 5: 组装创作执行包（任务书 + Contract v2 + 直写提示词）
+### Step 5: 组装创作执行包（任务书 + Context Contract + 直写提示词）
 输出可直接供 Step 2A 消费的单一执行包，不拆分独立 Step 1.5。
 
 - 第 7 板块必须包含“伏笔优先级清单”：
@@ -228,7 +228,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index recent
   - 若 `可选伏笔` 超过 5 条：展示前 5 条并标注“其余 N 条可选伏笔已省略”
   - 若 `foreshadowing_data_missing=true`：明确输出“结构化伏笔数据缺失，当前清单仅供占位”
 
-Contract v2 必须字段（不可缺）：
+Context Contract 必须字段（不可缺）：
 - `目标` / `阻力` / `代价` / `本章变化` / `未闭合问题`
 - `核心冲突一句话`
 - `开头类型` / `情绪节奏` / `信息密度`
@@ -262,7 +262,7 @@ Contract v2 必须字段（不可缺）：
 6. ✅ 章末钩子建议类型明确
 7. ✅ 反派层级已注明（若大纲提供）
 8. ✅ 第 7 板块已基于 `plot_threads.foreshadowing` 按紧急度排序输出
-9. ✅ Contract v2 字段完整且与任务书一致
+9. ✅ Context Contract 字段完整且与任务书一致
 10. ✅ 逻辑红线校验通过（fail=0）
 11. ✅ **时间约束板块完整**（上章时间锚点、本章时间锚点、允许推进跨度、过渡要求、倒计时状态）
 12. ✅ **时间逻辑红线通过**（无回跳、无倒计时跳跃、大跨度有过渡要求）

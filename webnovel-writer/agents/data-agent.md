@@ -1,17 +1,19 @@
 ---
 name: data-agent
-description: 数据处理Agent (v5.4)，负责 AI 实体提取、场景切片、索引构建，并记录钩子/模式/结束状态与章节摘要。
+description: 数据处理Agent，负责 AI 实体提取、场景切片、索引构建，并记录钩子/模式/结束状态与章节摘要。
 tools: Read, Write, Bash
 model: inherit
 ---
 
-# data-agent (数据处理Agent v5.4)
+# data-agent (数据处理Agent)
 
-> **Role**: 智能数据工程师，负责从章节正文中提取结构化信息并写入数据链。
+> **职责**: 智能数据工程师，负责从章节正文中提取结构化信息并写入数据链。
 >
-> **Philosophy**: AI驱动提取，智能消歧 - 用语义理解替代正则匹配，用置信度控制质量。
+> **原则**: AI驱动提取，智能消歧 - 用语义理解替代正则匹配，用置信度控制质量。
 
-**v5.2 变更（v5.4 沿用）**:
+**命令示例即最终准则**：本文档中的所有 CLI 命令示例已与当前仓库真实接口对齐。脚本调用方式以本文档示例为准；命令失败时查错误日志定位问题，不去大范围翻源码学习调用方式。
+
+**当前约定**：
 - 章节摘要不再追加到正文，改为 `.webnovel/summaries/ch{NNNN}.md`
 - 在 state.json 写入 `chapter_meta`（钩子/模式/结束状态）
 
@@ -68,35 +70,22 @@ model: inherit
 - `${SCRIPTS_DIR}/webnovel.py`
 
 ```bash
-# 仅使用 CLAUDE_PLUGIN_ROOT，避免多路径探测带来的误判
-if [ -z "${CLAUDE_PLUGIN_ROOT}" ] || [ ! -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
-  echo "ERROR: 未设置 CLAUDE_PLUGIN_ROOT 或缺少目录: ${CLAUDE_PLUGIN_ROOT}/scripts" >&2
-  exit 1
-fi
-SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-
-# 建议先确认解析出的 project_root，避免写到错误目录
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" where
+export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts"
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" preflight
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" where
 ```
 
-### Step A: 加载上下文 (v5.1 SQL 查询)
+### Step A: 加载上下文（SQL 查询）
 
 使用 Read 工具读取章节正文:
 - 章节正文: 实际章节文件路径（优先 `正文/第0100章-章节标题.md`，旧格式 `正文/第0100章.md` 仍兼容）
 
 使用 Bash 工具从 index.db 查询已有实体:
  ```bash
-  # v5.1: 从 SQLite 获取核心实体
-  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-core-entities
-  
-  # v5.1: 获取实体别名
-  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-aliases --entity "xiaoyan"
-  
-  # 查询最近出场记录
-  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index recent-appearances --limit 20
-  
-  # v5.1: 按别名查找实体（一对多）
-  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-by-alias --alias "萧炎"
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-core-entities
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-aliases --entity "xiaoyan"
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index recent-appearances --limit 20
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-by-alias --alias "萧炎"
   ```
 
 ### Step B: AI 实体提取
@@ -113,22 +102,22 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" where
 | 0.5 - 0.8 | 采用建议值，记录 warning |
 | < 0.5 | 标记待人工确认，不自动写入 |
 
-### Step D: 写入存储 (v5.2 引入)
+### Step D: 写入存储
 
  **写入 index.db (实体/别名/状态变化/关系)**:
  ```bash
-  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index upsert-entity --data '{...}'
-  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index register-alias --alias "红衣女子" --entity "hongyi_girl" --type "角色"
-  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index record-state-change --data '{...}'
-  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index upsert-relationship --data '{...}'
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index upsert-entity --data '{...}'
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index register-alias --alias "红衣女子" --entity "hongyi_girl" --type "角色"
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index record-state-change --data '{...}'
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index upsert-relationship --data '{...}'
  ```
 
  **更新精简版 state.json**:
  ```bash
-  python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state process-chapter --chapter 100 --data '{...}'
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state process-chapter --chapter 100 --data '{...}'
  ```
 
-写入内容 (v5.2 引入):
+写入内容：
 - 更新 `progress.current_chapter`
 - 更新 `protagonist_state`
 - 更新 `strand_tracker`
@@ -172,13 +161,13 @@ hook_strength: "strong"
 ### Step G: 向量嵌入
 
 ```bash
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" rag index-chapter \
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" rag index-chapter \
   --chapter 100 \
   --scenes '[...]' \
   --summary "本章摘要文本"
 ```
 
-**父子索引规则 (v1.2)**:
+**父子索引规则**：
 - 父块: `chunk_type='summary'`, `chunk_id='ch0100_summary'`
 - 子块: `chunk_type='scene'`, `chunk_id='ch0100_s{scene_index}'`, `parent_chunk_id='ch0100_summary'`
 - `source_file`:
@@ -193,14 +182,14 @@ if review_score >= 80:
 ```
 
 ```bash
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" style extract --chapter 100 --score 85 --scenes '[...]'
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" style extract --chapter 100 --score 85 --scenes '[...]'
 ```
 
-### Step I: 债务利息计算（v5.4 新增）
+### Step I: 债务利息计算
 
 **默认不自动触发**。仅在“开启债务追踪”或用户明确要求时执行：
  ```bash
- python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index accrue-interest --current-chapter {chapter}
+ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index accrue-interest --current-chapter {chapter}
  ```
 
 此步骤会：
@@ -226,6 +215,11 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" style extrac
 - 脚本自动写入：`.webnovel/observability/data_agent_timing.jsonl`
 - Data Agent 报告中仍需返回：`timing_ms` + `bottlenecks_top3`
 - 规则：`bottlenecks_top3` 始终按耗时降序返回；当 `TOTAL > 30000ms` 时，需在报告文字部分附加原因说明。
+
+观测日志说明：
+- `call_trace.jsonl`：外层流程调用链（agent 启动、排队、环境探测等系统开销）。
+- `data_agent_timing.jsonl`：Data Agent 内部各子步骤耗时。
+- 当外层总耗时远大于内层 timing 之和时，默认先归因为 agent 启动与环境探测开销，不误判为正文或数据处理慢。
 
 ```json
 {

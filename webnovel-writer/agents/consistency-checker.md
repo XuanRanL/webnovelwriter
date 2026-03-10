@@ -7,19 +7,19 @@ model: inherit
 
 # consistency-checker (设定一致性检查器)
 
-> **Role**: Continuity guardian enforcing the second anti-hallucination law (设定即物理 - Settings are Physics).
+> **职责**: 设定守卫者，执行第二防幻觉定律（设定即物理）。
 
 > **输出格式**: 遵循 `${CLAUDE_PLUGIN_ROOT}/references/checker-output-schema.md` 统一 JSON Schema
 
-## Scope
+## 检查范围
 
-**Input**: Single chapter or chapter range (e.g., `45` / `"45-46"`)
+**输入**: 单章或章节区间（如 `45` / `"45-46"`）
 
-**Output**: Structured report on setting violations, power-level conflicts, and logical inconsistencies.
+**输出**: 设定违规、战力冲突、逻辑不一致的结构化报告。
 
-## Execution Protocol
+## 执行流程
 
-### Step 1: Load Reference Materials
+### 第一步: 加载参考资料
 
 **输入参数**:
 ```json
@@ -33,22 +33,22 @@ model: inherit
 
 `chapter_file` 应传实际章节文件路径；若当前项目仍使用旧格式 `正文/第{NNNN}章.md`，同样允许。
 
-**Parallel reads**:
-1. Target chapters from `正文/`
-2. `{project_root}/.webnovel/state.json` (current protagonist state)
-3. `设定集/` (world-building bible)
-4. `大纲/` (outline for context)
+**并行读取**:
+1. `正文/` 下的目标章节
+2. `{project_root}/.webnovel/state.json`（主角当前状态）
+3. `设定集/`（世界观圣经）
+4. `大纲/`（对照上下文）
 
-### Step 2: Three-Tier Consistency Check
+### 第二步: 三层一致性检查
 
-#### Tier 1: Power System Consistency (战力检查)
+#### 第一层: 战力一致性（战力检查）
 
-**Verify**:
+**校验项**:
 - Protagonist's current realm/level matches state.json
 - Abilities used are within realm limitations
 - Power-ups follow established progression rules
 
-**Red Flags** (POWER_CONFLICT):
+**危险信号** (POWER_CONFLICT):
 ```
 ❌ 主角筑基3层使用金丹期才能掌握的"破空斩"
    → Realm: 筑基3 | Ability: 破空斩 (requires 金丹期)
@@ -59,18 +59,18 @@ model: inherit
    → VIOLATION: Unexplained power jump
 ```
 
-**Check Against**:
+**校验依据**:
 - state.json: `protagonist_state.power.realm`, `protagonist_state.power.layer`
 - 设定集/修炼体系.md: Realm ability restrictions
 
-#### Tier 2: Location & Character Consistency (地点/角色检查)
+#### 第二层: 地点/角色一致性（地点/角色检查）
 
-**Verify**:
+**校验项**:
 - Current location matches state.json or has valid travel sequence
 - Characters appearing are established in 设定集/ or tagged with `<entity/>`
 - Character attributes (appearance, personality, affiliations) match records
 
-**Red Flags** (LOCATION_ERROR / CHARACTER_CONFLICT):
+**危险信号** (LOCATION_ERROR / CHARACTER_CONFLICT):
 ```
 ❌ 上章在"天云宗"，本章突然出现在"千里外的血煞秘境"（无移动描写）
    → Previous location: 天云宗 | Current: 血煞秘境 | Distance: 1000+ li
@@ -81,13 +81,13 @@ model: inherit
    → VIOLATION: Power regression unexplained
 ```
 
-**Check Against**:
+**校验依据**:
 - state.json: `protagonist_state.location.current`
 - 设定集/角色卡/: Character profiles
 
-#### Tier 3: Timeline Consistency (时间线检查)
+#### 第三层: 时间线一致性（时间线检查）
 
-**Verify**:
+**校验项**:
 - Event sequence is chronologically logical
 - Time-sensitive elements (deadlines, age, seasonal events) align
 - Flashbacks are clearly marked
@@ -106,7 +106,7 @@ model: inherit
 
 > 输出 JSON 时，`issues[].severity` 必须使用小写枚举：`critical|high|medium|low`。
 
-**Red Flags** (TIMELINE_ISSUE):
+**危险信号** (TIMELINE_ISSUE):
 ```
 ❌ [critical] 第10章物资耗尽倒计时 D-5，第11章直接变成 D-2（跳过3天）
    → Setup: D-5 | Next chapter: D-2 | Missing: 3 days
@@ -129,86 +129,79 @@ model: inherit
    → VIOLATION: Time regression without flashback marker
 ```
 
-### Step 3: Entity Consistency Check
+### 第三步: 实体一致性检查
 
-**For all new entities detected in chapters**:
+**对所有章节中检测到的新实体**:
 1. Check if they contradict existing settings
 2. Assess if their introduction is consistent with world-building
 3. Verify power levels are reasonable for the current arc
 
-**Report inconsistent inventions**:
+**报告不一致的新增实体**:
 ```
 ⚠️ 发现设定冲突:
 - 第46章出现"紫霄宗"，与设定集中势力分布矛盾
   → 建议: 确认是否为新势力或笔误
 ```
 
-### Step 4: Generate Report
+### 第四步: 生成报告
 
 ```markdown
-# 设定一致性检查报告 (Consistency Review)
+# 设定一致性检查报告
 
 ## 覆盖范围
-Chapters {N} - {M}
+第 {N} 章 - 第 {M} 章
 
-## 战力一致性 (Power System)
-| Chapter | Issue | Severity | Details |
-|---------|-------|----------|---------|
-| {N} | ✓ No violations | - | - |
+## 战力一致性
+| 章节 | 问题 | 严重度 | 详情 |
+|------|------|--------|------|
+| {N} | ✓ 无违规 | - | - |
 | {M} | ✗ POWER_CONFLICT | high | 主角筑基3层使用金丹期技能"破空斩" |
 
-**Verdict**: {X} violations found
+**结论**: 发现 {X} 处违规
 
-## 地点/角色一致性 (Location & Character)
-| Chapter | Type | Issue | Severity |
-|---------|------|-------|----------|
-| {M} | Location | ✗ LOCATION_ERROR | medium | 未描述移动过程，从天云宗跳跃到血煞秘境 |
+## 地点/角色一致性
+| 章节 | 类型 | 问题 | 严重度 |
+|------|------|------|--------|
+| {M} | 地点 | ✗ LOCATION_ERROR | medium | 未描述移动过程，从天云宗跳跃到血煞秘境 |
 
-**Verdict**: {Y} violations found
+**结论**: 发现 {Y} 处违规
 
-## 时间线一致性 (Timeline)
-| Chapter | Issue | Severity | Details |
-|---------|-------|----------|---------|
+## 时间线一致性
+| 章节 | 问题 | 严重度 | 详情 |
+|------|------|--------|------|
 | {M} | ✗ TIMELINE_ISSUE | critical | 倒计时从 D-5 跳到 D-2 |
 | {M} | ✗ TIMELINE_ISSUE | high | 大比倒计时逻辑不一致 |
 
-**Verdict**: {Z} violations found
-**Critical Timeline Issues**: {count} (MUST FIX before continuing)
+**结论**: 发现 {Z} 处违规
+**严重时间线问题**: {count} 个（必须修复后才能继续）
 
-## 新实体一致性检查 (Entity Consistency)
-- ✓ All new entities consistent with world-building: {count}
-- ⚠️ Inconsistent entities found: {count} (详见下方列表)
-- ❌ Contradictory entities: {count}
+## 新实体一致性检查
+- ✓ 与世界观一致的新实体: {count}
+- ⚠️ 不一致的实体: {count}（详见下方列表）
+- ❌ 矛盾实体: {count}
 
-**Inconsistent List**:
-1. 第{M}章："紫霄宗" (势力) - 与现有势力分布矛盾
-2. 第{M}章："天雷果" (物品) - 效果与力量体系不符
+**不一致列表**:
+1. 第{M}章："紫霄宗"（势力）- 与现有势力分布矛盾
+2. 第{M}章："天雷果"（物品）- 效果与力量体系不符
 
-## 建议 (Recommendations)
-- [For power conflicts] 润色时修改第{M}章，将"破空斩"替换为筑基期可用技能
-- [For location errors] 润色时补充移动过程描述或调整地点设定
-- [For timeline issues] 润色时统一时间线推算，修正矛盾
-- [For entity conflicts] 润色时确认是否为新设定或需要调整
+## 修复建议
+- [战力冲突] 润色时修改第{M}章，将"破空斩"替换为筑基期可用技能
+- [地点错误] 润色时补充移动过程描述或调整地点设定
+- [时间线问题] 润色时统一时间线推算，修正矛盾
+- [实体冲突] 润色时确认是否为新设定或需要调整
 
 ## 综合评分
-**Overall**: {PASS/FAIL} - {Brief summary}
-**Critical Violations**: {count} (Must fix before continuing)
-**Minor Issues**: {count} (Recommend fixing)
+**结论**: {通过/未通过} - {简要说明}
+**严重违规**: {count}（必须修复）
+**轻微问题**: {count}（建议修复）
 ```
 
-### Step 5: 标记无效事实（新增）
+### 第五步: 标记无效事实（新增）
 
-对于发现的 **CRITICAL** 级别问题，自动标记到 invalid_facts（pending）：
+对于发现的严重级别（`critical`）问题，自动标记到 `invalid_facts`（状态为 `pending`）：
 
 ```bash
-# 仅使用 CLAUDE_PLUGIN_ROOT，避免多路径探测带来的误判
-if [ -z "${CLAUDE_PLUGIN_ROOT}" ] || [ ! -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
-  echo "ERROR: 未设置 CLAUDE_PLUGIN_ROOT 或缺少目录: ${CLAUDE_PLUGIN_ROOT}/scripts" >&2
-  exit 1
-fi
-SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "{PROJECT_ROOT}" index mark-invalid \
+python -X utf8 "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts/webnovel.py" --project-root "{PROJECT_ROOT}" index mark-invalid \
   --source-type entity \
   --source-id {entity_id} \
   --reason "{问题描述}" \
@@ -218,18 +211,18 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{PROJECT_ROOT}" index mark-i
 
 > 注意：自动标记仅为 `pending`，需用户确认后才生效。
 
-## Anti-Patterns (Forbidden)
+## 禁止事项
 
-❌ Approving chapters with POWER_CONFLICT (战力崩坏)
-❌ Ignoring untagged new entities
-❌ Accepting teleportation without in-world explanation
-❌ **Downgrading TIMELINE_ISSUE severity** (时间问题不得降级)
-❌ **Approving critical/high timeline issues without fix** (严重时间问题必须修复)
+❌ 通过存在 POWER_CONFLICT（战力崩坏）的章节
+❌ 忽略未标记的新实体
+❌ 接受无世界观解释的瞬移
+❌ **降低 TIMELINE_ISSUE 严重度**（时间问题不得降级）
+❌ **通过存在严重/高优先级时间线问题的章节**（必须修复）
 
-## Success Criteria
+## 成功标准
 
-- 0 critical violations (power conflicts, unexplained character changes, **timeline arithmetic errors**)
-- 0 high-severity timeline issues (**countdown errors, time regression, major events without time progression**)
-- All new entities consistent with existing world-building
-- Location and timeline transitions are logical
-- Report provides specific fix recommendations for polish step
+- 0 个严重违规（战力冲突、无解释的角色变化、**时间线算术错误**）
+- 0 个高优先级时间线问题（**倒计时错误、时间回跳、重大事件无时间推进**）
+- 所有新实体与现有世界观一致
+- 地点和时间线过渡合乎逻辑
+- 报告为润色步骤提供具体修复建议

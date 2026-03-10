@@ -1,4 +1,4 @@
-# Context Contract v2
+# Context Contract
 
 ## 目的
 - 为 `Context Agent`、`Writer`、`Review` 提供统一、可排序、可追踪的上下文契约。

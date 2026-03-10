@@ -4,7 +4,7 @@ description: Writes webnovel chapters (default 2000-2500 words). Use when the us
 allowed-tools: Read Write Edit Grep Bash Task
 ---
 
-# Chapter Writing (Structured Workflow v2)
+# Chapter Writing (Structured Workflow)
 
 ## 目标
 
@@ -32,6 +32,15 @@ allowed-tools: Read Write Edit Grep Bash Task
 - `index.db.review_metrics` 新纪录（含 `overall_score`）
 - `.webnovel/summaries/ch{NNNN}.md`
 - `.webnovel/state.json` 的进度与 `chapter_meta` 更新
+
+### 流程硬约束（禁止事项）
+
+- **禁止并步**：不得将两个 Step 合并为一个动作执行（如同时做 2A 和 3）。
+- **禁止跳步**：不得跳过未被模式定义标记为可跳过的 Step。
+- **禁止临时改名**：不得将 Step 的输出产物改写为非标准文件名或格式。
+- **禁止自创模式**：`--fast` / `--minimal` 只允许按上方定义裁剪步骤，不允许自创混合模式、"半步"或"简化版"。
+- **禁止自审替代**：Step 3 审查必须由 Task 子代理执行，主流程不得内联伪造审查结论。
+- **禁止源码探测**：脚本调用方式以本文档与 data-agent 文档中的命令示例为准，命令失败时查日志定位问题，不去翻源码学习调用方式。
 
 ## 引用加载等级（strict, lazy）
 
@@ -114,29 +123,15 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 环境设置（bash 命令执行前）：
 ```bash
-# WORKSPACE_ROOT：Claude Code 的工作区根（通常等于 $CLAUDE_PROJECT_DIR）
 export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts"
+export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/skills/webnovel-write"
 
-if [ -z "${CLAUDE_PLUGIN_ROOT}" ] || [ ! -d "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write" ]; then
-  echo "ERROR: 未设置 CLAUDE_PLUGIN_ROOT 或缺少目录: ${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write" >&2
-  exit 1
-fi
-export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write"
-
-if [ -z "${CLAUDE_PLUGIN_ROOT}" ] || [ ! -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
-  echo "ERROR: 未设置 CLAUDE_PLUGIN_ROOT 或缺少目录: ${CLAUDE_PLUGIN_ROOT}/scripts" >&2
-  exit 1
-fi
-export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-
-if [ ! -f "${SCRIPTS_DIR}/extract_chapter_context.py" ]; then
-  echo "ERROR: 缺少脚本: ${SCRIPTS_DIR}/extract_chapter_context.py" >&2
-  exit 1
-fi
-
-# 解析真实书项目根（后续所有 Read/Write 路径都必须以 $PROJECT_ROOT 为前缀，避免写到工作区根目录）
-export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" preflight
+export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
 ```
+
+**硬门槛**：`preflight` 必须成功。它统一校验 `CLAUDE_PLUGIN_ROOT` 派生出的 `SKILL_ROOT` / `SCRIPTS_DIR`、`webnovel.py`、`extract_chapter_context.py` 和解析出的 `PROJECT_ROOT`。任一失败都立即阻断。
 
 输出：
 - “已就绪输入”与“缺失输入”清单；缺失则阻断并提示先补齐。
@@ -144,17 +139,10 @@ export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WOR
 ### Step 0.5：工作流断点记录（best-effort，不阻断）
 
 ```bash
-# 开始整条任务
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-task --command webnovel-write --chapter {chapter_num} || true
-
-# 进入某一步（示例：Step 1）
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 1" --step-name "Context Agent" || true
-
-# Step 1 完成后记录（每个 Step 结束都要调用）
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 1" --artifacts '{"ok":true}' || true
-
-# 全部 Step 结束后，再结束整条任务
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-task --artifacts '{"ok":true}' || true
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-task --command webnovel-write --chapter {chapter_num} || true
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 1" --step-name "Context Agent" || true
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 1" --artifacts '{"ok":true}' || true
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-task --artifacts '{"ok":true}' || true
 ```
 
 要求：
@@ -162,7 +150,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow co
 - 任何记录失败只记警告，不阻断写作。
 - 每个 Step 执行结束后，同样需要 `complete-step`（失败不阻断）。
 
-### Step 1：Context Agent（内置 Contract v2，生成直写执行包）
+### Step 1：Context Agent（内置 Context Contract，生成直写执行包）
 
 使用 Task 调用 `context-agent`，参数：
 - `chapter`
@@ -174,12 +162,12 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow co
 - 若 `state` 或大纲不可用，立即阻断并返回缺失项。
 - 输出必须同时包含：
   - 7 板块任务书（目标/冲突/承接/角色/场景约束/伏笔/追读力）；
-  - Contract v2 全字段（目标/阻力/代价/本章变化/未闭合问题/开头类型/情绪节奏/信息密度/过渡章判定/追读力设计）；
+  - Context Contract 全字段（目标/阻力/代价/本章变化/未闭合问题/开头类型/情绪节奏/信息密度/过渡章判定/追读力设计）；
   - Step 2A 可直接消费的“写作执行包”（章节节拍、不可变事实清单、禁止事项、终检清单）。
 - 合同与任务书出现冲突时，以“大纲与设定约束更严格者”为准。
 
 输出：
-- 单一“创作执行包”（任务书 + Contract v2 + 直写提示词），供 Step 2A 直接消费，不再拆分独立 Step 1.5。
+- 单一“创作执行包”（任务书 + Context Contract + 直写提示词），供 Step 2A 直接消费，不再拆分独立 Step 1.5。
 
 ### Step 2A：正文起草
 
@@ -193,6 +181,12 @@ cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 - 默认按 2000-2500 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
 - 禁止占位符正文（如 `[TODO]`、`[待补充]`）。
 - 保留承接关系：若上章有明确钩子，本章必须回应（可部分兑现）。
+
+中文思维写作约束（硬规则）：
+- **禁止"先英后中"**：不得先用英文工程化骨架（如 ABCDE 分段、Summary/Conclusion 框架）组织内容，再翻译成中文。
+- **中文叙事单元优先**：以"动作、反应、代价、情绪、场景、关系位移"为基本叙事单元，不使用英文结构标签驱动正文生成。
+- **禁止英文结论话术**：正文、审查说明、润色说明、变更摘要、最终报告中不得出现 Overall / PASS / FAIL / Summary / Conclusion 等英文结论标题。
+- **英文仅限机器标识**：CLI flag（`--fast`）、checker id（`consistency-checker`）、DB 字段名（`anti_ai_force_check`）、JSON 键名等不可改的接口名保持英文，其余一律使用简体中文。
 
 输出：
 - 章节草稿（可进入 Step 2B 或 Step 3）。
@@ -239,9 +233,24 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 
 审查指标落库（必做）：
 ```bash
-# 统一入口 webnovel.py：无需 cd / PYTHONPATH，且自动注入 --project-root
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics --data '@review_metrics.json'
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics --data "@${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json"
 ```
+
+review_metrics 字段约束（当前工作流约定只传以下字段）：
+```json
+{
+  "start_chapter": 100,
+  "end_chapter": 100,
+  "overall_score": 85.0,
+  "dimension_scores": {"爽点密度": 8.5, "设定一致性": 8.0, "节奏控制": 7.8, "人物塑造": 8.2, "连贯性": 9.0, "追读力": 8.7},
+  "severity_counts": {"critical": 0, "high": 1, "medium": 2, "low": 0},
+  "critical_issues": ["问题描述"],
+  "report_file": "审查报告/第100-100章审查报告.md",
+  "notes": "单个字符串；selected_checkers / timeline_gate / anti_ai_force_check 等扩展信息压成单行文本写入此字段"
+}
+```
+- `notes` 在当前执行契约中必须是单个字符串，不得传入对象或数组。
+- 当前工作流不额外传入其它顶层字段；脚本侧未在此处做新增硬校验。
 
 硬要求：
 - `--minimal` 也必须产出 `overall_score`。
@@ -275,6 +284,27 @@ cat "${SKILL_ROOT}/references/writing/typesetting.md"
 - `storage_path=.webnovel/`
 - `state_file=.webnovel/state.json`
 
+Data Agent 默认子步骤（全部执行）：
+- A. 加载上下文
+- B. AI 实体提取
+- C. 实体消歧
+- D. 写入 state/index
+- E. 写入章节摘要
+- F. AI 场景切片
+- G. RAG 向量索引（`rag index-chapter --scenes ...`）
+- H. 风格样本评估（`style extract --scenes ...`，仅 `review_score >= 80` 时）
+- I. 债务利息（默认跳过）
+
+`--scenes` 来源优先级（G/H 步骤共用）：
+1. 优先从 `index.db` 的 scenes 记录获取（Step F 写入的结果）
+2. 其次按 `start_line` / `end_line` 从正文切片构造
+3. 最后允许单场景退化（整章作为一个 scene）
+
+Step 5 失败隔离规则：
+- 若 G/H 失败原因是 `--scenes` 缺失、scene 为空、scene JSON 格式错误：只补跑 G/H 子步骤，不回滚或重跑 Step 1-4。
+- 若 A-E 失败（state/index/summary 写入失败）：仅重跑 Step 5，不回滚已通过的 Step 1-4。
+- 禁止因 RAG/style 子步骤失败而重跑整个写作链。
+
 执行后检查（最小白名单）：
 - `.webnovel/state.json`
 - `.webnovel/index.db`
@@ -285,6 +315,11 @@ cat "${SKILL_ROOT}/references/writing/typesetting.md"
 - 读取 timing 日志最近一条；
 - 当 `TOTAL > 30000ms` 时，输出最慢 2-3 个环节与原因说明。
 
+观测日志说明：
+- `call_trace.jsonl`：外层流程调用链（agent 启动、排队、环境探测等系统开销）。
+- `data_agent_timing.jsonl`：Data Agent 内部各子步骤耗时。
+- 当外层总耗时远大于内层 timing 之和时，默认先归因为 agent 启动与环境探测开销，不误判为正文或数据处理慢。
+
 债务利息：
 - 默认关闭，仅在用户明确要求或开启追踪时执行（见 `step-5-debt-switch.md`）。
 
@@ -292,10 +327,12 @@ cat "${SKILL_ROOT}/references/writing/typesetting.md"
 
 ```bash
 git add .
-git commit -m "Ch{chapter_num}: {title}"
+git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 ```
 
 规则：
+- 提交时机：验证、回写、清理全部完成后最后执行。
+- 提交信息默认中文，格式：`第{chapter_num}章: {title}`。
 - 若 commit 失败，必须给出失败原因与未提交文件范围。
 
 ## 充分性闸门（必须通过）
@@ -317,7 +354,7 @@ git commit -m "Ch{chapter_num}: {title}"
 test -f "${PROJECT_ROOT}/.webnovel/state.json"
 test -f "${PROJECT_ROOT}/正文/第${chapter_padded}章.md"
 test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md"
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 1
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 1
 tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || true
 ```
 

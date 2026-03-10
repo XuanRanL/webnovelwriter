@@ -1,7 +1,6 @@
 ---
 name: polish-guide
 purpose: 章节生成后的润色阶段加载，基于审查报告修复问题 + 强化网文口感
-version: "6.0"
 ---
 
 <context>
@@ -264,18 +263,18 @@ version: "6.0"
 
 必须输出：
 1. 润色后的章节正文
-2. 修复摘要（建议结构）
+2. 修复摘要（结构如下）
 
 ```text
-[Polish Report]
-- critical_fixed: N
-- high_fixed: N
-- medium_low_fixed: N
-- anti_ai_rewrites: N
+[润色报告]
+- 严重问题已修复: N 处
+- 高优先级已修复: N 处
+- 中低优先级已修复: N 处
+- Anti-AI 改写: N 处
 - anti_ai_force_check: pass/fail
-- poison_risk: pass/fail
-- deviations:
-  - {location}: {reason}
+- 毒点风险: pass/fail
+- 偏离记录:
+  - {位置}: {原因}
 ```
 
 若 `critical` 未清零，必须显式标注“未通过”，并返回 Step 4 继续修复。

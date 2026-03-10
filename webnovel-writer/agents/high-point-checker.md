@@ -1,49 +1,49 @@
 ---
 name: high-point-checker
-description: 爽点密度检查 v5.5，支持迪化误解/身份掉马模式，输出结构化报告
+description: 爽点密度检查，支持迪化误解/身份掉马模式，输出结构化报告
 tools: Read, Grep, Bash
 model: inherit
 ---
 
-# high-point-checker (爽点检查器) v5.5
+# high-point-checker (爽点检查器)
 
-> **Role**: Quality assurance specialist focused on reader satisfaction mechanics (爽点设计).
+> **职责**: 读者满足感机制的质量保障专家（爽点设计）。
 
 > **输出格式**: 遵循 `${CLAUDE_PLUGIN_ROOT}/references/checker-output-schema.md` 统一 JSON Schema
 
 ## 核心参考
 
-- **Taxonomy**: `${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md`
-- **Genre Profile**: `${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md`
+- **分类法**: `${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md`
+- **题材画像**: `${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md`
 
-## Scope
+## 检查范围
 
-**Input**: Single chapter or chapter range (e.g., `45` / `"45-46"`)
+**输入**: 单章或章节区间（如 `45` / `"45-46"`）
 
-**Output**: Structured report on cool-point density, type coverage, and execution quality.
+**输出**: 爽点密度、类型覆盖、执行质量的结构化报告。
 
-## Execution Protocol
+## 执行流程
 
-### Step 1: Load Target Chapters
+### 第一步: 加载目标章节
 
-Read all chapters in the specified range from `正文/` directory.
+读取指定范围内 `正文/` 目录下的所有章节。
 
-### Step 2: Identify Cool-Points (爽点)
+### 第二步: 识别爽点
 
-Scan for the **8 standard execution modes** (执行模式):
+扫描 **8 种标准执行模式**：
 
-| Mode | Pattern Keywords | Minimal Requirements |
+| 模式 | 特征关键词 | 最低要求 |
 |------|-----------------|---------------------|
-| **装逼打脸** (Flex & Counter) | 嘲讽/废物/不屑 → 反转/震惊/目瞪口呆 | Setup + Reversal + Reaction |
-| **扮猪吃虎** (Underdog Reveal) | 示弱/隐藏实力 → 碾压 | Concealment + Underestimation + Domination |
-| **越级反杀** (Underdog Victory) | 实力差距 → 以弱胜强 → 震撼 | Gap Display + Strategy/Power-up + Reversal |
-| **打脸权威** (Authority Challenge) | 权威/前辈/强者 → 主角挑战成功 | Authority Established + Challenge + Success |
-| **反派翻车** (Villain Downfall) | 反派得意/阴谋 → 计划失败/被反杀 | Villain Setup + Protagonist Counter + Downfall |
-| **甜蜜超预期** (Sweet Surprise) | 期待/心动 → 超预期表现 → 情感升华 | Anticipation + Exceeding Expectation + Emotion |
-| **迪化误解** (Misunderstanding Elevation) | 主角随意行为 → 配角脑补升华 → 读者优越感 | Casual Action + Info Gap + Misinterpretation + Reader Superiority |
-| **身份掉马** (Identity Reveal) | 身份伪装 → 关键时刻揭露 → 周围震惊 | Concealment (long-term) + Trigger Event + Reveal + Mass Reaction |
+| **装逼打脸** | 嘲讽/废物/不屑 → 反转/震惊/目瞪口呆 | 铺垫 + 反转 + 反应 |
+| **扮猪吃虎** | 示弱/隐藏实力 → 碾压 | 隐藏 + 轻视 + 碾压 |
+| **越级反杀** | 实力差距 → 以弱胜强 → 震撼 | 展示差距 + 策略/爆发 + 反转 |
+| **打脸权威** | 权威/前辈/强者 → 主角挑战成功 | 建立权威 + 挑战 + 成功 |
+| **反派翻车** | 反派得意/阴谋 → 计划失败/被反杀 | 反派铺垫 + 主角反制 + 翻车 |
+| **甜蜜超预期** | 期待/心动 → 超预期表现 → 情感升华 | 期待 + 超越期待 + 情绪 |
+| **迪化误解** | 主角随意行为 → 配角脑补升华 → 读者优越感 | 随意行为 + 信息差 + 误解 + 读者优越 |
+| **身份掉马** | 身份伪装 → 关键时刻揭露 → 周围震惊 | 隐藏（长期）+ 触发事件 + 揭露 + 群体反应 |
 
-### Step 2.1: 迪化误解模式检测（v5.3 引入）
+### 第二步补充: 迪化误解模式检测
 
 **核心结构**:
 1. 主角随意行为（无心插柳）
@@ -61,7 +61,7 @@ Scan for the **8 standard execution modes** (执行模式):
 - B级：脑补尚可，效果一般
 - C级：脑补太刻意，配角显得蠢
 
-### Step 2.2: 身份掉马模式检测（v5.3 引入）
+### 第二步补充: 身份掉马模式检测
 
 **核心结构**:
 1. 身份伪装（需长期铺垫）
@@ -80,23 +80,23 @@ Scan for the **8 standard execution modes** (执行模式):
 - C级：无铺垫，突兀
 - F级：硬编身份，逻辑矛盾
 
-### Step 3: Density Check
+### 第三步: 密度检查
 
-**Recommended Baseline (rolling windows)**:
+**推荐基线（滚动窗口）**:
 - **Per chapter**: 优先有爽点或同等兑现；允许过渡章低密度
 - **Every 5 chapters**: 建议 ≥ 1 组合爽点（2种模式叠加）
 - **Every 10-15 chapters**: 建议 ≥ 1 里程碑爽点（改变主角地位）
 
-**Output**:
+**输出**:
 ```
-Chapter X: [✓ 2 cool-points] or [△ 0 cool-points - warning if consecutive]
+第 X 章: [✓ 2 个爽点] 或 [△ 0 个爽点 - 连续出现时需预警]
 ```
 
-### Step 4: Type Diversity Check
+### 第四步: 类型多样性检查
 
-**Anti-monotony requirement**: No single type should dominate 80%+ of cool-points in the review range.
+**反单调要求**: 审查范围内单一类型不得超过 80%。
 
-**Example**:
+**示例**:
 ```
 Chapters 1-2:
 - 装逼打脸: 3 (75%) ✓
@@ -113,89 +113,89 @@ Chapters 45-46:
 Mode diversity: Warning - Monotonous pacing
 ```
 
-### Step 5: Execution Quality Assessment
+### 第五步: 执行质量评估
 
-For each identified cool-point, check:
+对每个已识别的爽点，检查：
 
-1. **Setup sufficiency**: Was there adequate build-up (至少1-2章伏笔)?
-2. **Reversal impact**: Is the twist unexpected yet logical?
-3. **Emotional payoff**: Did it deliver catharsis (读者情绪释放)?
-4. **30/40/30 Heuristic**: Is the structure clear enough (no rigid ratio required)?
-   - 30% Setup/Buildup (铺垫)
-   - 40% Delivery/Execution (兑现)
-   - 30% Twist/Aftermath (微反转)
-5. **Pressure/Relief Ratio** (压扬比例): Does it match the genre?
+1. **铺垫充分性**: 是否有充分的前期铺垫（至少1-2章）?
+2. **反转冲击**: 转折是否出人意料又合乎逻辑?
+3. **情绪回报**: 是否实现了读者情绪释放?
+4. **30/40/30 参考结构**: 结构是否清晰（不要求严格比例）?
+   - 30% 铺垫蓄势
+   - 40% 兑现执行
+   - 30% 微反转/余波
+5. **压扬比例**: 是否匹配题材?
    - 传统爽文: 压3扬7
    - 硬核正剧: 压5扬5
    - 虐恋文: 压7扬3
 
-**Quality Grades**:
-- **A (优秀)**: All criteria met, strong execution, structure clear
-- **B (良好)**: Most criteria met, may have minor ratio issues
-- **C (及格)**: Basic criteria met but structure weak
-- **F (失败)**: Sudden cool-point without setup, or logically inconsistent
+**质量评级**:
+- **A（优秀）**: 所有标准达标，执行有力，结构清晰
+- **B（良好）**: 多数标准达标，可能有轻微比例问题
+- **C（及格）**: 基本标准达标但结构偏弱
+- **F（失败）**: 爽点缺少铺垫突然出现，或逻辑不一致
 
-### Step 6: Generate Report
+### 第六步: 生成报告
 
 ```markdown
-# 爽点检查报告 (Cool-Point Review)
+# 爽点检查报告
 
 ## 覆盖范围
-Chapters {N} - {M}
+第 {N} 章 - 第 {M} 章
 
-## 密度检查 (Density)
-- Chapter {N}: ✓ 2 cool-points (装逼打脸 + 越级反杀)
-- Chapter {M}: △ 0 cool-points **[WARNING - 连续出现时需补强]**
+## 密度检查
+- 第 {N} 章: ✓ 2 个爽点（装逼打脸 + 越级反杀）
+- 第 {M} 章: △ 0 个爽点 **[预警 - 连续出现时需补强]**
 
-**Verdict**: {PASS/WARNING/FAIL} (rolling-window based)
+**结论**: {通过/预警/未通过}（基于滚动窗口）
 
-## 类型分布 (Mode Diversity)
-- 装逼打脸 (Flex & Counter): {count} ({percent}%)
-- 扮猪吃虎 (Underdog Reveal): {count} ({percent}%)
-- 越级反杀 (Underdog Victory): {count} ({percent}%)
-- 打脸权威 (Authority Challenge): {count} ({percent}%)
-- 反派翻车 (Villain Downfall): {count} ({percent}%)
-- 甜蜜超预期 (Sweet Surprise): {count} ({percent}%)
+## 类型分布
+- 装逼打脸: {count}（{percent}%）
+- 扮猪吃虎: {count}（{percent}%）
+- 越级反杀: {count}（{percent}%）
+- 打脸权威: {count}（{percent}%）
+- 反派翻车: {count}（{percent}%）
+- 甜蜜超预期: {count}（{percent}%）
 
-**Verdict**: {PASS/WARNING} (Monotony risk if one type > 80%)
+**结论**: {通过/预警}（单一类型 > 80% 时有单调风险）
 
-## 质量评级 (Quality)
-| Chapter | Cool-Point | Mode | Grade | 30/40/30 | 压扬比 | Issue (if any) |
-|---------|-----------|------|-------|---------|--------|----------------|
+## 质量评级
+| 章节 | 爽点 | 模式 | 评级 | 30/40/30 | 压扬比 | 问题 |
+|------|------|------|------|---------|--------|------|
 | {N} | 主角被嘲讽后一招秒杀对手 | 装逼打脸 | A | ✓ | 压3扬7 | - |
-| {M} | 突然顿悟突破境界 | 越级反杀 | C | ✗ | 压1扬9 | 缺少铺垫（no prior struggle），压扬比失衡 |
+| {M} | 突然顿悟突破境界 | 越级反杀 | C | ✗ | 压1扬9 | 缺少铺垫，压扬比失衡 |
 
-**Verdict**: Average grade = {X}
+**结论**: 平均评级 = {X}
 
-## 建议 (Recommendations)
-- [If density warning] Chapter {M} 低密度，建议补{mode}型爽点或同等兑现
-- [If monotony] 过度依赖{mode}型，建议增加{other_modes}
-- [If quality issue] Chapter {M} 的爽点执行不足，需要补充{missing_element}
-- [If structural weakness] 爽点结构偏弱，建议补铺垫/兑现/余波中的缺项
-- [If pressure/relief violation] 压扬比例不符合{genre}类型，建议调整为{ratio}
+## 修复建议
+- [密度预警] 第 {M} 章低密度，建议补{mode}型爽点或同等兑现
+- [单调风险] 过度依赖{mode}型，建议增加{other_modes}
+- [质量问题] 第 {M} 章的爽点执行不足，需要补充{missing_element}
+- [结构偏弱] 爽点结构偏弱，建议补铺垫/兑现/余波中的缺项
+- [压扬比问题] 压扬比例不符合{genre}类型，建议调整为{ratio}
 
 ## 综合评分
-**Overall**: {PASS/FAIL} - {Brief summary}
+**结论**: {通过/未通过} - {简要说明}
 ```
 
-## Anti-Patterns (Forbidden)
+## 禁止事项
 
-❌ Ignoring consecutive low-density chapters without warning
-❌ Ignoring sudden cool-points without setup
-❌ Approving 5+ consecutive chapters of the same type
+❌ 忽略连续低密度章节且不预警
+❌ 忽略缺乏铺垫的突发爽点
+❌ 通过连续 5+ 章同类型爽点
 ❌ 迪化误解中配角智商明显下线
 ❌ 身份掉马无任何前期暗示
 
-## Success Criteria
+## 成功标准
 
-- Rolling window density stays healthy (not continuously low)
-- Type distribution shows variety (no single type > 80%)
-- Average quality grade ≥ B
+- 滚动窗口密度保持健康（不连续低密度）
+- 类型分布显示多样性（单一类型不超过 80%）
+- 平均质量评级 ≥ B
 - 迪化误解的脑补需合理
 - 身份掉马需有铺垫
-- Report includes actionable recommendations
+- 报告包含可执行的修复建议
 
-## v5.3 输出格式增强（v5.5 沿用）
+## 输出格式增强
 
 ```json
 {

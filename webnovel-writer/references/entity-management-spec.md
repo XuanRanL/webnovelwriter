@@ -1,14 +1,11 @@
 # 实体管理规范 (Entity Management Specification)
 
-> **版本**: 5.4（基于 5.1 规范）
 > **适用范围**: 所有实体类型（角色/地点/物品/势力/招式）
 > **核心目标**: AI 驱动的实体提取、别名管理、版本追踪
->
-> **v5.4**: 版本号对齐，规范沿用 v5.1。
 
 ---
 
-## v5.1 变更
+## 当前规范变更
 
 1. **SQLite 存储**: 实体、别名、状态变化、关系迁移到 `index.db`
 2. **state.json 精简**: 仅保留进度、主角状态、节奏追踪（< 5KB）
@@ -20,7 +17,7 @@
 
 ---
 
-## 一、存储架构 (v5.1)
+## 一、存储架构
 
 ### 1.1 数据分布
 
@@ -99,7 +96,7 @@ CREATE TABLE relationships (
 
 ---
 
-## 二、处理流程 (v5.1)
+## 二、处理流程
 
 ### 2.1 Data Agent 自动提取
 
@@ -156,7 +153,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-rel
 
 ## 三、标签体系 (可选)
 
-> v5.1 主流程使用 Data Agent 自动提取。以下标签仅用于**手动标注场景**。
+> 当前主流程使用 Data Agent 自动提取。以下标签仅用于**手动标注场景**。
 
 ### 3.1 新建实体 (`<entity>`)
 
@@ -237,7 +234,7 @@ def generate_entity_id(entity_type: str, name: str, existing_ids: set) -> str:
 
 ### 5.1 别名冲突
 
-v5.1 允许 **aliases 一对多**：同一别名可以指向多个实体。
+当前结构允许 **aliases 一对多**：同一别名可以指向多个实体。
 
 当 `ref="别名"` 命中多个实体且无法消歧时，报错：
 
@@ -261,7 +258,7 @@ v5.1 允许 **aliases 一对多**：同一别名可以指向多个实体。
 
 ## 六、迁移说明
 
-从 v5.0 迁移到 v5.1：
+从旧版结构迁移到当前结构：
 
 ```bash
 # 运行迁移脚本
@@ -280,7 +277,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index stats
 
 ## 七、总结
 
-### 7.1 v5.1 核心改进
+### 7.1 当前结构的核心改进
 
 1. **SQLite 存储**: 解决 state.json 膨胀问题
 2. **精简 JSON**: state.json 保持 < 5KB

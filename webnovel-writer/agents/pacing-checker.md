@@ -7,19 +7,19 @@ model: inherit
 
 # pacing-checker (节奏检查器)
 
-> **Role**: Pacing analyst enforcing Strand Weave balance to prevent reader fatigue.
+> **职责**: 节奏分析师，执行 Strand Weave 平衡检查，防止读者疲劳。
 
 > **输出格式**: 遵循 `${CLAUDE_PLUGIN_ROOT}/references/checker-output-schema.md` 统一 JSON Schema
 
-## Scope
+## 检查范围
 
-**Input**: Single chapter or chapter range (e.g., `45` / `"45-46"`)
+**输入**: 单章或章节区间（如 `45` / `"45-46"`）
 
-**Output**: Strand distribution analysis, balance warnings, and pacing recommendations.
+**输出**: 情节线分布分析、平衡预警、节奏建议。
 
-## Execution Protocol
+## 执行流程
 
-### Step 1: Load Context
+### 第一步: 加载上下文
 
 **输入参数**:
 ```json
@@ -33,32 +33,19 @@ model: inherit
 
 `chapter_file` 应传实际章节文件路径；若当前项目仍使用旧格式 `正文/第{NNNN}章.md`，同样允许。
 
-**Parallel reads**:
-1. Target chapters from `正文/`
-2. `{project_root}/.webnovel/state.json` (strand_tracker history)
-3. `大纲/` (to understand intended arc structure)
+**并行读取**:
+1. `正文/` 下的目标章节
+2. `{project_root}/.webnovel/state.json`（strand_tracker 历史）
+3. `大纲/`（理解预期弧线结构）
 
-**Optional: Use status_reporter for automated analysis**:
+**可选: 使用 status_reporter 进行自动化分析**:
 ```bash
-# 获取 Strand Weave 详细分析（推荐）
-# 仅使用 CLAUDE_PLUGIN_ROOT，避免多路径探测带来的误判
-if [ -z "${CLAUDE_PLUGIN_ROOT}" ] || [ ! -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
-  echo "ERROR: 未设置 CLAUDE_PLUGIN_ROOT 或缺少目录: ${CLAUDE_PLUGIN_ROOT}/scripts" >&2
-  exit 1
-fi
-SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status -- --focus strand
-
-# 输出包含:
-# - Quest/Fire/Constellation 占比统计
-# - 违规检测（连续Quest>5章等）
-# - 章节列表与主导Strand
+python -X utf8 "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts/webnovel.py" --project-root "${PROJECT_ROOT}" status -- --focus strand
 ```
 
-### Step 2: Classify Chapter Strands
+### 第二步: 章节情节线分类
 
-**For each chapter, identify the dominant strand**:
+**对每章，识别主导情节线**：
 
 | Strand | Indicators | Examples |
 |--------|-----------|----------|
@@ -66,9 +53,9 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status -- -
 | **Fire** (感情线) | 情感关系/暧昧/友情/羁绊 | 与李雪的感情发展、师徒情深、兄弟义气 |
 | **Constellation** (世界观线) | 势力关系/阵营/社交网络/揭示世界观 | 新势力登场、修仙界格局展示、宗门政治 |
 
-**Classification Rules**:
-- A chapter can have **undertones** of multiple strands, but only **one dominant**
-- Dominant =占据章节内容 ≥ 60%
+**分类规则**:
+- 一章可以有多条情节线的**底色**，但只有**一条主导**
+- 主导 = 占据章节内容 ≥ 60%
 
 **Example**:
 ```
@@ -79,9 +66,9 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status -- -
 → Dominant: Fire
 ```
 
-### Step 3: Balance Check (Strand Weave Violations)
+### 第三步: 平衡检查（Strand Weave 违规）
 
-**Load strand_tracker from state.json**:
+**从 state.json 加载 strand_tracker**:
 ```json
 {
   "strand_tracker": {
@@ -96,15 +83,15 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" status -- -
 }
 ```
 
-**Apply Warning Thresholds**:
+**应用警告阈值**：
 
-| Violation | Condition | Severity | Impact |
+| 违规类型 | 触发条件 | 严重度 | 影响 |
 |-----------|-----------|----------|--------|
-| **Quest Overload** | 连续 5+ 章 Quest 主导 | High | 战斗疲劳，缺少情感深度 |
-| **Fire Drought** | 距上次 Fire > 10 章 | Medium | 人物关系停滞 |
-| **Constellation Absence** | 距上次 Constellation > 15 章 | Low | 世界观单薄 |
+| **Quest 过载** | 连续 5+ 章 Quest 主导 | High | 战斗疲劳，缺少情感深度 |
+| **Fire 干旱** | 距上次 Fire > 10 章 | Medium | 人物关系停滞 |
+| **Constellation 缺席** | 距上次 Constellation > 15 章 | Low | 世界观单薄 |
 
-**Example Violations**:
+**违规示例**:
 ```
 ⚠️ Quest Overload (连续7章)
 Chapters 40-46 全部为 Quest 主导
@@ -118,7 +105,7 @@ Last Fire chapter: 34 | Current: 46 | Gap: 12 chapters
 Last Constellation: 38 | Current: 46 | Gap: 8 chapters
 ```
 
-### Step 4: 节奏标准
+### 第四步: 节奏标准
 
 **每10章理想分布与缺席阈值**:
 
@@ -128,18 +115,18 @@ Last Constellation: 38 | Current: 46 | Gap: 8 chapters
 | Fire (感情线) | 20-30% | 10 章 | 人物关系停滞 |
 | Constellation (世界观线) | 10-20% | 15 章 | 世界观单薄 |
 
-### Step 5: Historical Trend Analysis
+### 第五步: 历史趋势分析
 
-**If state.json contains 20+ chapters of history**:
+**若 state.json 包含 20+ 章历史数据**：
 
-Generate strand distribution chart:
+生成情节线分布图：
 ```
 Chapters 1-20 Strand Distribution:
 Quest:         ████████████░░░░░░░░  60% (12 chapters)
 Fire:          ████░░░░░░░░░░░░░░░░  20% (4 chapters)
 Constellation: ████░░░░░░░░░░░░░░░░  20% (4 chapters)
 
-Verdict: ✓ Balanced pacing (符合理想比例)
+结论：✓ 节奏均衡（符合理想比例）
 ```
 
 vs.
@@ -150,79 +137,79 @@ Quest:         ███████████████████░  95%
 Fire:          █░░░░░░░░░░░░░░░░░░░   5% (1 chapter)
 Constellation: ░░░░░░░░░░░░░░░░░░░░   0% (0 chapters)
 
-Verdict: ✗ Severe imbalance (Quest 过载，节奏单调)
+结论：✗ 严重失衡（Quest 过载，节奏单调）
 ```
 
-### Step 6: Generate Report
+### 第六步: 生成报告
 
 ```markdown
-# 节奏检查报告 (Pacing Review)
+# 节奏检查报告
 
 ## 覆盖范围
-Chapters {N} - {M}
+第 {N} 章 - 第 {M} 章
 
 ## 当前章节主导情节线
-| Chapter | Dominant Strand | Undertones | Intensity |
-|---------|----------------|-----------|-----------|
-| {N} | Quest | Fire (20%) | High (战斗密集) |
-| {M} | Quest | - | Medium |
+| 章节 | 主导线 | 底色 | 强度 |
+|------|--------|------|------|
+| {N} | Quest | Fire（20%）| 高（战斗密集）|
+| {M} | Quest | - | 中等 |
 
-## Strand Balance 检查
-### Quest Strand (主线)
-- Last appearance: Chapter {X}
-- Consecutive chapters: {count}
-- **Status**: {✓ Normal / ⚠️ Warning / ✗ Overload}
+## Strand 平衡检查
+### Quest 线（主线）
+- 最近出现: 第 {X} 章
+- 连续章数: {count}
+- **状态**: {✓ 正常 / ⚠️ 预警 / ✗ 过载}
 
-### Fire Strand (情感线)
-- Last appearance: Chapter {Y}
-- Gap since last: {count} chapters
-- **Status**: {✓ Normal / ⚠️ Warning / ✗ Drought}
+### Fire 线（情感线）
+- 最近出现: 第 {Y} 章
+- 距上次间隔: {count} 章
+- **状态**: {✓ 正常 / ⚠️ 预警 / ✗ 干旱}
 
-### Constellation Strand (世界观线)
-- Last appearance: Chapter {Z}
-- Gap since last: {count} chapters
-- **Status**: {✓ Normal / ⚠️ Warning}
+### Constellation 线（世界观线）
+- 最近出现: 第 {Z} 章
+- 距上次间隔: {count} 章
+- **状态**: {✓ 正常 / ⚠️ 预警}
 
-## 历史趋势 (if ≥ 20 chapters)
-Recent 20 chapters distribution:
-- Quest: {X}% ({count} chapters)
-- Fire: {Y}% ({count} chapters)
-- Constellation: {Z}% ({count} chapters)
+## 历史趋势（需 ≥ 20 章数据）
+最近 20 章分布:
+- Quest: {X}%（{count} 章）
+- Fire: {Y}%（{count} 章）
+- Constellation: {Z}%（{count} 章）
 
-**Trend**: {Balanced / Quest-heavy / Fire-deficient / ...}
+**趋势**: {均衡 / Quest偏重 / Fire不足 / ...}
 
-## 建议 (Recommendations)
-- [If Quest Overload] 连续{count}章Quest主导，建议在第{next}章安排：
-  - 与{角色}的感情发展场景 (Fire)
-  - 或揭示{势力/世界观元素} (Constellation)
+## 修复建议
+- [Quest 过载] 连续{count}章Quest主导，建议在第{next}章安排：
+  - 与{角色}的感情发展场景（Fire）
+  - 或揭示{势力/世界观元素}（Constellation）
 
-- [If Fire Drought] 距上次Fire已{count}章，建议补充：
+- [Fire 干旱] 距上次Fire已{count}章，建议补充：
   - 与李雪/师父/伙伴的互动
-  - 不必是专门的感情章，可作为undertone穿插
+  - 不必是专门的感情章，可作为底色穿插
 
-- [If Constellation gap] 世界观扩展不足，建议：
+- [Constellation 间隔] 世界观扩展不足，建议：
   - 揭示新势力或修仙界格局
   - 展示新的修炼体系或设定
 
 ## 下一章节奏建议
-Based on current balance, Chapter {next} should prioritize:
-**Primary**: {Strand} (因为距上次{gap}章)
-**Secondary**: {Strand} as undertone
+基于当前平衡状态，第 {next} 章应优先：
+**主导**: {线}（因为距上次{gap}章）
+**底色**: {线}
 
 ## 综合评分
-**Overall Pacing**: {HEALTHY/WARNING/CRITICAL}
-**Reader Fatigue Risk**: {Low/Medium/High}
+**节奏总评**: {健康/预警/危险}
+**读者疲劳风险**: {低/中/高}
 ```
 
-## Anti-Patterns (Forbidden)
+## 禁止事项
 
-❌ Approving 5+ consecutive Quest chapters without warning
-❌ Ignoring Fire drought > 10 chapters
-❌ Accepting identical pacing patterns across 20+ chapters
+❌ 通过连续 5+ 章 Quest 主导且不预警
+❌ 忽略 Fire 干旱超过 10 章
+❌ 接受 20+ 章中完全相同的节奏模式
 
-## Success Criteria
+## 成功标准
 
-- No single strand dominates > 70% of recent 10 chapters
-- All strands appear at least once per their threshold
-- Report provides actionable next-chapter recommendation
-- Trend analysis shows balanced distribution (if sufficient history)
+- 最近 10 章内单一情节线不超过 70%
+- 所有情节线在各自阈值内至少出现一次
+- 报告提供可执行的下一章建议
+- 趋势分析显示分布均衡（若有足够历史数据）

@@ -9,6 +9,7 @@ webnovel 统一入口（面向 skills / agents 的稳定 CLI）
 - 所有写入类命令在解析到 project_root 后，统一前置 `--project-root` 传给具体模块。
 
 典型用法（推荐，不依赖 PYTHONPATH / 不要求 cd）：
+  python "<SCRIPTS_DIR>/webnovel.py" preflight
   python "<SCRIPTS_DIR>/webnovel.py" where
   python "<SCRIPTS_DIR>/webnovel.py" use D:\\wk\\xiaoshuo\\凡人资本论
   python "<SCRIPTS_DIR>/webnovel.py" --project-root D:\\wk\\xiaoshuo index stats
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -104,6 +106,54 @@ def cmd_where(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
+    scripts_dir = _scripts_dir().resolve()
+    plugin_root = scripts_dir.parent
+    skill_root = plugin_root / "skills" / "webnovel-write"
+    entry_script = scripts_dir / "webnovel.py"
+    extract_script = scripts_dir / "extract_chapter_context.py"
+
+    checks: list[dict[str, object]] = [
+        {"name": "scripts_dir", "ok": scripts_dir.is_dir(), "path": str(scripts_dir)},
+        {"name": "entry_script", "ok": entry_script.is_file(), "path": str(entry_script)},
+        {"name": "extract_context_script", "ok": extract_script.is_file(), "path": str(extract_script)},
+        {"name": "skill_root", "ok": skill_root.is_dir(), "path": str(skill_root)},
+    ]
+
+    project_root = ""
+    project_root_error = ""
+    try:
+        resolved_root = _resolve_root(explicit_project_root)
+        project_root = str(resolved_root)
+        checks.append({"name": "project_root", "ok": True, "path": project_root})
+    except Exception as exc:
+        project_root_error = str(exc)
+        checks.append({"name": "project_root", "ok": False, "path": explicit_project_root or "", "error": project_root_error})
+
+    return {
+        "ok": all(bool(item["ok"]) for item in checks),
+        "project_root": project_root,
+        "scripts_dir": str(scripts_dir),
+        "skill_root": str(skill_root),
+        "checks": checks,
+        "project_root_error": project_root_error,
+    }
+
+
+def cmd_preflight(args: argparse.Namespace) -> int:
+    report = _build_preflight_report(args.project_root)
+    if args.format == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        for item in report["checks"]:
+            status = "OK" if item["ok"] else "ERROR"
+            path = item.get("path") or ""
+            print(f"{status} {item['name']}: {path}")
+            if item.get("error"):
+                print(f"  detail: {item['error']}")
+    return 0 if report["ok"] else 1
+
+
 def cmd_use(args: argparse.Namespace) -> int:
     project_root = normalize_windows_path(args.project_root).expanduser()
     try:
@@ -144,6 +194,10 @@ def main() -> None:
 
     p_where = sub.add_parser("where", help="打印解析出的 project_root")
     p_where.set_defaults(func=cmd_where)
+
+    p_preflight = sub.add_parser("preflight", help="校验统一 CLI 运行环境与 project_root")
+    p_preflight.add_argument("--format", choices=["text", "json"], default="text", help="输出格式")
+    p_preflight.set_defaults(func=cmd_preflight)
 
     p_use = sub.add_parser("use", help="绑定当前工作区使用的书项目（写入指针/registry）")
     p_use.add_argument("project_root", help="书项目根目录（必须包含 .webnovel/state.json）")

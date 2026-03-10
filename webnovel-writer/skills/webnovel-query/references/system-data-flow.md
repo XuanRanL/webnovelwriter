@@ -1,12 +1,10 @@
 ---
 name: system-data-flow
 purpose: 项目初始化和状态查询时加载，理解数据结构
-version: "5.4"
 ---
 
 <context>
 此文件用于项目数据结构参考。Claude 已知一般文件组织，这里只补充网文工作流特定的目录约定和脚本职责。
-v5.4：版本号对齐，内容沿用 v5.2。
 </context>
 
 <instructions>
@@ -27,11 +25,11 @@ v5.4：版本号对齐，内容沿用 v5.2。
     └── archive/            # 归档数据（不活跃角色/已回收伏笔）
 ```
 
-## v5.1 架构变更
+## 架构变更说明
 
 **核心变化**: 解决 state.json 膨胀问题（20章后 token 爆炸）
 
-| 数据类型 | v5.0 存储位置 | v5.1 存储位置 |
+| 数据类型 | 旧版存储位置 | 当前存储位置 |
 |----------|--------------|--------------|
 | entities_v3 | state.json | **index.db** (entities 表) |
 | alias_index | state.json | **index.db** (aliases 表) |
@@ -42,7 +40,7 @@ v5.4：版本号对齐，内容沿用 v5.2。
 | strand_tracker | state.json | state.json (保留) |
 | disambiguation_* | state.json | state.json (保留) |
 
-## v5.2 双 Agent 架构
+## 双 Agent 架构
 
 ```
 写作前: Context Agent 读取数据 → 组装上下文包
@@ -59,7 +57,7 @@ v5.4：版本号对齐，内容沿用 v5.2。
 Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
 ```
 
-## 脚本/模块职责速查 (v5.1)
+## 脚本/模块职责速查
 
 ### 核心脚本
 
@@ -70,14 +68,14 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
 | `backup_manager.py` | 章节号 | 自动 Git 备份 |
 | `status_reporter.py` | 无 | 生成健康报告/伏笔紧急度 |
 | `archive_manager.py` | 无 | 归档不活跃数据 |
-| `data_modules/migrate_state_to_sqlite.py` | 项目路径 | 迁移旧 state.json 到 SQLite (v5.1 新增) |
+| `data_modules/migrate_state_to_sqlite.py` | 项目路径 | 迁移旧 state.json 到 SQLite |
 
 ### data_modules 模块
 
 | 模块 | 职责 |
 |------|------|
 | `state_manager.py` | 实体状态管理（精简 state.json + SQLite 同步） |
-| `sql_state_manager.py` | SQLite 状态管理（v5.1 新增，替代 JSON 写入） |
+| `sql_state_manager.py` | SQLite 状态管理（替代 JSON 写入） |
 | `index_manager.py` | SQLite 索引管理（实体/别名/关系/状态变化/章节/场景） |
 | `entity_linker.py` | 别名注册与消歧 |
 | `rag_adapter.py` | 向量嵌入与语义检索 |
@@ -85,7 +83,7 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
 | `api_client.py` | LLM API 调用封装 |
 | `config.py` | 配置管理 |
 
-## 每章数据链（v5.2 顺序）
+## 每章数据链
 
 ```
 1. Context Agent 组装创作任务书
@@ -122,7 +120,7 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
 
 > `update_state.py` 用于手动/脚本化更新 `progress`/`protagonist_state`/`strand_tracker` 等字段；主流程通常由 Data Agent 在处理数据链时同步推进进度。
 
-## state.json 精简结构 (v5.2)
+## state.json 精简结构
 
 ```json
 {
@@ -153,9 +151,9 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
 }
 ```
 
-> **v5.1 变更**: entities_v3、alias_index、state_changes、structured_relationships 已迁移到 index.db，不再存储在 state.json 中。
+> **当前结构说明**: entities_v3、alias_index、state_changes、structured_relationships 已迁移到 index.db，不再存储在 state.json 中。
 
-## index.db 表结构 (v5.1)
+## index.db 表结构
 
 ```sql
 -- 实体表
@@ -210,7 +208,7 @@ CREATE TABLE appearances (...);
 
 ## Data Agent AI 提取流程
 
-v5.0 不再要求 XML 标签，由 Data Agent 智能提取：
+当前主流程不再要求 XML 标签，由 Data Agent 智能提取：
 
 1. **实体识别**: 从正文语义识别角色/地点/物品/势力
 2. **实体匹配**: 优先匹配已有实体（通过 alias_index）
@@ -229,7 +227,7 @@ v5.0 不再要求 XML 标签，由 Data Agent 智能提取：
 
 **推荐字段**: content, status, planted_chapter, target_chapter, tier
 
-## alias_index 格式 (v5.0 一对多)
+## alias_index 格式（一对多）
 
 ```json
 {
@@ -258,7 +256,7 @@ cat "$PROJECT_ROOT/.webnovel/state.json" | jq '.progress'
 </example>
 
 <example>
-<input>v5.1: 查询实体（SQL）</input>
+<input>查询实体（SQL）</input>
 <output>
 ```bash
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-entity --id "xiaoyan"
@@ -271,7 +269,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-cor
 </example>
 
 <example>
-<input>v5.1: 按别名查找实体（一对多）</input>
+<input>按别名查找实体（一对多）</input>
 <output>
 ```bash
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-by-alias --alias "天云宗"
@@ -281,7 +279,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-by-
 </example>
 
 <example>
-<input>v5.1: 查询状态变化</input>
+<input>查询状态变化</input>
 <output>
 ```bash
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-state-changes --entity "xiaoyan" --limit 10
@@ -291,7 +289,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-sta
 </example>
 
 <example>
-<input>v5.1: 查询关系</input>
+<input>查询关系</input>
 <output>
 ```bash
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index get-relationships --entity "xiaoyan"
@@ -319,7 +317,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" index entity-
 </example>
 
 <example>
-<input>v5.1: 迁移旧 state.json 到 SQLite</input>
+<input>迁移旧 state.json 到 SQLite</input>
 <output>
 ```bash
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" migrate -- --backup
@@ -334,10 +332,10 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" migrate -- --
 ❌ 伏笔状态写成"待回收" → ✅ 使用规范值"未回收"
 ❌ 手工更新忘记加 planted_chapter → ✅ 脚本已自动补全
 ❌ 归档路径混淆 → ✅ 固定为 `.webnovel/archive/*.json`
-❌ alias_index 期望单对象 → ✅ v5.0+ 使用数组格式（一对多）
-❌ 期望 XML 标签提取 → ✅ v5.0+ 由 Data Agent AI 自动提取
+❌ alias_index 期望单对象 → ✅ 当前结构使用数组格式（一对多）
+❌ 期望 XML 标签提取 → ✅ 当前主流程由 Data Agent AI 自动提取
 ❌ 使用旧版 data_modules.state_manager schema → ✅ 统一使用 entities_v3 结构
-❌ v5.1 仍从 state.json 读取 entities_v3 → ✅ 改用 SQL 查询 index.db
-❌ v5.1 仍写入 state.json 大数据 → ✅ 改用 SQLite 增量写入
-❌ v5.1 state.json 膨胀 → ✅ 运行迁移脚本: `python "${SCRIPTS_DIR}/webnovel.py" migrate`
+❌ 仍从 state.json 读取 entities_v3 → ✅ 改用 SQL 查询 index.db
+❌ 仍写入 state.json 大数据 → ✅ 改用 SQLite 增量写入
+❌ 让 state.json 持续膨胀 → ✅ 运行迁移脚本: `python "${SCRIPTS_DIR}/webnovel.py" migrate`
 </errors>

@@ -1,7 +1,6 @@
 ---
 name: core-constraints
 purpose: 每次章节写作前加载，确保三大定律执行
-version: "5.4"
 ---
 
 <!-- DEPRECATED: use ${CLAUDE_PLUGIN_ROOT}/references/shared/core-constraints.md -->

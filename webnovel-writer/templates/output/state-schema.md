@@ -1,8 +1,8 @@
-# state.json 结构说明 (v5.4)
+# state.json 结构说明
 
 > 该文件为运行态精简状态，避免体量膨胀。实体等大数据存于 index.db。
 >
-> **v5.4**：以下示例与 `update_state.py` 当前校验字段保持一致。
+> 以下示例与 `update_state.py` 当前校验字段保持一致。
 
 ```json
 {

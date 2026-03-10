@@ -74,6 +74,12 @@ RERANK_API_KEY=your_rerank_api_key
 /webnovel-review 1-5
 ```
 
+如需排查本地 CLI / 插件目录 / 项目根解析问题，可直接运行统一预检：
+
+```bash
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<WORKSPACE_ROOT>" preflight
+```
+
 ### 6) 启动可视化面板（可选）
 
 ```bash
@@ -111,7 +117,9 @@ model: sonnet
 
 | 版本 | 说明 |
 |------|------|
-| **v5.5.2 (当前)** | 支持将详细大纲中的章节名同步到正文文件名；修复 workflow_manager 在无参 find_project_root monkeypatch 下的兼容性问题。 |
+| **v5.5.4 (当前)** | 补齐写作链提示词强约束（流程硬约束、中文思维写作约束、Step 职责边界）；统一中文化审查/润色/Agent 报告文案；清理文档内部版本号与版本历史，降低与插件发版版本混淆。 |
+| **v5.5.3** | 新增统一 `preflight` 预检命令；写作链 CLI 示例统一为 UTF-8 运行方式，收口文档中的长 shell 预检片段并降低 Windows 终端乱码风险。 |
+| **v5.5.2** | 支持将详细大纲中的章节名同步到正文文件名；修复 workflow_manager 在无参 find_project_root monkeypatch 下的兼容性问题。 |
 | **v5.5.1** | 修复卷级单文件大纲在上下文快照中的章节提取问题；补齐命令文档中遗漏的 `/webnovel-dashboard` 与 `/webnovel-learn`。 |
 | **v5.5.0** | 新增只读可视化 Dashboard Skill（`/webnovel-dashboard`）与实时刷新能力；支持插件目录启动与预构建前端分发 |
 | **v5.4.4** | 引入官方 Plugin Marketplace 安装机制；统一修复 Skills/Agents/References 的 CLI 调用（`CLAUDE_PLUGIN_ROOT` 单路径，透传命令统一 `--`） |
@@ -123,7 +131,7 @@ model: sonnet
 推荐使用 GitHub Actions 的 `Plugin Release` 工作流统一发版：
 
 1. 打开仓库的 Actions 页面，选择 `Plugin Release`。
-2. 输入 `version`（例如 `5.5.2`）和 `release_notes`。
+2. 输入 `version`（例如 `5.5.4`）和 `release_notes`。
 3. 工作流会自动完成以下动作：
    - 同步 `plugin.json`、`marketplace.json` 与 README 当前版本
    - 提交版本变更

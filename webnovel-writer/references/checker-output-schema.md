@@ -1,4 +1,4 @@
-# Checker 统一输出 Schema (v5.4)
+# Checker 统一输出 Schema
 
 所有审查 Agent 应遵循此统一输出格式，便于自动化汇总和趋势分析。
 

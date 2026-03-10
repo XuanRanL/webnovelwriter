@@ -5,14 +5,13 @@ purpose: 重定向到权威版本
 
 <context>
 此文件已迁移到统一位置，避免多版本不同步问题。
-v5.4：版本号对齐，权威版本已更新。
 </context>
 
 <instructions>
 
 ## 权威版本位置
 
-`${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/system-data-flow.md` (v5.4)
+`${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/system-data-flow.md`
 
 ## 加载方式
 
@@ -35,7 +34,7 @@ cat "${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query/references/system-data-flow.md"
     └── archive/            # 归档数据
 ```
 
-### v5.1 核心变化
+### 当前结构核心变化
 - **双 Agent 架构**: Context Agent (读) + Data Agent (写)
 - **无 XML 标签**: 纯正文写作，Data Agent AI 自动提取实体
 - **SQLite 存储**: entities/aliases/state_changes 迁移到 index.db

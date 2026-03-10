@@ -76,18 +76,28 @@ parallel Task(agent, {chapter, chapter_file, project_root}) for agent in selecte
 
 ```text
 审查汇总 - 第 {chapter_num} 章
-- selected_checkers: {list}
-- critical issues: {N}
-- high issues: {N}
-- overall_score: {score}
+- 已启用审查器: {list}
+- 严重问题: {N} 个
+- 高优先级问题: {N} 个
+- 综合评分: {score}
 - 可进入润色: {是/否}
 ```
 
 ## 审查指标落库（必做）
 
 ```bash
-python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics --data '@review_metrics.json'
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics --data "@${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json"
 ```
+
+review_metrics 文件字段约束（当前工作流约定只传以下字段）：
+- `start_chapter`（int）、`end_chapter`（int）：单章时二者相等
+- `overall_score`（float）：必填
+- `dimension_scores`（Dict[str, float]）：按已启用 checker 计算
+- `severity_counts`（Dict[str, int]）：键为 critical / high / medium / low
+- `critical_issues`（List[str]）
+- `report_file`（str）
+- `notes`（str）：在当前执行契约中必须是单个字符串；`selected_checkers`、`timeline_gate`、`anti_ai_force_check` 等扩展信息统一压成单行文本写入此字段，不得作为独立顶层键传入
+- 当前工作流不额外传入其它顶层字段；脚本侧未在此处做新增硬校验
 
 ## 进入 Step 4 前闸门
 
@@ -117,7 +127,7 @@ if len(critical_timeline) > 0:
         print(f"- 第{issue.chapter}章: {issue.description}")
     return BLOCKED
 else:
-    PASS: "时间线检查通过"
+    通过: "时间线检查通过"
 ```
 
 **修复指引**：

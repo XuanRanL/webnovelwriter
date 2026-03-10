@@ -1,8 +1,8 @@
-# index.db 表结构说明 (v5.4，基于 v5.1/v5.2)
+# index.db 表结构说明
 
 > 以 SQLite 存储大规模数据（实体/别名/场景/关系）。
 >
-> **v5.4**：结构沿用 v5.1/v5.2，并新增追读力/可观测性相关表。
+> 当前结构包含追读力/可观测性相关表。
 
 ## 表一览
 
@@ -68,13 +68,13 @@
 - description (TEXT)
 - chapter (INTEGER)
 
-### v5.3 追读力债务相关表
+### 追读力债务相关表
 - override_contracts
 - chase_debt
 - debt_events
 - chapter_reading_power
 
-### v5.4 可观测性与审查相关表
+### 可观测性与审查相关表
 - invalid_facts
 - review_metrics
 - rag_query_log

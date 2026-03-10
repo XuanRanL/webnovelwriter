@@ -1,10 +1,10 @@
-# 题材配置档案 (Genre Profiles) v5.5
+# 题材配置档案 (Genre Profiles)
 
 > **定位**：本文档定义各题材的追读力配置参数，供 Step 1.5 / Context Agent / Checkers 读取。
 >
 > **原则**：配置用于"调整权重和建议"，不做硬性裁决。
 >
-> **v5.5**：基于 xslca.cc 热门榜实证数据扩展，新增 history-travel / game-lit，并更新 shuangwen / xianxia / urban-power 关键参数。
+> **说明**：基于 xslca.cc 热门榜实证数据扩展，新增 history-travel / game-lit，并更新 shuangwen / xianxia / urban-power 关键参数。
 
 ---
 
@@ -689,14 +689,3 @@ override_config:
 | 微兑现类型清单 | 哪些类型偏好 |
 | Hard/Soft 标准 | 阈值调整 |
 | Override 理由类型 | 哪些理由允许 |
-
----
-
-## 五、版本历史
-
-| 版本 | 日期 | 变更 |
-|------|------|------|
-| v5.5 | 2026-02-26 | 基于 xslca.cc 热门榜实证数据更新：新增 history-travel/game-lit profile，强化 xianxia 阶位制/资源货币化，urban-power 3章一峰节奏，shuangwen 数值反馈约束 |
-| v5.4.1 | 2026-02-06 | 新增 3 个内置题材profile：电竞/直播文/克苏鲁 |
-| v5.4 | 2026-02-03 | 版本号对齐，内容不变 |
-| v5.3 | 2026-02-01 | 初版，包含8个内置题材profile |
