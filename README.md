@@ -130,11 +130,16 @@ model: sonnet
 
 推荐使用 GitHub Actions 的 `Plugin Release` 工作流统一发版：
 
-1. 打开仓库的 Actions 页面，选择 `Plugin Release`。
-2. 输入 `version`（例如 `5.5.4`）和 `release_notes`。
-3. 工作流会自动完成以下动作：
-   - 同步 `plugin.json`、`marketplace.json` 与 README 当前版本
-   - 提交版本变更
+1. 先在本地同步版本信息：
+   ```bash
+   python -X utf8 webnovel-writer/scripts/sync_plugin_version.py --version 5.5.4 --release-notes "本次版本说明"
+   ```
+2. 提交并推送版本变更（`README.md`、`plugin.json`、`marketplace.json`）。
+3. 打开仓库的 Actions 页面，选择 `Plugin Release`。
+4. 输入与当前仓库元数据一致的 `version`（例如 `5.5.4`）和用于 GitHub Release 的 `release_notes`。
+5. 工作流会执行以下动作：
+   - 校验 `plugin.json`、`marketplace.json` 与 README 当前版本已经一致
+   - 校验当前版本与输入的 `version` 一致
    - 创建并推送 `vX.Y.Z` Tag
    - 创建同名 GitHub Release
 

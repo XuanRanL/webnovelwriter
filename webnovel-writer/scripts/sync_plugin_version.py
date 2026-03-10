@@ -137,7 +137,7 @@ def sync_versions(version: str | None = None, release_notes: str | None = None) 
     return previous_version, target_version, changed
 
 
-def check_versions() -> int:
+def check_versions(expected_version: str | None = None) -> int:
     plugin_payload = load_json(PLUGIN_JSON_PATH)
     marketplace_payload = load_json(MARKETPLACE_JSON_PATH)
     readme_content = load_text(README_PATH)
@@ -154,6 +154,10 @@ def check_versions() -> int:
         )
     if plugin_version != readme_version:
         mismatches.append(f"plugin.json={plugin_version}, README.md={readme_version}")
+    if expected_version and plugin_version != expected_version:
+        mismatches.append(
+            f"expected={expected_version}, current release metadata={plugin_version}"
+        )
 
     if mismatches:
         print("Version mismatch detected:")
@@ -177,6 +181,10 @@ def main() -> int:
         help="Update release metadata to the given semantic version",
     )
     parser.add_argument(
+        "--expected-version",
+        help="When used with --check, require the current release metadata to match this version",
+    )
+    parser.add_argument(
         "--release-notes",
         help="Release notes used for the README current release row",
     )
@@ -184,10 +192,14 @@ def main() -> int:
 
     if args.version and not VERSION_PATTERN.fullmatch(args.version):
         parser.error("--version must look like X.Y.Z")
+    if args.expected_version and not VERSION_PATTERN.fullmatch(args.expected_version):
+        parser.error("--expected-version must look like X.Y.Z")
+    if args.expected_version and not args.check:
+        parser.error("--expected-version can only be used together with --check")
 
     try:
         if args.check:
-            return check_versions()
+            return check_versions(expected_version=args.expected_version)
 
         previous_version, target_version, changed = sync_versions(
             version=args.version,
