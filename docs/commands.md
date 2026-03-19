@@ -99,3 +99,27 @@
 产出：
 
 - `.webnovel/project_memory.json`
+
+## 长期记忆运维命令（CLI）
+
+用途：查看、查询、回填和手动更新长期记忆（`memory_scratchpad.json`）。
+
+示例：
+
+```bash
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" memory stats
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" memory query --category character_state --subject xiaoyan
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" memory dump
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" memory conflicts
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" memory bootstrap
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" memory update --chapter 100 --data '{...}'
+```
+
+常用子命令：
+
+- `memory stats`：查看总量、状态分布、分类统计
+- `memory query`：按 `category/subject/status` 过滤查询
+- `memory dump`：导出完整 scratchpad 内容
+- `memory conflicts`：查看同主键 active 冲突项
+- `memory bootstrap`：从 `index.db` 与 `summaries` 回填初始长期记忆
+- `memory update`：对指定章节结果执行一次手动映射写入

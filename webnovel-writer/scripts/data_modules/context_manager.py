@@ -54,6 +54,7 @@ class ContextManager:
     EXTRA_SECTIONS = {
         "story_skeleton",
         "memory",
+        "long_term_memory",
         "preferences",
         "alerts",
         "reader_signal",
@@ -69,6 +70,7 @@ class ContextManager:
         "writing_guidance",
         "story_skeleton",
         "memory",
+        "long_term_memory",
         "preferences",
         "alerts",
     ]
@@ -188,6 +190,17 @@ class ContextManager:
 
     def _build_pack(self, chapter: int) -> Dict[str, Any]:
         state = self._load_state()
+        use_orchestrator = bool(getattr(self.config, "context_use_memory_orchestrator", False))
+
+        orchestrator_pack: Dict[str, Any] = {}
+        try:
+            from .memory.orchestrator import MemoryOrchestrator
+
+            orchestrator = MemoryOrchestrator(self.config)
+            orchestrator_pack = orchestrator.build_memory_pack(chapter)
+        except Exception as exc:
+            logger.warning("memory_orchestrator_failed: %s", exc)
+
         core = {
             "chapter_outline": self._load_outline(chapter),
             "protagonist_snapshot": state.get("protagonist_state", {}),
@@ -201,6 +214,21 @@ class ContextManager:
                 window=self.config.context_recent_meta_window,
             ),
         }
+        if use_orchestrator and orchestrator_pack:
+            working_items = list(orchestrator_pack.get("working_memory") or [])
+            outline_item = next((x for x in working_items if x.get("source") == "outline"), None)
+            state_item = next((x for x in working_items if x.get("source") == "state_export"), None)
+            summary_items = [
+                {"chapter": x.get("chapter"), "summary": x.get("content")}
+                for x in working_items
+                if x.get("source") == "summary"
+            ]
+            core["chapter_outline"] = str(outline_item.get("content", "")) if outline_item else core["chapter_outline"]
+            if isinstance(state_item, dict) and isinstance(state_item.get("content"), dict):
+                state_export = dict(state_item.get("content") or {})
+                core["protagonist_snapshot"] = state_export.get("protagonist_state", core["protagonist_snapshot"])
+            if summary_items:
+                core["recent_summaries"] = summary_items
 
         scene = {
             "location_context": state.get("protagonist_state", {}).get("location", {}),
@@ -220,6 +248,7 @@ class ContextManager:
 
         preferences = self._load_json_optional(self.config.webnovel_dir / "preferences.json")
         memory = self._load_json_optional(self.config.webnovel_dir / "project_memory.json")
+        long_term_memory: Dict[str, Any] = orchestrator_pack if orchestrator_pack else {}
         story_skeleton = self._load_story_skeleton(chapter)
         alert_slice = max(0, int(self.config.context_alerts_slice))
         reader_signal = self._load_reader_signal(chapter)
@@ -237,6 +266,7 @@ class ContextManager:
             "story_skeleton": story_skeleton,
             "preferences": preferences,
             "memory": memory,
+            "long_term_memory": long_term_memory,
             "alerts": {
                 "disambiguation_warnings": (
                     state.get("disambiguation_warnings", [])[-alert_slice:] if alert_slice else []

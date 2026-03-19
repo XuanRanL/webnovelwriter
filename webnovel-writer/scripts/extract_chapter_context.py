@@ -314,6 +314,7 @@ def _load_contract_context(project_root: Path, chapter_num: int) -> Dict[str, An
         "reader_signal": (sections.get("reader_signal") or {}).get("content", {}),
         "genre_profile": (sections.get("genre_profile") or {}).get("content", {}),
         "writing_guidance": (sections.get("writing_guidance") or {}).get("content", {}),
+        "long_term_memory": (sections.get("long_term_memory") or {}).get("content", {}),
     }
 
 
@@ -340,6 +341,7 @@ def build_chapter_context_payload(project_root: Path, chapter_num: int) -> Dict[
         "reader_signal": contract_context.get("reader_signal", {}),
         "genre_profile": contract_context.get("genre_profile", {}),
         "writing_guidance": contract_context.get("writing_guidance", {}),
+        "long_term_memory": contract_context.get("long_term_memory", {}),
         "rag_assist": rag_assist,
     }
 
@@ -480,6 +482,36 @@ def _render_text(payload: Dict[str, Any]) -> str:
         refs = genre_profile.get("reference_hints") or []
         for row in refs[:3]:
             lines.append(f"- {row}")
+        lines.append("")
+
+    long_term_memory = payload.get("long_term_memory") or {}
+    if long_term_memory:
+        lines.append("## 长期记忆")
+        lines.append("")
+        stats = long_term_memory.get("stats") or {}
+        if stats:
+            lines.append(
+                f"- 注入条目: {stats.get('injected', 0)} / 总条目: {stats.get('total', 0)}"
+            )
+        active_constraints = long_term_memory.get("active_constraints") or []
+        if active_constraints:
+            lines.append("- 活跃约束:")
+            for row in active_constraints[:5]:
+                value = str(row.get("value", "") or "").strip()
+                subject = str(row.get("subject", "") or "").strip()
+                if subject:
+                    lines.append(f"  - [{subject}] {value}")
+                else:
+                    lines.append(f"  - {value}")
+        facts = long_term_memory.get("long_term_facts") or []
+        if facts:
+            lines.append("- 关键长期事实:")
+            for row in facts[:5]:
+                category = str(row.get("category", "") or "").strip()
+                subject = str(row.get("subject", "") or "").strip()
+                field = str(row.get("field", "") or "").strip()
+                value = str(row.get("value", "") or "").strip()
+                lines.append(f"  - ({category}) {subject}.{field} = {value}")
         lines.append("")
 
     rag_assist = payload.get("rag_assist") or {}

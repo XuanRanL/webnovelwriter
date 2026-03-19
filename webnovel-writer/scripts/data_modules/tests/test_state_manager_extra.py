@@ -201,6 +201,12 @@ def test_process_chapter_result_and_sqlite_sync(temp_project):
             },
         ],
         "chapter_meta": {"hook": "test", "end": "ok"},
+        "memory_facts": {
+            "timeline_events": [{"event": "萧炎离开天云宗", "chapter": 12, "time_hint": "夜晚"}],
+            "world_rules": [{"rule": "修炼体系九境", "scope": "global", "domain": "修炼体系", "field": "境界划分"}],
+            "open_loops": [{"content": "三年之约", "status": "active", "urgency": 80}],
+            "reader_promises": [{"content": "纳兰嫣然会出场", "type": "encounter"}],
+        },
     }
     warnings = manager.process_chapter_result(12, result)
     assert any("需人工确认" in w for w in warnings)
@@ -217,6 +223,7 @@ def test_process_chapter_result_and_sqlite_sync(temp_project):
     by_tier = manager.get_entities_by_tier("核心")
     assert "xiaoyan" in by_type
     assert "xiaoyan" in by_tier
+    assert temp_project.scratchpad_file.exists()
 
 
 def test_export_context_and_protagonist_alias(temp_project):

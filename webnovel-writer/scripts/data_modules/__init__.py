@@ -51,6 +51,10 @@ __all__ = [
     "StyleSampler",
     "StyleSample",
     "SceneType",
+    # Memory
+    "ScratchpadManager",
+    "MemoryWriter",
+    "MemoryOrchestrator",
 ]
 
 
@@ -87,6 +91,10 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "StyleSampler": (".style_sampler", "StyleSampler"),
     "StyleSample": (".style_sampler", "StyleSample"),
     "SceneType": (".style_sampler", "SceneType"),
+    # Memory
+    "ScratchpadManager": (".memory.store", "ScratchpadManager"),
+    "MemoryWriter": (".memory.writer", "MemoryWriter"),
+    "MemoryOrchestrator": (".memory.orchestrator", "MemoryOrchestrator"),
 }
 
 
@@ -103,4 +111,3 @@ def __getattr__(name: str) -> Any:  # pragma: no cover
 
 def __dir__() -> list[str]:  # pragma: no cover
     return sorted(set(list(globals().keys()) + list(_LAZY_EXPORTS.keys())))
-

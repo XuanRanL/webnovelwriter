@@ -223,6 +223,9 @@ def main() -> None:
     p_context = sub.add_parser("context", help="转发到 context_manager")
     p_context.add_argument("args", nargs=argparse.REMAINDER)
 
+    p_memory = sub.add_parser("memory", help="转发到 memory.store")
+    p_memory.add_argument("args", nargs=argparse.REMAINDER)
+
     p_migrate = sub.add_parser("migrate", help="转发到 migrate_state_to_sqlite")
     p_migrate.add_argument("args", nargs=argparse.REMAINDER)
 
@@ -287,6 +290,8 @@ def main() -> None:
         raise SystemExit(_run_data_module("entity_linker", [*forward_args, *rest]))
     if tool == "context":
         raise SystemExit(_run_data_module("context_manager", [*forward_args, *rest]))
+    if tool == "memory":
+        raise SystemExit(_run_data_module("memory.store", [*forward_args, *rest]))
     if tool == "migrate":
         raise SystemExit(_run_data_module("migrate_state_to_sqlite", [*forward_args, *rest]))
 

@@ -95,6 +95,50 @@ def test_context_manager_build_and_filter(temp_project):
     assert any(c.get("entity_id") == "xiaoyan" for c in characters)
     assert not any(c.get("entity_id") == "bad" for c in characters)
     assert payload["sections"]["preferences"]["content"].get("tone") == "热血"
+    assert "long_term_memory" in payload["sections"]
+
+
+def test_context_manager_uses_memory_orchestrator_for_working_when_enabled(temp_project, monkeypatch):
+    state = {
+        "protagonist_state": {"name": "旧快照"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temp_project.context_use_memory_orchestrator = True
+
+    def _fake_pack(self, chapter, task_type="write"):
+        return {
+            "working_memory": [
+                {"layer": "working", "source": "outline", "chapter": chapter, "content": "FAKE_OUTLINE"},
+                {
+                    "layer": "working",
+                    "source": "state_export",
+                    "chapter": chapter,
+                    "content": {"protagonist_state": {"name": "新快照"}},
+                },
+                {"layer": "working", "source": "summary", "chapter": chapter - 1, "content": "FAKE_SUMMARY"},
+            ],
+            "episodic_memory": [],
+            "semantic_memory": [],
+            "long_term_facts": [],
+            "active_constraints": [],
+            "recent_changes": [],
+            "warnings": [],
+            "stats": {"total": 0, "injected": 0, "filtered": 0, "conflicts": 0},
+        }
+
+    monkeypatch.setattr("data_modules.memory.orchestrator.MemoryOrchestrator.build_memory_pack", _fake_pack)
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(1, use_snapshot=False, save_snapshot=False)
+    core = payload["sections"]["core"]["content"]
+    long_term_memory = payload["sections"]["long_term_memory"]["content"]
+
+    assert "working_memory" in long_term_memory
+    assert core["chapter_outline"] == "FAKE_OUTLINE"
+    assert core["protagonist_snapshot"] == {"name": "新快照"}
+    assert core["recent_summaries"] == [{"chapter": 0, "summary": "FAKE_SUMMARY"}]
 
 
 def test_context_manager_loads_volume_outline_file(temp_project):

@@ -1093,6 +1093,16 @@ class StateManager:
         # 同步主角状态（entities_v3 → protagonist_state）
         self.sync_protagonist_from_entity()
 
+        # 长期记忆写入（best-effort，不阻断主流程）
+        try:
+            from .memory.writer import MemoryWriter
+
+            writer = MemoryWriter(self.config)
+            mem_result = writer.update_from_chapter_result(chapter, result)
+            logger.info("memory_write: %s", mem_result)
+        except Exception as exc:
+            logger.warning("memory_write_failed: %s", exc)
+
         return warnings
 
     # ==================== 导出 ====================
@@ -1260,7 +1270,11 @@ def main():
         from project_locator import resolve_project_root
         from .config import DataModulesConfig
 
-        resolved_root = resolve_project_root(args.project_root)
+        try:
+            resolved_root = resolve_project_root(args.project_root)
+        except FileNotFoundError:
+            # 兼容旧行为：显式目录无法被 locator 识别时，直接按传入路径初始化。
+            resolved_root = Path(args.project_root).expanduser().resolve()
         config = DataModulesConfig.from_project_root(resolved_root)
 
     manager = StateManager(config)

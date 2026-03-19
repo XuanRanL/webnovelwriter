@@ -161,6 +161,7 @@ def test_build_chapter_context_payload_includes_contract_sections(tmp_path):
     assert "rag_assist" in payload
     assert isinstance(payload["rag_assist"], dict)
     assert payload["rag_assist"].get("invoked") is False
+    assert "long_term_memory" in payload
 
 
 def test_render_text_contains_writing_guidance_section(tmp_path):
