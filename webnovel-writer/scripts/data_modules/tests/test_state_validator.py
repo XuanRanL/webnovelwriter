@@ -104,4 +104,3 @@ def test_normalize_state_runtime_sections():
     chapter_meta = normalize_chapter_meta(normalized["chapter_meta"])
     assert "1" in chapter_meta
     assert chapter_meta["1"]["coolpoint_patterns"] == ["打脸", "翻车"]
-

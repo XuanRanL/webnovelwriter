@@ -42,6 +42,16 @@ STEP_STATUS_RUNNING = "running"
 STEP_STATUS_COMPLETED = "completed"
 STEP_STATUS_FAILED = "failed"
 
+WRITE_WORKFLOW_STEPS = [
+    "Step 0.5",
+    "Step 1",
+    "Step 2A",
+    "Step 2B",
+    "Step 3",
+    "Step 4",
+    "Step 5",
+    "Step 6",
+]
 
 def now_iso() -> str:
     return datetime.now().isoformat()
@@ -110,6 +120,7 @@ def expected_step_owner(command: str, step_id: str) -> str:
     """
     if command == "webnovel-write":
         mapping = {
+            "Step 0.5": "webnovel-write-skill",
             "Step 1": "context-agent",
             "Step 1.5": "webnovel-write-skill",
             "Step 2A": "writer-draft",
@@ -423,7 +434,7 @@ def analyze_recovery_options(interrupt_info):
 
     step_id = current_step["id"]
 
-    if step_id in {"Step 1", "Step 1.5"}:
+    if step_id in {"Step 0.5", "Step 1", "Step 1.5"}:
         return [
             {
                 "option": "A",
@@ -715,7 +726,7 @@ def get_pending_steps(command):
     """Get command pending step list."""
     if command == "webnovel-write":
         # v2: Step 1 内置 Contract v2，不再单独记录 Step 1.5，避免产生 step_order_violation 噪声。
-        return ["Step 1", "Step 2A", "Step 2B", "Step 3", "Step 4", "Step 5", "Step 6"]
+        return list(WRITE_WORKFLOW_STEPS)
     if command == "webnovel-review":
         return ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6", "Step 7", "Step 8"]
     return []

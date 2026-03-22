@@ -105,6 +105,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" inde
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-by-alias --alias "萧炎"
 ```
 
+
 ### Step 3：执行实体提取与语义消歧
 
 由 Data Agent 在同一轮上下文内直接完成，不额外调用独立 LLM Agent。

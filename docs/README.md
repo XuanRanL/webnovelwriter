@@ -7,6 +7,8 @@
 - [LIGHT 改造计划](#light-改造计划)
 - [长期记忆研究报告](#长期记忆研究报告)
 - [长期记忆新架构](#长期记忆新架构)
+- [STORYTELLER 论文总结](#storyteller-论文总结)
+- [STORYTELLER 落地方案](#storyteller-落地方案)
 - [命令详解](#命令详解)
 - [RAG 与配置](#rag-与配置)
 - [题材模板](#题材模板)
@@ -31,6 +33,14 @@
 ## 长期记忆新架构
 
 - `long-term-memory-architecture-v2.md`：基于调研结论重规划的长期记忆架构
+
+## STORYTELLER 论文总结
+
+- `storyteller-paper-summary.md`：STORYTELLER 论文方法、模块、流程与项目启发总结
+
+## STORYTELLER 落地方案
+
+- `storyteller-implementation-plan.md`：基于当前项目的 STORYTELLER 结构化章纲落地实施方案
 
 ## 命令详解
 

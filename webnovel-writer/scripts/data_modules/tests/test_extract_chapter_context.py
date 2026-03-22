@@ -272,3 +272,80 @@ def test_render_text_contains_rag_assist_section_when_hits_exist(tmp_path):
     assert "- 模式: auto" in text
     assert "[graph_hybrid]" in text
     assert "萧炎与药老" in text
+
+
+def test_build_chapter_context_payload_includes_plot_structure(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[2]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from extract_chapter_context import build_chapter_context_payload
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+    state = {
+        "project": {"genre": "xuanhuan"},
+        "progress": {"current_chapter": 5, "total_words": 15000},
+        "protagonist_state": {},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    (webnovel_dir / "state.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    outline_dir = tmp_path / "大纲"
+    outline_dir.mkdir(parents=True, exist_ok=True)
+    (outline_dir / "第1卷-详细大纲.md").write_text(
+        """### 第5章：试炼开局
+CBN：萧炎抵达外院试炼场
+CPNs：
+- 导师宣布试炼规则
+- 萧炎发现规则被人做了手脚
+CEN：萧炎决定先隐忍观察
+必须覆盖节点：规则异常暴露、决定隐忍
+本章禁区：不能直接揭穿黑手
+""",
+        encoding="utf-8",
+    )
+
+    payload = build_chapter_context_payload(tmp_path, 5)
+    plot_structure = payload.get("plot_structure") or {}
+    assert plot_structure.get("cbn") == "萧炎抵达外院试炼场"
+    assert plot_structure.get("cpns") == ["导师宣布试炼规则", "萧炎发现规则被人做了手脚"]
+    assert plot_structure.get("cen") == "萧炎决定先隐忍观察"
+    assert plot_structure.get("mandatory_nodes") == ["规则异常暴露", "决定隐忍"]
+    assert plot_structure.get("prohibitions") == ["不能直接揭穿黑手"]
+
+
+def test_render_text_contains_plot_structure_section(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[2]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from extract_chapter_context import _render_text
+
+    payload = {
+        "chapter": 8,
+        "outline": "测试大纲",
+        "previous_summaries": [],
+        "state_summary": "状态",
+        "context_contract_version": "v2",
+        "plot_structure": {
+            "cbn": "主角进入遗迹",
+            "cpns": ["发现石碑异常", "与守卫短暂交锋"],
+            "cen": "决定深入遗迹核心",
+            "mandatory_nodes": ["发现石碑异常"],
+            "prohibitions": ["不能提前拿到终极传承"],
+        },
+        "reader_signal": {},
+        "genre_profile": {},
+        "writing_guidance": {},
+        "rag_assist": {"invoked": False, "hits": []},
+    }
+
+    text = _render_text(payload)
+    assert "## 情节结构" in text
+    assert "- CBN: 主角进入遗迹" in text
+    assert "- CPN1: 发现石碑异常" in text
+    assert "- CEN: 决定深入遗迹核心" in text
+    assert "- 本章禁区: 不能提前拿到终极传承" in text

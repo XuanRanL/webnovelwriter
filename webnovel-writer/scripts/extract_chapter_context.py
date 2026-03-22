@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-from chapter_outline_loader import load_chapter_outline
+from chapter_outline_loader import load_chapter_outline, load_chapter_plot_structure
 
 from runtime_compat import enable_windows_utf8_stdio
 
@@ -314,6 +314,7 @@ def _load_contract_context(project_root: Path, chapter_num: int) -> Dict[str, An
         "reader_signal": (sections.get("reader_signal") or {}).get("content", {}),
         "genre_profile": (sections.get("genre_profile") or {}).get("content", {}),
         "writing_guidance": (sections.get("writing_guidance") or {}).get("content", {}),
+        "plot_structure": (sections.get("plot_structure") or {}).get("content", {}),
         "long_term_memory": (sections.get("long_term_memory") or {}).get("content", {}),
     }
 
@@ -329,6 +330,7 @@ def build_chapter_context_payload(project_root: Path, chapter_num: int) -> Dict[
 
     state_summary = extract_state_summary(project_root)
     contract_context = _load_contract_context(project_root, chapter_num)
+    plot_structure = contract_context.get("plot_structure") or load_chapter_plot_structure(project_root, chapter_num)
     rag_assist = _load_rag_assist(project_root, chapter_num, outline)
 
     return {
@@ -341,6 +343,7 @@ def build_chapter_context_payload(project_root: Path, chapter_num: int) -> Dict[
         "reader_signal": contract_context.get("reader_signal", {}),
         "genre_profile": contract_context.get("genre_profile", {}),
         "writing_guidance": contract_context.get("writing_guidance", {}),
+        "plot_structure": plot_structure,
         "long_term_memory": contract_context.get("long_term_memory", {}),
         "rag_assist": rag_assist,
     }
@@ -381,6 +384,26 @@ def _render_text(payload: Dict[str, Any]) -> str:
         if stage:
             lines.append(f"- 上下文阶段权重: {stage}")
             lines.append("")
+
+    plot_structure = payload.get("plot_structure") or {}
+    if plot_structure:
+        lines.append("## 情节结构")
+        lines.append("")
+        cbn = str(plot_structure.get("cbn") or "").strip()
+        if cbn:
+            lines.append(f"- CBN: {cbn}")
+        for idx, item in enumerate(plot_structure.get("cpns") or [], start=1):
+            lines.append(f"- CPN{idx}: {item}")
+        cen = str(plot_structure.get("cen") or "").strip()
+        if cen:
+            lines.append(f"- CEN: {cen}")
+        mandatory_nodes = plot_structure.get("mandatory_nodes") or []
+        if mandatory_nodes:
+            lines.append("- 必须覆盖节点: " + " | ".join(str(x) for x in mandatory_nodes))
+        prohibitions = plot_structure.get("prohibitions") or []
+        if prohibitions:
+            lines.append("- 本章禁区: " + " | ".join(str(x) for x in prohibitions))
+        lines.append("")
 
     writing_guidance = payload.get("writing_guidance") or {}
     guidance_items = writing_guidance.get("guidance_items") or []

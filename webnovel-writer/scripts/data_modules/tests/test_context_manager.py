@@ -699,3 +699,37 @@ def test_context_manager_genre_profile_prefers_project_over_project_info(temp_pr
 
     assert profile.get("genre_raw") == "xuanhuan"
     assert profile.get("genre") == "xuanhuan"
+
+
+def test_context_manager_includes_plot_structure_when_outline_has_nodes(temp_project):
+    state = {
+        "project": {"genre": "xuanhuan"},
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temp_project.outline_dir.mkdir(parents=True, exist_ok=True)
+    (temp_project.outline_dir / "第1卷-详细大纲.md").write_text(
+        """### 第4章：试炼
+CBN：进入试炼场
+CPNs：
+- 观察规则
+- 发现陷阱
+CEN：决定将计就计
+必须覆盖节点：发现陷阱
+本章禁区：不能直接翻脸
+""",
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(4, use_snapshot=False, save_snapshot=False)
+
+    plot_structure = payload["sections"]["plot_structure"]["content"]
+    assert plot_structure.get("cbn") == "进入试炼场"
+    assert plot_structure.get("cpns") == ["观察规则", "发现陷阱"]
+    assert plot_structure.get("cen") == "决定将计就计"
+    assert plot_structure.get("mandatory_nodes") == ["发现陷阱"]
+    assert plot_structure.get("prohibitions") == ["不能直接翻脸"]

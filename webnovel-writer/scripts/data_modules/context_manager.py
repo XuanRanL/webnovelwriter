@@ -15,9 +15,9 @@ from runtime_compat import enable_windows_utf8_stdio
 from typing import Any, Dict, List, Optional
 
 try:
-    from chapter_outline_loader import load_chapter_outline
+    from chapter_outline_loader import load_chapter_outline, load_chapter_plot_structure
 except ImportError:  # pragma: no cover
-    from scripts.chapter_outline_loader import load_chapter_outline
+    from scripts.chapter_outline_loader import load_chapter_outline, load_chapter_plot_structure
 
 from .config import get_config
 from .index_manager import IndexManager, WritingChecklistScoreMeta
@@ -60,6 +60,7 @@ class ContextManager:
         "reader_signal",
         "genre_profile",
         "writing_guidance",
+        "plot_structure",
     }
     SECTION_ORDER = [
         "core",
@@ -68,6 +69,7 @@ class ContextManager:
         "reader_signal",
         "genre_profile",
         "writing_guidance",
+        "plot_structure",
         "story_skeleton",
         "memory",
         "long_term_memory",
@@ -254,6 +256,7 @@ class ContextManager:
         reader_signal = self._load_reader_signal(chapter)
         genre_profile = self._load_genre_profile(state)
         writing_guidance = self._build_writing_guidance(chapter, reader_signal, genre_profile)
+        plot_structure = self._load_plot_structure(chapter)
 
         return {
             "meta": {"chapter": chapter},
@@ -263,6 +266,7 @@ class ContextManager:
             "reader_signal": reader_signal,
             "genre_profile": genre_profile,
             "writing_guidance": writing_guidance,
+            "plot_structure": plot_structure,
             "story_skeleton": story_skeleton,
             "preferences": preferences,
             "memory": memory,
@@ -669,6 +673,9 @@ class ContextManager:
 
     def _load_outline(self, chapter: int) -> str:
         return load_chapter_outline(self.config.project_root, chapter, max_chars=1500)
+
+    def _load_plot_structure(self, chapter: int) -> Dict[str, Any]:
+        return load_chapter_plot_structure(self.config.project_root, chapter)
 
     def _load_recent_summaries(self, chapter: int, window: int = 3) -> List[Dict[str, Any]]:
         summaries = []

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Any, Dict
 
 try:
     from chapter_paths import volume_num_for_chapter
@@ -127,3 +128,95 @@ def load_chapter_outline(project_root: Path, chapter_num: int, max_chars: int | 
     if max_chars and len(outline) > max_chars:
         return outline[:max_chars] + "\n...(已截断)"
     return outline
+
+_PLOT_SECTION_FIELD_MAP = {
+    "cbn": "cbn",
+    "cpns": "cpns",
+    "cen": "cen",
+    "必须覆盖节点": "mandatory_nodes",
+    "本章禁区": "prohibitions",
+}
+
+
+def _clean_plot_line(line: str) -> str:
+    text = str(line or "").strip()
+    text = re.sub(r"^[\-\*•]+\s*", "", text)
+    text = re.sub(r"^\d+[\.、]\s*", "", text)
+    return text.strip()
+
+
+def _append_plot_value(target: Dict[str, Any], field: str, value: str) -> None:
+    value = _clean_plot_line(value)
+    if not value:
+        return
+
+    if field in {"cpns", "mandatory_nodes", "prohibitions"}:
+        target.setdefault(field, [])
+        candidates = [value]
+        if field in {"mandatory_nodes", "prohibitions"}:
+            split_values = [part.strip() for part in re.split(r"[、,，；;|]+", value) if part.strip()]
+            if split_values:
+                candidates = split_values
+        for item in candidates:
+            if item not in target[field]:
+                target[field].append(item)
+        return
+
+    if field not in target:
+        target[field] = value
+
+
+def parse_chapter_plot_structure(outline_text: str) -> Dict[str, Any]:
+    text = str(outline_text or "")
+    if not text or text.startswith("⚠️"):
+        return {}
+
+    structure: Dict[str, Any] = {}
+    current_field = ""
+
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            current_field = ""
+            continue
+        if re.match(r"^#{1,6}\s*第\s*\d+\s*章", stripped):
+            current_field = ""
+            continue
+
+        cleaned = _clean_plot_line(stripped)
+        matched_field = ""
+        matched_value = ""
+        for label, field in _PLOT_SECTION_FIELD_MAP.items():
+            match = re.match(rf"^{re.escape(label)}\s*[：:]\s*(.*)$", cleaned, re.IGNORECASE)
+            if match:
+                matched_field = field
+                matched_value = match.group(1).strip()
+                break
+
+        if matched_field:
+            current_field = matched_field
+            _append_plot_value(structure, matched_field, matched_value)
+            continue
+
+        if current_field:
+            _append_plot_value(structure, current_field, cleaned)
+
+    cpns = structure.get("cpns") or []
+    mandatory_nodes = structure.get("mandatory_nodes") or []
+    prohibitions = structure.get("prohibitions") or []
+    if not any([structure.get("cbn"), cpns, structure.get("cen"), mandatory_nodes, prohibitions]):
+        return {}
+
+    return {
+        "cbn": str(structure.get("cbn") or "").strip(),
+        "cpns": cpns,
+        "cen": str(structure.get("cen") or "").strip(),
+        "mandatory_nodes": mandatory_nodes,
+        "prohibitions": prohibitions,
+        "source": "chapter_outline",
+    }
+
+
+def load_chapter_plot_structure(project_root: Path, chapter_num: int) -> Dict[str, Any]:
+    outline = load_chapter_outline(project_root, chapter_num, max_chars=None)
+    return parse_chapter_plot_structure(outline)

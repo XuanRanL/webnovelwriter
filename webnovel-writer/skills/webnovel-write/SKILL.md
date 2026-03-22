@@ -12,6 +12,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 - 默认目标字数 2000-2500；若用户或大纲另有要求，以用户和大纲为准。
 - 保证审查、润色、数据回写、长期记忆提取全部闭环。
 - 输出内容必须能被下一章直接消费。
+- 若章纲包含结构化节点，则正文必须围绕节点骨架展开。
 
 ## 执行原则
 
@@ -23,9 +24,9 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 ## 模式定义
 
-- `/webnovel-write`：Step 1 → Step 2A → Step 2B → Step 3 → Step 4 → Step 5 → Step 6
-- `/webnovel-write --fast`：Step 1 → Step 2A → Step 3 → Step 4 → Step 5 → Step 6
-- `/webnovel-write --minimal`：Step 1 → Step 2A → Step 2B → Step 3（仅核心 3 个审查器）→ Step 4 → Step 5 → Step 6
+- `/webnovel-write`：Step 0.5 → Step 1 → Step 2A → Step 2B → Step 3 → Step 4 → Step 5 → Step 6
+- `/webnovel-write --fast`：Step 0.5 → Step 1 → Step 2A → Step 3 → Step 4 → Step 5 → Step 6
+- `/webnovel-write --minimal`：Step 0.5 → Step 1 → Step 2A → Step 2B → Step 3（仅核心 3 个审查器）→ Step 4 → Step 5 → Step 6
 
 最小产物：
 - 章节正文文件
@@ -41,7 +42,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 - 禁止改名：标准产物文件名和格式不得私自改写。
 - 禁止伪造审查：Step 3 必须由 Task 子代理执行。
 - 禁止源码探测：CLI 调用方式以本文档和 agent 文档为准，命令失败优先查日志。
-- Workflow step-id 必须使用实现侧真实编号：`Step 1`、`Step 2A`、`Step 2B`、`Step 3`、`Step 4`、`Step 5`、`Step 6`。
+- Workflow step-id 必须使用实现侧真实编号：`Step 0.5`、`Step 1`、`Step 2A`、`Step 2B`、`Step 3`、`Step 4`、`Step 5`、`Step 6`。
 
 ## 引用加载等级
 
@@ -113,6 +114,35 @@ export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-roo
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-task --command webnovel-write --chapter {chapter_num} || true
 ```
 
+### Step 0.5：轻量节点预检
+
+目的：在不阻断流程的前提下，对章纲中的结构化节点做轻量一致性提醒。
+
+执行前记录：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 0.5" --step-name "节点预检" || true
+```
+
+规则：
+- 只在当前章详细大纲存在 `CBN/CEN` 时执行。
+- 只检查主角或 POV 角色相关节点。
+- 第一版仅检查：
+  - `CBN` 中地点是否与 `protagonist_state.location` 明显冲突
+  - `CBN/CEN` 中主角境界或能力要求是否与 `protagonist_state.power` 明显冲突
+- 检查结果仅作为警告注入给 `context-agent`，不得阻断流程。
+- 若无节点字段，直接跳过。
+
+警告示例：
+- `[NODE_WARNING] CBN 地点与当前状态不一致: 章纲=迦南学院入口, 实际=乌坦城`
+- `[NODE_WARNING] CBN 强度要求与当前境界不一致: 章纲=斗师级压制, 实际=斗者三星`
+
+完成后记录：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 0.5" --artifacts '{"node_precheck":true}' || true
+```
+
 ### Step 1：调用 Context Agent 生成执行包
 
 记录开始：
@@ -126,10 +156,12 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 - `project_root`
 - `storage_path=.webnovel/`
 - `state_file=.webnovel/state.json`
+- 若存在 `NODE_WARNING`，一并传入
 
 硬要求：
 - 输出必须包含任务书、Context Contract、Step 2A 直写提示词。
 - 执行包中必须纳入长期记忆约束与时间约束。
+- 若章纲提供结构化节点，执行包中必须包含“情节结构”板块与节拍映射。
 
 记录完成：
 
@@ -151,6 +183,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 - 不得出现 `[TODO]`、`[待补充]` 等占位符。
 - 若上章存在明确钩子，本章必须回应。
 - 中文思维写作，不使用英文框架骨架驱动正文。
+- 若存在结构化节点：正文必须围绕 `CBN -> CPNs -> CEN` 展开，不得跳过必须节点。
 
 完成后记录：
 
@@ -170,6 +203,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 硬要求：
 - 只改表达，不改事实、事件顺序、人物行为结果、设定规则。
 - 重点消除模板腔、说明腔、机械腔。
+- 若存在结构化节点，不得因风格改写破坏节点顺序和收束方向。
 
 完成后记录：
 
@@ -204,16 +238,25 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 - 标准模式与 `--fast`：核心 3 个 + auto 命中的条件审查器
 - `--minimal`：只跑核心 3 个
 
-审查指标落库：
+Step 3 中间产物约定：
+- checker 原始结果：`${PROJECT_ROOT}/.webnovel/tmp/review_results.json`
+- 聚合结果：`${PROJECT_ROOT}/.webnovel/tmp/review_aggregated.json`
+- 落库指标：`${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json`
+
+标准文件流：
 
 ```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" review-pipeline   --chapter {chapter_num}   --review-results "${PROJECT_ROOT}/.webnovel/tmp/review_results.json"   --aggregated-out "${PROJECT_ROOT}/.webnovel/tmp/review_aggregated.json"   --review-metrics-out "${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json"   --report-file "审查报告/第{chapter_num}章审查报告.md"
+
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics --data "@${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json"
 ```
 
 硬要求：
-- 必须产出 `overall_score`。
-- `notes` 必须是单个字符串。
-- 未落库 `review_metrics` 不得进入 Step 4。
+- `review_results.json` 必须保留各 checker 原始结构化结果。
+- `review_aggregated.json` 必须包含 `overall_score`、`issues` 与 `timeline_gate`。
+- `review_metrics.json` 的 `notes` 必须是单个字符串。
+- 若 `review_aggregated.json.timeline_gate.blocked=true`，不得进入 Step 4/5。
+- Step 4 必须直接消费 `review_results.json` 与 `review_aggregated.json`。
 
 完成后记录：
 
@@ -239,6 +282,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 硬要求：
 - 必须输出 `anti_ai_force_check=pass/fail`
 - `fail` 时不得进入 Step 5
+- 有节点时，不得在润色中删除必须节点对应的情节落点
 
 完成后记录：
 
@@ -321,11 +365,13 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 未满足以下条件前，不得结束流程：
 
 1. 章节正文文件存在且非空。
-2. Step 3 已产出 `overall_score`，且 `review_metrics` 已落库。
-3. Step 4 的 `anti_ai_force_check=pass`。
-4. Step 5 已更新 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`。
-5. Step 5 已写入 `.webnovel/memory_scratchpad.json`。
-6. 若启用观测，已读取最新 timing 记录并给出结论。
+2. Step 3 已产出 `${PROJECT_ROOT}/.webnovel/tmp/review_aggregated.json`，其中包含 `overall_score`。
+3. Step 3 的 `review_metrics` 已落库。
+4. 若存在 `timeline_gate.blocked=true`，流程必须停在 Step 3。
+5. Step 4 的 `anti_ai_force_check=pass`。
+6. Step 5 已更新 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`。
+7. Step 5 已写入 `.webnovel/memory_scratchpad.json`。
+8. 若启用观测，已读取最新 timing 记录并给出结论。
 
 ## 验证与交付
 

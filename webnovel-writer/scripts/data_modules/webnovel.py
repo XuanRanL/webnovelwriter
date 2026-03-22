@@ -252,6 +252,13 @@ def main() -> None:
     p_extract_context.add_argument("--chapter", type=int, required=True, help="目标章节号")
     p_extract_context.add_argument("--format", choices=["text", "json"], default="text", help="输出格式")
 
+    p_review_pipeline = sub.add_parser("review-pipeline", help="转发到 review_pipeline.py")
+    p_review_pipeline.add_argument("--chapter", type=int, required=True, help="目标章节号")
+    p_review_pipeline.add_argument("--review-results", required=True, help="checker 原始结果 JSON 文件")
+    p_review_pipeline.add_argument("--aggregated-out", help="聚合结果输出文件")
+    p_review_pipeline.add_argument("--review-metrics-out", help="review_metrics 输出文件")
+    p_review_pipeline.add_argument("--report-file", default="", help="审查报告路径")
+
     # 兼容：允许 `--project-root` 出现在任意位置（减少 agents/skills 拼命令的出错率）
     from .cli_args import normalize_global_project_root
 
@@ -308,6 +315,19 @@ def main() -> None:
     if tool == "extract-context":
         return_args = [*forward_args, "--chapter", str(args.chapter), "--format", str(args.format)]
         raise SystemExit(_run_script("extract_chapter_context.py", return_args))
+    if tool == "review-pipeline":
+        return_args = [
+            *forward_args,
+            "--chapter", str(args.chapter),
+            "--review-results", str(args.review_results),
+        ]
+        if args.aggregated_out:
+            return_args.extend(["--aggregated-out", str(args.aggregated_out)])
+        if args.review_metrics_out:
+            return_args.extend(["--review-metrics-out", str(args.review_metrics_out)])
+        if args.report_file:
+            return_args.extend(["--report-file", str(args.report_file)])
+        raise SystemExit(_run_script("review_pipeline.py", return_args))
 
     raise SystemExit(2)
 

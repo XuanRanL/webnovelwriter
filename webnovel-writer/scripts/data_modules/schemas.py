@@ -109,6 +109,8 @@ class MemoryFacts(BaseModel):
     reader_promises: List[ReaderPromise] = Field(default_factory=list)
 
 
+
+
 class DataAgentOutput(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -181,4 +183,6 @@ def normalize_data_agent_output(payload: Dict[str, Any]) -> Dict[str, Any]:
                 memory_facts[key] = [value]
 
     payload.setdefault("scenes_chunked", 0)
+
+
     return payload

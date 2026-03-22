@@ -202,3 +202,24 @@ def test_cleanup_artifacts_confirm_deletes_with_backup(tmp_path, monkeypatch):
     backup_dir = tmp_path / ".webnovel" / "recovery_backups"
     backups = list(backup_dir.glob("ch0008-*"))
     assert backups
+
+
+def test_workflow_step_zero_point_five_is_registered(tmp_path, monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+
+    assert module.expected_step_owner("webnovel-write", "Step 0.5") == "webnovel-write-skill"
+    assert module.get_pending_steps("webnovel-write")[0] == "Step 0.5"
+
+    module.start_task("webnovel-write", {"chapter_num": 15})
+    module.start_step("Step 0.5", "节点预检")
+    module.complete_step("Step 0.5")
+    module.start_step("Step 1", "Context")
+
+    trace_path = module.get_call_trace_path()
+    rows = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    violation_events = [row for row in rows if row.get("event") == "step_order_violation"]
+    assert not violation_events
