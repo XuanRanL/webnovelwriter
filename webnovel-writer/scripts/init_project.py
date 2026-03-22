@@ -278,7 +278,7 @@ def init_project(
         "设定集/物品库",
         "设定集/其他设定",
         "大纲",
-        "正文/第1卷",
+        "正文",
         "审查报告",
     ]
     for dir_path in directories:
