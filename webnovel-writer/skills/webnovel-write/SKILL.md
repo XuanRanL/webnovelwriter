@@ -23,9 +23,9 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 ## 模式定义
 
-- `/webnovel-write`：Step 1 → 2A → 2B → 3 → 4 → 5 → 6
-- `/webnovel-write --fast`：Step 1 → 2A → 3 → 4 → 5 → 6（跳过 2B）
-- `/webnovel-write --minimal`：Step 1 → 2A → 3（仅3个基础审查）→ 4 → 5 → 6
+- `/webnovel-write`：Step 1 → 2A → 2B → 3 → 3.5 → 4 → 5 → 6
+- `/webnovel-write --fast`：Step 1 → 2A → 3 → 3.5 → 4 → 5 → 6（跳过 2B）
+- `/webnovel-write --minimal`：Step 1 → 2A → 3（仅3个基础审查）→ 3.5 → 4 → 5 → 6
 
 最小产物（所有模式）：
 - `正文/第{NNNN}章-{title_safe}.md` 或 `正文/第{NNNN}章.md`
@@ -59,6 +59,9 @@ allowed-tools: Read Write Edit Grep Bash Task
 - `references/step-3-review-gate.md`
   - 用途：Step 3 审查调用模板、汇总格式、落库 JSON 规范。
   - 触发：Step 3 必读。
+- `references/step-3.5-external-review.md`
+  - 用途：Step 3.5 外部模型审查（Qwen3.5 + GLM-5 双模型生产评分）。
+  - 触发：Step 3.5 必读。
 - `references/step-5-debt-switch.md`
   - 用途：Step 5 债务利息开关规则（默认关闭）。
   - 触发：Step 5 必读。
@@ -146,7 +149,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 ```
 
 要求：
-- `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 4` / `Step 5` / `Step 6`。
+- `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 3.5` / `Step 4` / `Step 5` / `Step 6`。
 - 任何记录失败只记警告，不阻断写作。
 - 每个 Step 执行结束后，同样需要 `complete-step`（失败不阻断）。
 
@@ -256,6 +259,32 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
 - `--minimal` 也必须产出 `overall_score`。
 - 未落库 `review_metrics` 不得进入 Step 5。
 
+### Step 3.5：外部模型审查（Qwen3.5 + GLM-5 双模型生产评分）
+
+执行前加载：
+```bash
+cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
+```
+
+执行步骤：
+
+1. 调用外部审查脚本（双模型并行）：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/external_review.py" --project-root "${PROJECT_ROOT}" --chapter {chapter_num} --models "qwen,glm5"
+```
+
+2. 读取输出文件 `${PROJECT_ROOT}/.webnovel/tmp/external_review_ch{NNNN}.json`，逐条评估外部模型发现的问题：
+   - **必须采纳**：外部模型 `critical`/`high` 且 Claude 复核确认属实
+   - **建议采纳**：外部模型 `medium` 且 Claude 认为有道理
+   - **可忽略**：`low` 或 Claude 判断为误报
+
+3. 将采纳的问题修复写入正文。
+
+硬要求：
+- 所有模式均执行，不可跳过。
+- 必须逐条评估并记录采纳/驳回决定。
+- 外部模型超时或失败时记录警告，不阻断流程。
+
 ### Step 4：润色（问题修复优先）
 
 执行前必须加载：
@@ -341,10 +370,11 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 
 1. 章节正文文件存在且非空：`正文/第{chapter_padded}章-{title_safe}.md` 或 `正文/第{chapter_padded}章.md`
 2. Step 3 已产出 `overall_score` 且 `review_metrics` 成功落库
-3. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
-4. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
-5. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`
-6. 若开启性能观测，已读取最新 timing 记录并输出结论
+3. Step 3.5 外部模型审查已完成，Claude 已逐条评估并记录采纳/驳回决定
+4. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
+5. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
+6. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`
+7. 若开启性能观测，已读取最新 timing 记录并输出结论
 
 ## 验证与交付
 
