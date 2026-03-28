@@ -1,89 +1,84 @@
-# Step 3.5 外部模型审查（External Model Review）
+# Step 3.5 外部模型审查（Agent化，6维度×3模型）
 
 ## 目的
 
-在 Claude 审查（Step 3）通过后，调用外部大模型做独立的"生产评分"。
-外部模型视角与 Claude 不同，能发现 Claude 自审盲区（设定偏差、逻辑漏洞、读者感受）。
+在 Step 3 的同时，调用3个外部模型各自独立做6维度审查，产出18份报告供Claude统一复核。
 
 ## 触发条件
 
-- Step 3 `overall_score` 已生成且 ≥ 70（即 Step 3 基本通过）。
-- **所有模式均执行**（标准 / `--fast` / `--minimal`），不可跳过。
+- Step 2A 完成后，与 Step 3 同时启动（并行）
+- 所有模式均执行，不可跳过
 
-## 外部模型配置
+## 架构
 
-使用硅基流动（SiliconFlow）API，双模型并行审查：
-
-| 模型 | ID | 角色 |
-|------|----|------|
-| Qwen3.5-397B | `Qwen/Qwen3.5-397B-A17B` | 设定/逻辑审查（区分度高，敢给 critical） |
-| GLM-5 | `Pro/zai-org/GLM-5` | 编辑/读者感受审查（视角独特，嗅觉锐利） |
-
-API 配置：
 ```
-BASE_URL: https://api.siliconflow.cn/v1/chat/completions
-API_KEY: 从 ~/.claude/webnovel-writer/.env 的 EMBED_API_KEY 读取
+Step 3 + 3.5 并行：
+  Claude 6个checker ──────────┐
+  external-review-agent(qwen) ──┤── 全部完成 → Claude汇总24份报告
+  external-review-agent(kimi) ──┤
+  external-review-agent(glm) ───┘
 ```
 
-## 执行流程
+## 外部审查Agent执行流程
 
-### 1. 调用外部审查脚本
+每个 external-review-agent 内部：
+1. 读取完整项目上下文（state.json/大纲/设定集/摘要）
+2. 写入 context JSON 文件
+3. 调用 `external_review.py --mode dimensions --model-key {key}`
+4. 脚本内部并发6个维度的API调用
+5. agent用项目上下文交叉验证结果
+6. 输出统一格式报告
+
+## 6个审查维度
+
+| 维度 | 对应内部checker | 检查重点 |
+|------|----------------|----------|
+| consistency | consistency-checker | 设定/战力/时间线一致性 |
+| continuity | continuity-checker | 场景过渡/伏笔/逻辑连贯 |
+| ooc | ooc-checker | 角色行为/对话/成长一致性 |
+| reader_pull | reader-pull-checker | 钩子/微兑现/追读力 |
+| high_point | high-point-checker | 爽点密度/类型差异化 |
+| pacing | pacing-checker | 章内节奏/信息密度/strand平衡 |
+
+## 模型配置
+
+| 模型 | 主力 (codexcc) | 备用 (硅基流动) |
+|------|---------------|----------------|
+| qwen | qwen3.5-plus | Qwen/Qwen3.5-397B-A17B |
+| kimi | kimi-k2.5 | Pro/moonshotai/Kimi-K2.5 |
+| glm | glm-5 | Pro/zai-org/GLM-5 |
+
+## 脚本调用
 
 ```bash
 python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter {chapter_num} \
-  --models "qwen,glm5"
+  --mode dimensions \
+  --model-key {qwen|kimi|glm}
 ```
 
-脚本输出：`${PROJECT_ROOT}/.webnovel/tmp/external_review_ch{NNNN}.json`
+## Claude汇总复核
 
-### 2. Claude 综合讨论
+Step 3 + 3.5 全部完成后，Claude统一处理24份报告：
 
-主流程读取外部审查结果，逐条评估：
+**采纳标准：**
+- 必须采纳：2个以上来源（含Claude自身）指出同一问题
+- 建议采纳：外部模型发现的 critical/high 问题，Claude复核确认属实
+- 可忽略：仅1个外部模型提出且Claude判断为误报
 
-**采纳标准**：
-- **必须采纳**：外部模型发现的 `critical` 或 `high` 问题，且 Claude 复核确认属实
-- **建议采纳**：外部模型发现的 `medium` 问题，Claude 认为有道理
-- **可忽略**：外部模型的 `low` 问题，或 Claude 判断为误报/过度解读
-
-**讨论输出格式**：
+**输出：**
 ```
-外部审查讨论 - 第 {chapter_num} 章
-- Qwen3.5 评分: {score} | GLM-5 评分: {score}
-- 采纳问题: {N} 个
-  - [来源] 问题描述 → 修复方案
-- 驳回问题: {N} 个
-  - [来源] 问题描述 → 驳回理由
+审查汇总 - 第 {chapter_num} 章
+- Claude内部审查: 6个checker，综合 {score}
+- 外部审查: qwen={score} kimi={score} glm={score}
+- 交叉验证采纳: {N} 个问题
+- 驳回: {N} 个问题
+- 可进入润色: 是/否
 ```
 
-### 3. 执行修复
+## 失败处理
 
-将采纳的问题修复写入正文（覆盖章节文件），然后进入 Step 4。
-
-## 审查 Prompt 模板
-
-外部模型使用统一的审查 prompt，包含：
-- 四维度评分（设定一致性 / 连贯性 / 人物塑造 / 追读力）
-- 小说背景信息（从 state.json 动态读取）
-- 前序章节摘要（从 summaries/ 读取最近 2-3 章）
-- JSON 格式输出要求
-
-## 输出契约
-
-Step 3.5 完成后必须产出：
-1. 外部审查 JSON 文件（双模型结果）
-2. Claude 讨论摘要（采纳/驳回列表）
-3. 修复后的正文（如有修改）
-
-## 进入 Step 4 前闸门
-
-- Step 3.5 外部审查已完成（双模型均返回结果或超时）
-- Claude 已逐条评估并记录采纳/驳回决定
-- 采纳的问题已修复写入正文
-
-## 禁止事项
-
-- 禁止跳过外部审查（即使 Step 3 分数很高）
-- 禁止不经 Claude 讨论直接采纳外部模型意见
-- 禁止忽略外部模型发现的 critical/high 问题（必须复核并给出明确结论）
+- 单个外部模型全部失败：标记该模型为error，不阻塞流程
+- 3个外部模型全部失败：报告错误，Claude基于Step 3结果继续
+- Step 3.5 不构成硬闸门，Step 3 通过即可进入 Step 4
