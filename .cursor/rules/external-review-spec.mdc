@@ -58,6 +58,41 @@ issue 的 type 分类说明：
 - STYLE: 句式AI化/说明腔/排版/对话自然度
 ```
 
+## 一·二、User 消息结构（必须注入项目上下文）
+
+外审 API 调用的 user 消息**不能只发章节正文**。必须按以下结构组装：
+
+```
+===== 项目上下文（请基于以下信息严格审查正文） =====
+
+【本章大纲】
+{从详细大纲提取本章 "### 第 N 章" 段落}
+
+【主角设定】
+{主角卡.md + 金手指设计.md}
+
+【配角设定】
+{女主卡.md + 反派设计.md}
+
+【力量体系】
+{力量体系.md}
+
+【世界观】
+{世界观.md}
+
+【前2章摘要】
+{summaries/ch{N-2}.md + ch{N-1}.md}
+
+【主角当前状态】
+{state.json 的 protagonist_state + progress}
+
+===== 待审查正文 =====
+
+{章节正文全文}
+```
+
+加载规则：大纲按 `### 第 N 章` 分割取本章；前章摘要 Ch1 无则跳过；state.json 只取 protagonist_state 和 progress；设定集全拼接约 7500 字；总 user 消息约 12000 字。
+
 ## 二、外审输出 JSON Schema
 
 每个模型的审查结果文件（`.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`）必须包含：
