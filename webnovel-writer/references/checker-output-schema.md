@@ -82,7 +82,14 @@
     "cool_point_types": ["装逼打脸", "越级反杀"],
     "density_score": 8,
     "type_diversity": 0.8,
-    "milestone_present": false
+    "milestone_present": false,
+    "cool_value": {
+      "suppression_intensity": 8,
+      "reversal_speed": 7,
+      "logic_completeness": 9,
+      "score": 62,
+      "formula": "8×7/max(1,11-9)=28"
+    }
   }
 }
 ```
