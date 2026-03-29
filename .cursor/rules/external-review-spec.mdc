@@ -83,8 +83,8 @@ issue 的 type 分类说明：
 【前2章摘要】
 {summaries/ch{N-2}.md + ch{N-1}.md}
 
-【主角当前状态】
-{state.json 的 protagonist_state + progress}
+【主角当前状态（注意：以下为最新状态，审查早期章节时动态数值可能与正文不一致，以正文为准）】
+{state.json 的 protagonist_state（移除credits）+ progress}
 
 ===== 待审查正文 =====
 
