@@ -1,0 +1,79 @@
+---
+description: 网文写作工作流核心规则（从 Claude Code memory 迁移）
+globs: 星际拆解师/**
+alwaysApply: true
+---
+
+# 网文写作工作流规则
+
+## 项目配置
+
+- workspace_root: I:\AI-extention\webnovel-writer
+- current_project_root: I:\AI-extention\webnovel-writer\星际拆解师
+- 插件目录: C:\Users\Windows\.claude\plugins\cache\webnovel-writer-marketplace\webnovel-writer\5.5.4
+
+## 禁止跳步赶进度（硬约束）
+
+每章必须独立走完完整流程（Step 0→1→2A→2B→3→3.5→4→5→6），不得跳过任何Step。
+
+**历史违规记录：**
+1. Ch7-10：跳过审查子代理
+2. Ch13-20：跳过 Context Agent + 审查 + 报告文件
+3. Ch22-25：跳过 Step 0/1/2B + 内部 checker 没等返回就推进下一章
+
+**执行纪律：**
+- 写完一章 → 等所有 checker 返回 → 汇总 → 修复 → 报告 → Data Agent → Git → 才开始下一章
+- 绝不在 checker 运行期间开始下一章的起草
+- 不要在意时间和 token，只要质量
+
+## 禁止跳过 Step 2B
+
+标准模式写作流程中，Step 2B（风格适配）不可跳过，必须在 2A 之后、Step 3 之前执行。只有 --fast 或 --minimal 模式才允许跳过 2B。
+
+## 每章必须跑完整审查流程
+
+- 每章必须并行启动审查子代理（6个维度全部执行）
+- 等待所有审查器返回后汇总评分
+- 有可修复的 medium 以上问题就修改正文，然后重跑对应审查器做第二轮
+- 确认没有明显提升空间后才进入 Data Agent 和 Git
+- 任何情况都不能为了速度牺牲质量
+
+## 审查评分目标
+
+- 90-100 可接受范围，但越高越好
+- 有提升空间时应多轮审查修改
+- 个别维度因章节类型/情节因素评分偏低属于正常，不必强行拉分
+- 存在可修复的 medium/high 问题时，Step 4 修复后重新进入 Step 3 做第二轮审查
+
+## Step 3.5 外部模型审查配置
+
+**三模型架构：**
+- qwen（稳定锚点）：codexcc `qwen3.5-plus` → 备用硅基流动 `Qwen/Qwen3.5-397B-A17B`
+- kimi（逻辑/设定）：codexcc `kimi-k2.5` → 备用硅基流动 `Pro/moonshotai/Kimi-K2.5`
+- glm（编辑/读者感受）：codexcc `glm-5` → 备用硅基流动 `Pro/zai-org/GLM-5`
+
+**供应商：**
+- 主力：codexcc (`https://api.codexcc.top/v1`)，key: CODEXCC_API_KEY（在 .env 中）
+- 备用：硅基流动 (`https://api.siliconflow.cn/v1`)，key: EMBED_API_KEY（在 .env 中）
+
+**失败重试：** 主力 2 次 → 切备用 2 次 → 标记 error 继续
+
+**调用方式：** 使用 external-review-agent 子代理，传入 model_key（qwen/kimi/glm），调用 external_review.py 脚本
+
+**执行要求：** 每章 Step 3 通过后，必须并行跑 3 个外部模型审查（Step 3.5），全部返回后才进入 Step 4
+
+## 插件自定义改动
+
+用户 fork 了 webnovel-writer 到 XuanRanL/webnovel-writer。
+所有自定义改动记录在：`C:\Users\Windows\.claude\plugins\marketplaces\webnovel-writer-marketplace\webnovel-writer\CUSTOMIZATIONS.md`
+
+- 用户说"上游更新了" → 先读 CUSTOMIZATIONS.md，merge 后逐条验证改动未丢失
+- 做任何新的自定义改动 → 必须追加记录到 CUSTOMIZATIONS.md
+
+## API 配置位置
+
+`.env` 文件位于两处（脚本按优先级加载）：
+1. 工作区根目录：`I:\AI-extention\webnovel-writer\.env`（优先）
+2. 全局：`C:\Users\Windows\.claude\webnovel-writer\.env`（兜底）
+
+包含：Embedding API / Rerank API / External Review API 的密钥和端点。

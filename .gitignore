@@ -1,5 +1,10 @@
 .claude/settings.local.json
 
+# API keys
+.env
+.env.*
+!.env.example
+
 # Python caches & virtualenv
 __pycache__/
 *.py[cod]
