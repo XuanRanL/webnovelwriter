@@ -340,6 +340,7 @@ Data Agent 默认子步骤（全部执行）：
 - G. RAG 向量索引（`rag index-chapter --scenes ...`）
 - H. 风格样本评估（`style extract --scenes ...`，仅 `review_score >= 80` 时）
 - I. 债务利息（默认跳过）
+- K. 设定集同步检查（每章执行，best-effort，失败不阻断）
 
 `--scenes` 来源优先级（G/H 步骤共用）：
 1. 优先从 `index.db` 的 scenes 记录获取（Step F 写入的结果）
@@ -368,6 +369,11 @@ Step 5 失败隔离规则：
 
 债务利息：
 - 默认关闭，仅在用户明确要求或开启追踪时执行（见 `step-5-debt-switch.md`）。
+
+设定集同步（Step K）：
+- 每章执行，检查新实体/道具状态变化/伏笔/资产变动，追加到设定集文件
+- 所有追加带 `[Ch{N}]` 章节标注
+- 失败不阻断流程
 
 ### Step 6：Git 备份（可失败但需说明）
 
