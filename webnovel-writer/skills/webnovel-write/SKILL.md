@@ -1,6 +1,6 @@
 ---
 name: webnovel-write
-description: Writes webnovel chapters (default 2000-2500 words). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
+description: Writes webnovel chapters (default 3000-3500 words). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
 allowed-tools: Read Write Edit Grep Bash Task
 ---
 
@@ -9,7 +9,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 ## 目标
 
 - 以稳定流程产出可发布章节：优先使用 `正文/第{NNNN}章-{title_safe}.md`，无标题时回退 `正文/第{NNNN}章.md`。
-- 默认章节字数目标：2000-2500（用户或大纲明确覆盖时从其约定）。
+- 默认章节字数目标：3000-3500（用户或大纲明确覆盖时从其约定）。
 - 保证审查、润色、数据回写完整闭环，避免“写完即丢上下文”。
 - 输出直接可被后续章节消费的结构化数据：`review_metrics`、`summaries`、`chapter_meta`。
 
@@ -23,9 +23,9 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 ## 模式定义
 
-- `/webnovel-write`：Step 1 → 2A → 2B → 3 → 3.5 → 4 → 5 → 6
-- `/webnovel-write --fast`：Step 1 → 2A → 3 → 3.5 → 4 → 5 → 6（跳过 2B）
-- `/webnovel-write --minimal`：Step 1 → 2A → 3（仅3个基础审查）→ 3.5 → 4 → 5 → 6
+- `/webnovel-write`：Step 1 → 2A → 2B → 3+3.5(并行) → 4 → 5 → 6
+- `/webnovel-write --fast`：Step 1 → 2A → 3+3.5(并行) → 4 → 5 → 6（跳过 2B）
+- `/webnovel-write --minimal`：Step 1 → 2A → 3（仅3个基础审查，跳过3.5）→ 4 → 5 → 6
 
 最小产物（所有模式）：
 - `正文/第{NNNN}章-{title_safe}.md` 或 `正文/第{NNNN}章.md`
@@ -36,11 +36,35 @@ allowed-tools: Read Write Edit Grep Bash Task
 ### 流程硬约束（禁止事项）
 
 - **禁止并步**：不得将两个 Step 合并为一个动作执行（如同时做 2A 和 3）。
-- **禁止跳步**：不得跳过未被模式定义标记为可跳过的 Step。
+- **禁止跳步**：不得跳过未被模式定义标记为可跳过的 Step。即使批量写多章、赶进度、上下文紧张，也必须每章完整执行所有 Step。任何"先写完再补审"、"跳过 Context Agent 直接起草"、"只跑外部审查不跑内部审查"的行为均视为违规。
+- **禁止赶进度降级**：批量写作多章时，每一章都必须独立走完完整流程（Step 0→1→2A→2B→3→3.5→4→5→6）。不得因为"后面还有很多章"而简化任何一章的流程。质量优先于速度，这是不可协商的硬规则。
+- **禁止省略审查报告**：Step 3 完成后必须生成审查报告文件（`审查报告/第{NNNN}章审查报告.md`），包含所有审查器的结果汇总。不得只在内存中汇总分数而不写文件。
 - **禁止临时改名**：不得将 Step 的输出产物改写为非标准文件名或格式。
 - **禁止自创模式**：`--fast` / `--minimal` 只允许按上方定义裁剪步骤，不允许自创混合模式、"半步"或"简化版"。
 - **禁止自审替代**：Step 3 审查必须由 Task 子代理执行，主流程不得内联伪造审查结论。
+- **禁止主观估分**：`overall_score` 必须来自审查子代理的聚合结果，不得因为"子代理还没返回"而自行估算分数。
 - **禁止源码探测**：脚本调用方式以本文档与 data-agent 文档中的命令示例为准，命令失败时查日志定位问题，不去翻源码学习调用方式。
+
+### 章节间闸门（Chapter Gate）
+
+在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
+
+1. Step 3 的 6 个内部 checker 全部返回并汇总出 overall_score
+2. Step 3.5 的 6 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充3模型失败不阻塞）
+3. 所有 critical/high 问题已修复
+4. 审查报告 .md 文件已生成（含内部6维度分数+外部6模型评分矩阵）
+5. Step 5 Data Agent 已完成
+6. Step 6 Git 已提交
+
+验证方式：在开始下一章 Step 0 之前，执行以下检查：
+```bash
+test -f "${PROJECT_ROOT}/审查报告/第${chapter_padded}章审查报告.md" && \
+test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md" && \
+git log --oneline -1 | grep "第${chapter_num}章"
+```
+任一条件不满足，禁止开始下一章。
+
+**禁止在 checker 运行期间开始下一章的起草。** 等待是流程的一部分，不是浪费时间。
 
 ## 引用加载等级（strict, lazy）
 
@@ -60,7 +84,7 @@ allowed-tools: Read Write Edit Grep Bash Task
   - 用途：Step 3 审查调用模板、汇总格式、落库 JSON 规范。
   - 触发：Step 3 必读。
 - `references/step-3.5-external-review.md`
-  - 用途：Step 3.5 外部模型审查（Qwen3.5 + GLM-5 双模型生产评分）。
+  - 用途：Step 3.5 外部模型审查完整规范（6模型架构/供应商fallback链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
   - 触发：Step 3.5 必读。
 - `references/step-5-debt-switch.md`
   - 用途：Step 5 债务利息开关规则（默认关闭）。
@@ -149,7 +173,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 ```
 
 要求：
-- `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 3.5` / `Step 4` / `Step 5` / `Step 6`。
+- `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 4` / `Step 5` / `Step 6`。
 - 任何记录失败只记警告，不阻断写作。
 - 每个 Step 执行结束后，同样需要 `complete-step`（失败不阻断）。
 
@@ -181,7 +205,7 @@ cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 
 硬要求：
 - 只输出纯正文到章节正文文件；若详细大纲已有章节名，优先使用 `正文/第{chapter_padded}章-{title_safe}.md`，否则回退为 `正文/第{chapter_padded}章.md`。
-- 默认按 2000-2500 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
+- 默认按 3000-3500 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
 - 禁止占位符正文（如 `[TODO]`、`[待补充]`）。
 - 保留承接关系：若上章有明确钩子，本章必须回应（可部分兑现）。
 
@@ -259,31 +283,24 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
 - `--minimal` 也必须产出 `overall_score`。
 - 未落库 `review_metrics` 不得进入 Step 5。
 
-### Step 3.5：外部模型审查（Qwen3.5 + GLM-5 双模型生产评分）
+### Step 3.5：外部模型审查（与 Step 3 并行或紧接执行）
 
-执行前加载：
+执行前必须加载：
 ```bash
 cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 ```
 
-执行步骤：
-
-1. 调用外部审查脚本（双模型并行）：
-```bash
-python -X utf8 "${SCRIPTS_DIR}/external_review.py" --project-root "${PROJECT_ROOT}" --chapter {chapter_num} --models "qwen,glm5"
-```
-
-2. 读取输出文件 `${PROJECT_ROOT}/.webnovel/tmp/external_review_ch{NNNN}.json`，逐条评估外部模型发现的问题：
-   - **必须采纳**：外部模型 `critical`/`high` 且 Claude 复核确认属实
-   - **建议采纳**：外部模型 `medium` 且 Claude 认为有道理
-   - **可忽略**：`low` 或 Claude 判断为误报
-
-3. 将采纳的问题修复写入正文。
-
 硬要求：
-- 所有模式均执行，不可跳过。
-- 必须逐条评估并记录采纳/驳回决定。
-- 外部模型超时或失败时记录警告，不阻断流程。
+- 6 模型并发调用（核心3 + 补充3），核心3模型必须全部成功。
+- 按 reference 文件中的 Prompt 模板构建 system 消息。
+- 每次 API 调用后验证路由（检查 response.model 字段）。
+- 核心模型 fallback 链：healwrap(2次) → codexcc(1次) → 硅基流动(兜底)。
+- 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
+- 生成审查报告必须包含 6 模型评分矩阵 + 共识问题 + Step 4 修复清单。
+
+输出：
+- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`
+- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 6 模型矩阵）
 
 ### Step 4：润色（问题修复优先）
 
@@ -370,11 +387,10 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 
 1. 章节正文文件存在且非空：`正文/第{chapter_padded}章-{title_safe}.md` 或 `正文/第{chapter_padded}章.md`
 2. Step 3 已产出 `overall_score` 且 `review_metrics` 成功落库
-3. Step 3.5 外部模型审查已完成，Claude 已逐条评估并记录采纳/驳回决定
-4. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
-5. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
-6. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`
-7. 若开启性能观测，已读取最新 timing 记录并输出结论
+3. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
+4. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
+5. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`
+6. 若开启性能观测，已读取最新 timing 记录并输出结论
 
 ## 验证与交付
 
