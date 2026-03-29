@@ -125,8 +125,8 @@ issue 的 type 分类说明：
 {.webnovel/summaries/ch{N-2}.md 全文，若不存在则跳过}
 {.webnovel/summaries/ch{N-1}.md 全文，若不存在则跳过}
 
-【主角当前状态】
-{从 state.json 提取 protagonist_state 和 progress 字段}
+【主角当前状态（注意：以下为第{当前章号}章后的最新状态，审查早期章节时信用点等动态数值可能与正文不一致，请以正文描述为准）】
+{从 state.json 提取 protagonist_state 和 progress 字段，移除 attributes.credits}
 
 ===== 待审查正文 =====
 
