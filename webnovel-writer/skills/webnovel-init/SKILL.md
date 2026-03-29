@@ -151,6 +151,22 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 输出：
 - 进入 Deep 采集前的“已知信息清单”和“待收集清单”。
 
+### Search Tool 使用规则（init阶段高频使用）
+
+init 阶段搜索是一次性投入、长期受益，应高频使用：
+
+每个 Step 的具体搜索内容：
+- Step 1：搜索同题材近期爆款（"网文 {题材} 2025 2026 爆款 卖点"），了解市场竞争和差异化空间
+- Step 2：搜索该题材经典主角原型（"{题材} 主角 原型 反差 设计"），获取角色设计灵感
+- Step 3：搜索同类金手指（"网文 {金手指类型} 设计 案例"），确保差异化
+- Step 4：搜索世界观设计常见问题（"{题材} 世界观 设定 创新 问题"）
+- Step 5：搜索反套路趋势（"网文 {题材} 套路 反套路 2025 2026"）
+每个 Step 至少 1 次 search，关键 Step（1/4/5）推荐 2-3 次。
+
+Search 失败处理：立即停止，要求用户配置 Tavily/Brave Search MCP 或手动提供搜索结果。
+
+调研笔记：搜索到的有价值信息保存到 `调研笔记/题材参考.md`，供后续 plan/write 复用。
+
 ### Step 1：故事核与商业定位
 
 收集项（必收）：
@@ -442,6 +458,7 @@ test -f "{project_root}/.webnovel/state.json"
 find "{project_root}/设定集" -maxdepth 1 -type f -name "*.md"
 test -f "{project_root}/大纲/总纲.md"
 test -f "{project_root}/.webnovel/idea_bank.json"
+test -d "{project_root}/调研笔记"
 ```
 
 成功标准：

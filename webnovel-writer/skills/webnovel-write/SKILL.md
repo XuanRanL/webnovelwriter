@@ -1,7 +1,7 @@
 ---
 name: webnovel-write
 description: Writes webnovel chapters (default 3000-3500 words). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
-allowed-tools: Read Write Edit Grep Bash Task
+allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
 ---
 
 # Chapter Writing (Structured Workflow)
@@ -176,6 +176,32 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 - `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 4` / `Step 5` / `Step 6`。
 - 任何记录失败只记警告，不阻断写作。
 - 每个 Step 执行结束后，同样需要 `complete-step`（失败不阻断）。
+
+### Search Tool 使用规则（全流程适用）
+
+WebSearch/WebFetch 触发规则：
+- **强制触发**：涉及专业领域（机甲技术/军事/科学/法律）→ 搜索术语和真实细节
+- **强制触发**：需要特定案例或参考（如"真实驾驶舱布局""地下通道地质结构"）→ 搜索具体资料
+- **推荐触发**：章节类型特殊（战斗/情感/揭秘/追逐/谈判）→ 搜索该类型写作技巧
+- **推荐触发**：新卷首章或Ch1-3 → 搜索同题材开篇技巧
+- **推荐触发**：审查发现 HIGH 级 STYLE/PACING 问题 → 搜索改进方法
+- **按需触发**：普通推进章无特殊场景 → 不搜索
+
+各 Step 的具体搜索内容：
+- Step 1：搜索本章场景类型的写作技巧（"机甲战斗 描写技巧""谈判场景 张力写法"）
+- Step 2A：搜索专业领域术语和真实细节（"机甲驾驶舱 操控界面""军事通讯 加密术语"）
+- Step 2B：搜索风格参考（"硬核科幻 技术描写 范例"）
+- Step 4：搜索审查问题的改进方法（"对话平淡 改进技巧""节奏拖沓 如何加快"）
+
+搜索结果归档：有价值的专业信息保存到 `调研笔记/` 对应主题文件，供后续章节复用。
+
+**Search 失败处理协议（硬规则）**：
+如果 WebSearch 工具调用失败（返回错误/不可用/超时）：
+1. 立即停止当前工作
+2. 告知用户："WebSearch 工具不可用，需要您提供搜索能力"
+3. 建议用户配置 Tavily MCP / Brave Search MCP，或手动提供搜索结果
+4. 等待用户配置完成或手动提供信息后再继续
+5. 不要跳过搜索步骤直接继续——搜索获取的专业细节直接影响质量
 
 ### Step 1：Context Agent（内置 Context Contract，生成直写执行包）
 

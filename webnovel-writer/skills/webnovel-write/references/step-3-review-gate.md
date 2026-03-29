@@ -9,49 +9,25 @@
 
 ## 审查路由模式
 
-- 标准/`--fast`：`auto` 路由（核心 3 个 + 条件命中）。
-- `--minimal`：固定核心 3 个（不启用条件审查器）。
+- 标准/`--fast`：全量 6 个审查器始终执行。
+- `--minimal`：固定核心 3 个（不启用扩展审查器）。
 
-核心审查器（始终执行）：
-- `consistency-checker`
-- `continuity-checker`
-- `ooc-checker`
-
-条件审查器（仅 `auto` 命中时执行）：
-- `reader-pull-checker`
-- `high-point-checker`
-- `pacing-checker`
-
-## Auto 路由判定信号
-
-输入信号来源：
-1. Step 1.5 合同（是否过渡章、追读力设计、核心冲突）。
-2. 本章正文（战斗/反转/高光/章末未闭合问题等信号）。
-3. 大纲标签（关键章/高潮章/卷末章/转场章）。
-4. 最近章节节奏（连续主线、情感线断档、世界观线断档）。
-
-路由规则：
-- `reader-pull-checker`：当满足任一条件时启用
-  - 非过渡章；
-  - 有明确未闭合问题/期待锚点；
-  - 用户显式要求“追读力审查”。
-- `high-point-checker`：当满足任一条件时启用
-  - 关键章/高潮章/卷末章；
-  - 正文出现战斗、反杀、打脸、身份揭露、大反转等高光信号。
-- `pacing-checker`：当满足任一条件时启用
-  - 章号 >= 10；
-  - 最近章节存在明显节奏失衡风险；
-  - 用户显式要求“节奏审查”。
+审查器（标准模式全部执行）：
+- `consistency-checker`（设定一致性）
+- `continuity-checker`（连贯性）
+- `ooc-checker`（人物OOC）
+- `reader-pull-checker`（追读力）
+- `high-point-checker`（爽点密度）
+- `pacing-checker`（节奏平衡）
 
 ## Task 调用模板（示意）
 
 ```text
-selected = ["consistency-checker", "continuity-checker", "ooc-checker"]
-
-if mode != "minimal":
-  if trigger_reader_pull: selected.append("reader-pull-checker")
-  if trigger_high_point: selected.append("high-point-checker")
-  if trigger_pacing: selected.append("pacing-checker")
+if mode == "minimal":
+  selected = ["consistency-checker", "continuity-checker", "ooc-checker"]
+else:
+  selected = ["consistency-checker", "continuity-checker", "ooc-checker",
+              "reader-pull-checker", "high-point-checker", "pacing-checker"]
 
 parallel Task(agent, {chapter, chapter_file, project_root}) for agent in selected
 ```

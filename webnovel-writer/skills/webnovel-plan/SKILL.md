@@ -1,6 +1,7 @@
 ---
 name: webnovel-plan
 description: Builds volume and chapter outlines from the total outline, inherits creative constraints, and prepares writing-ready chapter plans. Use when the user asks for outlining or runs /webnovel-plan.
+allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
 ---
 
 # Outline Planning
@@ -100,6 +101,25 @@ If 总纲.md lacks volume ranges / core conflict / climax, ask the user to fill 
 - `设定集/主角卡.md`：欲望、缺陷、初始资源与限制。
 - `设定集/反派设计.md`：小/中/大反派层级与主角镜像关系。
 
+## 2.5) 卷前调研（必做）
+
+目标：在规划本卷章纲前，通过搜索获取专业知识和创作参考，确保大纲有真实细节支撑。
+
+```
+卷前调研（至少5次search）：
+1. 搜索本卷涉及的专业领域（2-3次）
+   - 如第1卷："机甲拆解 技术 废品回收""遗迹暴走 失控机甲 设定参考"
+   - 如第2卷："太空探索 遗迹考古 星际航行 物理原理"
+2. 搜索同题材近6个月内爆款的节奏和创新点（1-2次）
+   - "科幻机甲 网文 2025 2026 热门 爆款 节奏"
+3. 搜索本卷关键场景类型的写作技巧（1-2次）
+   - "机甲战斗场景 描写技巧""谈判场景 张力 网文"
+4. 将调研结果保存到 调研笔记/ 对应主题文件
+5. 在后续Step中引用调研笔记作为参考输入
+```
+
+Search 失败处理：同 webnovel-write 的失败协议——立即停止，要求用户配置搜索工具。
+
 ## 3) Select volume
 - Offer choices from 总纲.md (卷名 + 章节范围).
 - Confirm any special requirement (tone, POV emphasis, romance, etc.).
@@ -112,6 +132,10 @@ Load template:
 ```bash
 cat "${SKILL_ROOT}/../../templates/output/大纲-卷节拍表.md"
 ```
+
+执行前搜索（推荐）：
+- 搜索本卷题材的经典节拍结构："网文 {题材} 节奏 节拍 结构"
+- 搜索本卷核心爽点类型的设计技巧："网文 {爽点类型} 写法 案例"
 
 Must satisfy (hard requirements):
 - **中段反转（必填）**：不得留空；若无，写 `无（理由：...）`

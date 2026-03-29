@@ -280,6 +280,11 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
    - 追加到 `设定集/资产变动表.md`
    - 更新 `state.json` 的 `progress.total_words`（累加本章字数）
 
+5. **调研笔记归档**：
+   - 如果本章写作过程中使用了 WebSearch 获取专业信息
+   - 将有价值的搜索结果追加到 `调研笔记/` 对应主题文件（机甲技术/军事战术/星际物理/题材参考）
+   - 标注 `[Ch{N}]` 和搜索关键词，方便后续定位
+
 所有追加必须带 `[Ch{N}]` 章节标注。Step K 失败不阻断流程。
 
 ---
