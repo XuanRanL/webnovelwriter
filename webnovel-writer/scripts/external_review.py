@@ -390,25 +390,115 @@ def call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_
     return dim_key, None, model_name or "none", "none", None, False, None, chain, elapsed, last_error
 
 
-def build_context_block(context_data):
-    parts = ["## 审查上下文\n"]
-    if not context_data:
+def _read_setting_file(project_root, filename):
+    """Read a file from 设定集/ directory, return content or empty string."""
+    p = project_root / "设定集" / filename
+    if p.exists():
+        return p.read_text(encoding="utf-8")
+    return ""
+
+
+def _load_state_json(project_root):
+    """Load state.json and return (protagonist_state, progress) tuple."""
+    state_path = project_root / ".webnovel" / "state.json"
+    if state_path.exists():
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        return data.get("protagonist_state", {}), data.get("progress", {})
+    return {}, {}
+
+
+def _load_prev_summaries(project_root, chapter_num):
+    """Load previous 2 chapter summaries."""
+    parts = []
+    for prev in [chapter_num - 2, chapter_num - 1]:
+        if prev < 1:
+            continue
+        p = project_root / ".webnovel" / "summaries" / f"ch{prev:04d}.md"
+        if p.exists():
+            parts.append(p.read_text(encoding="utf-8"))
+    return "\n\n".join(parts)
+
+
+def build_context_block(context_data, project_root=None, chapter_num=None):
+    """Build user message context following step-3.5-external-review.md spec.
+
+    Assembles context from context_data JSON first, then supplements missing
+    fields by reading directly from project files (设定集/, state.json, summaries/).
+    """
+    parts = ["===== 项目上下文（请基于以下信息严格审查正文） =====\n"]
+    if not context_data and not project_root:
         parts.append("**警告：无项目上下文，审查结果可能不准确**\n")
         return "\n".join(parts)
-    if context_data.get("novel_info"):
-        parts.append(f"### 小说基础信息\n{context_data['novel_info']}\n")
-    if context_data.get("protagonist_state"):
-        parts.append(f"### 主角当前状态\n{json.dumps(context_data['protagonist_state'], ensure_ascii=False, indent=2)}\n")
-    if context_data.get("world_settings"):
-        parts.append(f"### 世界观设定\n{context_data['world_settings']}\n")
-    if context_data.get("power_system"):
-        parts.append(f"### 力量体系\n{context_data['power_system']}\n")
-    if context_data.get("protagonist_card"):
-        parts.append(f"### 主角卡\n{context_data['protagonist_card']}\n")
-    if context_data.get("outline_excerpt"):
-        parts.append(f"### 本章大纲\n{context_data['outline_excerpt']}\n")
-    if context_data.get("prev_summaries"):
-        parts.append(f"### 前序章节摘要\n{context_data['prev_summaries']}\n")
+
+    if not project_root:
+        project_root = Path(".")
+    else:
+        project_root = Path(project_root)
+
+    # 【本章大纲】
+    outline = context_data.get("outline_excerpt", "") if context_data else ""
+    if outline:
+        parts.append(f"【本章大纲】\n{outline}\n")
+
+    # 【主角设定】= 主角卡 + 金手指设计
+    protagonist_card = context_data.get("protagonist_card", "") if context_data else ""
+    if not protagonist_card:
+        protagonist_card = _read_setting_file(project_root, "主角卡.md")
+    golden_finger = context_data.get("golden_finger_card", "") if context_data else ""
+    if not golden_finger:
+        golden_finger = _read_setting_file(project_root, "金手指设计.md")
+    if protagonist_card or golden_finger:
+        parts.append(f"【主角设定】\n{protagonist_card}\n{golden_finger}\n")
+
+    # 【配角设定】= 女主卡 + 反派设计
+    female_lead = context_data.get("female_lead_card", "") if context_data else ""
+    if not female_lead:
+        female_lead = _read_setting_file(project_root, "女主卡.md")
+    villain = context_data.get("villain_design", "") if context_data else ""
+    if not villain:
+        villain = _read_setting_file(project_root, "反派设计.md")
+    if female_lead or villain:
+        parts.append(f"【配角设定】\n{female_lead}\n{villain}\n")
+
+    # 【力量体系】
+    power = context_data.get("power_system", "") if context_data else ""
+    if not power:
+        power = _read_setting_file(project_root, "力量体系.md")
+    if power:
+        parts.append(f"【力量体系】\n{power}\n")
+
+    # 【世界观】
+    world = context_data.get("world_settings", "") if context_data else ""
+    if not world:
+        world = _read_setting_file(project_root, "世界观.md")
+    if world:
+        parts.append(f"【世界观】\n{world}\n")
+
+    # 【前2章摘要】
+    summaries = context_data.get("prev_summaries", "") if context_data else ""
+    if not summaries and chapter_num:
+        summaries = _load_prev_summaries(project_root, chapter_num)
+    if summaries:
+        parts.append(f"【前2章摘要】\n{summaries}\n")
+
+    # 【主角当前状态】- remove credits, add progress
+    prot_state = context_data.get("protagonist_state", {}) if context_data else {}
+    progress = {}
+    if not prot_state:
+        prot_state, progress = _load_state_json(project_root)
+    else:
+        _, progress = _load_state_json(project_root)
+    if prot_state:
+        state_copy = json.loads(json.dumps(prot_state))  # deep copy
+        if "attributes" in state_copy and "credits" in state_copy["attributes"]:
+            del state_copy["attributes"]["credits"]
+        state_block = json.dumps(state_copy, ensure_ascii=False, indent=2)
+        if progress:
+            progress_block = json.dumps(progress, ensure_ascii=False, indent=2)
+            state_block += f"\n\n进度信息：\n{progress_block}"
+        ch_label = f"第{chapter_num}章后的" if chapter_num else ""
+        parts.append(f"【主角当前状态（注意：以下为{ch_label}最新状态，审查早期章节时动态数值可能与正文不一致，请以正文描述为准）】\n{state_block}\n")
+
     return "\n".join(parts)
 
 
@@ -441,7 +531,7 @@ def run_dimensions_mode(args, api_keys):
         sys.exit(1)
     chapter_text = ch_files[0].read_text(encoding="utf-8")
 
-    context_block = build_context_block(context_data)
+    context_block = build_context_block(context_data, project_root=project_root, chapter_num=chapter_num)
 
     # Run 6 dimensions concurrently
     results = {}

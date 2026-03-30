@@ -364,4 +364,32 @@ density-checker（信息密度）：
 
 ---
 
+## [2026-03-30] Step 3.5 外部审查 build_context_block 输入数据补全
+
+**改动文件：**
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `scripts/external_review.py` | 修改 | 重写 `build_context_block` 函数，新增3个辅助函数，修复输入数据不完整问题 |
+
+**背景：**
+- Ch28 8维度测试发现：外部审查模型收到的上下文严重缺失
+- `external_context_ch0028.json` 缺少女主卡、反派设计、金手指设计等关键字段
+- 旧 `build_context_block` 完全依赖 context JSON，JSON 缺字段则审查模型无法获取对应设定
+- 导致模型在"设定一致性"维度可能误判（无参照物）
+
+**修复方案：**
+- 新增 `_read_setting_file(project_root, filename)`：直接从 `设定集/` 目录读取设定文件
+- 新增 `_load_state_json(project_root)`：从 `state.json` 读取主角状态和进度
+- 新增 `_load_prev_summaries(project_root, chapter_num)`：读取前2章摘要
+- 重写 `build_context_block(context_data, project_root, chapter_num)`：
+  - 每个上下文字段先查 context JSON，缺失则 fallback 到磁盘文件
+  - 覆盖7大上下文块：本章大纲/主角设定(主角卡+金手指)/配角设定(女主卡+反派)/力量体系/世界观/前2章摘要/主角当前状态
+  - 主角状态剔除 credits 字段（避免泄露精确经济数值给审查模型）
+  - 新增进度信息块
+- 调用处传入 `project_root` 和 `chapter_num` 参数
+
+**验证：** 12/12 结构检查 + 7/7 内容检查全部通过，三份副本（cache/fork/marketplace）MD5 一致。
+
+---
+
 <!-- 新的改动记录追加在此线下方 -->
