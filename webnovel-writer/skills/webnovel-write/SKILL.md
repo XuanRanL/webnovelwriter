@@ -1,7 +1,7 @@
 ---
 name: webnovel-write
-description: Writes webnovel chapters (default 2000-2500 words). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
-allowed-tools: Read Write Edit Grep Bash Task
+description: Writes webnovel chapters (default 3000-3500 words). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
+allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
 ---
 
 # Chapter Writing (Structured Workflow)
@@ -9,7 +9,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 ## 目标
 
 - 以稳定流程产出可发布章节：优先使用 `正文/第{NNNN}章-{title_safe}.md`，无标题时回退 `正文/第{NNNN}章.md`。
-- 默认章节字数目标：2000-2500（用户或大纲明确覆盖时从其约定）。
+- 默认章节字数目标：3000-3500（用户或大纲明确覆盖时从其约定）。
 - 保证审查、润色、数据回写完整闭环，避免“写完即丢上下文”。
 - 输出直接可被后续章节消费的结构化数据：`review_metrics`、`summaries`、`chapter_meta`。
 
@@ -23,9 +23,9 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 ## 模式定义
 
-- `/webnovel-write`：Step 1 → 2A → 2B → 3 → 4 → 5 → 6
-- `/webnovel-write --fast`：Step 1 → 2A → 3 → 4 → 5 → 6（跳过 2B）
-- `/webnovel-write --minimal`：Step 1 → 2A → 3（仅3个基础审查）→ 4 → 5 → 6
+- `/webnovel-write`：Step 1 → 2A → 2B → 3+3.5(并行) → 4 → 5 → 6
+- `/webnovel-write --fast`：Step 1 → 2A → 3+3.5(并行) → 4 → 5 → 6（跳过 2B）
+- `/webnovel-write --minimal`：Step 1 → 2A → 3（仅3个基础审查，跳过3.5）→ 4 → 5 → 6
 
 最小产物（所有模式）：
 - `正文/第{NNNN}章-{title_safe}.md` 或 `正文/第{NNNN}章.md`
@@ -36,11 +36,35 @@ allowed-tools: Read Write Edit Grep Bash Task
 ### 流程硬约束（禁止事项）
 
 - **禁止并步**：不得将两个 Step 合并为一个动作执行（如同时做 2A 和 3）。
-- **禁止跳步**：不得跳过未被模式定义标记为可跳过的 Step。
+- **禁止跳步**：不得跳过未被模式定义标记为可跳过的 Step。即使批量写多章、赶进度、上下文紧张，也必须每章完整执行所有 Step。任何"先写完再补审"、"跳过 Context Agent 直接起草"、"只跑外部审查不跑内部审查"的行为均视为违规。
+- **禁止赶进度降级**：批量写作多章时，每一章都必须独立走完完整流程（Step 0→1→2A→2B→3→3.5→4→5→6）。不得因为"后面还有很多章"而简化任何一章的流程。质量优先于速度，这是不可协商的硬规则。
+- **禁止省略审查报告**：Step 3 完成后必须生成审查报告文件（`审查报告/第{NNNN}章审查报告.md`），包含所有审查器的结果汇总。不得只在内存中汇总分数而不写文件。
 - **禁止临时改名**：不得将 Step 的输出产物改写为非标准文件名或格式。
 - **禁止自创模式**：`--fast` / `--minimal` 只允许按上方定义裁剪步骤，不允许自创混合模式、"半步"或"简化版"。
 - **禁止自审替代**：Step 3 审查必须由 Task 子代理执行，主流程不得内联伪造审查结论。
+- **禁止主观估分**：`overall_score` 必须来自审查子代理的聚合结果，不得因为"子代理还没返回"而自行估算分数。
 - **禁止源码探测**：脚本调用方式以本文档与 data-agent 文档中的命令示例为准，命令失败时查日志定位问题，不去翻源码学习调用方式。
+
+### 章节间闸门（Chapter Gate）
+
+在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
+
+1. Step 3 的 8 个内部 checker 全部返回并汇总出 overall_score
+2. Step 3.5 的 6 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充3模型失败不阻塞），每模型审查 8 个维度
+3. 所有 critical/high 问题已修复
+4. 审查报告 .md 文件已生成（含内部8维度分数+外部6模型×8维度评分矩阵）
+5. Step 5 Data Agent 已完成
+6. Step 6 Git 已提交
+
+验证方式：在开始下一章 Step 0 之前，执行以下检查：
+```bash
+test -f "${PROJECT_ROOT}/审查报告/第${chapter_padded}章审查报告.md" && \
+test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md" && \
+git log --oneline -1 | grep "第${chapter_num}章"
+```
+任一条件不满足，禁止开始下一章。
+
+**禁止在 checker 运行期间开始下一章的起草。** 等待是流程的一部分，不是浪费时间。
 
 ## 引用加载等级（strict, lazy）
 
@@ -59,6 +83,9 @@ allowed-tools: Read Write Edit Grep Bash Task
 - `references/step-3-review-gate.md`
   - 用途：Step 3 审查调用模板、汇总格式、落库 JSON 规范。
   - 触发：Step 3 必读。
+- `references/step-3.5-external-review.md`
+  - 用途：Step 3.5 外部模型审查完整规范（6模型架构/供应商fallback链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
+  - 触发：Step 3.5 必读。
 - `references/step-5-debt-switch.md`
   - 用途：Step 5 债务利息开关规则（默认关闭）。
   - 触发：Step 5 必读。
@@ -150,6 +177,32 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 - 任何记录失败只记警告，不阻断写作。
 - 每个 Step 执行结束后，同样需要 `complete-step`（失败不阻断）。
 
+### Search Tool 使用规则（全流程适用）
+
+WebSearch/WebFetch 触发规则：
+- **强制触发**：涉及专业领域（机甲技术/军事/科学/法律）→ 搜索术语和真实细节
+- **强制触发**：需要特定案例或参考（如"真实驾驶舱布局""地下通道地质结构"）→ 搜索具体资料
+- **推荐触发**：章节类型特殊（战斗/情感/揭秘/追逐/谈判）→ 搜索该类型写作技巧
+- **推荐触发**：新卷首章或Ch1-3 → 搜索同题材开篇技巧
+- **推荐触发**：审查发现 HIGH 级 STYLE/PACING 问题 → 搜索改进方法
+- **按需触发**：普通推进章无特殊场景 → 不搜索
+
+各 Step 的具体搜索内容：
+- Step 1：搜索本章场景类型的写作技巧（"机甲战斗 描写技巧""谈判场景 张力写法"）
+- Step 2A：搜索专业领域术语和真实细节（"机甲驾驶舱 操控界面""军事通讯 加密术语"）
+- Step 2B：搜索风格参考（"硬核科幻 技术描写 范例"）
+- Step 4：搜索审查问题的改进方法（"对话平淡 改进技巧""节奏拖沓 如何加快"）
+
+搜索结果归档：有价值的专业信息保存到 `调研笔记/` 对应主题文件，供后续章节复用。
+
+**Search 失败处理协议（硬规则）**：
+如果 WebSearch 工具调用失败（返回错误/不可用/超时）：
+1. 立即停止当前工作
+2. 告知用户："WebSearch 工具不可用，需要您提供搜索能力"
+3. 建议用户配置 Tavily MCP / Brave Search MCP，或手动提供搜索结果
+4. 等待用户配置完成或手动提供信息后再继续
+5. 不要跳过搜索步骤直接继续——搜索获取的专业细节直接影响质量
+
 ### Step 1：Context Agent（内置 Context Contract，生成直写执行包）
 
 使用 Task 调用 `context-agent`，参数：
@@ -158,16 +211,32 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 - `storage_path=.webnovel/`
 - `state_file=.webnovel/state.json`
 
+Context Agent 额外输入（必读）：
+- `设定集/伏笔追踪.md`（所有"活跃"伏笔线，确保长线伏笔不被遗忘）
+- `设定集/道具与技术.md`（带章节时间线，防止引用"还没出现的"道具）
+- `大纲/第N卷-节拍表.md`（本卷宏观节奏锚点）
+- 相关角色卡的"语音规则"段落（注入 beat 的对话风格指导）
+
 硬要求：
 - 若 `state` 或大纲不可用，立即阻断并返回缺失项。
 - 输出必须同时包含：
   - 7 板块任务书（目标/冲突/承接/角色/场景约束/伏笔/追读力）；
   - Context Contract 全字段（目标/阻力/代价/本章变化/未闭合问题/开头类型/情绪节奏/信息密度/过渡章判定/追读力设计）；
   - Step 2A 可直接消费的“写作执行包”（章节节拍、不可变事实清单、禁止事项、终检清单）。
+- 写作执行包的每个 beat 必须包含：字数分配、场景描述（地点+氛围）、情绪曲线位置、感官锚点（至少1个画面）、关键对话方向+语音规则（若有对话）、本beat禁止事项。
 - 合同与任务书出现冲突时，以“大纲与设定约束更严格者”为准。
 
 输出：
 - 单一“创作执行包”（任务书 + Context Contract + 直写提示词），供 Step 2A 直接消费，不再拆分独立 Step 1.5。
+
+开篇黄金协议（Ch1-3 专用，叠加在标准流程之上）：
+- Ch1：主角在前 500 字内出场且用行动展示（非旁白介绍）
+- Ch1：核心冲突或世界规则在前 1000 字内暗示（Show not Tell）
+- Ch1：章末钩子强度强制 strong
+- Ch1-2：金手指至少暗示存在
+- Ch1-3：人物名字总数不超过 5 个
+- Ch1-3：至少 5 个冲突点
+- Ch1-3：第一个场景必须包含至少 1 个具象数字（展示世界观量级）
 
 ### Step 2A：正文起草
 
@@ -178,7 +247,7 @@ cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 
 硬要求：
 - 只输出纯正文到章节正文文件；若详细大纲已有章节名，优先使用 `正文/第{chapter_padded}章-{title_safe}.md`，否则回退为 `正文/第{chapter_padded}章.md`。
-- 默认按 2000-2500 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
+- 默认按 3000-3500 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
 - 禁止占位符正文（如 `[TODO]`、`[待补充]`）。
 - 保留承接关系：若上章有明确钩子，本章必须回应（可部分兑现）。
 
@@ -205,7 +274,7 @@ cat "${SKILL_ROOT}/references/style-adapter.md"
 输出：
 - 风格化正文（覆盖原章节文件）。
 
-### Step 3：审查（auto 路由，必须由 Task 子代理执行）
+### Step 3：审查（全量审查，必须由 Task 子代理执行）
 
 执行前加载：
 ```bash
@@ -215,21 +284,20 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 调用约束：
 - 必须用 `Task` 调用审查 subagent，禁止主流程伪造审查结论。
 - 可并行发起审查，统一汇总 `issues/severity/overall_score`。
-- 默认使用 `auto` 路由：根据“本章执行合同 + 正文信号 + 大纲标签”动态选择审查器。
 
-核心审查器（始终执行）：
-- `consistency-checker`
-- `continuity-checker`
-- `ooc-checker`
-
-条件审查器（`auto` 命中时执行）：
-- `reader-pull-checker`
-- `high-point-checker`
-- `pacing-checker`
+审查器（标准模式全部执行）：
+- `consistency-checker`（设定一致性）
+- `continuity-checker`（连贯性）
+- `ooc-checker`（人物OOC）
+- `reader-pull-checker`（追读力）
+- `high-point-checker`（爽点密度）
+- `pacing-checker`（节奏平衡）
+- `dialogue-checker`（对话质量）
+- `density-checker`（信息密度）
 
 模式说明：
-- 标准/`--fast`：核心 3 个 + auto 命中的条件审查器
-- `--minimal`：只跑核心 3 个（忽略条件审查器）
+- 标准/`--fast`：全量 8 个审查器始终执行。
+- `--minimal`：固定核心 3 个（consistency/continuity/ooc）。
 
 审查指标落库（必做）：
 ```bash
@@ -242,7 +310,7 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
   "start_chapter": 100,
   "end_chapter": 100,
   "overall_score": 85.0,
-  "dimension_scores": {"爽点密度": 8.5, "设定一致性": 8.0, "节奏控制": 7.8, "人物塑造": 8.2, "连贯性": 9.0, "追读力": 8.7},
+  "dimension_scores": {"爽点密度": 8.5, "设定一致性": 8.0, "节奏控制": 7.8, "人物塑造": 8.2, "连贯性": 9.0, "追读力": 8.7, "对话质量": 8.3, "信息密度": 8.8},
   "severity_counts": {"critical": 0, "high": 1, "medium": 2, "low": 0},
   "critical_issues": ["问题描述"],
   "report_file": "审查报告/第100-100章审查报告.md",
@@ -255,6 +323,25 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
 硬要求：
 - `--minimal` 也必须产出 `overall_score`。
 - 未落库 `review_metrics` 不得进入 Step 5。
+
+### Step 3.5：外部模型审查（与 Step 3 并行或紧接执行）
+
+执行前必须加载：
+```bash
+cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
+```
+
+硬要求：
+- 6 模型并发调用（核心3 + 补充3），核心3模型必须全部成功。
+- 按 reference 文件中的 Prompt 模板构建 system 消息。
+- 每次 API 调用后验证路由（检查 response.model 字段）。
+- 核心模型 fallback 链：healwrap(2次) → codexcc(1次) → 硅基流动(兜底)。
+- 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
+- 生成审查报告必须包含 6 模型 × 8 维度评分矩阵 + 共识问题 + Step 4 修复清单。
+
+输出：
+- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`
+- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 6 模型 × 8 维度矩阵）
 
 ### Step 4：润色（问题修复优先）
 
@@ -294,6 +381,7 @@ Data Agent 默认子步骤（全部执行）：
 - G. RAG 向量索引（`rag index-chapter --scenes ...`）
 - H. 风格样本评估（`style extract --scenes ...`，仅 `review_score >= 80` 时）
 - I. 债务利息（默认跳过）
+- K. 设定集同步检查（每章执行，best-effort，失败不阻断）
 
 `--scenes` 来源优先级（G/H 步骤共用）：
 1. 优先从 `index.db` 的 scenes 记录获取（Step F 写入的结果）
@@ -322,6 +410,11 @@ Step 5 失败隔离规则：
 
 债务利息：
 - 默认关闭，仅在用户明确要求或开启追踪时执行（见 `step-5-debt-switch.md`）。
+
+设定集同步（Step K）：
+- 每章执行，检查新实体/道具状态变化/伏笔/资产变动，追加到设定集文件
+- 所有追加带 `[Ch{N}]` 章节标注
+- 失败不阻断流程
 
 ### Step 6：Git 备份（可失败但需说明）
 

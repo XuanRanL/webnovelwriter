@@ -82,7 +82,14 @@
     "cool_point_types": ["装逼打脸", "越级反杀"],
     "density_score": 8,
     "type_diversity": 0.8,
-    "milestone_present": false
+    "milestone_present": false,
+    "cool_value": {
+      "suppression_intensity": 8,
+      "reversal_speed": 7,
+      "logic_completeness": 9,
+      "score": 62,
+      "formula": "8×7/max(1,11-9)=28"
+    }
   }
 }
 ```
@@ -142,6 +149,58 @@
 }
 ```
 
+### dialogue-checker
+```json
+{
+  "metrics": {
+    "dialogue_ratio": 0.35,
+    "info_dump_lines": 1,
+    "subtext_instances": 3,
+    "distinguishable_voices": 4,
+    "indistinguishable_pairs": 0,
+    "intent_types": ["试探", "施压", "回避"],
+    "longest_monologue_chars": 120,
+    "dialogue_advances_plot": true
+  }
+}
+```
+
+字段说明：
+- `dialogue_ratio`：对话占全文比例（0-1），建议范围 0.25-0.55
+- `info_dump_lines`：说明书式对话行数（角色对话只为向读者传递设定信息）
+- `subtext_instances`：潜台词实例数（表面说A实际意图B）
+- `distinguishable_voices`：可辨识的独立声音数
+- `indistinguishable_pairs`：遮住人名后无法区分的角色对数
+- `intent_types`：对话中出现的意图类型（试探/施压/回避/诱导/防御/安抚/威胁/请求）
+- `longest_monologue_chars`：最长单人连续独白字数（超过200字标记 warning）
+- `dialogue_advances_plot`：对话整体是否推进了剧情/关系/信息
+
+### density-checker
+```json
+{
+  "metrics": {
+    "effective_word_ratio": 0.85,
+    "filler_paragraphs": 1,
+    "repeat_segments": 0,
+    "info_per_paragraph_avg": 1.2,
+    "dead_paragraphs": 0,
+    "longest_no_progress_span": 350,
+    "inner_monologue_ratio": 0.15,
+    "redundant_descriptions": 1
+  }
+}
+```
+
+字段说明：
+- `effective_word_ratio`：有效字数占比（0-1），每段至少提供新信息/推进/情绪变化才算有效，建议 >= 0.80
+- `filler_paragraphs`：填充段落数（不服务于氛围/角色/剧情的纯填充）
+- `repeat_segments`：重复表达段数（同一信息换说法再说一次）
+- `info_per_paragraph_avg`：平均每段信息增量（新事实/新情绪/新决策，建议 >= 1.0）
+- `dead_paragraphs`：死段落数（完全无信息增量、无氛围贡献、无节奏功能）
+- `longest_no_progress_span`：最长无推进跨度（字数），超过500字标记 warning
+- `inner_monologue_ratio`：内心独白占比（0-1），超过 0.25 标记 warning
+- `redundant_descriptions`：冗余描写段数（已通过其他方式传达的信息再次描述）
+
 ## 汇总格式
 
 Step 3 完成后，输出汇总 JSON：
@@ -155,10 +214,12 @@ Step 3 完成后，输出汇总 JSON：
     "consistency-checker": {"score": 90, "pass": true, "critical": 0, "high": 0},
     "ooc-checker": {"score": 75, "pass": true, "critical": 0, "high": 1},
     "continuity-checker": {"score": 85, "pass": true, "critical": 0, "high": 0},
-    "pacing-checker": {"score": 80, "pass": true, "critical": 0, "high": 0}
+    "pacing-checker": {"score": 80, "pass": true, "critical": 0, "high": 0},
+    "dialogue-checker": {"score": 82, "pass": true, "critical": 0, "high": 0},
+    "density-checker": {"score": 88, "pass": true, "critical": 0, "high": 0}
   },
   "overall": {
-    "score": 82.5,
+    "score": 83.1,
     "pass": true,
     "critical_total": 0,
     "high_total": 2,
