@@ -32,7 +32,7 @@ alwaysApply: true
 
 ## 每章必须跑完整审查流程
 
-- 每章必须并行启动审查子代理（6个维度全部执行）
+- 每章必须并行启动审查子代理（8个维度全部执行）
 - 等待所有审查器返回后汇总评分
 - 有可修复的 medium 以上问题就修改正文，然后重跑对应审查器做第二轮
 - 确认没有明显提升空间后才进入 Data Agent 和 Git
@@ -78,17 +78,70 @@ alwaysApply: true
 - fallback 到 codexcc/硅基流动不占 healwrap RPM
 
 **外审 Prompt 要求（升级版）：**
-每个 issue 必须包含 type（SETTING_CONFLICT/CONTINUITY/OOC/PACING/READER_PULL/STYLE）、severity、location（定位到段落）、description、suggestion（修改建议）、quote（引用原句）。每个维度返回 score + comment + 该维度下的 issues 列表。
+8个审查维度：设定一致性/连贯性/人物塑造/追读力/爽点密度/节奏控制/对话质量/信息密度。
+每个 issue 必须包含 type（SETTING_CONFLICT/CONTINUITY/OOC/PACING/READER_PULL/STYLE/DIALOGUE_FLAT/DIALOGUE_INFODUMP/DIALOGUE_MONOLOGUE/PADDING/REPETITION）、severity、location（定位到段落）、description、suggestion（修改建议）、quote（引用原句）。每个维度返回 score + comment + 该维度下的 issues 列表。
 
 **外审输出 JSON 必须包含：**
 model_actual（响应中实际模型）、routing_verified（bool）、provider_chain（尝试链路记录）、api_meta（elapsed_ms/tokens/attempts/final_provider）
 
 **审查报告格式：**
-- 6模型评分矩阵（可用模型 × 6维度）
+- 6模型评分矩阵（可用模型 × 8维度）
 - 共识问题（>=3模型指出的同类问题 = 真问题）
 - Step 4 修复清单（从共识问题筛选 severity >= medium）
 
-**执行要求：** 每章 Step 3 通过后，必须跑 6 个外部模型审查（Step 3.5），核心3模型全部返回后才进入 Step 4
+**执行要求：** 每章 Step 3（8个内部checker）+ Step 3.5（6个外部模型×8维度）通过后，核心3模型全部返回后才进入 Step 4
+
+## 开篇黄金协议（Ch1-3 专用，叠加在标准流程之上）
+
+- Ch1：主角在前 500 字内出场且用行动展示（非旁白介绍）
+- Ch1：核心冲突或世界规则在前 1000 字内暗示（Show not Tell）
+- Ch1：章末钩子强度强制 strong
+- Ch1-2：金手指至少暗示存在
+- Ch1-3：人物名字总数不超过 5 个
+- Ch1-3：至少 5 个冲突点
+- Ch1-3：第一个场景必须包含至少 1 个具象数字（展示世界观量级）
+
+## 中文思维写作约束（硬规则）
+
+- **禁止"先英后中"**：不得先用英文工程化骨架（如 ABCDE 分段、Summary/Conclusion 框架）组织内容，再翻译成中文。
+- **中文叙事单元优先**：以"动作、反应、代价、情绪、场景、关系位移"为基本叙事单元，不使用英文结构标签驱动正文生成。
+- **禁止英文结论话术**：正文、审查说明、润色说明、变更摘要、最终报告中不得出现 Overall / PASS / FAIL / Summary / Conclusion 等英文结论标题。
+- **英文仅限机器标识**：CLI flag（`--fast`）、checker id（`consistency-checker`）、DB 字段名（`anti_ai_force_check`）、JSON 键名等不可改的接口名保持英文，其余一律使用简体中文。
+
+## Search Tool 使用规则（全流程适用）
+
+**触发规则：**
+- **强制触发**：涉及专业领域（机甲技术/军事/科学/法律）→ 搜索术语和真实细节
+- **强制触发**：需要特定案例或参考（如"真实驾驶舱布局""地下通道地质结构"）→ 搜索具体资料
+- **推荐触发**：章节类型特殊（战斗/情感/揭秘/追逐/谈判）→ 搜索该类型写作技巧
+- **推荐触发**：新卷首章或Ch1-3 → 搜索同题材开篇技巧
+- **推荐触发**：审查发现 HIGH 级 STYLE/PACING 问题 → 搜索改进方法
+- **按需触发**：普通推进章无特殊场景 → 不搜索
+
+**各 Step 的具体搜索内容：**
+- Step 1：搜索本章场景类型的写作技巧（"机甲战斗 描写技巧""谈判场景 张力写法"）
+- Step 2A：搜索专业领域术语和真实细节（"机甲驾驶舱 操控界面""军事通讯 加密术语"）
+- Step 2B：搜索风格参考（"硬核科幻 技术描写 范例"）
+- Step 4：搜索审查问题的改进方法（"对话平淡 改进技巧""节奏拖沓 如何加快"）
+
+搜索结果归档：有价值的专业信息保存到 `调研笔记/` 对应主题文件，供后续章节复用。
+
+**Search 失败处理协议（硬规则）**：
+1. 立即停止当前工作
+2. 告知用户搜索工具不可用
+3. 等待用户配置或手动提供信息后再继续
+4. 不要跳过搜索步骤直接继续——搜索获取的专业细节直接影响质量
+
+## 充分性闸门（流程结束前必须通过）
+
+未满足以下条件前，不得结束当前章节流程：
+
+1. 章节正文文件存在且非空
+2. Step 3 已产出 `overall_score` 且 `review_metrics` 成功落库
+3. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
+4. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
+5. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{NNNN}.md`
+6. 审查报告 .md 文件已生成（含内部 + 外部评分矩阵）
 
 ## 插件自定义改动
 
