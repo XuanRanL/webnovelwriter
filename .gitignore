@@ -34,6 +34,9 @@ nul
 .tmp_*
 .tmp_outline_check/
 
+# Novel project data (local only)
+星际拆解师/
+
 # Local research / sibling projects (avoid accidental commit)
 .sisyphus/
 De-AI-Prompt/
