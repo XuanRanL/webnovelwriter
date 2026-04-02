@@ -553,6 +553,26 @@ def test_state_manager_cli_commands(temp_project, monkeypatch, capsys):
     assert out["status"] == "success"
 
 
+def test_state_manager_cli_rejects_invalid_project_root(monkeypatch, tmp_path, capsys):
+    invalid_root = tmp_path / "not-a-project"
+    invalid_root.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["state_manager", "--project-root", str(invalid_root), "get-progress"],
+    )
+
+    from data_modules import state_manager as sm
+
+    with pytest.raises(SystemExit) as exc:
+        sm.main()
+    out = json.loads(capsys.readouterr().out)
+    assert int(exc.value.code or 0) == 1
+    assert out["status"] == "error"
+    assert out["error"]["code"] == "INVALID_PROJECT_ROOT"
+
+
 def test_save_state_timeout(monkeypatch, temp_project):
     import filelock
     from data_modules import state_manager as sm

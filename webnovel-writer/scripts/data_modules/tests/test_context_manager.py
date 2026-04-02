@@ -141,6 +141,26 @@ def test_context_manager_uses_memory_orchestrator_for_working_when_enabled(temp_
     assert core["recent_summaries"] == [{"chapter": 0, "summary": "FAKE_SUMMARY"}]
 
 
+def test_context_manager_skips_memory_orchestrator_when_disabled(temp_project, monkeypatch):
+    state = {
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temp_project.context_use_memory_orchestrator = False
+
+    def _boom(self, chapter, task_type="write"):
+        raise AssertionError("context_use_memory_orchestrator=false 时不应调用 orchestrator")
+
+    monkeypatch.setattr("data_modules.memory.orchestrator.MemoryOrchestrator.build_memory_pack", _boom)
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(1, use_snapshot=False, save_snapshot=False)
+
+    assert payload["sections"]["long_term_memory"]["content"] == {}
+
+
 def test_context_manager_loads_volume_outline_file(temp_project):
     state = {
         "progress": {
@@ -199,6 +219,60 @@ def test_context_snapshot_respects_template(temp_project):
 
     assert plot_payload.get("template") == "plot"
     assert battle_payload.get("template") == "battle"
+
+
+def test_context_snapshot_invalidates_legacy_version(temp_project):
+    state = {
+        "project": {"genre": "xuanhuan"},
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temp_project.outline_dir.mkdir(parents=True, exist_ok=True)
+    (temp_project.outline_dir / "第1卷-详细大纲.md").write_text(
+        """### 第4章：试炼
+CBN：进入试炼场
+CPNs：
+- 观察规则
+CEN：决定将计就计
+""",
+        encoding="utf-8",
+    )
+
+    snapshot_path = temp_project.webnovel_dir / "context_snapshots" / "ch0004.json"
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "version": "1.2",
+                "chapter": 4,
+                "saved_at": "2026-03-01T00:00:00+00:00",
+                "meta": {"template": "plot"},
+                "payload": {
+                    "meta": {"chapter": 4},
+                    "sections": {
+                        "core": {
+                            "content": {"chapter_outline": "旧快照"},
+                            "text": "{}",
+                            "budget": 1000,
+                        }
+                    },
+                    "template": "plot",
+                    "weights": {},
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(4, template="plot", use_snapshot=True, save_snapshot=False)
+
+    assert payload["sections"]["core"]["content"]["chapter_outline"] != "旧快照"
+    assert payload["sections"]["plot_structure"]["content"]["cbn"] == "进入试炼场"
 
 
 def test_context_manager_applies_ranker_and_contract_meta(temp_project):

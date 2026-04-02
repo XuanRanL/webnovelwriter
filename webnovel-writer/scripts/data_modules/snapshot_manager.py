@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover
     # 当以 python -m scripts.data_modules... 形式运行
     from scripts.security_utils import atomic_write_json
 
-SNAPSHOT_VERSION = "1.2"
+SNAPSHOT_VERSION = "1.3"
 
 
 class SnapshotVersionMismatch(RuntimeError):

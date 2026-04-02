@@ -98,7 +98,18 @@ class ContextManager:
         if not isinstance(cached_template, str):
             return template == self.DEFAULT_TEMPLATE
 
-        return cached_template == template
+        if cached_template != template:
+            return False
+
+        payload = cached.get("payload", cached)
+        if not isinstance(payload, dict):
+            return False
+        sections = payload.get("sections")
+        if not isinstance(sections, dict):
+            return False
+
+        required_sections = {"plot_structure", "long_term_memory"}
+        return required_sections.issubset(set(sections.keys()))
 
     def build_context(
         self,
@@ -195,13 +206,14 @@ class ContextManager:
         use_orchestrator = bool(getattr(self.config, "context_use_memory_orchestrator", False))
 
         orchestrator_pack: Dict[str, Any] = {}
-        try:
-            from .memory.orchestrator import MemoryOrchestrator
+        if use_orchestrator:
+            try:
+                from .memory.orchestrator import MemoryOrchestrator
 
-            orchestrator = MemoryOrchestrator(self.config)
-            orchestrator_pack = orchestrator.build_memory_pack(chapter)
-        except Exception as exc:
-            logger.warning("memory_orchestrator_failed: %s", exc)
+                orchestrator = MemoryOrchestrator(self.config)
+                orchestrator_pack = orchestrator.build_memory_pack(chapter)
+            except Exception as exc:
+                logger.warning("memory_orchestrator_failed: %s", exc)
 
         core = {
             "chapter_outline": self._load_outline(chapter),

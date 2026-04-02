@@ -98,8 +98,7 @@ model: inherit
 - `index.db`：实体、别名、关系、状态变化、覆盖合同、追读力债务
 - `.webnovel/summaries/ch{NNNN}.md`：章节摘要
 - `.webnovel/context_snapshots/`：上下文快照，优先复用
-- `.webnovel/long_term_memory.json`：长期记忆主存储
-- `.webnovel/memory_scratchpad.json`：长期记忆暂存与待压缩事实
+- `.webnovel/memory_scratchpad.json`：当前长期记忆事实存储
 - `大纲/` 与 `设定集/`
 
 钩子数据说明：
@@ -168,7 +167,6 @@ cat "{project_root}/大纲/第{volume_id}卷-时间线.md"
 读取长期记忆：
 
 ```bash
-cat "{project_root}/.webnovel/long_term_memory.json"
 cat "{project_root}/.webnovel/memory_scratchpad.json"
 ```
 

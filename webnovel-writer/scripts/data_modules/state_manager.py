@@ -1273,9 +1273,13 @@ def main():
 
         try:
             resolved_root = resolve_project_root(args.project_root)
-        except FileNotFoundError:
-            # 兼容旧行为：显式目录无法被 locator 识别时，直接按传入路径初始化。
-            resolved_root = Path(args.project_root).expanduser().resolve()
+        except FileNotFoundError as exc:
+            print_error(
+                "INVALID_PROJECT_ROOT",
+                str(exc),
+                suggestion="请传入包含 .webnovel/state.json 的书项目根目录，或先通过 webnovel.py 解析 project_root。",
+            )
+            raise SystemExit(1) from exc
         config = DataModulesConfig.from_project_root(resolved_root)
 
     manager = StateManager(config)
