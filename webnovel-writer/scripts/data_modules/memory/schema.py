@@ -35,6 +35,14 @@ CATEGORY_KEY_RULES: Dict[str, tuple[str, ...]] = {
 }
 
 
+def memory_item_key(item: "MemoryItem") -> tuple:
+    """根据 category 规则计算 MemoryItem 的去重 key。供 store/compactor 共用。"""
+    fields = CATEGORY_KEY_RULES.get(item.category)
+    if not fields:
+        return (item.id,)
+    return tuple(getattr(item, f, None) for f in fields)
+
+
 def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 

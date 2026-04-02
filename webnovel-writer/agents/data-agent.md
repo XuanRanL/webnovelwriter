@@ -178,8 +178,18 @@ hook_strength: "strong"
 约束：
 - 不新增额外 LLM 调用。
 - 不创建独立 extractor Agent。
-- 只提炼“可跨章复用”的长期事实，不混入临时工作记忆。
+- 只提炼”可跨章复用”的长期事实，不混入临时工作记忆。
 - 提取结果必须交由 `memory/writer.py` 写入 `.webnovel/memory_scratchpad.json`。
+
+写入命令：
+
+```bash
+python -X utf8 “${SCRIPTS_DIR}/webnovel.py” --project-root “{project_root}” memory update \
+  --chapter {chapter} \
+  --data '@{tmp_dir}/chapter_result.json'
+```
+
+> `chapter_result.json` 是 Step 4 + Step 6 的完整结构化输出，包含 `state_changes`、`entities_new`、`relationships_new`、`chapter_meta`、`memory_facts` 等字段。
 
 ### Step 7：执行场景切片
 

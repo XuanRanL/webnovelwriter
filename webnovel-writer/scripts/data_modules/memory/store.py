@@ -19,6 +19,7 @@ from .schema import (
     CATEGORY_TO_BUCKET,
     MemoryItem,
     ScratchpadData,
+    memory_item_key,
     now_iso,
 )
 
@@ -59,13 +60,7 @@ class ScratchpadManager:
         atomic_write_json(self.path, payload, use_lock=_use_lock, backup=True)
 
     def _key_for(self, item: MemoryItem) -> tuple[Any, ...]:
-        rule = CATEGORY_KEY_RULES.get(item.category)
-        if not rule:
-            return (item.id,)
-        values: list[Any] = []
-        for key in rule:
-            values.append(getattr(item, key, None))
-        return tuple(values)
+        return memory_item_key(item)
 
     def upsert_item(self, item: MemoryItem) -> Dict[str, int]:
         normalized = item.normalized()

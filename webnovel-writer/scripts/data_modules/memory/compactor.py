@@ -7,14 +7,11 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
-from .schema import CATEGORY_KEY_RULES, CATEGORY_TO_BUCKET, MemoryItem, ScratchpadData, now_iso
+from .schema import CATEGORY_KEY_RULES, CATEGORY_TO_BUCKET, MemoryItem, ScratchpadData, memory_item_key, now_iso
 
 
 def _key_for(item: MemoryItem) -> Tuple:
-    fields = CATEGORY_KEY_RULES.get(item.category)
-    if not fields:
-        return (item.id,)
-    return tuple(getattr(item, f, None) for f in fields)
+    return memory_item_key(item)
 
 
 def _is_resolved_open_loop(item: MemoryItem) -> bool:
@@ -79,7 +76,7 @@ def compact_scratchpad(data: ScratchpadData, max_items: int = 500) -> Scratchpad
             )
             replaced = False
             for i, row in enumerate(list(data.story_facts)):
-                if row.subject == summary_item.subject and row.field == summary_item.field:
+                if row.subject == summary_item.subject and row.subject == "timeline_summary":
                     data.story_facts[i] = summary_item
                     replaced = True
                     break
