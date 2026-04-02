@@ -22,6 +22,8 @@ from data_modules.index_manager import IndexManager
 def temp_project(tmp_path):
     cfg = DataModulesConfig.from_project_root(tmp_path)
     cfg.ensure_dirs()
+    if not cfg.state_file.exists():
+        cfg.state_file.write_text("{}", encoding="utf-8")
     return cfg
 
 
@@ -125,6 +127,9 @@ def test_migrate_state_verbose_and_dry_run(temp_project, capsys):
 
 def test_migrate_state_cli_main(tmp_path, monkeypatch, capsys):
     project_root = tmp_path
+    webnovel_dir = project_root / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+    (webnovel_dir / "state.json").write_text("{}", encoding="utf-8")
     args = [
         "migrate_state_to_sqlite",
         "--project-root",
