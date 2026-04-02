@@ -401,16 +401,13 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
             {"role": "user", "content": user_msg},
         ],
         "temperature": 0.3,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
     }
-    # Thinking models (qwen-3.5, deepseek-v3.2, etc.) may wrap output in <think> tags,
-    # consuming most of max_tokens on reasoning. Disable thinking and increase limit.
+    # Thinking models (qwen-3.5, deepseek-v3.2, etc.) wrap output in <think> tags,
+    # consuming most of max_tokens on reasoning. Remove limit to let API use model max.
     model_lower = model_id.lower()
     if any(t in model_lower for t in ("qwen-3", "qwen3", "deepseek")):
-        payload["max_tokens"] = 60000
-        # Try to disable thinking mode via common API parameters
-        payload["extra_body"] = {"enable_thinking": False}
-        payload["chat_template_kwargs"] = {"enable_thinking": False}
+        payload["max_tokens"] = 65536  # thinking 模型需要足够空间给推理+输出
     # Acquire rate limiter before first request
     limiter = ProviderRateLimiter.get(provider_name) if provider_name else None
     provider_chain = []
