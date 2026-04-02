@@ -1,5 +1,5 @@
 [run]
-source = .claude/scripts/data_modules
+source = webnovel-writer/scripts/data_modules
 omit =
     */tests/*
 
