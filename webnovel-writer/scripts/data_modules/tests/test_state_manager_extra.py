@@ -498,6 +498,10 @@ def test_sync_protagonist_from_string_and_empty_updates(temp_project):
 
 
 def test_state_manager_cli_commands(temp_project, monkeypatch, capsys):
+    # CLI 的 resolve_project_root 需要 state.json 存在
+    if not temp_project.state_file.exists():
+        temp_project.state_file.write_text("{}", encoding="utf-8")
+
     idx = IndexManager(temp_project)
     idx.upsert_entity(
         EntityMeta(

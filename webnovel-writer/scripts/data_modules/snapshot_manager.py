@@ -73,11 +73,14 @@ class SnapshotManager:
         with lock:
             if not path.exists():
                 return None
-            data = json.loads(path.read_text(encoding="utf-8"))
-        version = str(data.get("version", ""))
-        if version != self.version:
-            raise SnapshotVersionMismatch(self.version, version)
-        return data
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                return None
+            version = str(data.get("version", ""))
+            if version != self.version:
+                raise SnapshotVersionMismatch(self.version, version)
+            return data
 
     def delete_snapshot(self, chapter: int) -> bool:
         path = self._snapshot_path(chapter)

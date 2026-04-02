@@ -150,6 +150,9 @@ def normalize_data_agent_output(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
 
+    # 操作副本，避免修改调用方原始数据
+    payload = dict(payload)
+
     def _ensure_list(key: str):
         value = payload.get(key)
         if value is None:
@@ -175,6 +178,8 @@ def normalize_data_agent_output(payload: Dict[str, Any]) -> Dict[str, Any]:
     elif not isinstance(memory_facts, dict):
         payload["memory_facts"] = {}
     else:
+        memory_facts = dict(memory_facts)
+        payload["memory_facts"] = memory_facts
         for key in ["timeline_events", "world_rules", "open_loops", "reader_promises"]:
             value = memory_facts.get(key)
             if value is None:
@@ -183,6 +188,5 @@ def normalize_data_agent_output(payload: Dict[str, Any]) -> Dict[str, Any]:
                 memory_facts[key] = [value]
 
     payload.setdefault("scenes_chunked", 0)
-
 
     return payload

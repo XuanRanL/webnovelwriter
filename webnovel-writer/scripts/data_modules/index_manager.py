@@ -499,7 +499,7 @@ class IndexManager(IndexChapterMixin, IndexEntityMixin, IndexDebtMixin, IndexRea
                     chapter INTEGER NOT NULL,
                     note TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (debt_id) REFERENCES chase_debt(id)
+                    FOREIGN KEY (debt_id) REFERENCES chase_debt(id) ON DELETE CASCADE
                 )
             """)
 

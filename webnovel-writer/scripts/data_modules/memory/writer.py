@@ -20,7 +20,7 @@ class MemoryWriter:
 
     def _item_id(self, category: str, subject: str, field: str, chapter: int) -> str:
         raw = f"{category}|{subject}|{field}|{chapter}"
-        digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+        digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
         return f"mem-{category}-{digest}"
 
     def _upsert(self, item: MemoryItem, stats: Dict[str, Any]) -> None:
@@ -145,7 +145,7 @@ class MemoryWriter:
                 id=self._item_id("timeline", event, str(source_chapter), chapter),
                 layer="semantic",
                 category="timeline",
-                subject=event,
+                subject=event[:64],
                 field="event",
                 value=event,
                 payload={"time_hint": row.get("time_hint"), "event_type": row.get("event_type")},
