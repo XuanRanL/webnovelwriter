@@ -15,9 +15,9 @@ from runtime_compat import enable_windows_utf8_stdio
 from typing import Any, Dict, List, Optional
 
 try:
-    from chapter_outline_loader import load_chapter_outline
+    from chapter_outline_loader import load_chapter_outline, load_chapter_plot_structure
 except ImportError:  # pragma: no cover
-    from scripts.chapter_outline_loader import load_chapter_outline
+    from scripts.chapter_outline_loader import load_chapter_outline, load_chapter_plot_structure
 
 from .config import get_config
 from .index_manager import IndexManager, WritingChecklistScoreMeta
@@ -54,11 +54,13 @@ class ContextManager:
     EXTRA_SECTIONS = {
         "story_skeleton",
         "memory",
+        "long_term_memory",
         "preferences",
         "alerts",
         "reader_signal",
         "genre_profile",
         "writing_guidance",
+        "plot_structure",
     }
     SECTION_ORDER = [
         "core",
@@ -67,8 +69,10 @@ class ContextManager:
         "reader_signal",
         "genre_profile",
         "writing_guidance",
+        "plot_structure",
         "story_skeleton",
         "memory",
+        "long_term_memory",
         "preferences",
         "alerts",
     ]
@@ -94,7 +98,18 @@ class ContextManager:
         if not isinstance(cached_template, str):
             return template == self.DEFAULT_TEMPLATE
 
-        return cached_template == template
+        if cached_template != template:
+            return False
+
+        payload = cached.get("payload", cached)
+        if not isinstance(payload, dict):
+            return False
+        sections = payload.get("sections")
+        if not isinstance(sections, dict):
+            return False
+
+        required_sections = {"plot_structure", "long_term_memory"}
+        return required_sections.issubset(set(sections.keys()))
 
     def build_context(
         self,
@@ -188,6 +203,18 @@ class ContextManager:
 
     def _build_pack(self, chapter: int) -> Dict[str, Any]:
         state = self._load_state()
+        use_orchestrator = bool(getattr(self.config, "context_use_memory_orchestrator", False))
+
+        orchestrator_pack: Dict[str, Any] = {}
+        if use_orchestrator:
+            try:
+                from .memory.orchestrator import MemoryOrchestrator
+
+                orchestrator = MemoryOrchestrator(self.config)
+                orchestrator_pack = orchestrator.build_memory_pack(chapter)
+            except Exception as exc:
+                logger.warning("memory_orchestrator_failed: %s", exc)
+
         core = {
             "chapter_outline": self._load_outline(chapter),
             "protagonist_snapshot": state.get("protagonist_state", {}),
@@ -201,6 +228,21 @@ class ContextManager:
                 window=self.config.context_recent_meta_window,
             ),
         }
+        if use_orchestrator and orchestrator_pack:
+            working_items = list(orchestrator_pack.get("working_memory") or [])
+            outline_item = next((x for x in working_items if x.get("source") == "outline"), None)
+            state_item = next((x for x in working_items if x.get("source") == "state_export"), None)
+            summary_items = [
+                {"chapter": x.get("chapter"), "summary": x.get("content")}
+                for x in working_items
+                if x.get("source") == "summary"
+            ]
+            core["chapter_outline"] = str(outline_item.get("content", "")) if outline_item else core["chapter_outline"]
+            if isinstance(state_item, dict) and isinstance(state_item.get("content"), dict):
+                state_export = dict(state_item.get("content") or {})
+                core["protagonist_snapshot"] = state_export.get("protagonist_state", core["protagonist_snapshot"])
+            if summary_items:
+                core["recent_summaries"] = summary_items
 
         scene = {
             "location_context": state.get("protagonist_state", {}).get("location", {}),
@@ -220,11 +262,13 @@ class ContextManager:
 
         preferences = self._load_json_optional(self.config.webnovel_dir / "preferences.json")
         memory = self._load_json_optional(self.config.webnovel_dir / "project_memory.json")
+        long_term_memory: Dict[str, Any] = orchestrator_pack if orchestrator_pack else {}
         story_skeleton = self._load_story_skeleton(chapter)
         alert_slice = max(0, int(self.config.context_alerts_slice))
         reader_signal = self._load_reader_signal(chapter)
         genre_profile = self._load_genre_profile(state)
         writing_guidance = self._build_writing_guidance(chapter, reader_signal, genre_profile)
+        plot_structure = self._load_plot_structure(chapter)
 
         return {
             "meta": {"chapter": chapter},
@@ -234,9 +278,11 @@ class ContextManager:
             "reader_signal": reader_signal,
             "genre_profile": genre_profile,
             "writing_guidance": writing_guidance,
+            "plot_structure": plot_structure,
             "story_skeleton": story_skeleton,
             "preferences": preferences,
             "memory": memory,
+            "long_term_memory": long_term_memory,
             "alerts": {
                 "disambiguation_warnings": (
                     state.get("disambiguation_warnings", [])[-alert_slice:] if alert_slice else []
@@ -639,6 +685,9 @@ class ContextManager:
 
     def _load_outline(self, chapter: int) -> str:
         return load_chapter_outline(self.config.project_root, chapter, max_chars=1500)
+
+    def _load_plot_structure(self, chapter: int) -> Dict[str, Any]:
+        return load_chapter_plot_structure(self.config.project_root, chapter)
 
     def _load_recent_summaries(self, chapter: int, window: int = 3) -> List[Dict[str, Any]]:
         summaries = []

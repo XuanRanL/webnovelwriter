@@ -848,6 +848,10 @@ class StatusReporter:
         if focus in ["all", "basic"]:
             report_lines.extend(self._generate_basic_stats())
 
+        # 记忆统计（长期记忆）
+        if focus in ["all", "basic"]:
+            report_lines.extend(self._generate_memory_section())
+
         # 角色活跃度
         if focus in ["all", "characters"]:
             report_lines.extend(self._generate_character_section())
@@ -873,6 +877,37 @@ class StatusReporter:
             report_lines.extend(self._generate_relationship_section())
 
         return "\n".join(report_lines)
+
+    def _generate_memory_section(self) -> List[str]:
+        """生成长期记忆统计章节（best-effort）。"""
+        try:
+            from data_modules.memory.store import ScratchpadManager
+        except Exception:
+            try:
+                from scripts.data_modules.memory.store import ScratchpadManager
+            except Exception:
+                return []
+
+        try:
+            manager = ScratchpadManager(self.config)
+            stats = manager.stats()
+            conflicts = manager.conflicts()
+        except Exception:
+            return []
+
+        return [
+            "## 🧠 长期记忆统计",
+            "",
+            f"- **总条目**: {stats.get('total', 0)}",
+            f"- **Active**: {stats.get('active', 0)}",
+            f"- **Outdated**: {stats.get('outdated', 0)}",
+            f"- **Contradicted**: {stats.get('contradicted', 0)}",
+            f"- **Tentative**: {stats.get('tentative', 0)}",
+            f"- **冲突键数量**: {len(conflicts)}",
+            "",
+            "---",
+            "",
+        ]
 
     def _generate_basic_stats(self) -> List[str]:
         """生成基本统计"""

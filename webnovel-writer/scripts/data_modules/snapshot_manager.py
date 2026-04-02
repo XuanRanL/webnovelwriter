@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover
     # 当以 python -m scripts.data_modules... 形式运行
     from scripts.security_utils import atomic_write_json
 
-SNAPSHOT_VERSION = "1.2"
+SNAPSHOT_VERSION = "1.3"
 
 
 class SnapshotVersionMismatch(RuntimeError):
@@ -73,11 +73,14 @@ class SnapshotManager:
         with lock:
             if not path.exists():
                 return None
-            data = json.loads(path.read_text(encoding="utf-8"))
-        version = str(data.get("version", ""))
-        if version != self.version:
-            raise SnapshotVersionMismatch(self.version, version)
-        return data
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                return None
+            version = str(data.get("version", ""))
+            if version != self.version:
+                raise SnapshotVersionMismatch(self.version, version)
+            return data
 
     def delete_snapshot(self, chapter: int) -> bool:
         path = self._snapshot_path(chapter)

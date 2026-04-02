@@ -52,7 +52,7 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
   - 触发：所有项目必读。
 - `references/system-data-flow.md`
   - 用途：初始化产物与后续 `/plan`、`/write` 的数据流一致性检查。
-  - 触发：Step 0 预检必读。
+  - 触发：Step 1 预检必读。
 
 ### worldbuilding
 
@@ -123,7 +123,7 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
 
 ## 交互流程（Deep）
 
-### Step 0：预检与上下文加载
+### Step 1：预检与上下文加载
 
 环境设置（bash 命令执行前）：
 ```bash
@@ -151,7 +151,7 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 输出：
 - 进入 Deep 采集前的“已知信息清单”和“待收集清单”。
 
-### Step 1：故事核与商业定位
+### Step 2：故事核与商业定位
 
 收集项（必收）：
 - 书名（可先给工作名）
@@ -171,7 +171,7 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 - 优先让用户自由描述，再二次结构化确认。
 - 若用户卡住，给 2-4 个候选方向供选。
 
-### Step 2：角色骨架与关系冲突
+### Step 3：角色骨架与关系冲突
 
 收集项（必收）：
 - 主角姓名
@@ -185,7 +185,7 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 - 主角原型标签（成长型/复仇型/天才流等）
 - 多主角分工
 
-### Step 3：金手指与兑现机制
+### Step 4：金手指与兑现机制
 
 收集项（必收）：
 - 金手指类型（可为“无金手指”）
@@ -200,7 +200,7 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 - 若为重生：重生时间点、记忆完整度
 - 若为传承/器灵：辅助边界与出手限制
 
-### Step 4：世界观与力量规则
+### Step 5：世界观与力量规则
 
 收集项（必收）：
 - 世界规模（单城/多域/大陆/多界）
@@ -213,7 +213,7 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 - 宗门/组织层级
 - 境界链与小境界
 
-### Step 5：创意约束包（差异化核心）
+### Step 6：创意约束包（差异化核心）
 
 流程：
 1. 基于题材映射加载反套路库（最多 2 个主相关库）。
@@ -234,7 +234,7 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 备注：
 - 若用户要求“贴近当下市场”，可触发外部检索并标注时间戳。
 
-### Step 6：一致性复述与最终确认
+### Step 7：一致性复述与最终确认
 
 必须输出“初始化摘要草案”并让用户确认：
 - 故事核（题材/一句话故事/核心冲突）

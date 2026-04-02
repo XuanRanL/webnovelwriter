@@ -103,6 +103,10 @@ class DataModulesConfig:
         return self.webnovel_dir / "state.json"
 
     @property
+    def scratchpad_file(self) -> Path:
+        return self.webnovel_dir / "memory_scratchpad.json"
+
+    @property
     def index_db(self) -> Path:
         return self.webnovel_dir / "index.db"
 
@@ -256,6 +260,12 @@ class DataModulesConfig:
         "，",
         "、",
     )
+    context_use_memory_orchestrator: bool = False
+    memory_orchestrator_max_items: int = 30
+    memory_orchestrator_recent_changes_limit: int = 10
+    memory_orchestrator_source_window: int = 20
+    memory_compactor_enabled: bool = True
+    memory_compactor_threshold: int = 500
 
     export_recent_changes_slice: int = 20
     export_disambiguation_slice: int = 20

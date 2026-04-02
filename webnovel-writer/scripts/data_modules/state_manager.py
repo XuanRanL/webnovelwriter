@@ -32,6 +32,7 @@ from .observability import safe_append_perf_timing, safe_log_tool_call
 
 logger = logging.getLogger(__name__)
 
+
 try:
     # 当 scripts 目录在 sys.path 中（常见：从 scripts/ 运行）
     from security_utils import atomic_write_json, read_json_safe
@@ -1079,6 +1080,7 @@ class StateManager:
         # 处理消歧不确定项（不影响实体写入，但必须对 Writer 可见）
         warnings.extend(self._record_disambiguation(chapter, result.get("uncertain", [])))
 
+
         # 写入 chapter_meta（钩子/模式/结束状态）
         chapter_meta = result.get("chapter_meta")
         if isinstance(chapter_meta, dict):
@@ -1086,12 +1088,21 @@ class StateManager:
             self._state.setdefault("chapter_meta", {})
             self._state["chapter_meta"][meta_key] = chapter_meta
             self._pending_chapter_meta[meta_key] = chapter_meta
-
         # 更新进度
         self.update_progress(chapter)
 
         # 同步主角状态（entities_v3 → protagonist_state）
         self.sync_protagonist_from_entity()
+
+        # 长期记忆写入（best-effort，不阻断主流程）
+        try:
+            from .memory.writer import MemoryWriter
+
+            writer = MemoryWriter(self.config)
+            mem_result = writer.update_from_chapter_result(chapter, result)
+            logger.info("memory_write: %s", mem_result)
+        except Exception as exc:
+            logger.warning("memory_write_failed: %s", exc)
 
         return warnings
 
@@ -1260,7 +1271,15 @@ def main():
         from project_locator import resolve_project_root
         from .config import DataModulesConfig
 
-        resolved_root = resolve_project_root(args.project_root)
+        try:
+            resolved_root = resolve_project_root(args.project_root)
+        except FileNotFoundError as exc:
+            print_error(
+                "INVALID_PROJECT_ROOT",
+                str(exc),
+                suggestion="请传入包含 .webnovel/state.json 的书项目根目录，或先通过 webnovel.py 解析 project_root。",
+            )
+            raise SystemExit(1) from exc
         config = DataModulesConfig.from_project_root(resolved_root)
 
     manager = StateManager(config)

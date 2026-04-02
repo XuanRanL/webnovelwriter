@@ -51,6 +51,28 @@ _PATTERN_FIELDS = [
 _PATTERN_SPLIT_RE = re.compile(r"[、,，/|+；;。]+")
 
 
+_PLOT_LIST_FIELDS = ("cpns", "mandatory_nodes", "prohibitions")
+
+
+def _normalize_string_list(raw_value: Any) -> List[str]:
+    items: List[str] = []
+    if isinstance(raw_value, list):
+        source = raw_value
+    elif isinstance(raw_value, str):
+        source = split_patterns(raw_value)
+    else:
+        return []
+
+    seen = set()
+    for item in source:
+        text = str(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        items.append(text)
+    return items
+
+
 def to_positive_int(value: Any) -> Optional[int]:
     if value is None or isinstance(value, bool):
         return None
@@ -202,6 +224,23 @@ def normalize_chapter_meta_entry(entry: Mapping[str, Any]) -> Dict[str, Any]:
 
     if merged_patterns:
         normalized["coolpoint_patterns"] = merged_patterns
+
+    plot_structure = entry.get("plot_structure")
+    if isinstance(plot_structure, Mapping):
+        normalized_plot_structure = dict(plot_structure)
+        cbn = str(plot_structure.get("cbn") or "").strip()
+        cen = str(plot_structure.get("cen") or "").strip()
+        if cbn:
+            normalized_plot_structure["cbn"] = cbn
+        if cen:
+            normalized_plot_structure["cen"] = cen
+        for field_name in _PLOT_LIST_FIELDS:
+            normalized_values = _normalize_string_list(plot_structure.get(field_name))
+            if normalized_values:
+                normalized_plot_structure[field_name] = normalized_values
+            elif field_name in normalized_plot_structure:
+                normalized_plot_structure[field_name] = []
+        normalized["plot_structure"] = normalized_plot_structure
 
     return normalized
 

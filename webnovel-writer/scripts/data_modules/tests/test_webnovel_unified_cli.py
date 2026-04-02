@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import json
 import sys
 from pathlib import Path
 
@@ -166,3 +167,225 @@ def test_quality_trend_report_writes_to_book_root_when_input_is_workspace_root(t
     assert output_path.is_file()
     assert (book_root / ".webnovel" / "index.db").is_file()
     assert not (workspace_root / ".webnovel" / "index.db").exists()
+
+
+
+def test_index_aggregate_review_results_forwards_with_resolved_project_root(monkeypatch, tmp_path):
+    module = _load_webnovel_module()
+
+    book_root = (tmp_path / "book").resolve()
+    called = {}
+
+    def _fake_resolve(explicit_project_root=None):
+        return book_root
+
+    def _fake_run_data_module(module_name, argv):
+        called["module_name"] = module_name
+        called["argv"] = list(argv)
+        return 0
+
+    monkeypatch.setattr(module, "_resolve_root", _fake_resolve)
+    monkeypatch.setattr(module, "_run_data_module", _fake_run_data_module)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "webnovel",
+            "--project-root",
+            str(tmp_path),
+            "index",
+            "aggregate-review-results",
+            "--chapter",
+            "12",
+            "--data",
+            '{"continuity-checker":{"overall_score":80}}',
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        module.main()
+
+    assert int(exc.value.code or 0) == 0
+    assert called["module_name"] == "index_manager"
+    assert called["argv"] == [
+        "--project-root",
+        str(book_root),
+        "aggregate-review-results",
+        "--chapter",
+        "12",
+        "--data",
+        '{"continuity-checker":{"overall_score":80}}',
+    ]
+
+
+
+
+
+def test_review_pipeline_builds_artifacts(tmp_path):
+    _ensure_scripts_on_path()
+    import review_pipeline as review_pipeline_module
+
+    project_root = (tmp_path / "book").resolve()
+    (project_root / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (project_root / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
+
+    review_results_path = tmp_path / "review_results.json"
+    review_results_path.write_text(
+        json.dumps(
+            {
+                "continuity-checker": {
+                    "agent": "continuity-checker",
+                    "chapter": 20,
+                    "overall_score": 76,
+                    "pass": True,
+                    "issues": [
+                        {
+                            "id": "TIME_001",
+                            "type": "TIMELINE_ISSUE",
+                            "severity": "high",
+                            "location": "第2段",
+                            "description": "时间线回跳",
+                            "suggestion": "补时间锚点",
+                        }
+                    ],
+                    "metrics": {},
+                    "summary": "存在时间线问题",
+                },
+                "consistency-checker": {
+                    "agent": "consistency-checker",
+                    "chapter": 20,
+                    "overall_score": 84,
+                    "pass": True,
+                    "issues": [],
+                    "metrics": {},
+                    "summary": "设定稳定",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    payload = review_pipeline_module.build_review_artifacts(
+        project_root=project_root,
+        chapter=20,
+        review_results_path=review_results_path,
+        report_file="审查报告/第20章.md",
+    )
+
+    assert payload["aggregated"]["overall_score"] == 80.0
+    assert payload["aggregated"]["timeline_gate"]["blocked"] is True
+    assert payload["review_metrics"]["report_file"] == "审查报告/第20章.md"
+    assert "timeline_gate:block=True;count=1" in payload["review_metrics"]["notes"]
+
+
+def test_review_pipeline_forwards_with_resolved_project_root(monkeypatch, tmp_path):
+    module = _load_webnovel_module()
+
+    book_root = (tmp_path / "book").resolve()
+    review_results = (tmp_path / "review_results.json").resolve()
+    called = {}
+
+    def _fake_resolve(explicit_project_root=None):
+        return book_root
+
+    def _fake_run_script(script_name, argv):
+        called["script_name"] = script_name
+        called["argv"] = list(argv)
+        return 0
+
+    monkeypatch.setattr(module, "_resolve_root", _fake_resolve)
+    monkeypatch.setattr(module, "_run_script", _fake_run_script)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "webnovel",
+            "--project-root",
+            str(tmp_path),
+            "review-pipeline",
+            "--chapter",
+            "18",
+            "--review-results",
+            str(review_results),
+            "--aggregated-out",
+            str(tmp_path / "aggregated.json"),
+            "--review-metrics-out",
+            str(tmp_path / "review_metrics.json"),
+            "--report-file",
+            "审查报告/第18章.md",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        module.main()
+
+    assert int(exc.value.code or 0) == 0
+    assert called["script_name"] == "review_pipeline.py"
+    assert called["argv"] == [
+        "--project-root",
+        str(book_root),
+        "--chapter",
+        "18",
+        "--review-results",
+        str(review_results),
+        "--aggregated-out",
+        str(tmp_path / "aggregated.json"),
+        "--review-metrics-out",
+        str(tmp_path / "review_metrics.json"),
+        "--report-file",
+        "审查报告/第18章.md",
+    ]
+
+
+def test_review_pipeline_main_creates_output_directories(tmp_path):
+    _ensure_scripts_on_path()
+    import review_pipeline as review_pipeline_module
+
+    project_root = (tmp_path / "book").resolve()
+    (project_root / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (project_root / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
+
+    review_results_path = tmp_path / "review_results.json"
+    review_results_path.write_text(
+        json.dumps(
+            {
+                "consistency-checker": {
+                    "agent": "consistency-checker",
+                    "chapter": 9,
+                    "overall_score": 88,
+                    "pass": True,
+                    "issues": [],
+                    "metrics": {},
+                    "summary": "稳定",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    aggregated_out = project_root / ".webnovel" / "tmp" / "review" / "aggregated.json"
+    metrics_out = project_root / ".webnovel" / "tmp" / "review" / "metrics.json"
+
+    old_argv = sys.argv
+    sys.argv = [
+        "review_pipeline",
+        "--project-root",
+        str(project_root),
+        "--chapter",
+        "9",
+        "--review-results",
+        str(review_results_path),
+        "--aggregated-out",
+        str(aggregated_out),
+        "--review-metrics-out",
+        str(metrics_out),
+    ]
+    try:
+        review_pipeline_module.main()
+    finally:
+        sys.argv = old_argv
+
+    assert aggregated_out.is_file()
+    assert metrics_out.is_file()

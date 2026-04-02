@@ -95,6 +95,70 @@ def test_context_manager_build_and_filter(temp_project):
     assert any(c.get("entity_id") == "xiaoyan" for c in characters)
     assert not any(c.get("entity_id") == "bad" for c in characters)
     assert payload["sections"]["preferences"]["content"].get("tone") == "热血"
+    assert "long_term_memory" in payload["sections"]
+
+
+def test_context_manager_uses_memory_orchestrator_for_working_when_enabled(temp_project, monkeypatch):
+    state = {
+        "protagonist_state": {"name": "旧快照"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temp_project.context_use_memory_orchestrator = True
+
+    def _fake_pack(self, chapter, task_type="write"):
+        return {
+            "working_memory": [
+                {"layer": "working", "source": "outline", "chapter": chapter, "content": "FAKE_OUTLINE"},
+                {
+                    "layer": "working",
+                    "source": "state_export",
+                    "chapter": chapter,
+                    "content": {"protagonist_state": {"name": "新快照"}},
+                },
+                {"layer": "working", "source": "summary", "chapter": chapter - 1, "content": "FAKE_SUMMARY"},
+            ],
+            "episodic_memory": [],
+            "semantic_memory": [],
+            "long_term_facts": [],
+            "active_constraints": [],
+            "recent_changes": [],
+            "warnings": [],
+            "stats": {"total": 0, "injected": 0, "filtered": 0, "conflicts": 0},
+        }
+
+    monkeypatch.setattr("data_modules.memory.orchestrator.MemoryOrchestrator.build_memory_pack", _fake_pack)
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(1, use_snapshot=False, save_snapshot=False)
+    core = payload["sections"]["core"]["content"]
+    long_term_memory = payload["sections"]["long_term_memory"]["content"]
+
+    assert "working_memory" in long_term_memory
+    assert core["chapter_outline"] == "FAKE_OUTLINE"
+    assert core["protagonist_snapshot"] == {"name": "新快照"}
+    assert core["recent_summaries"] == [{"chapter": 0, "summary": "FAKE_SUMMARY"}]
+
+
+def test_context_manager_skips_memory_orchestrator_when_disabled(temp_project, monkeypatch):
+    state = {
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temp_project.context_use_memory_orchestrator = False
+
+    def _boom(self, chapter, task_type="write"):
+        raise AssertionError("context_use_memory_orchestrator=false 时不应调用 orchestrator")
+
+    monkeypatch.setattr("data_modules.memory.orchestrator.MemoryOrchestrator.build_memory_pack", _boom)
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(1, use_snapshot=False, save_snapshot=False)
+
+    assert payload["sections"]["long_term_memory"]["content"] == {}
 
 
 def test_context_manager_loads_volume_outline_file(temp_project):
@@ -155,6 +219,60 @@ def test_context_snapshot_respects_template(temp_project):
 
     assert plot_payload.get("template") == "plot"
     assert battle_payload.get("template") == "battle"
+
+
+def test_context_snapshot_invalidates_legacy_version(temp_project):
+    state = {
+        "project": {"genre": "xuanhuan"},
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temp_project.outline_dir.mkdir(parents=True, exist_ok=True)
+    (temp_project.outline_dir / "第1卷-详细大纲.md").write_text(
+        """### 第4章：试炼
+CBN：进入试炼场
+CPNs：
+- 观察规则
+CEN：决定将计就计
+""",
+        encoding="utf-8",
+    )
+
+    snapshot_path = temp_project.webnovel_dir / "context_snapshots" / "ch0004.json"
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "version": "1.2",
+                "chapter": 4,
+                "saved_at": "2026-03-01T00:00:00+00:00",
+                "meta": {"template": "plot"},
+                "payload": {
+                    "meta": {"chapter": 4},
+                    "sections": {
+                        "core": {
+                            "content": {"chapter_outline": "旧快照"},
+                            "text": "{}",
+                            "budget": 1000,
+                        }
+                    },
+                    "template": "plot",
+                    "weights": {},
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(4, template="plot", use_snapshot=True, save_snapshot=False)
+
+    assert payload["sections"]["core"]["content"]["chapter_outline"] != "旧快照"
+    assert payload["sections"]["plot_structure"]["content"]["cbn"] == "进入试炼场"
 
 
 def test_context_manager_applies_ranker_and_contract_meta(temp_project):
@@ -655,3 +773,37 @@ def test_context_manager_genre_profile_prefers_project_over_project_info(temp_pr
 
     assert profile.get("genre_raw") == "xuanhuan"
     assert profile.get("genre") == "xuanhuan"
+
+
+def test_context_manager_includes_plot_structure_when_outline_has_nodes(temp_project):
+    state = {
+        "project": {"genre": "xuanhuan"},
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    temp_project.outline_dir.mkdir(parents=True, exist_ok=True)
+    (temp_project.outline_dir / "第1卷-详细大纲.md").write_text(
+        """### 第4章：试炼
+CBN：进入试炼场
+CPNs：
+- 观察规则
+- 发现陷阱
+CEN：决定将计就计
+必须覆盖节点：发现陷阱
+本章禁区：不能直接翻脸
+""",
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(4, use_snapshot=False, save_snapshot=False)
+
+    plot_structure = payload["sections"]["plot_structure"]["content"]
+    assert plot_structure.get("cbn") == "进入试炼场"
+    assert plot_structure.get("cpns") == ["观察规则", "发现陷阱"]
+    assert plot_structure.get("cen") == "决定将计就计"
+    assert plot_structure.get("mandatory_nodes") == ["发现陷阱"]
+    assert plot_structure.get("prohibitions") == ["不能直接翻脸"]
