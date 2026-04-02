@@ -2,7 +2,7 @@
 Step 3.5 External Model Review Script
 Supports two modes:
   - legacy: single prompt, 4-dimension combined review (backward compatible)
-  - dimensions: 6 separate dimension prompts, concurrent API calls
+  - dimensions: 8 separate dimension prompts, concurrent API calls
 Three-tier fallback: healwrap (primary) → codexcc (backup) → siliconflow (fallback)
 Six-model architecture: 3 core (kimi/glm/qwen-plus) + 3 supplemental (qwen/deepseek/minimax)
 """
@@ -11,6 +11,7 @@ import time
 import sys
 import argparse
 import re
+import threading
 import requests
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,16 +20,83 @@ PROVIDERS = {
     "healwrap": {
         "base_url": "https://llm-api.healwrap.cn/v1/chat/completions",
         "env_key_names": ["HEALWRAP_API_KEY"],
+        "rpm": 10,
     },
     "codexcc": {
         "base_url": "https://api.codexcc.top/v1/chat/completions",
         "env_key_names": ["CODEXCC_API_KEY"],
+        "rpm": 30,
     },
     "siliconflow": {
         "base_url": "https://api.siliconflow.cn/v1/chat/completions",
         "env_key_names": ["EMBED_API_KEY", "EMBEDDING_API_KEY", "SILICONFLOW_API_KEY"],
+        "rpm": 30,
     },
 }
+
+# Default concurrency: max dimensions running in parallel per model
+DEFAULT_MAX_CONCURRENT = 2
+
+
+class ProviderRateLimiter:
+    """Thread-safe token-bucket rate limiter, one instance per provider.
+
+    Ensures that across all threads, requests to a given provider
+    respect its RPM (requests per minute) limit.
+    """
+
+    _instances = {}  # provider_name -> ProviderRateLimiter
+    _lock = threading.Lock()
+
+    @classmethod
+    def get(cls, provider_name, rpm=None):
+        with cls._lock:
+            if provider_name not in cls._instances:
+                if rpm is None:
+                    rpm = PROVIDERS.get(provider_name, {}).get("rpm", 10)
+                cls._instances[provider_name] = cls(provider_name, rpm)
+            return cls._instances[provider_name]
+
+    @classmethod
+    def reset_all(cls):
+        """Reset all instances (for testing)."""
+        with cls._lock:
+            cls._instances.clear()
+
+    def __init__(self, provider_name, rpm):
+        self.provider_name = provider_name
+        self.rpm = rpm
+        self.min_interval = 60.0 / rpm  # seconds between requests
+        self._timestamps = []           # recent request timestamps
+        self._sem_lock = threading.Lock()
+
+    def acquire(self):
+        """Block until it's safe to make the next request."""
+        while True:
+            with self._sem_lock:
+                now = time.time()
+                # Purge timestamps older than 60s
+                self._timestamps = [t for t in self._timestamps if now - t < 60.0]
+                if len(self._timestamps) < self.rpm:
+                    # Under RPM limit — check minimum interval
+                    if self._timestamps:
+                        wait = self.min_interval - (now - self._timestamps[-1])
+                        if wait > 0:
+                            # Release lock, wait, then retry
+                            pass
+                        else:
+                            self._timestamps.append(now)
+                            return
+                    else:
+                        self._timestamps.append(now)
+                        return
+                else:
+                    # At RPM limit — must wait for oldest to expire
+                    wait = 60.0 - (now - self._timestamps[0]) + 0.1
+            # Wait outside the lock
+            if 'wait' not in dir() or wait <= 0:
+                wait = self.min_interval
+            time.sleep(max(wait, 0.5))
 
 # Core models: must succeed, have full fallback chain
 MODELS = {
@@ -90,9 +158,9 @@ MODELS = {
 }
 
 # Backward-compatible aliases for legacy --model-key usage
-MODEL_ALIASES = {
-    "qwen": "qwen-plus",  # legacy "qwen" maps to core qwen-plus
-}
+# NOTE: "qwen" is now a distinct supplemental model (qwen-3.5) in MODELS dict,
+# so it must NOT be aliased to "qwen-plus". Only add aliases for truly retired keys.
+MODEL_ALIASES = {}
 
 DIMENSIONS = {
     "consistency": {
@@ -107,7 +175,9 @@ DIMENSIONS = {
 {context_block}
 
 严格按JSON输出：
-{{"dimension":"consistency","score":0-100,"issues":[{{"id":"CON_001","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议"}}],"summary":"一句话"}}
+{{"dimension":"consistency","score":0-100,"issues":[{{"id":"CON_001","type":"SETTING_CONFLICT/CONTINUITY","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
 
 ## 本章正文
 {chapter_text}"""
@@ -124,7 +194,9 @@ DIMENSIONS = {
 {context_block}
 
 严格按JSON输出：
-{{"dimension":"continuity","score":0-100,"issues":[{{"id":"CONT_001","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议"}}],"summary":"一句话"}}
+{{"dimension":"continuity","score":0-100,"issues":[{{"id":"CONT_001","type":"CONTINUITY","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
 
 ## 本章正文
 {chapter_text}"""
@@ -141,7 +213,9 @@ DIMENSIONS = {
 {context_block}
 
 严格按JSON输出：
-{{"dimension":"ooc","score":0-100,"issues":[{{"id":"OOC_001","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议"}}],"summary":"一句话"}}
+{{"dimension":"ooc","score":0-100,"issues":[{{"id":"OOC_001","type":"OOC","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
 
 ## 本章正文
 {chapter_text}"""
@@ -158,7 +232,9 @@ DIMENSIONS = {
 {context_block}
 
 严格按JSON输出：
-{{"dimension":"reader_pull","score":0-100,"issues":[{{"id":"RP_001","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议"}}],"summary":"一句话"}}
+{{"dimension":"reader_pull","score":0-100,"issues":[{{"id":"RP_001","type":"READER_PULL","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
 
 ## 本章正文
 {chapter_text}"""
@@ -175,7 +251,9 @@ DIMENSIONS = {
 {context_block}
 
 严格按JSON输出：
-{{"dimension":"high_point","score":0-100,"issues":[{{"id":"HP_001","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议"}}],"summary":"一句话"}}
+{{"dimension":"high_point","score":0-100,"issues":[{{"id":"HP_001","type":"PACING或READER_PULL（二选一，按问题性质选择）","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
 
 ## 本章正文
 {chapter_text}"""
@@ -192,7 +270,49 @@ DIMENSIONS = {
 {context_block}
 
 严格按JSON输出：
-{{"dimension":"pacing","score":0-100,"issues":[{{"id":"PACE_001","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议"}}],"summary":"一句话"}}
+{{"dimension":"pacing","score":0-100,"issues":[{{"id":"PACE_001","type":"PACING","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
+
+## 本章正文
+{chapter_text}"""
+    },
+    "dialogue_quality": {
+        "name": "对话质量",
+        "system": "你是一个专业的网文对话质量审查编辑。",
+        "prompt": """请检查以下章节的对话质量，重点关注：
+1. 不同角色说话风格是否有差异（遮住人名后能否分辨说话者）
+2. 对话是否只为传递信息而缺少意图/冲突（信息倾倒/说明书式对话）
+3. 是否有单人连续独白过长（超过200字）
+4. 对话是否推进情节/塑造角色，而非仅填充字数
+5. 是否存在潜台词（表面说A实际意图B）
+
+{context_block}
+
+严格按JSON输出：
+{{"dimension":"dialogue_quality","score":0-100,"issues":[{{"id":"DQ_001","type":"DIALOGUE_FLAT/DIALOGUE_INFODUMP/DIALOGUE_MONOLOGUE","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
+
+## 本章正文
+{chapter_text}"""
+    },
+    "information_density": {
+        "name": "信息密度",
+        "system": "你是一个专业的网文信息密度审查编辑。",
+        "prompt": """请检查以下章节的信息密度，重点关注：
+1. 是否有无信息增量的水分段落（不推进剧情/角色/情绪/氛围）
+2. 是否有同一信息重复描述（已通过动作/对话传达后又用叙述重复）
+3. 信息分布是否均匀（非开头密集结尾稀疏，或全程平淡）
+4. 每段是否都有存在的理由（删除后是否影响理解）
+5. 内心独白是否过多（占比超过25%需预警）
+
+{context_block}
+
+严格按JSON输出：
+{{"dimension":"information_density","score":0-100,"issues":[{{"id":"ID_001","type":"PADDING/REPETITION","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
 
 ## 本章正文
 {chapter_text}"""
@@ -235,22 +355,44 @@ def load_api_keys():
     return keys
 
 
-def verify_routing(model_key, provider_name, response_model):
-    """Check if the response model matches what was requested."""
+def verify_routing(model_key, provider_name, response_model, requested_model_id=""):
+    """Check if the response model matches what was requested.
+
+    Verification logic:
+    1. Blacklist: check known routing bugs (immediate fail)
+    2. Positive match: response_model must contain the requested model name
+       or a known alias. Providers may return decorated names (e.g. siliconflow
+       returns 'Pro/xxx/Model'), so we do case-insensitive substring matching.
+    """
     if not response_model:
         return False, "no_model_in_response"
 
-    # Check known routing bugs
+    resp_lower = response_model.lower()
+
+    # Step 1: Check known routing bugs (blacklist)
     if provider_name in ROUTING_BUGS:
         bugs = ROUTING_BUGS[provider_name].get(model_key, [])
         for bug_pattern in bugs:
-            if bug_pattern.lower() in response_model.lower():
+            if bug_pattern.lower() in resp_lower:
                 return False, f"known_bug:{bug_pattern}_returned_for_{model_key}"
 
-    return True, "ok"
+    # Step 2: Positive match — response model should contain the requested model id
+    if requested_model_id:
+        # Normalize: strip provider prefix (e.g. "Pro/zai-org/GLM-5" → "glm-5")
+        req_base = requested_model_id.rsplit("/", 1)[-1].lower()
+        if req_base in resp_lower:
+            return True, "positive_match"
+        # Also try model_key as fallback (e.g. "kimi" in "kimi-k2.5-xxx")
+        if model_key.lower() in resp_lower:
+            return True, "key_match"
+        # No match found — suspicious but not a known bug
+        return False, f"no_positive_match:requested={requested_model_id},got={response_model}"
+
+    # No requested_model_id provided, can only pass blacklist check
+    return True, "blacklist_only"
 
 
-def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max_retries=2):
+def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max_retries=2, provider_name=None):
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
         "model": model_id,
@@ -261,8 +403,12 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
         "temperature": 0.3,
         "max_tokens": 4096,
     }
+    # Acquire rate limiter before first request
+    limiter = ProviderRateLimiter.get(provider_name) if provider_name else None
     provider_chain = []
     for attempt in range(max_retries + 1):
+        if limiter:
+            limiter.acquire()
         start_ts = time.time()
         try:
             resp = requests.post(base_url, headers=headers, json=payload, timeout=timeout)
@@ -309,13 +455,46 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
 def extract_json(text):
     if not text:
         return None
+    # Priority 1: fenced ```json block
     m = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
     if m:
         try:
             return json.loads(m.group(1))
         except json.JSONDecodeError:
             pass
-    m = re.search(r'\{.*\}', text, re.DOTALL)
+    # Priority 2: brace-depth scanner — find first valid top-level {...} object
+    start = text.find('{')
+    while start != -1:
+        depth = 0
+        in_string = False
+        escape_next = False
+        for i in range(start, len(text)):
+            c = text[i]
+            if escape_next:
+                escape_next = False
+                continue
+            if c == '\\' and in_string:
+                escape_next = True
+                continue
+            if c == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start:i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break  # This candidate failed; try next '{' below
+        # Move to next '{' after current start
+        start = text.find('{', start + 1)
+    # Priority 3: greedy fallback (last resort)
+    m = re.search(r'\{[^{}]*\}', text)
     if m:
         try:
             return json.loads(m.group(0))
@@ -339,11 +518,13 @@ def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, 
             continue
 
         base_url = PROVIDERS[provider_name]["base_url"]
-        max_attempts = 2 if provider_name == "healwrap" else 1
+        # healwrap: 2 retries (3 total attempts); codexcc/siliconflow: 0 retries (1 attempt, fail-fast)
+        max_retries = 2 if provider_name == "healwrap" else 0
 
         raw, error, model_actual, usage, attempts = call_api(
             base_url, api_keys[provider_name], provider_cfg["id"],
-            system_msg, user_msg, timeout, max_retries=max_attempts
+            system_msg, user_msg, timeout, max_retries=max_retries,
+            provider_name=provider_name
         )
 
         for a in attempts:
@@ -355,7 +536,7 @@ def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, 
 
         if raw:
             # Verify routing
-            routing_ok, routing_reason = verify_routing(model_key, provider_name, model_actual)
+            routing_ok, routing_reason = verify_routing(model_key, provider_name, model_actual, provider_cfg["id"])
             if not routing_ok:
                 full_chain.append({
                     "provider": provider_name,
@@ -371,11 +552,26 @@ def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, 
     return None, None, "none", None, False, None, full_chain
 
 
+CH1_3_SPECIAL_PROMPT = """
+【特别注意】这是小说的第{chapter}章（开篇章节）。请以首次接触本书的新读者视角额外评估：
+1. 读完后是否有强烈意愿继续阅读？（1-10分）
+2. 主角是否在前500字内建立了辨识度？
+3. 世界观是否Show not Tell？
+4. 有没有让你想跳过的段落？
+5. 人物名字是否过多让你困惑？
+开篇章节的评分标准应比普通章节更严格。
+"""
+
+
 def call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_text, context_block, chapter_num):
     timeout = model_config["timeout"]
     novel_header = f"## 小说信息\n章节号：第{chapter_num}章\n\n"
     user_msg = novel_header + dim_cfg["prompt"].replace("{chapter_text}", chapter_text).replace("{context_block}", context_block)
     system_msg = dim_cfg["system"]
+
+    # Ch1-3 special handling: append extra evaluation criteria per spec
+    if chapter_num <= 3:
+        user_msg += "\n" + CH1_3_SPECIAL_PROMPT.format(chapter=chapter_num)
 
     start_ts = time.time()
     parsed, model_name, provider, model_actual, routing_ok, usage, chain = try_provider_chain(
@@ -399,23 +595,59 @@ def _read_setting_file(project_root, filename):
 
 
 def _load_state_json(project_root):
-    """Load state.json and return (protagonist_state, progress) tuple."""
+    """Load state.json and return dict with protagonist_state, progress, and review context fields."""
     state_path = project_root / ".webnovel" / "state.json"
     if state_path.exists():
         data = json.loads(state_path.read_text(encoding="utf-8"))
-        return data.get("protagonist_state", {}), data.get("progress", {})
-    return {}, {}
+        # Extract chapter_meta (recent 3 chapters for hook/pattern/emotion tracking)
+        # Use `or` pattern: data.get("key") returns None when JSON value is null
+        chapter_meta = data.get("chapter_meta") or {}
+        recent_meta = {}
+        if chapter_meta:
+            sorted_keys = sorted(chapter_meta.keys(), reverse=True)[:3]
+            recent_meta = {k: chapter_meta[k] for k in sorted_keys}
+        # Extract active foreshadowing threads
+        plot_threads = data.get("plot_threads") or {}
+        foreshadowing = plot_threads.get("foreshadowing") or []
+        # Extract recent strand_tracker history
+        strand_tracker = data.get("strand_tracker") or {}
+        strand_history = (strand_tracker.get("history") or [])[-5:]
+        return {
+            "protagonist_state": data.get("protagonist_state") or {},
+            "progress": data.get("progress") or {},
+            "recent_chapter_meta": recent_meta,
+            "foreshadowing": foreshadowing,
+            "strand_history": strand_history,
+        }
+    return {
+        "protagonist_state": {},
+        "progress": {},
+        "recent_chapter_meta": {},
+        "foreshadowing": [],
+        "strand_history": [],
+    }
 
 
-def _load_prev_summaries(project_root, chapter_num):
-    """Load previous 2 chapter summaries."""
+def _load_prev_chapters(project_root, chapter_num, window=3):
+    """Load previous chapters' full text (default: 3 chapters).
+
+    Priority: full chapter text from 正文/ > summary from summaries/ as fallback.
+    """
     parts = []
-    for prev in [chapter_num - 2, chapter_num - 1]:
-        if prev < 1:
-            continue
-        p = project_root / ".webnovel" / "summaries" / f"ch{prev:04d}.md"
-        if p.exists():
-            parts.append(p.read_text(encoding="utf-8"))
+    chapters_dir = project_root / "正文"
+    summaries_dir = project_root / ".webnovel" / "summaries"
+    for prev in range(max(1, chapter_num - window), chapter_num):
+        # Try full chapter text first
+        ch_files = list(chapters_dir.glob(f"第{prev:04d}章*.md")) if chapters_dir.exists() else []
+        if ch_files:
+            text = ch_files[0].read_text(encoding="utf-8")
+            parts.append(f"### 第{prev}章正文\n{text}")
+        else:
+            # Fallback to summary
+            summary_path = summaries_dir / f"ch{prev:04d}.md"
+            if summary_path.exists():
+                text = summary_path.read_text(encoding="utf-8")
+                parts.append(f"### 第{prev}章摘要（正文文件缺失，仅有摘要）\n{text}")
     return "\n\n".join(parts)
 
 
@@ -424,6 +656,8 @@ def build_context_block(context_data, project_root=None, chapter_num=None):
 
     Assembles context from context_data JSON first, then supplements missing
     fields by reading directly from project files (设定集/, state.json, summaries/).
+    Includes chapter_meta, foreshadowing, and strand history for accurate
+    continuity/reader_pull/pacing/ooc dimension reviews.
     """
     parts = ["===== 项目上下文（请基于以下信息严格审查正文） =====\n"]
     if not context_data and not project_root:
@@ -434,6 +668,9 @@ def build_context_block(context_data, project_root=None, chapter_num=None):
         project_root = Path(".")
     else:
         project_root = Path(project_root)
+
+    # Load state.json once (provides protagonist_state, progress, and review context)
+    state_info = _load_state_json(project_root)
 
     # 【本章大纲】
     outline = context_data.get("outline_excerpt", "") if context_data else ""
@@ -474,20 +711,19 @@ def build_context_block(context_data, project_root=None, chapter_num=None):
     if world:
         parts.append(f"【世界观】\n{world}\n")
 
-    # 【前2章摘要】
-    summaries = context_data.get("prev_summaries", "") if context_data else ""
-    if not summaries and chapter_num:
-        summaries = _load_prev_summaries(project_root, chapter_num)
-    if summaries:
-        parts.append(f"【前2章摘要】\n{summaries}\n")
+    # 【前章正文】(window=3, full chapter text for accurate cross-chapter review)
+    # Accept both new key "prev_chapters_text" and legacy key "prev_summaries"
+    prev_text = (context_data.get("prev_chapters_text") or context_data.get("prev_summaries") or "") if context_data else ""
+    if not prev_text and chapter_num:
+        prev_text = _load_prev_chapters(project_root, chapter_num)
+    if prev_text:
+        parts.append(f"【前章正文（用于判断连贯性、角色一致性、节奏差异化、钩子回应）】\n{prev_text}\n")
 
     # 【主角当前状态】- remove credits, add progress
-    prot_state = context_data.get("protagonist_state", {}) if context_data else {}
-    progress = {}
+    prot_state = (context_data.get("protagonist_state") or {}) if context_data else {}
     if not prot_state:
-        prot_state, progress = _load_state_json(project_root)
-    else:
-        _, progress = _load_state_json(project_root)
+        prot_state = state_info["protagonist_state"]
+    progress = state_info["progress"]
     if prot_state:
         state_copy = json.loads(json.dumps(prot_state))  # deep copy
         if "attributes" in state_copy and "credits" in state_copy["attributes"]:
@@ -499,7 +735,130 @@ def build_context_block(context_data, project_root=None, chapter_num=None):
         ch_label = f"第{chapter_num}章后的" if chapter_num else ""
         parts.append(f"【主角当前状态（注意：以下为{ch_label}最新状态，审查早期章节时动态数值可能与正文不一致，请以正文描述为准）】\n{state_block}\n")
 
+    # 【近期章节模式】- recent 3 chapters' hook/emotion/pattern (for reader_pull & high_point)
+    recent_meta = state_info.get("recent_chapter_meta") or {}
+    if recent_meta:
+        meta_lines = []
+        for ch_key in sorted(recent_meta.keys()):
+            meta = recent_meta[ch_key] if isinstance(recent_meta[ch_key], dict) else {}
+            hook = meta.get("hook") or {}
+            pattern = meta.get("pattern") or {}
+            ending = meta.get("ending") or {}
+            meta_lines.append(
+                f"第{ch_key}章: 钩子={hook.get('type','?')}({hook.get('strength','?')}) "
+                f"开场={pattern.get('opening','?')} 情绪={pattern.get('emotion_rhythm','?')} "
+                f"结束情绪={ending.get('emotion','?')} 地点={ending.get('location','?')}"
+            )
+        parts.append(f"【近期章节模式（判断钩子/情绪/模式是否重复）】\n" + "\n".join(meta_lines) + "\n")
+
+    # 【活跃伏笔线】- active foreshadowing threads (for continuity)
+    foreshadowing = state_info.get("foreshadowing") or []
+    if foreshadowing:
+        fs_lines = []
+        for fs in foreshadowing:
+            if isinstance(fs, dict):
+                status = fs.get("status", "active")
+                if status in ("active", "planted"):
+                    desc = fs.get("description", fs.get("content", "?"))
+                    planted = fs.get("planted_chapter", "?")
+                    urgency = fs.get("urgency", "")
+                    urgency_str = f" 紧迫度={urgency}" if urgency else ""
+                    fs_lines.append(f"- [Ch{planted}埋设] {desc}{urgency_str}")
+        if fs_lines:
+            parts.append(f"【活跃伏笔线（判断伏笔是否有回应、是否遗忘）】\n" + "\n".join(fs_lines) + "\n")
+
+    # 【节奏历史】- recent 5 strand history (for pacing differentiation)
+    strand_history = state_info.get("strand_history") or []
+    if strand_history:
+        sh_lines = []
+        for sh in strand_history:
+            if isinstance(sh, dict):
+                ch = sh.get("chapter", "?")
+                dom = sh.get("dominant", "?")
+                sh_lines.append(f"第{ch}章: {dom}")
+        if sh_lines:
+            parts.append(f"【节奏历史（判断节奏是否有差异化，避免连续同类型）】\n" + "\n".join(sh_lines) + "\n")
+
     return "\n".join(parts)
+
+
+def _compute_cross_validation(all_issues):
+    """Cross-validate issues: group by type+location similarity, mark consensus.
+
+    Rules:
+    - Issues with the same type AND similar location from the same model
+      are grouped together.
+    - Since this runs per-model (single model), cross-validation within
+      a single model marks issues based on dimension agreement:
+      - verified: issue flagged by >=2 dimensions (corroborated)
+      - unverified: issue flagged by only 1 dimension
+      - dismissed: 0 (requires cross-model data, handled at aggregation layer)
+
+    When used at the aggregation layer (across 6 models), the caller should
+    re-run cross-validation across all model results for true consensus.
+    """
+    if not all_issues:
+        return {
+            "total_issues": 0,
+            "verified": 0,
+            "unverified": 0,
+            "dismissed": 0,
+            "consensus_groups": [],
+        }
+
+    # Group issues by (severity, type_or_id_prefix, approximate_location)
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for issue in all_issues:
+        # Build grouping key: severity + issue type pattern + location
+        severity = issue.get("severity", "unknown")
+        # Try to extract issue type from id prefix (e.g., "CON_001" -> "CON")
+        issue_id = issue.get("id", "")
+        issue_type = issue.get("type", "")
+        if not issue_type and issue_id:
+            issue_type = issue_id.split("_")[0] if "_" in issue_id else issue_id
+        location = issue.get("location", "unknown")
+        # Normalize location: strip whitespace, take first 10 chars for fuzzy match
+        loc_key = location.strip()[:15] if location else "unknown"
+        group_key = f"{issue_type}|{loc_key}"
+        groups[group_key].append(issue)
+
+    verified_count = 0
+    unverified_count = 0
+    consensus_groups = []
+
+    for key, group_issues in groups.items():
+        # Count unique source dimensions
+        source_dims = set()
+        for iss in group_issues:
+            dim = iss.get("source_dimension", "")
+            if dim:
+                source_dims.add(dim)
+
+        if len(source_dims) >= 2:
+            # Corroborated by multiple dimensions
+            verified_count += len(group_issues)
+            consensus_groups.append({
+                "type": key.split("|")[0],
+                "location": key.split("|")[1] if "|" in key else "unknown",
+                "dimension_count": len(source_dims),
+                "dimensions": sorted(source_dims),
+                "issue_count": len(group_issues),
+                "max_severity": max(
+                    (iss.get("severity", "low") for iss in group_issues),
+                    key=lambda s: {"critical": 4, "high": 3, "medium": 2, "low": 1}.get(s, 0)
+                ),
+            })
+        else:
+            unverified_count += len(group_issues)
+
+    return {
+        "total_issues": len(all_issues),
+        "verified": verified_count,
+        "unverified": unverified_count,
+        "dismissed": 0,  # Requires project data comparison, done at aggregation layer
+        "consensus_groups": consensus_groups,
+    }
 
 
 def run_dimensions_mode(args, api_keys):
@@ -533,7 +892,8 @@ def run_dimensions_mode(args, api_keys):
 
     context_block = build_context_block(context_data, project_root=project_root, chapter_num=chapter_num)
 
-    # Run 6 dimensions concurrently
+    # Run dimensions with controlled concurrency (respect provider RPM)
+    max_concurrent = getattr(args, 'max_concurrent', DEFAULT_MAX_CONCURRENT)
     results = {}
     all_issues = []
     scores = {}
@@ -541,7 +901,7 @@ def run_dimensions_mode(args, api_keys):
     total_prompt_tokens = 0
     total_completion_tokens = 0
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
         futures = {}
         for dim_key, dim_cfg in DIMENSIONS.items():
             f = executor.submit(call_dimension, api_keys, resolved_key, model_config,
@@ -585,27 +945,33 @@ def run_dimensions_mode(args, api_keys):
     successful_providers = [r["provider"] for r in results.values() if r.get("status") == "ok"]
     final_provider = max(set(successful_providers), key=successful_providers.count) if successful_providers else "none"
 
+    # Determine model_actual deterministically: use first successful dimension by sorted key
+    ok_dims = sorted(dim_key for dim_key, r in results.items() if r.get("status") == "ok")
+    model_actual_final = results[ok_dims[0]].get("model_actual", "") if ok_dims else ""
+
     # Total elapsed
     total_elapsed = sum(r.get("elapsed_ms", 0) for r in results.values() if r.get("status") == "ok")
+
+    # H3 fix: all([]) == True, so guard against empty successful list
+    ok_results = [r for r in results.values() if r.get("status") == "ok"]
+    routing_all_ok = all(r.get("routing_verified", False) for r in ok_results) if ok_results else False
 
     output = {
         "agent": f"external-{resolved_key}",
         "chapter": chapter_num,
         "model_key": resolved_key,
         "model_requested": model_config["providers"][0]["id"],
-        "model_actual": results.get(list(results.keys())[0], {}).get("model_actual", ""),
+        "model_actual": model_actual_final,
         "provider": final_provider,
-        "routing_verified": all(r.get("routing_verified", False) for r in results.values() if r.get("status") == "ok"),
+        "routing_verified": routing_all_ok,
         "overall_score": overall,
-        "pass": overall >= 60,
-        "dimension_reports": results,
+        "pass": overall >= 75,
+        "dimension_reports": [
+            {"dimension": dk, "name": DIMENSIONS[dk]["name"], **dv}
+            for dk, dv in sorted(results.items())
+        ],
         "issues": all_issues,
-        "cross_validation": {
-            "total_issues": len(all_issues),
-            "verified": 0,
-            "unverified": len(all_issues),
-            "dismissed": 0,
-        },
+        "cross_validation": _compute_cross_validation(all_issues),
         "provider_chain": full_provider_chain,
         "api_meta": {
             "final_provider": final_provider,
@@ -619,7 +985,7 @@ def run_dimensions_mode(args, api_keys):
             "dimensions_failed": sum(1 for r in results.values() if r.get("status") == "failed"),
             "total_issues": len(all_issues),
         },
-        "summary": f"{resolved_key} 6维度审查完成，{len(valid_scores)}/6成功，综合{overall}分，{len(all_issues)}个问题",
+        "summary": f"{resolved_key} {len(DIMENSIONS)}维度审查完成，{len(valid_scores)}/{len(DIMENSIONS)}成功，综合{overall}分，{len(all_issues)}个问题",
     }
 
     # Save
@@ -675,9 +1041,17 @@ def main():
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--chapter", required=True, type=int)
     parser.add_argument("--mode", default="legacy", choices=["legacy", "dimensions"])
-    parser.add_argument("--model-key", default="qwen-plus", help="For dimensions mode: qwen-plus/kimi/glm/qwen/deepseek/minimax")
+    parser.add_argument("--model-key", default="qwen-plus", help="For dimensions mode: qwen-plus/kimi/glm/qwen/deepseep/minimax")
     parser.add_argument("--models", default="qwen-plus,kimi,glm", help="For legacy mode: comma-separated")
+    parser.add_argument("--max-concurrent", type=int, default=DEFAULT_MAX_CONCURRENT,
+                        help=f"Max parallel dimension calls per model (default: {DEFAULT_MAX_CONCURRENT})")
+    parser.add_argument("--rpm-override", type=int, default=None,
+                        help="Override healwrap RPM limit (default: use provider config)")
     args = parser.parse_args()
+
+    # Apply RPM override if specified
+    if args.rpm_override:
+        ProviderRateLimiter.get("healwrap", rpm=args.rpm_override)
 
     api_keys = load_api_keys()
     if not api_keys:
