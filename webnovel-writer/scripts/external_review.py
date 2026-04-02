@@ -403,6 +403,14 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
         "temperature": 0.3,
         "max_tokens": 4096,
     }
+    # Thinking models (qwen-3.5, deepseek-v3.2, etc.) may wrap output in <think> tags,
+    # consuming most of max_tokens on reasoning. Disable thinking and increase limit.
+    model_lower = model_id.lower()
+    if any(t in model_lower for t in ("qwen-3", "qwen3", "deepseek")):
+        payload["max_tokens"] = 60000
+        # Try to disable thinking mode via common API parameters
+        payload["extra_body"] = {"enable_thinking": False}
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
     # Acquire rate limiter before first request
     limiter = ProviderRateLimiter.get(provider_name) if provider_name else None
     provider_chain = []
@@ -455,6 +463,10 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
 def extract_json(text):
     if not text:
         return None
+    # Priority 0: Strip thinking tags (qwen-3.5, deepseek, etc. wrap reasoning in <think>)
+    think_match = re.search(r'</think>\s*', text)
+    if think_match:
+        text = text[think_match.end():]
     # Priority 1: fenced ```json block
     m = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
     if m:
