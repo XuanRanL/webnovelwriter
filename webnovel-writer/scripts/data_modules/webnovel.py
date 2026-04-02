@@ -230,9 +230,6 @@ def main() -> None:
     p_migrate.add_argument("args", nargs=argparse.REMAINDER)
 
     # Pass-through to scripts
-    p_workflow = sub.add_parser("workflow", help="转发到 workflow_manager.py")
-    p_workflow.add_argument("args", nargs=argparse.REMAINDER)
-
     p_status = sub.add_parser("status", help="转发到 status_reporter.py")
     p_status.add_argument("args", nargs=argparse.REMAINDER)
 
@@ -302,8 +299,6 @@ def main() -> None:
     if tool == "migrate":
         raise SystemExit(_run_data_module("migrate_state_to_sqlite", [*forward_args, *rest]))
 
-    if tool == "workflow":
-        raise SystemExit(_run_script("workflow_manager.py", [*forward_args, *rest]))
     if tool == "status":
         raise SystemExit(_run_script("status_reporter.py", [*forward_args, *rest]))
     if tool == "update-state":

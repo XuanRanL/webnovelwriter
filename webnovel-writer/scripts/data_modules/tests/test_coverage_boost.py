@@ -335,22 +335,6 @@ def test_webnovel_passthrough_memory(monkeypatch, tmp_path):
     assert called["mod"] == "memory.store"
 
 
-def test_webnovel_passthrough_workflow_script(monkeypatch, tmp_path):
-    module = _load_webnovel_module()
-    book_root = tmp_path / "book"
-    called = {}
-
-    monkeypatch.setattr(module, "_resolve_root", lambda _=None: book_root)
-    monkeypatch.setattr(module, "_run_script", lambda s, a: (called.update(script=s, argv=list(a)), 0)[1])
-    monkeypatch.setattr(sys, "argv", ["webnovel", "workflow", "start", "--chapter", "10"])
-
-    with pytest.raises(SystemExit) as exc:
-        module.main()
-    assert int(exc.value.code or 0) == 0
-    assert called["script"] == "workflow_manager.py"
-    assert "--project-root" in called["argv"]
-
-
 def test_webnovel_strip_project_root_args():
     module = _load_webnovel_module()
     result = module._strip_project_root_args(["--project-root", "/a", "cmd", "--project-root=/b", "--other"])
