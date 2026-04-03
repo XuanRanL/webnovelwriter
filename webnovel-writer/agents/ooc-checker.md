@@ -245,7 +245,7 @@ model: inherit
 
 **issue type**: 本 checker 所有问题统一使用 `OOC` 类型。
 
-> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值。
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 13 个标准枚举值。
 
 ## 配角能动性检查（扩展）
 

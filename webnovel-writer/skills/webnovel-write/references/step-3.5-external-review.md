@@ -10,16 +10,16 @@
 | glm-5 | 编辑/读者感受 | `glm-5.0` | `glm-5` | `glm-5` | `Pro/zai-org/GLM-5` |
 | qwen3.5-plus | 网文/爽点 | — | `qwen3.5-plus` | `qwen3.5-plus` | `Qwen/Qwen3.5-397B-A17B` |
 
-### 补充层（失败不阻塞）
+### 补充层（失败不阻塞，累计3维度失败早停）
 
-| 模型 | 角色 | 供应商 |
-|------|------|--------|
-| qwen-3.5 | 宽松锚点 | healwrap |
-| deepseek-v3.2 | 技术考据 | healwrap |
-| minimax-m2.5 | 快速参考 | nextapi → healwrap |
-| doubao-seed-2.0 | 结构审查/逻辑一致性 | healwrap |
-| glm-4.7 | 文学质感/角色声音 | healwrap |
-| minimax-m2.7 | 对话/情感深度 | nextapi → healwrap |
+| 模型 | 角色 | healwrap | nextapi | codexcc | 硅基流动 |
+|------|------|---------|---------|---------|---------|
+| qwen-3.5 | 宽松锚点 | `qwen-3.5` | — | — | `Qwen/Qwen3.5-397B-A17B` |
+| deepseek-v3.2 | 技术考据 | `deepseek-v3.2` | — | — | `Pro/deepseek-ai/DeepSeek-V3.2` |
+| minimax-m2.5 | 快速参考 | `minimax-m2.5` | `minimax-m2.5` | `minimax-m2.5` | `Pro/MiniMaxAI/MiniMax-M2.5` |
+| doubao-seed-2.0 | 结构审查 | `doubao-seed-2.0` | — | — | — |
+| glm-4.7 | 文学质感 | `glm-4.7` | — | — | `Pro/zai-org/GLM-4.7` |
+| minimax-m2.7 | 对话/情感 | `minimax-m2.7` | `minimax-m2.7` | `MiniMax-M2.7` | — |
 
 ## 供应商配置
 
@@ -300,7 +300,7 @@ issue 的 type 分类说明：
 
 `审查报告/第{NNNN}章审查报告.md` 必须包含：
 
-1. **8模型评分矩阵**（可用模型 × 10维度 + 总分 + 路由状态 + 供应商）
+1. **9模型评分矩阵**（可用模型 × 10维度 + 总分 + 路由状态 + 供应商）
 2. **共识问题**（>=3个模型指出的同类问题 = 真问题）
 3. **Step 4 修复清单**（从共识问题 + severity >= medium + verified 中筛选，按优先级排序）
 4. **模型路由验证结果**（每个模型的请求/实际/通过状态）
