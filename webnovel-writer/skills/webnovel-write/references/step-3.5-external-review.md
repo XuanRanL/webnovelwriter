@@ -30,9 +30,11 @@
 - 备用2/兜底：硅基流动 (`https://api.siliconflow.cn/v1`)，key: EMBED_API_KEY
 
 **重试与 fallback 规则：**
-- 核心3模型统一链：nextapi(重试2次) → healwrap(重试2次) → codexcc(错误1次切) → 硅基流动(兜底)
-- 补充层 minimax/minimax-m2.7：nextapi(重试2次) → healwrap(重试2次) → 失败标记 error 继续
-- 补充层 qwen/deepseek/doubao/glm4：healwrap(重试2次) → 失败标记 error 继续
+- 核心3模型统一链：nextapi(重试2次) → healwrap(重试2次) → codexcc(不重试) → 硅基流动(兜底)
+- 补充层 minimax/minimax-m2.7：nextapi(重试2次) → healwrap(重试2次) → codexcc(不重试)
+- 补充层 qwen/deepseek/glm4：healwrap(重试2次) → 硅基流动(兜底)
+- 补充层 doubao：healwrap(重试2次) only（其他供应商无此模型）
+- 幽灵零分（score=0+空摘要）：provider 层自动检测并切下一供应商重试
 - 每次 API 调用后**必须验证路由**：检查 response.model 字段是否匹配请求模型
 - 路由错误视为该供应商不可用，不重试直接切下一个
 - 429限流：等6秒后重试；超时：计入重试次数
