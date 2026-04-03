@@ -7,6 +7,19 @@
 
 ---
 
+## [2026-04-03] 幽灵零分（phantom score=0）修复
+
+**问题**：模型返回合法JSON但内容为空（`score:0, summary:""`），被 `_run_single_model()` 视为 `status:"ok"` 并计入均分。7/90维度受影响，导致 minimax(72.9)、qwen-plus(74.8)、minimax-m2.7(70.6) 分数虚低。
+
+**修复**：在 `_run_single_model()` 的结果聚合处增加语义校验——`score==0 && summary.strip()==""` 时标记为 `status:"failed", error:"phantom_success_score0_empty"`，不计入 `scores[]` 字典，触发早停计数。
+
+**修改文件：**
+| 文件 | 修改内容 |
+|------|---------|
+| `scripts/external_review.py` | `_run_single_model()` 增加 phantom score=0 检测与拦截 |
+
+---
+
 ## [2026-04-03] nextapi 供应商集成 + 9模型架构 + 早停修复
 
 **架构变更：**

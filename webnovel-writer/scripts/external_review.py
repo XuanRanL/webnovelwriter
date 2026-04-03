@@ -1090,6 +1090,15 @@ def _run_single_model(args, api_keys):
 
             if parsed:
                 dim_score = parsed.get("score", 0)
+                dim_summary = parsed.get("summary", "")
+                # 零分空摘要 = 幽灵成功（模型返回了合法JSON但内容为空）
+                if dim_score == 0 and not dim_summary.strip():
+                    total_dim_failures += 1
+                    results[dim_key] = {"status": "failed", "error": "phantom_success_score0_empty"}
+                    if is_supplemental and total_dim_failures >= EARLY_STOP_THRESHOLD and early_stop_event and not early_stop_event.is_set():
+                        early_stop_event.set()
+                        print(f"[early-stop] {resolved_key}（补充层）累计{total_dim_failures}次失败，触发早停", file=sys.stderr)
+                    continue
                 dim_issues = parsed.get("issues", [])
                 scores[dim_key] = dim_score
                 for issue in dim_issues:
@@ -1103,7 +1112,7 @@ def _run_single_model(args, api_keys):
                     "status": "ok",
                     "score": dim_score,
                     "issues": dim_issues,
-                    "summary": parsed.get("summary", ""),
+                    "summary": dim_summary,
                     "model": model_name,
                     "model_actual": model_actual,
                     "provider": provider,
