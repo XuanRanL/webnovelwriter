@@ -1,0 +1,112 @@
+{
+  "progress": {
+    "current_chapter": 3,
+    "total_words": 7500,
+    "last_updated": "2026-04-01"
+  },
+  "project": {
+    "title": "斗破苍穹（测试）",
+    "genre": "xianxia",
+    "author": "test"
+  },
+  "protagonist_state": {
+    "name": "萧炎",
+    "location": "迦南学院",
+    "power": {
+      "realm": "斗者",
+      "layer": "九星"
+    },
+    "golden_finger": {
+      "name": "药老戒指",
+      "level": 1
+    }
+  },
+  "entities_v3": {
+    "角色": {
+      "xiaoyan": {
+        "name": "萧炎",
+        "canonical_name": "萧炎",
+        "tier": "核心",
+        "aliases": ["他", "少年"],
+        "is_protagonist": true,
+        "first_appearance": 1,
+        "last_appearance": 3,
+        "current": {
+          "realm": "斗者九星",
+          "location": "迦南学院"
+        }
+      },
+      "xuner": {
+        "name": "薰儿",
+        "canonical_name": "薰儿",
+        "tier": "核心",
+        "aliases": ["她", "少女"],
+        "first_appearance": 1,
+        "last_appearance": 2,
+        "current": {
+          "realm": "斗者七星",
+          "location": "萧家"
+        }
+      },
+      "yaolao": {
+        "name": "药老",
+        "canonical_name": "药尘",
+        "tier": "核心",
+        "aliases": ["老者", "药尘"],
+        "first_appearance": 2,
+        "last_appearance": 3,
+        "current": {
+          "realm": "斗圣（封印）",
+          "location": "萧炎戒指内"
+        }
+      }
+    }
+  },
+  "strand_tracker": {
+    "history": [
+      {"chapter": 1, "strand": "quest"},
+      {"chapter": 2, "strand": "quest"},
+      {"chapter": 3, "strand": "constellation"}
+    ]
+  },
+  "chapter_meta": {
+    "0003": {
+      "hook": {
+        "type": "危机钩",
+        "content": "纳兰嫣然的信使已到萧家门口",
+        "strength": "strong"
+      },
+      "pattern": {
+        "opening": "动作开场",
+        "hook": "危机钩",
+        "emotion_rhythm": "低→高",
+        "info_density": "medium"
+      },
+      "ending": {
+        "time": "黄昏",
+        "location": "迦南学院演武场",
+        "emotion": "紧张期待"
+      }
+    }
+  },
+  "plot_threads": {
+    "foreshadowing": [
+      {
+        "content": "三年之约即将到期",
+        "planted_chapter": 1,
+        "target_chapter": 10,
+        "resolved_chapter": null,
+        "status": "active",
+        "urgency": 80
+      },
+      {
+        "content": "药老真实身份尚未揭晓",
+        "planted_chapter": 2,
+        "target_chapter": 20,
+        "resolved_chapter": null,
+        "status": "active",
+        "urgency": 30
+      }
+    ]
+  }
+}

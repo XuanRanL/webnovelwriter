@@ -1,0 +1,42 @@
+{
+  "character_state": [],
+  "story_facts": [],
+  "world_rules": [
+    {
+      "id": "rule-realm-001",
+      "layer": "semantic",
+      "category": "world_rule",
+      "subject": "力量体系",
+      "field": "境界顺序",
+      "value": "斗之气→斗者→斗师→大斗师→斗灵→斗王→斗皇→斗宗→斗尊→斗圣→斗帝",
+      "status": "active",
+      "source_chapter": 1,
+      "evidence": ["ch0001"],
+      "updated_at": "2026-04-01T00:00:00",
+      "payload": {}
+    }
+  ],
+  "timeline": [],
+  "open_loops": [
+    {
+      "id": "ol-three-year-001",
+      "layer": "semantic",
+      "category": "open_loop",
+      "subject": "三年之约",
+      "field": "",
+      "value": "萧炎与纳兰嫣然的三年之约即将到期，萧炎必须在期限内恢复实力",
+      "status": "active",
+      "source_chapter": 1,
+      "evidence": ["ch0001"],
+      "updated_at": "2026-04-01T00:00:00",
+      "payload": {"expected_payoff": "对决", "urgency": 0.8}
+    }
+  ],
+  "reader_promises": [],
+  "relationships": [],
+  "meta": {
+    "version": 1,
+    "last_updated": "2026-04-01T00:00:00",
+    "total_items": 2
+  }
+}
