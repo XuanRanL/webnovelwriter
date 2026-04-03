@@ -135,12 +135,13 @@ MODELS = {
         ],
         "timeout": 300,
     },
-    # Supplemental models: healwrap only, failure doesn't block
+    # Supplemental models: multi-provider fallback, failure doesn't block
     "qwen": {
         "tier": "supplemental",
         "role": "宽松锚点",
         "providers": [
             {"provider": "healwrap", "id": "qwen-3.5", "name": "Qwen-3.5"},
+            {"provider": "siliconflow", "id": "Qwen/Qwen3.5-397B-A17B", "name": "Qwen3.5-397B-SF"},
         ],
         "timeout": 300,
     },
@@ -149,6 +150,7 @@ MODELS = {
         "role": "技术考据",
         "providers": [
             {"provider": "healwrap", "id": "deepseek-v3.2", "name": "DeepSeek-V3.2"},
+            {"provider": "siliconflow", "id": "Pro/deepseek-ai/DeepSeek-V3.2", "name": "DeepSeek-V3.2-SF"},
         ],
         "timeout": 300,
     },
@@ -158,6 +160,8 @@ MODELS = {
         "providers": [
             {"provider": "nextapi", "id": "minimax-m2.5", "name": "MiniMax-M2.5"},
             {"provider": "healwrap", "id": "minimax-m2.5", "name": "MiniMax-M2.5"},
+            {"provider": "codexcc", "id": "minimax-m2.5", "name": "MiniMax-M2.5"},
+            {"provider": "siliconflow", "id": "Pro/MiniMaxAI/MiniMax-M2.5", "name": "MiniMax-M2.5-SF"},
         ],
         "timeout": 300,
     },
@@ -174,6 +178,7 @@ MODELS = {
         "role": "文学质感/角色声音",
         "providers": [
             {"provider": "healwrap", "id": "glm-4.7", "name": "GLM-4.7"},
+            {"provider": "siliconflow", "id": "Pro/zai-org/GLM-4.7", "name": "GLM-4.7-SF"},
         ],
         "timeout": 300,
     },
@@ -183,6 +188,7 @@ MODELS = {
         "providers": [
             {"provider": "nextapi", "id": "minimax-m2.7", "name": "MiniMax-M2.7"},
             {"provider": "healwrap", "id": "minimax-m2.7", "name": "MiniMax-M2.7"},
+            {"provider": "codexcc", "id": "MiniMax-M2.7", "name": "MiniMax-M2.7"},
         ],
         "timeout": 300,
     },
@@ -650,6 +656,15 @@ def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, 
 
             parsed = extract_json(raw)
             if parsed:
+                # 幽灵零分检测：score=0且摘要为空 → 视为无效，尝试下一个供应商
+                if parsed.get("score", 0) == 0 and not str(parsed.get("summary", "")).strip():
+                    full_chain.append({
+                        "provider": provider_name,
+                        "attempt": 0,
+                        "result": "phantom_score0_retry",
+                    })
+                    print(f"[phantom] {model_key}@{provider_name}: score=0+空摘要，尝试下一供应商", file=sys.stderr)
+                    continue
                 return parsed, provider_cfg["name"], provider_name, model_actual, routing_ok, usage, full_chain
 
     return None, None, "none", None, False, None, full_chain

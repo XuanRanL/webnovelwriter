@@ -7,16 +7,30 @@
 
 ---
 
-## [2026-04-03] 幽灵零分（phantom score=0）修复
+## [2026-04-03] 幽灵零分修复 + 补充模型 fallback 链
 
-**问题**：模型返回合法JSON但内容为空（`score:0, summary:""`），被 `_run_single_model()` 视为 `status:"ok"` 并计入均分。7/90维度受影响，导致 minimax(72.9)、qwen-plus(74.8)、minimax-m2.7(70.6) 分数虚低。
+**问题1**：模型返回合法JSON但内容为空（`score:0, summary:""`），被视为有效评分。
 
-**修复**：在 `_run_single_model()` 的结果聚合处增加语义校验——`score==0 && summary.strip()==""` 时标记为 `status:"failed", error:"phantom_success_score0_empty"`，不计入 `scores[]` 字典，触发早停计数。
+**修复（双层防御）**：
+1. **Provider 层**（`try_provider_chain`）：score=0+空摘要 → 记录 `phantom_score0_retry` → 自动尝试下一供应商
+2. **Model 层**（`_run_single_model`）：所有供应商都返回 phantom → 标记 `status:"failed"`，不计入均分
+
+**问题2**：补充模型只有 1-2 个供应商，失败后无处可退。
+
+**修复**：给所有补充模型增加多供应商 fallback 链：
+- qwen-3.5: healwrap → siliconflow
+- deepseek-v3.2: healwrap → siliconflow
+- minimax-m2.5: nextapi → healwrap → codexcc → siliconflow
+- minimax-m2.7: nextapi → healwrap → codexcc
+- glm-4.7: healwrap → siliconflow
+- doubao-seed-2.0: healwrap only（其他供应商无此模型）
+
+**效果**：90/90 维度 100% 成功率（之前 79/90 = 87.8%），8 次 phantom 自动重试全部恢复。
 
 **修改文件：**
 | 文件 | 修改内容 |
 |------|---------|
-| `scripts/external_review.py` | `_run_single_model()` 增加 phantom score=0 检测与拦截 |
+| `scripts/external_review.py` | MODELS 补充模型 providers 扩展; `try_provider_chain` phantom 检测+重试; `_run_single_model` phantom 二级拦截 |
 
 ---
 
