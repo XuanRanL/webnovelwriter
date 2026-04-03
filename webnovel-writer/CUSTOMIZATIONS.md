@@ -7,6 +7,109 @@
 
 ---
 
+## [2026-04-03] external_review.py 稳定性修复 + --model-key all 模式
+
+**修复的问题：**
+1. **连接池中毒**：`call_api()` 中 `requests.post()` 共享 urllib3 连接池，ConnectionResetError(10054) 后连接池被污染导致后续调用全部秒失败。改用显式 `requests.Session()`，连接错误后关闭重建。
+2. **error=success bug**：`call_dimension()` 中 API 返回 success 但 JSON 解析失败时，error 标识错误地显示 "success"。现改为 "json_parse_failed"。
+3. **模型遗漏**：Agent 手动逐个调用模型时遗漏 doubao/glm4（Ch30-35 除 Ch34 外全部遗漏）。新增 `--model-key all` 模式，脚本自动遍历全部 8 个模型。
+4. **补充层无效重试**：minimax 连接断开后 21 次无意义重试。新增早停机制——补充层连续 3 个维度失败后跳过剩余维度。
+
+**修改文件：**
+| 文件 | 修改内容 |
+|------|---------|
+| `scripts/external_review.py` | Session 重建、error=success 修复、`--model-key all` 模式、补充层早停 |
+| `skills/webnovel-write/SKILL.md` | Step 3.5 调用命令改为 `--model-key all`，添加参数说明 |
+| `skills/webnovel-write/references/step-3.5-external-review.md` | 推荐调用策略更新、调用命令示例、参数白名单、早停说明 |
+
+---
+
+## [2026-04-03] 默认字数目标调整 2100-3200 → 2200-3500
+
+**改动文件：**
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `skills/webnovel-write/SKILL.md` | 修改 | 第3行description + 第12行全局目标 + 第252行Step 2A硬要求，2100-3200→2200-3500 |
+| `skills/webnovel-write/references/style-adapter.md` | 修改 | 第22行默认字数 + 第86行章节类型适配，2100-3200→2200-3500 |
+
+**背景：**
+- 用户要求上调上限至3500，下限微调至2200，适配更宽松的字数弹性
+
+---
+
+## [2026-04-02] Step 3.5 外部审查：6模型→8模型升级
+
+**新增模型（2个补充层）**:
+- `doubao-seed-2.0`（结构审查/逻辑一致性）：字节跳动 thinking 模型，256K 上下文，强推理+中文能力，healwrap only
+- `glm-4.7`（文学质感/角色声音）：智谱 355B MoE thinking 模型，200K 上下文，强写作/角色扮演，healwrap only
+
+**架构变更**:
+- 核心层不变（3模型：kimi-k2.5/glm-5/qwen3.5-plus，三级 fallback）
+- 补充层从3→5模型（+doubao-seed-2.0, +glm-4.7，均 healwrap only）
+- thinking 模型检测新增 `doubao` 和 `glm-4` 模式匹配
+- `DEFAULT_MAX_CONCURRENT` 已从 2 降为 1（避免 RPM 超限）
+
+**修改文件**:
+| 文件 | 修改内容 |
+|------|---------|
+| `scripts/external_review.py` | MODELS 字典新增 doubao/glm4 条目；thinking 检测扩展；docstring/argparse/注释更新 |
+| `skills/webnovel-write/references/step-3.5-external-review.md` | 六模型→八模型架构；补充层表格+fallback规则+并发控制+报告模板更新 |
+| `skills/webnovel-write/SKILL.md` | 章节间闸门/充分性闸门/Step 3.5 硬要求中 6模型→8模型 |
+
+---
+
+## [2026-04-02] 小说质量优化全面升级
+
+**新增 Checker Agent（2个）**:
+- `agents/prose-quality-checker.md`：文笔质感检查器，评估句式节奏、比喻新鲜度、感官丰富度、动词力度、画面感、具象化程度。使用新 issue type `PROSE_FLAT`
+- `agents/emotion-checker.md`：情感表现检查器，评估 Show vs Tell、情感梯度、情感锚点、情感惯性、共鸣设计。使用新 issue type `EMOTION_SHALLOW`
+
+**Schema 更新**:
+- `references/checker-output-schema.md`：问题类型从11→13（+PROSE_FLAT, +EMOTION_SHALLOW），新增2个checker的metrics模板，汇总模板从8→10个checker
+
+**审查流程更新**:
+- `skills/webnovel-write/references/step-3-review-gate.md`：标准模式从8→10个checker
+- `skills/webnovel-write/references/step-3.5-external-review.md`：外审维度从8→10（+文笔质感, +情感表现）
+- `scripts/external_review.py`：新增2个维度的审查prompt
+- `skills/webnovel-write/SKILL.md`：Chapter Gate 更新为10 checker，维度更新为10
+- `skills/webnovel-review/SKILL.md`：Full depth 追加 prose-quality-checker 和 emotion-checker
+
+**现有 Checker 增强**:
+- `agents/ooc-checker.md`：+配角能动性检查（独立动机、反应vs主动、消失追踪、反派智商）
+- `agents/reader-pull-checker.md`：+开篇吸引力检查（HARD-005开头进入速度、开头钩子、解释性开场检测、上章钩子回应速度）
+- `agents/continuity-checker.md`：+伏笔回收质量评估、+章末过渡质量评估、+主题一致性轻量检查
+- `agents/density-checker.md`：+跨章重复模式检测（开头模式、描写套路、情绪节奏重复）
+
+**润色系统升级**:
+- `skills/webnovel-write/references/polish-guide.md`：
+  - 新增 PROSE_FLAT/EMOTION_SHALLOW 修复规则
+  - Anti-AI 动作套话从"禁用"改为"频率限制"（每章≤2次/词）
+  - 新增结构级 Anti-AI 检测（信息密度均匀度、情绪强度曲线、段落功能分布、句长方差）
+  - 新增润色迭代收益递减判断（最多3轮，收益递减警告）
+
+**工作流增强**:
+- `skills/webnovel-write/references/step-1.5-contract.md`：+风险预估（预测Step 3弱项）、+读者认知追踪（reader_knows/expects/info_gap）
+- `skills/webnovel-write/references/style-adapter.md`：+角色语音DNA（6维度语音特征约束）
+- `agents/context-agent.md`：+质量反馈注入（近期高频问题规避、成功模式参考、范文锚定）
+- `agents/data-agent.md`：+审查报告持久化、+实体状态交叉验证、+风格样本段落级采样（阈值降低）
+
+**影响范围**: 18个文件（2个新建+16个修改），涵盖审查、润色、上下文、数据管线全流程
+
+---
+
+## [2026-04-01] 默认字数目标调整 3000-3500 → 2100-3200
+
+**改动文件：**
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `skills/webnovel-write/SKILL.md` | 修改 | 第3行description + 第12行全局目标 + 第252行Step 2A硬要求，3000-3500→2100-3200 |
+| `skills/webnovel-write/references/style-adapter.md` | 修改 | 第22行默认字数 + 第74行章节类型适配，3000-3500→2100-3200 |
+
+**背景：**
+- 用户要求下调字数区间，扩大弹性范围（下限2100，上限3200），适配不同章节节奏需求
+
+---
+
 ## [2026-03-27] Step 3.5 外部模型审查
 
 **Commit:** d1015e1
@@ -392,4 +495,258 @@ density-checker（信息密度）：
 
 ---
 
+## [2026-03-30] 8维度全面落地 + 爽点密度加强 + 交叉验证实现
+
+**改动文件：**
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `scripts/external_review.py` | 修改 | DIMENSIONS 从6→8维度（新增 dialogue_quality + information_density），pass 阈值 60→75，实现真正的 cross_validation 逻辑，动态化所有硬编码数字 |
+| `agents/dialogue-checker.md` | **新增** | 对话质量审查 agent（辨识度/意图层次/信息倾倒/独白控制），8 个 metrics 字段 |
+| `agents/density-checker.md` | **新增** | 信息密度审查 agent（有效字数比/填充段/重复段/死段落/推进跨度），8 个 metrics 字段 |
+| `scripts/workflow_manager.py` | 修改 | 移除 expected_step_owner 中残留的 Step 1.5 映射 |
+| `skills/webnovel-write/references/polish-guide.md` | 修改 | 章节重编号(8/9/10)消除重复，新增 §11 爽点密度补种机制 |
+| `skills/webnovel-write/references/step-1.5-contract.md` | 修改 | 追读力设计新增"爽点规划"必填子字段（类型/铺垫来源/兑现方式） |
+| `skills/webnovel-write/SKILL.md` | 修改 | Step 2A 新增"爽点密度约束"硬规则（每800字至少1微爽点） |
+
+**背景：**
+- 2026-03-30 的 8 维度升级更新了所有规范文件但遗漏了实际执行脚本 `external_review.py`
+- DIMENSIONS 字典仍为 6 维，缺少 dialogue_quality 和 information_density
+- dialogue-checker.md 和 density-checker.md agent 定义文件未创建，导致 Step 3 内部审查无法执行这两个 checker
+- cross_validation 是空壳（verified/dismissed 永远为 0）
+- pass 阈值 60 与规范的 75 分不合格线矛盾
+- 爽点密度 avg 61.1 是质量最弱维度，缺乏系统性加强机制
+
+**P0 修复（严重）：**
+1. `external_review.py` DIMENSIONS 字典添加 `dialogue_quality` 和 `information_density` 两个完整条目
+2. `dialogue-checker.md` 191 行完整 agent 定义（遮名辨识度测试/意图层次/信息倾倒/独白控制/推进检查）
+3. `density-checker.md` 231 行完整 agent 定义（有效字数比/填充段/重复段/死段落/推进跨度/内心独白/冗余描写）
+
+**P1 修复（中等）：**
+4. pass 阈值 `overall >= 60` → `overall >= 75`（与规范对齐）
+5. `_compute_cross_validation()` 真实实现：按 issue_type + location 分组，≥2 个维度标记同类问题 = verified
+6. `polish-guide.md` 重编号：§6.对话辨识度→§8，§7.模板套路→§9，§8.具象化→§10
+
+**P2 修复（轻微）：**
+7. `workflow_manager.py` 移除 `expected_step_owner` 中的 `"Step 1.5"` 残留映射
+
+**P3 增强（爽点密度专项）：**
+8. `step-1.5-contract.md` 追读力设计新增"爽点规划"必填字段：类型 + 铺垫来源 + 兑现方式 + 过渡章微兑现
+9. `SKILL.md` Step 2A 新增硬约束：每 800 字至少 1 微爽点，铺垫章降至 1200 字/个，全章不得为零
+10. `polish-guide.md` 新增 §11 爽点密度补种：high-point-checker < 70 时强制在薄弱区间插入微爽点
+
+**动态化改动（external_review.py）：**
+- `max_workers=6` → `max_workers=len(DIMENSIONS)`
+- `"6维度审查完成"` → `f"{len(DIMENSIONS)}维度审查完成"`
+- docstring `"6 separate dimension prompts"` → `"8 separate dimension prompts"`
+- cross_validation 字段从硬编码 stub → 调用 `_compute_cross_validation(all_issues)`
+
+**架构变更：**
+```
+旧：Step 3(8 checker, 但 dialogue/density 无 agent 文件→实际只执行6个) + Step 3.5(6模型×6维度) = 42份报告
+新：Step 3(8 checker, 全部有 agent 文件→真正执行8个) + Step 3.5(6模型×8维度) = 56份报告
+```
+
+**验证：**
+- Python ast.parse: SYNTAX OK
+- DIMENSIONS count: 8/8 ✅
+- 所有 dimension 条目含 name/system/prompt + 正确占位符 ✅
+- cross_validation 5 项单元测试全部通过 ✅
+- pass threshold = 75 ✅
+- max_workers/summary 动态化 ✅
+- 两个新 agent 文件存在且格式正确 ✅
+- workflow_manager Step 1.5 已移除 ✅
+- polish-guide 章节编号无重复 ✅
+- SKILL.md 爽点密度约束已添加 ✅
+
+---
+
 <!-- 新的改动记录追加在此线下方 -->
+
+## [2026-03-30] Step 0-6 全流程审计修复（22项bug）
+
+**改动文件：**
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `skills/webnovel-write/SKILL.md` | 修改 | BUG-01/02/03 + CROSS-03/04 修复 |
+| `skills/webnovel-write/references/polish-guide.md` | 修改 | BUG-20 + BUG-14/21 + CROSS-02 修复 |
+| `skills/webnovel-write/references/step-3-review-gate.md` | 修改 | BUG-08/15 + CROSS-03 修复 |
+| `skills/webnovel-write/references/step-3.5-external-review.md` | 修改 | BUG-20 + CROSS-02 修复 |
+| `skills/webnovel-write/references/step-5-debt-switch.md` | 修改 | BUG-26 修复 |
+| `skills/webnovel-plan/SKILL.md` | 修改 | BUG-20 修复 |
+| `agents/data-agent.md` | 修改 | DATA-1/2/3 修复 |
+
+**修复清单：**
+
+🔴 Critical:
+- **BUG-20**: 移除 polish-guide.md §8 + step-3.5-external-review.md + webnovel-plan/SKILL.md 中的硬编码角色名(陆衍/老周/沈映雪/刘疤/韩远)，替换为通用描述
+- **CROSS-02**: 统一三套不兼容的 issue type 系统——polish-guide.md 新增11个type的修复规则 + type映射表（内部↔外部）
+- **BUG-14/21**: polish-guide.md 新增5个缺失type的修复动作（DIALOGUE_FLAT/INFODUMP/MONOLOGUE/PADDING/REPETITION）
+- **BUG-10/11**: 确认 TIMELINE_ISSUE 由 consistency-checker 产出（非phantom），在映射表中关联 CONTINUITY type
+- **DATA-1**: 修复 chapter_meta 双层嵌套——data-agent.md 输出规范改为扁平对象（不含章节号外层键）
+- **DATA-2**: data-agent.md Step K 伏笔追踪新增 state.json 同步写入（`--add-foreshadowing` / `--resolve-foreshadowing`）
+
+🟠 High:
+- **BUG-01**: `--step-id` 允许列表新增 `Step 3.5`
+- **BUG-02**: 验证命令和Chapter Gate改为 glob 匹配，支持带标题/无标题两种文件名
+- **BUG-03**: report_file 示例从范围格式 `第100-100章` 改为单章格式 `第0100章`
+- **BUG-08/15**: step-3-review-gate.md 新增数字及格线（≥75合格）和4级评分阈值规则
+- **BUG-26**: step-5-debt-switch.md python 命令添加 `-X utf8` 标志
+- **CROSS-03**: 定义内外部分数合并算法（internal×0.6 + external_avg×0.4），写入 step-3-review-gate.md 和 SKILL.md
+- **CROSS-04**: 充分性闸门与章节间闸门条件同步（充分性闸门新增3.5/报告/Git条件；章节闸门新增anti_ai_force_check条件）
+- **DATA-3**: 修正 data-agent.md Step D 写入内容说明——明确 strand_tracker 需额外 CLI 调用，protagonist_state.power 依赖 SQLite 实体数据
+
+**已确认无需修复：**
+- BUG-05: style-adapter.md 字数引用已在上次更新中修正 ✅
+- BUG-12: checker-output-schema.md 已包含全部8个checker ✅
+- BUG-17: data-agent.md Step K 已有完整定义 ✅
+
+**已知限制（暂不修改）：**
+- DATA-3: world_settings 无自动化写入路径（init后永远为空骨架）——实际无消费者，设定数据存于 `设定集/*.md`
+
+---
+
+## [2026-03-31] Python 代码修复：外审上下文大幅补全 + 窗口对齐
+
+**改动文件：**
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `scripts/external_review.py` | 修改 | BUG-22 + DATA-4：build_context_block 补全3个上下文块 + 前章从摘要改为全文 + 窗口2→3 |
+| `scripts/extract_chapter_context.py` | 修改 | DATA-4：上下文窗口从硬编码2改为3，对齐 ContextManager |
+| `agents/external-review-agent.md` | 修改 | 前章摘要→前章正文，窗口2→3 |
+| `skills/webnovel-write/references/step-3.5-external-review.md` | 修改 | user 消息模板、上下文加载规则、token 估算全部更新 |
+
+**BUG-22 修复（external_review.py 上下文补全）：**
+1. `_load_state_json()` 重写：从只返回 protagonist_state+progress 扩展为同时返回 recent_chapter_meta(最近3章)、foreshadowing(活跃伏笔)、strand_history(最近5条节奏)
+2. `build_context_block()` 新增3个上下文块：
+   - 【近期章节模式】：从 chapter_meta 提取钩子类型/强度、开场方式、情绪节奏（供 reader_pull/high_point 维度判断重复）
+   - 【活跃伏笔线】：从 plot_threads.foreshadowing 提取未兑现伏笔链（供 continuity 维度判断遗忘）
+   - 【节奏历史】：从 strand_tracker.history 提取 dominant strand（供 pacing 维度判断差异化）
+3. 前章上下文从**摘要**升级为**全文**：`_load_prev_summaries()` → `_load_prev_chapters()`，优先读 `正文/` 目录完整章节，缺失时退化为 `summaries/` 摘要
+
+**DATA-4 修复（上下文窗口对齐）：**
+1. `extract_chapter_context.py:325`：`chapter_num - 2` → `chapter_num - summary_window`（summary_window=3）
+2. `external_review.py:470`：`_load_prev_chapters()` 默认 window=3
+3. 与 `ContextManager.context_recent_summaries_window=3` 对齐
+
+**上下文总量变化：**
+```
+旧：~12000 字（设定集 7500 + 前2章摘要 300 + 状态 1200 + 本章正文 3000）
+新：~21000 字（设定集 7500 + 前3章正文 9000 + 状态/伏笔/节奏 1500 + 本章正文 3000）
+```
+对 32K+ 模型无压力
+
+---
+
+## [2026-03-31] Step 3.5 外审流程 CRITICAL/HIGH bug 修复（9项）
+
+**改动文件：**
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `scripts/external_review.py` | 修改 | BUG-C1/C2 + H3/H4/H5/H6/H7 + dimension_reports 格式修复 |
+| `agents/external-review-agent.md` | 修改 | 移除 --context-file、对齐 context JSON keys、更新 dimension_reports 示例 |
+| `skills/webnovel-write/references/step-3.5-external-review.md` | 修改 | dimension_reports 示例对齐代码实际输出 |
+
+**CRITICAL 修复：**
+1. **BUG-C1**: agent spec 中 `--context-file` CLI 参数不存在于 argparse → 移除（脚本内部从 --project-root + --chapter 自动构建路径）
+2. **BUG-C2**: agent 写入 `prev_summaries` key，脚本读取 `prev_chapters_text` key → 脚本改为同时接受两个 key（`prev_chapters_text || prev_summaries`）；agent spec JSON 模板更新为9个完整字段
+
+**HIGH 修复：**
+3. **H3**: `routing_verified: all([]) == True` 当所有维度失败时误报 → 加 `if ok_results else False` 守卫
+4. **H4**: `model_actual` 取自 `list(results.keys())[0]`，因 as_completed 非确定性 → 改为 `sorted(ok_dims)[0]` 确定性选取
+5. **H5**: Ch1-3 开篇章节特殊审查 prompt 未实现 → 新增 `CH1_3_SPECIAL_PROMPT`，`chapter_num <= 3` 时追加5项额外评估标准
+6. **H6**: `verify_routing()` 只有黑名单检查（已知 codexcc bug），无正向匹配 → 新增正向匹配逻辑（请求模型名 ⊂ 响应模型名，key_match fallback）
+7. **H7**: `data.get("key", {})` 当 JSON 值为 null 时返回 None 而非 {} → 全部改为 `data.get("key") or {}` 模式（影响 _load_state_json + build_context_block 共11处）
+
+**MEDIUM 修复：**
+8. **dimension_reports 格式**: 代码输出 dict（keyed by dim_key），spec 文档要求 array → 改为 sorted array，每项添加 `dimension` 和 `name` 字段
+9. **agent spec context JSON 模板**: 补全9个字段（新增 golden_finger_card/female_lead_card/villain_design），与 build_context_block 实际读取的 key 完全对齐
+
+**verify_routing() 升级逻辑：**
+```
+旧：仅检查黑名单（codexcc GLM→MiniMax / kimi→qianfan）→ 其他一律 True
+新：
+  Step 1: 黑名单检查（不变）
+  Step 2: 正向匹配 — requested_model_id 的 base name ⊂ response_model（不区分大小写）
+  Step 3: key_match fallback — model_key ⊂ response_model
+  Step 4: 全不匹配 → False + "no_positive_match" 原因
+```
+
+**验证：** Python ast.parse SYNTAX OK，9/9 自动化检查全部通过
+
+---
+
+## [2026-03-31] 8内部审查Agent全面规范化 + Schema补全（18项修复）
+
+**改动文件：**
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `references/checker-output-schema.md` | 修改 | 新增统一评分公式+问题类型枚举(11种)+内心独白权责划分+monotony_risk字段 |
+| `agents/consistency-checker.md` | 修改 | 新增JSON输出+评分公式+canonical types映射+id/can_override+Ch1边界处理 |
+| `agents/continuity-checker.md` | 修改 | 新增JSON输出+评分公式+canonical types映射+id/can_override+Ch1边界处理 |
+| `agents/ooc-checker.md` | 修改 | 新增JSON输出+评分公式+canonical type(OOC)+id/can_override+移除硬编码角色名 |
+| `agents/pacing-checker.md` | 修改 | 新增JSON输出+评分公式+canonical type(PACING)+id/can_override+Ch1边界+修复60%/70%阈值歧义+移除硬编码李雪 |
+| `agents/reader-pull-checker.md` | 修改 | 新增schema引用+issues[]合并规则+populated issues示例 |
+| `agents/high-point-checker.md` | 修改 | issues[]示例填充+cool_value检测规则+monotony_risk声明为扩展+id/can_override+评分公式 |
+| `agents/dialogue-checker.md` | 修改 | id/can_override+评分公式+潜台词检测步骤(subtext_instances)+内心独白权责声明 |
+| `agents/density-checker.md` | 修改 | id/can_override+评分公式+REPETITION type示例+内心独白权责声明 |
+
+**Batch 1 — Schema Conformance (P0) 修复：**
+
+1. **SYS-1**: checker-output-schema.md 新增"统一评分公式"章节：`max(0, 100 - sum(deductions))` with critical=25/high=15/medium=8/low=3，pass阈值=75
+2. **SYS-2**: checker-output-schema.md 新增"问题类型枚举"章节：定义11个canonical types + 旧类型映射表(POWER_CONFLICT→SETTING_CONFLICT等6条)
+3. **SYS-3**: consistency/continuity/pacing-checker 新增JSON输出模板（含populated issues[]示例）
+4. **SYS-4**: 所有8个checker的issue示例添加 `id` 字段（格式：CONS_001/CONT_001/OOC_001/PACE_001/HP_001/DLG_001/DEN_001等）
+5. **SYS-5**: 所有8个checker的issue示例添加 `can_override` 字段
+6. **CK-4**: reader-pull-checker issues[]从永远空改为从hard_violations+soft_suggestions合并，新增合并规则说明
+
+**Batch 2 — Quality & Edge Cases (P1-P2) 修复：**
+
+7. **CK-5/CK-6**: high-point-checker 新增 cool_value 完整检测规则（三维度评估+计算公式）；monotony_risk 声明为checker私有扩展字段
+8. **CK-7**: pacing-checker 三阈值歧义修复——明确注释区分60%(单章分类)/70%(10章窗口上限)/55-65%(理想比例)三者互补关系
+9. **CK-8**: dialogue-checker 新增"第五步半: 潜台词检测"步骤——4条检测规则，赋予 subtext_instances 实际检测逻辑
+10. **CK-9**: checker-output-schema.md 新增"内心独白检查权责划分"表格；dialogue-checker+density-checker各自声明权责（结构vs比例）
+11. **硬编码角色名移除**: ooc-checker 林天→{主角名}、慕容雪→{女配名}、反派王少→{反派名}；pacing-checker 李雪→{配角}
+12. **EDGE-1/2/3**: consistency/continuity/pacing-checker 新增Ch1边界处理说明（无前章/无state.json时的降级策略）
+
+**issue type 映射总表：**
+```
+consistency-checker: POWER_CONFLICT/LOCATION_ERROR/CHARACTER_CONFLICT → SETTING_CONFLICT; TIMELINE_ISSUE → CONTINUITY
+continuity-checker:  场景断裂/前后矛盾/因果缺失/大纲偏离/逻辑漏洞/伏笔遗忘 → CONTINUITY
+ooc-checker:         所有OOC问题 → OOC
+pacing-checker:      所有节奏问题 → PACING
+reader-pull-checker: 所有追读力问题 → READER_PULL
+high-point-checker:  密度/单调 → PACING; 铺垫/执行 → READER_PULL
+dialogue-checker:    DIALOGUE_FLAT/DIALOGUE_INFODUMP/DIALOGUE_MONOLOGUE/PADDING
+density-checker:     PADDING/REPETITION
+```
+
+---
+
+## [2026-03-31] 全流程审查 Bug 修复（7处）
+
+**改动文件：**
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `agents/external-review-agent.md` | 修复 | 大纲路径硬编码"第1卷"→动态 `{volume_id}` |
+| `skills/webnovel-write/references/step-3.5-external-review.md` | 修复 | User消息模板中大纲路径同上 |
+| `references/checker-output-schema.md` | 修复 | cool_value 示例 score 62→28（匹配公式 8×7/max(1,11-9)=28） |
+| `agents/high-point-checker.md` | 修复 | 同上 cool_value score 修正 |
+| `skills/webnovel-plan/SKILL.md` | 修复 | 3处 PowerShell 语法→bash heredoc（Set-Content→cat >，Add-Content→cat >>） |
+
+**Bug 1 — 硬编码卷号（2处）：**
+- `external-review-agent.md` 第43行：`大纲/第1卷-详细大纲.md` → `大纲/第{volume_id}卷-详细大纲.md`
+- `step-3.5-external-review.md` 第127行：同上，并补充 volume_id 来源说明（state.json → 总纲 fallback）
+- **根因**: 最初编写时项目只有第1卷，未参考 context-agent.md / chapter_outline_loader.py 的动态模式
+
+**Bug 2 — cool_value 公式/数值不一致（2处）：**
+- `checker-output-schema.md` 和 `high-point-checker.md` 的 JSON 示例中 `score: 62` 但公式 `8×7/max(1,11-9)` = 28
+- **根因**: 示例手写，S/R/L 值更新后 score 未同步计算
+
+**Bug 3 — PowerShell 语法（3处）：**
+- `webnovel-plan/SKILL.md` 第147/172/388行：`@'...'@ | Set-Content` / `Add-Content` → bash `cat > ... << 'EOF'` / `cat >> ... << 'EOF'`
+- 第三处使用 `>>` 保持 Add-Content 的追加语义
+- **根因**: SKILL.md 编写时使用了 PowerShell 语法，与其他 skill 文件（均为 bash）不一致
+
+**验证结果：**
+- grep 确认零残留 PowerShell 语法、零硬编码"第1卷"、零 score:62
+- 插件缓存已同步（25文件）

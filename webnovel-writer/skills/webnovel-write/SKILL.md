@@ -1,6 +1,6 @@
 ---
 name: webnovel-write
-description: Writes webnovel chapters (default 3000-3500 words). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
+description: Writes webnovel chapters (default 2200-3500 words). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
 allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
 ---
 
@@ -9,7 +9,7 @@ allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
 ## 目标
 
 - 以稳定流程产出可发布章节：优先使用 `正文/第{NNNN}章-{title_safe}.md`，无标题时回退 `正文/第{NNNN}章.md`。
-- 默认章节字数目标：3000-3500（用户或大纲明确覆盖时从其约定）。
+- 默认章节字数目标：2200-3500（用户或大纲明确覆盖时从其约定）。
 - 保证审查、润色、数据回写完整闭环，避免“写完即丢上下文”。
 - 输出直接可被后续章节消费的结构化数据：`review_metrics`、`summaries`、`chapter_meta`。
 
@@ -23,9 +23,9 @@ allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
 
 ## 模式定义
 
-- `/webnovel-write`：Step 1 → 2A → 2B → 3+3.5(并行) → 4 → 5 → 6
-- `/webnovel-write --fast`：Step 1 → 2A → 3+3.5(并行) → 4 → 5 → 6（跳过 2B）
-- `/webnovel-write --minimal`：Step 1 → 2A → 3（仅3个基础审查，跳过3.5）→ 4 → 5 → 6
+- `/webnovel-write`：Step 0 → 0.5 → 1 → 2A → 2B → 3+3.5(并行) → 4 → 5 → 6
+- `/webnovel-write --fast`：Step 0 → 0.5 → 1 → 2A → 3+3.5(并行) → 4 → 5 → 6（跳过 2B）
+- `/webnovel-write --minimal`：Step 0 → 0.5 → 1 → 2A → 3（仅3个基础审查，跳过3.5）→ 4 → 5 → 6
 
 最小产物（所有模式）：
 - `正文/第{NNNN}章-{title_safe}.md` 或 `正文/第{NNNN}章.md`
@@ -49,15 +49,17 @@ allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
 
 在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
 
-1. Step 3 的 8 个内部 checker 全部返回并汇总出 overall_score
-2. Step 3.5 的 6 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充3模型失败不阻塞），每模型审查 8 个维度
-3. 所有 critical/high 问题已修复
-4. 审查报告 .md 文件已生成（含内部8维度分数+外部6模型×8维度评分矩阵）
-5. Step 5 Data Agent 已完成
-6. Step 6 Git 已提交
+1. Step 3 的内部 checker 全部返回并汇总出 overall_score（标准/`--fast` 为 10 个，`--minimal` 为 3 个核心 checker）
+2. Step 3.5 的 8 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充5模型失败不阻塞），每模型审查 10 个维度（`--minimal` 模式跳过此条件）
+3. 所有 critical 问题已修复，high 问题已修复或有 deviation 记录
+4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部10维度分数+外部8模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
+5. Step 4 的 `anti_ai_force_check=pass`
+6. Step 5 Data Agent 已完成
+7. Step 6 Git 已提交
 
 验证方式：在开始下一章 Step 0 之前，执行以下检查：
 ```bash
+ls "${PROJECT_ROOT}/正文/第${chapter_padded}章"*.md >/dev/null 2>&1 && \
 test -f "${PROJECT_ROOT}/审查报告/第${chapter_padded}章审查报告.md" && \
 test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md" && \
 git log --oneline -1 | grep "第${chapter_num}章"
@@ -84,7 +86,7 @@ git log --oneline -1 | grep "第${chapter_num}章"
   - 用途：Step 3 审查调用模板、汇总格式、落库 JSON 规范。
   - 触发：Step 3 必读。
 - `references/step-3.5-external-review.md`
-  - 用途：Step 3.5 外部模型审查完整规范（6模型架构/供应商fallback链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
+  - 用途：Step 3.5 外部模型审查完整规范（8模型架构/供应商fallback链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
   - 触发：Step 3.5 必读。
 - `references/step-5-debt-switch.md`
   - 用途：Step 5 债务利息开关规则（默认关闭）。
@@ -173,7 +175,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 ```
 
 要求：
-- `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 4` / `Step 5` / `Step 6`。
+- `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 3.5` / `Step 4` / `Step 5` / `Step 6`。
 - 任何记录失败只记警告，不阻断写作。
 - 每个 Step 执行结束后，同样需要 `complete-step`（失败不阻断）。
 
@@ -220,8 +222,8 @@ Context Agent 额外输入（必读）：
 硬要求：
 - 若 `state` 或大纲不可用，立即阻断并返回缺失项。
 - 输出必须同时包含：
-  - 7 板块任务书（目标/冲突/承接/角色/场景约束/伏笔/追读力）；
-  - Context Contract 全字段（目标/阻力/代价/本章变化/未闭合问题/开头类型/情绪节奏/信息密度/过渡章判定/追读力设计）；
+  - 8 板块任务书（核心任务/承接/角色/场景约束/时间约束/风格指导/连续性与伏笔/追读力策略）；
+  - Context Contract 全字段（目标/阻力/代价/本章变化/未闭合问题/开头类型/情绪节奏/信息密度/过渡章判定/追读力设计/爽点规划）；
   - Step 2A 可直接消费的“写作执行包”（章节节拍、不可变事实清单、禁止事项、终检清单）。
 - 写作执行包的每个 beat 必须包含：字数分配、场景描述（地点+氛围）、情绪曲线位置、感官锚点（至少1个画面）、关键对话方向+语音规则（若有对话）、本beat禁止事项。
 - 合同与任务书出现冲突时，以“大纲与设定约束更严格者”为准。
@@ -247,9 +249,10 @@ cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 
 硬要求：
 - 只输出纯正文到章节正文文件；若详细大纲已有章节名，优先使用 `正文/第{chapter_padded}章-{title_safe}.md`，否则回退为 `正文/第{chapter_padded}章.md`。
-- 默认按 3000-3500 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
+- 默认按 2200-3500 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
 - 禁止占位符正文（如 `[TODO]`、`[待补充]`）。
 - 保留承接关系：若上章有明确钩子，本章必须回应（可部分兑现）。
+- 爽点密度约束：每 800 字至少安排 1 个微爽点（信息揭示/小胜/认可/逆转/兑现）；纯铺垫章允许降至每 1200 字 1 个，但全章不得为零。
 
 中文思维写作约束（硬规则）：
 - **禁止"先英后中"**：不得先用英文工程化骨架（如 ABCDE 分段、Summary/Conclusion 框架）组织内容，再翻译成中文。
@@ -296,7 +299,7 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 - `density-checker`（信息密度）
 
 模式说明：
-- 标准/`--fast`：全量 8 个审查器始终执行。
+- 标准/`--fast`：全量 10 个审查器始终执行。
 - `--minimal`：固定核心 3 个（consistency/continuity/ooc）。
 
 审查指标落库（必做）：
@@ -310,10 +313,10 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
   "start_chapter": 100,
   "end_chapter": 100,
   "overall_score": 85.0,
-  "dimension_scores": {"爽点密度": 8.5, "设定一致性": 8.0, "节奏控制": 7.8, "人物塑造": 8.2, "连贯性": 9.0, "追读力": 8.7, "对话质量": 8.3, "信息密度": 8.8},
+  "dimension_scores": {"爽点密度": 85, "设定一致性": 80, "节奏控制": 78, "人物塑造": 82, "连贯性": 90, "追读力": 87, "对话质量": 83, "信息密度": 88, "文笔质感": 82, "情感表现": 80},
   "severity_counts": {"critical": 0, "high": 1, "medium": 2, "low": 0},
   "critical_issues": ["问题描述"],
-  "report_file": "审查报告/第100-100章审查报告.md",
+  "report_file": "审查报告/第0100章审查报告.md",
   "notes": "单个字符串；selected_checkers / timeline_gate / anti_ai_force_check 等扩展信息压成单行文本写入此字段"
 }
 ```
@@ -323,6 +326,7 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
 硬要求：
 - `--minimal` 也必须产出 `overall_score`。
 - 未落库 `review_metrics` 不得进入 Step 5。
+- `overall_score` 必须按 `step-3-review-gate.md` 的"内外部分数合并规则"计算：`round(internal * 0.6 + external_avg * 0.4)`。若 Step 3.5 全部失败或被模式跳过（`--minimal`），则退化为纯内部分数。
 
 ### Step 3.5：外部模型审查（与 Step 3 并行或紧接执行）
 
@@ -332,16 +336,28 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 ```
 
 硬要求：
-- 6 模型并发调用（核心3 + 补充3），核心3模型必须全部成功。
+- **必须使用 `--model-key all` 一次性执行全部 8 模型**，禁止手动逐个调用（防止遗漏模型）。
+- 核心3模型必须全部成功，补充5模型失败不阻塞。
 - 按 reference 文件中的 Prompt 模板构建 system 消息。
 - 每次 API 调用后验证路由（检查 response.model 字段）。
 - 核心模型 fallback 链：healwrap(2次) → codexcc(1次) → 硅基流动(兜底)。
 - 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
-- 生成审查报告必须包含 6 模型 × 8 维度评分矩阵 + 共识问题 + Step 4 修复清单。
+- 生成审查报告必须包含 8 模型 × 10 维度评分矩阵 + 共识问题 + Step 4 修复清单。
+
+调用命令：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
+  --project-root "${PROJECT_ROOT}" \
+  --chapter {chapter_num} \
+  --mode dimensions \
+  --model-key all \
+  --max-concurrent 1
+```
+⚠️ 脚本仅支持：`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--max-concurrent`, `--rpm-override`。不要传其他参数。
 
 输出：
-- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`
-- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 6 模型 × 8 维度矩阵）
+- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共8个文件）
+- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 8 模型 × 10 维度矩阵）
 
 ### Step 4：润色（问题修复优先）
 
@@ -381,6 +397,7 @@ Data Agent 默认子步骤（全部执行）：
 - G. RAG 向量索引（`rag index-chapter --scenes ...`）
 - H. 风格样本评估（`style extract --scenes ...`，仅 `review_score >= 80` 时）
 - I. 债务利息（默认跳过）
+- J. 生成处理报告（必须记录 A-I 每步耗时；写入 `.webnovel/observability/data_agent_timing.jsonl`）
 - K. 设定集同步检查（每章执行，best-effort，失败不阻断）
 
 `--scenes` 来源优先级（G/H 步骤共用）：
@@ -434,10 +451,13 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 
 1. 章节正文文件存在且非空：`正文/第{chapter_padded}章-{title_safe}.md` 或 `正文/第{chapter_padded}章.md`
 2. Step 3 已产出 `overall_score` 且 `review_metrics` 成功落库
-3. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
-4. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
-5. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`
-6. 若开启性能观测，已读取最新 timing 记录并输出结论
+3. Step 3.5 外部审查已完成（核心3模型必须成功）（`--minimal` 模式跳过此条件）
+4. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部10维度分数+外部8模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
+5. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
+6. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
+7. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`
+8. Step 6 Git 已提交
+9. 若开启性能观测，已读取最新 timing 记录并输出结论
 
 ## 验证与交付
 
@@ -445,7 +465,7 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 
 ```bash
 test -f "${PROJECT_ROOT}/.webnovel/state.json"
-test -f "${PROJECT_ROOT}/正文/第${chapter_padded}章.md"
+ls "${PROJECT_ROOT}/正文/第${chapter_padded}章"*.md >/dev/null 2>&1
 test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md"
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 1
 tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || true
@@ -468,6 +488,8 @@ tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || t
 1. 仅重跑失败步骤，不回滚已通过步骤。
 2. 常见最小修复：
    - 审查缺失：只重跑 Step 3 并落库；
+   - 外部审查缺失/失败：只重跑 Step 3.5（核心模型按 fallback 链重试）；
+   - `anti_ai_force_check=fail`：留在 Step 4 继续改写直到 pass，不回退也不跳过；
    - 润色失真：恢复 Step 2A 输出并重做 Step 4；
    - 摘要/状态缺失：只重跑 Step 5；
-3. 重新执行“验证与交付”全部检查，通过后结束。
+3. 重新执行”验证与交付”全部检查，通过后结束。

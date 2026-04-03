@@ -2,9 +2,9 @@
 Step 3.5 External Model Review Script
 Supports two modes:
   - legacy: single prompt, 4-dimension combined review (backward compatible)
-  - dimensions: 8 separate dimension prompts, concurrent API calls
+  - dimensions: 10 separate dimension prompts, concurrent API calls
 Three-tier fallback: healwrap (primary) → codexcc (backup) → siliconflow (fallback)
-Six-model architecture: 3 core (kimi/glm/qwen-plus) + 3 supplemental (qwen/deepseek/minimax)
+Eight-model architecture: 3 core (kimi/glm/qwen-plus) + 5 supplemental (qwen/deepseek/minimax/doubao/glm4)
 """
 import json
 import time
@@ -35,7 +35,7 @@ PROVIDERS = {
 }
 
 # Default concurrency: max dimensions running in parallel per model
-DEFAULT_MAX_CONCURRENT = 2
+DEFAULT_MAX_CONCURRENT = 1
 
 
 class ProviderRateLimiter:
@@ -152,6 +152,22 @@ MODELS = {
         "role": "快速参考",
         "providers": [
             {"provider": "healwrap", "id": "minimax-m2.5", "name": "MiniMax-M2.5"},
+        ],
+        "timeout": 300,
+    },
+    "doubao": {
+        "tier": "supplemental",
+        "role": "结构审查/逻辑一致性",
+        "providers": [
+            {"provider": "healwrap", "id": "doubao-seed-2.0", "name": "Doubao-Seed-2.0"},
+        ],
+        "timeout": 300,
+    },
+    "glm4": {
+        "tier": "supplemental",
+        "role": "文学质感/角色声音",
+        "providers": [
+            {"provider": "healwrap", "id": "glm-4.7", "name": "GLM-4.7"},
         ],
         "timeout": 300,
     },
@@ -317,6 +333,47 @@ DIMENSIONS = {
 ## 本章正文
 {chapter_text}"""
     },
+    "prose_quality": {
+        "name": "文笔质感",
+        "system": "你是一个专业的网文文笔质感审查编辑。",
+        "prompt": """请重点评估本章的文笔表现力：
+1. 句式是否有长短交替的节奏变化？
+2. 比喻是否新鲜（非套路化的'如刀/如水/如山'）？
+3. 是否有视觉之外的感官描写（听觉/触觉/嗅觉）？
+4. 动词是否精确有力（而非'看了/走了/做了'等万能动词）？
+5. 关键场景是否有空间方位感和画面感？
+6. 抽象表达是否用具体数字/对比替代？
+
+{context_block}
+
+严格按JSON输出：
+{{"dimension":"prose_quality","score":0-100,"issues":[{{"id":"PQ_001","type":"PROSE_FLAT/PROSE_CLICHE/PROSE_WEAK_VERB","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
+
+## 本章正文
+{chapter_text}"""
+    },
+    "emotion_expression": {
+        "name": "情感表现",
+        "system": "你是一个专业的网文情感表现审查编辑。",
+        "prompt": """请重点评估本章的情感表达质量：
+1. 情感是否通过行为/生理反应展示（Show）而非直接告知（Tell，如'他感到愤怒'）？
+2. 情感变化是否有梯度递进（而非突然跳变）？
+3. 情感场景是否有物理/生理锚点（手指发抖、喉结滚动等）？
+4. 上章结尾的情绪是否在本章开头延续（情感惯性）？
+5. 情感高潮是否有前文铺垫（earned而非forced）？
+
+{context_block}
+
+严格按JSON输出：
+{{"dimension":"emotion_expression","score":0-100,"issues":[{{"id":"EE_001","type":"EMOTION_TELL/EMOTION_JUMP/EMOTION_UNANCHORED","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+
+评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
+
+## 本章正文
+{chapter_text}"""
+    },
 }
 
 
@@ -403,58 +460,72 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
         "temperature": 0.3,
         "max_tokens": 8192,
     }
-    # Thinking models (qwen-3.5, deepseek-v3.2, etc.) wrap output in <think> tags,
+    # Thinking models (qwen-3.5, deepseek-v3.2, doubao-seed-2.0, glm-4.7, etc.) wrap output in <think> tags,
     # consuming most of max_tokens on reasoning. Remove limit to let API use model max.
     model_lower = model_id.lower()
-    if any(t in model_lower for t in ("qwen-3", "qwen3", "deepseek")):
+    if any(t in model_lower for t in ("qwen-3", "qwen3", "deepseek", "doubao", "glm-4")):
         payload["max_tokens"] = 65536  # thinking 模型需要足够空间给推理+输出
     # Acquire rate limiter before first request
     limiter = ProviderRateLimiter.get(provider_name) if provider_name else None
     provider_chain = []
-    for attempt in range(max_retries + 1):
-        if limiter:
-            limiter.acquire()
-        start_ts = time.time()
-        try:
-            resp = requests.post(base_url, headers=headers, json=payload, timeout=timeout)
-            elapsed = int((time.time() - start_ts) * 1000)
-            if resp.status_code == 200:
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                model_actual = data.get("model", "")
-                usage = data.get("usage", {})
-                provider_chain.append({
-                    "attempt": attempt + 1,
-                    "result": "success",
-                    "elapsed_ms": elapsed,
-                    "model_actual": model_actual,
-                })
-                return content, None, model_actual, usage, provider_chain
-            elif resp.status_code == 429:
-                provider_chain.append({"attempt": attempt + 1, "result": "rate_limited", "elapsed_ms": elapsed})
-                time.sleep(6)  # 429 wait 6s per spec
-            else:
-                err = f"HTTP {resp.status_code}: {resp.text[:200]}"
-                provider_chain.append({"attempt": attempt + 1, "result": f"http_{resp.status_code}", "elapsed_ms": elapsed})
+    session = requests.Session()
+    try:
+        for attempt in range(max_retries + 1):
+            if limiter:
+                limiter.acquire()
+            start_ts = time.time()
+            try:
+                resp = session.post(base_url, headers=headers, json=payload, timeout=timeout)
+                elapsed = int((time.time() - start_ts) * 1000)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data["choices"][0]["message"]["content"]
+                    model_actual = data.get("model", "")
+                    usage = data.get("usage", {})
+                    provider_chain.append({
+                        "attempt": attempt + 1,
+                        "result": "success",
+                        "elapsed_ms": elapsed,
+                        "model_actual": model_actual,
+                    })
+                    return content, None, model_actual, usage, provider_chain
+                elif resp.status_code == 429:
+                    provider_chain.append({"attempt": attempt + 1, "result": "rate_limited", "elapsed_ms": elapsed})
+                    time.sleep(6)  # 429 wait 6s per spec
+                else:
+                    err = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                    provider_chain.append({"attempt": attempt + 1, "result": f"http_{resp.status_code}", "elapsed_ms": elapsed})
+                    if attempt < max_retries:
+                        time.sleep(5)
+                    else:
+                        return None, err, None, None, provider_chain
+            except requests.exceptions.Timeout:
+                elapsed = int((time.time() - start_ts) * 1000)
+                provider_chain.append({"attempt": attempt + 1, "result": "timeout", "elapsed_ms": elapsed})
                 if attempt < max_retries:
                     time.sleep(5)
                 else:
-                    return None, err, None, None, provider_chain
-        except requests.exceptions.Timeout:
-            elapsed = int((time.time() - start_ts) * 1000)
-            provider_chain.append({"attempt": attempt + 1, "result": "timeout", "elapsed_ms": elapsed})
-            if attempt < max_retries:
-                time.sleep(5)
-            else:
-                return None, "Timeout", None, None, provider_chain
-        except Exception as e:
-            elapsed = int((time.time() - start_ts) * 1000)
-            provider_chain.append({"attempt": attempt + 1, "result": str(e)[:100], "elapsed_ms": elapsed})
-            if attempt < max_retries:
-                time.sleep(5)
-            else:
-                return None, str(e), None, None, provider_chain
-    return None, "Max retries", None, None, provider_chain
+                    return None, "Timeout", None, None, provider_chain
+            except (requests.exceptions.ConnectionError, ConnectionResetError, OSError) as e:
+                elapsed = int((time.time() - start_ts) * 1000)
+                provider_chain.append({"attempt": attempt + 1, "result": str(e)[:100], "elapsed_ms": elapsed})
+                # 连接错误后关闭旧 session 并重建，避免连接池中毒
+                session.close()
+                session = requests.Session()
+                if attempt < max_retries:
+                    time.sleep(8)  # 连接错误等更久再重试
+                else:
+                    return None, str(e), None, None, provider_chain
+            except Exception as e:
+                elapsed = int((time.time() - start_ts) * 1000)
+                provider_chain.append({"attempt": attempt + 1, "result": str(e)[:100], "elapsed_ms": elapsed})
+                if attempt < max_retries:
+                    time.sleep(5)
+                else:
+                    return None, str(e), None, None, provider_chain
+        return None, "Max retries", None, None, provider_chain
+    finally:
+        session.close()
 
 
 def extract_json(text):
@@ -591,7 +662,15 @@ def call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_
     if parsed:
         return dim_key, parsed, model_name, provider, model_actual, routing_ok, usage, chain, elapsed, None
 
-    last_error = chain[-1]["result"] if chain else "no_providers"
+    # 区分"API成功但JSON解析失败"和"API本身失败"
+    if chain:
+        last_result = chain[-1].get("result", "unknown")
+        if last_result == "success":
+            last_error = "json_parse_failed"
+        else:
+            last_error = last_result
+    else:
+        last_error = "no_providers"
     return dim_key, None, model_name or "none", "none", None, False, None, chain, elapsed, last_error
 
 
@@ -666,7 +745,7 @@ def build_context_block(context_data, project_root=None, chapter_num=None):
     Assembles context from context_data JSON first, then supplements missing
     fields by reading directly from project files (设定集/, state.json, summaries/).
     Includes chapter_meta, foreshadowing, and strand history for accurate
-    continuity/reader_pull/pacing/ooc dimension reviews.
+    continuity/reader_pull/pacing/ooc/prose_quality/emotion_expression dimension reviews.
     """
     parts = ["===== 项目上下文（请基于以下信息严格审查正文） =====\n"]
     if not context_data and not project_root:
@@ -803,7 +882,7 @@ def _compute_cross_validation(all_issues):
       - unverified: issue flagged by only 1 dimension
       - dismissed: 0 (requires cross-model data, handled at aggregation layer)
 
-    When used at the aggregation layer (across 6 models), the caller should
+    When used at the aggregation layer (across 8 models), the caller should
     re-run cross-validation across all model results for true consensus.
     """
     if not all_issues:
@@ -875,6 +954,46 @@ def run_dimensions_mode(args, api_keys):
     chapter_num = args.chapter
     model_key = args.model_key
 
+    # --model-key all: 遍历 MODELS 中全部模型，串行执行
+    if model_key == "all":
+        all_model_keys = list(MODELS.keys())
+        print(f"[all-models] 将依次执行 {len(all_model_keys)} 个模型: {', '.join(all_model_keys)}", file=sys.stderr)
+        all_results = {}
+        for mk in all_model_keys:
+            print(f"\n[all-models] === 开始模型: {mk} ({MODELS[mk]['tier']}) ===", file=sys.stderr)
+            args_copy = argparse.Namespace(**vars(args))
+            args_copy.model_key = mk
+            try:
+                _run_single_model(args_copy, api_keys)
+                all_results[mk] = "success"
+                print(f"[all-models] {mk}: 完成", file=sys.stderr)
+            except SystemExit:
+                all_results[mk] = "failed"
+                print(f"[all-models] {mk}: 失败（跳过继续）", file=sys.stderr)
+            except Exception as e:
+                all_results[mk] = f"error: {str(e)[:80]}"
+                print(f"[all-models] {mk}: 异常 {e}", file=sys.stderr)
+        # 汇总输出
+        summary = {
+            "mode": "all-models",
+            "chapter": chapter_num,
+            "total": len(all_model_keys),
+            "success": sum(1 for v in all_results.values() if v == "success"),
+            "failed": sum(1 for v in all_results.values() if v != "success"),
+            "details": all_results,
+        }
+        print(json.dumps(summary, ensure_ascii=False))
+        return
+
+    _run_single_model(args, api_keys)
+
+
+def _run_single_model(args, api_keys):
+    """执行单个模型的10维度审查。"""
+    project_root = Path(args.project_root)
+    chapter_num = args.chapter
+    model_key = args.model_key
+
     # Resolve alias
     resolved_key = MODEL_ALIASES.get(model_key, model_key)
     if resolved_key not in MODELS:
@@ -910,6 +1029,11 @@ def run_dimensions_mode(args, api_keys):
     total_prompt_tokens = 0
     total_completion_tokens = 0
 
+    # 补充层连续失败早停：连续 3 个维度失败后跳过剩余维度
+    is_supplemental = model_config.get("tier") == "supplemental"
+    consecutive_failures = 0
+    EARLY_STOP_THRESHOLD = 3
+
     with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
         futures = {}
         for dim_key, dim_cfg in DIMENSIONS.items():
@@ -922,6 +1046,7 @@ def run_dimensions_mode(args, api_keys):
             full_provider_chain.extend(chain)
 
             if parsed:
+                consecutive_failures = 0
                 dim_score = parsed.get("score", 0)
                 dim_issues = parsed.get("issues", [])
                 scores[dim_key] = dim_score
@@ -944,7 +1069,19 @@ def run_dimensions_mode(args, api_keys):
                     "elapsed_ms": elapsed,
                 }
             else:
+                consecutive_failures += 1
                 results[dim_key] = {"status": "failed", "error": error}
+
+                # 补充层连续失败达阈值 → 取消剩余维度，避免无意义重试
+                if is_supplemental and consecutive_failures >= EARLY_STOP_THRESHOLD:
+                    remaining = [fut for fut in futures if not fut.done()]
+                    for fut in remaining:
+                        fut.cancel()
+                    skipped_dims = [futures[fut] for fut in futures if fut.cancelled()]
+                    for sk_dim in skipped_dims:
+                        results[sk_dim] = {"status": "skipped", "error": f"early_stop_after_{consecutive_failures}_consecutive_failures"}
+                    print(f"[early-stop] {resolved_key}（补充层）连续{consecutive_failures}次失败，跳过剩余{len(skipped_dims)}个维度", file=sys.stderr)
+                    break
 
     # Calculate overall
     valid_scores = [s for s in scores.values() if isinstance(s, (int, float))]
@@ -1050,7 +1187,7 @@ def main():
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--chapter", required=True, type=int)
     parser.add_argument("--mode", default="legacy", choices=["legacy", "dimensions"])
-    parser.add_argument("--model-key", default="qwen-plus", help="For dimensions mode: qwen-plus/kimi/glm/qwen/deepseep/minimax")
+    parser.add_argument("--model-key", default="qwen-plus", help="For dimensions mode: qwen-plus/kimi/glm/qwen/deepseek/minimax/doubao/glm4 or 'all' for all models")
     parser.add_argument("--models", default="qwen-plus,kimi,glm", help="For legacy mode: comma-separated")
     parser.add_argument("--max-concurrent", type=int, default=DEFAULT_MAX_CONCURRENT,
                         help=f"Max parallel dimension calls per model (default: {DEFAULT_MAX_CONCURRENT})")

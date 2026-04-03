@@ -1,6 +1,6 @@
 # Step 3.5 外部模型审查规范
 
-## 六模型双层架构
+## 八模型双层架构
 
 ### 核心层（必须成功，有 fallback 保障）
 
@@ -17,6 +17,8 @@
 | qwen-3.5 | 宽松锚点 |
 | deepseek-v3.2 | 技术考据 |
 | minimax-m2.5 | 快速参考 |
+| doubao-seed-2.0 | 结构审查/逻辑一致性 |
+| glm-4.7 | 文学质感/角色声音 |
 
 ## 供应商配置
 
@@ -27,23 +29,49 @@
 
 **重试与 fallback 规则：**
 - 核心3模型统一链：healwrap(重试2次) → codexcc(错误1次切) → 硅基流动(兜底)
-- 补充3模型：healwrap(重试2次) → 失败标记 error 继续
+- 补充5模型：healwrap(重试2次) → 失败标记 error 继续
 - 每次 API 调用后**必须验证路由**：检查 response.model 字段是否匹配请求模型
 - 路由错误视为该供应商不可用，不重试直接切下一个
 - 429限流：等6秒后重试；超时：计入重试次数
 
 **并发控制（RPM 安全策略）：**
-- 每模型的8维度以 `--max-concurrent 2` 并发执行（默认值，避免瞬时打满 healwrap RPM=10）
-- 6模型按顺序依次审查（脚本单次调用处理1个模型，由工作流串行/并行调度多模型）
+- 每模型的10维度以 `--max-concurrent 1` 并发执行（默认值，避免瞬时打满 healwrap RPM=10）
+- 8模型按顺序依次审查（脚本单次调用处理1个模型，由工作流串行/并行调度多模型）
 - 内置 `ProviderRateLimiter`：per-provider 令牌桶限速，自动按 RPM 间隔排队
 - 若遇 429 限流：等6秒后重试（与限速器协同，不会连续触发 429）
 - fallback 到 codexcc/硅基流动不占 healwrap RPM
 - CLI 参数：`--max-concurrent N`（覆盖并发数）、`--rpm-override N`（覆盖 healwrap RPM）
 
 **推荐调用策略：**
-- 核心3模型可并行调用（各自独立进程，限速器 per-进程独立，healwrap 30 RPM 以内安全）
-- 补充3模型串行调用（共享同一 healwrap 连接池，间隔执行）
+- **首选**：`--model-key all` 一次性跑全部8个模型（脚本内部串行遍历，确保不遗漏）
+- 单模型调用：`--model-key kimi`（调试或补跑单个模型时使用）
 - 如果 healwrap RPM 升级到 30+，可设置 `--max-concurrent 4`
+
+**脚本调用命令（Agent 必须使用以下格式）：**
+```bash
+# 推荐：一次跑全部 8 模型
+python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
+  --project-root "${PROJECT_ROOT}" \
+  --chapter {chapter_num} \
+  --mode dimensions \
+  --model-key all \
+  --max-concurrent 1
+
+# 补跑单个模型
+python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
+  --project-root "${PROJECT_ROOT}" \
+  --chapter {chapter_num} \
+  --mode dimensions \
+  --model-key {model_key}
+```
+
+**⚠️ 脚本仅支持以下参数：**
+`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--max-concurrent`, `--rpm-override`
+不支持 `--chapter-file`、`--outline-file` 等参数，传入会导致脚本直接报错退出。
+
+**补充层早停机制：**
+- 补充层模型连续 3 个维度失败后自动跳过剩余维度
+- 避免 healwrap 连接中断时的无意义重试（如 minimax 21次失败）
 
 ## 路由验证规则
 
@@ -58,8 +86,8 @@
 调用外部模型时，system 消息使用以下模板（`{context}` 替换为章节特定描述）：
 
 ```
-你是一个资深网文章节审查专家。请从以下8个维度对章节进行严格审查并打分（0-100）：
-1.设定一致性 2.连贯性 3.人物塑造 4.追读力 5.爽点密度 6.节奏控制 7.对话质量 8.信息密度
+你是一个资深网文章节审查专家。请从以下10个维度对章节进行严格审查并打分（0-100）：
+1.设定一致性 2.连贯性 3.人物塑造 4.追读力 5.爽点密度 6.节奏控制 7.对话质量 8.信息密度 9.文笔质感 10.情感表现
 
 {context}
 
@@ -74,7 +102,7 @@
       "comment": "<该维度的整体评语，2-3句>",
       "issues": [
         {
-          "type": "<SETTING_CONFLICT|CONTINUITY|OOC|PACING|READER_PULL|STYLE|DIALOGUE_FLAT|DIALOGUE_INFODUMP|DIALOGUE_MONOLOGUE|PADDING|REPETITION>",
+          "type": "<SETTING_CONFLICT|CONTINUITY|OOC|PACING|READER_PULL|STYLE|DIALOGUE_FLAT|DIALOGUE_INFODUMP|DIALOGUE_MONOLOGUE|PADDING|REPETITION|PROSE_FLAT|EMOTION_SHALLOW>",
           "severity": "<critical|high|medium|low>",
           "location": "<定位到具体段落，如'第3段主角与配角A对话处'>",
           "description": "<问题描述>",
@@ -108,6 +136,8 @@ issue 的 type 分类说明：
 - DIALOGUE_MONOLOGUE: 单人连续独白过长（超过200字），缺少互动打断
 - PADDING: 段落无信息增量，不推进剧情/角色/情绪，属于水分填充
 - REPETITION: 同一信息已通过其他方式传达后再次重复描述
+- PROSE_FLAT: 文笔平淡/表现力不足（句式单调、比喻陈腐、感官贫乏、动词无力、画面感缺失）
+- EMOTION_SHALLOW: 情感表达生硬/未落地（直述替代展示、情感梯度断裂、缺乏锚点、强行煽情）
 ```
 
 ## 开篇章节特殊处理（Ch1-3）
@@ -192,6 +222,7 @@ issue 的 type 分类说明：
 | 力量体系 | 判断等级、技能、代价描述是否符合体系规则 |
 | 世界观 | 判断地点、势力、社会规则是否与设定矛盾 |
 | 女主卡+反派 | 判断配角言行是否 OOC |
+| 前3章正文/角色卡 | 判断文笔是否有表现力、感官是否丰富、情感表达是否到位 |
 
 ## 外审输出 JSON Schema
 
@@ -265,7 +296,7 @@ issue 的 type 分类说明：
 
 `审查报告/第{NNNN}章审查报告.md` 必须包含：
 
-1. **6模型评分矩阵**（可用模型 × 8维度 + 总分 + 路由状态 + 供应商）
+1. **8模型评分矩阵**（可用模型 × 10维度 + 总分 + 路由状态 + 供应商）
 2. **共识问题**（>=3个模型指出的同类问题 = 真问题）
 3. **Step 4 修复清单**（从共识问题 + severity >= medium + verified 中筛选，按优先级排序）
 4. **模型路由验证结果**（每个模型的请求/实际/通过状态）
