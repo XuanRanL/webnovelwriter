@@ -106,7 +106,7 @@ model: inherit
 
 > 输出 JSON 时，`issues[].severity` 必须使用小写枚举：`critical|high|medium|low`。
 
-**危险信号** (TIMELINE_ISSUE):
+**危险信号** (时间线类 CONTINUITY 问题，description 中须包含时间线关键词以便闸门识别):
 ```
 ❌ [critical] 第10章物资耗尽倒计时 D-5，第11章直接变成 D-2（跳过3天）
    → Setup: D-5 | Next chapter: D-2 | Missing: 3 days
@@ -169,8 +169,8 @@ model: inherit
 ## 时间线一致性
 | 章节 | 问题 | 严重度 | 详情 |
 |------|------|--------|------|
-| {M} | ✗ TIMELINE_ISSUE | critical | 倒计时从 D-5 跳到 D-2 |
-| {M} | ✗ TIMELINE_ISSUE | high | 大比倒计时逻辑不一致 |
+| {M} | ✗ CONTINUITY（时间线） | critical | 倒计时从 D-5 跳到 D-2 |
+| {M} | ✗ CONTINUITY（时间线） | high | 大比倒计时逻辑不一致 |
 
 **结论**: 发现 {Z} 处违规
 **严重时间线问题**: {count} 个（必须修复后才能继续）
@@ -196,6 +196,67 @@ model: inherit
 **轻微问题**: {count}（建议修复）
 ```
 
+### 评分与 JSON 输出
+
+使用统一扣分制公式（详见 `checker-output-schema.md` "统一评分公式"）：
+- `overall_score = max(0, 100 - sum(deductions))`（critical=25, high=15, medium=8, low=3）
+- `pass = overall_score >= 75`
+
+**JSON 输出**（必须与 Markdown 报告同时输出）：
+
+```json
+{
+  "agent": "consistency-checker",
+  "chapter": 45,
+  "overall_score": 82,
+  "pass": true,
+  "issues": [
+    {
+      "id": "CONS_001",
+      "type": "SETTING_CONFLICT",
+      "severity": "high",
+      "location": "第5段",
+      "description": "战力崩坏：主角筑基3层使用金丹期技能'破空斩'",
+      "suggestion": "将'破空斩'替换为筑基期可用技能，或补充特殊条件说明",
+      "can_override": false
+    },
+    {
+      "id": "CONS_002",
+      "type": "CONTINUITY",
+      "severity": "critical",
+      "location": "第3段",
+      "description": "倒计时错误：物资耗尽倒计时从D-5直接跳到D-2",
+      "suggestion": "补充D-4和D-3的时间推进描写，或调整倒计时数值",
+      "can_override": false
+    },
+    {
+      "id": "CONS_003",
+      "type": "SETTING_CONFLICT",
+      "severity": "medium",
+      "location": "第10段",
+      "description": "地点错误：上章在天云宗，本章突然出现在血煞秘境，无移动描写",
+      "suggestion": "补充移动过程或时间过渡描写",
+      "can_override": false
+    }
+  ],
+  "metrics": {
+    "power_violations": 1,
+    "location_errors": 1,
+    "timeline_issues": 1,
+    "entity_conflicts": 0
+  },
+  "summary": "发现1处战力违规、1处地点错误和1处严重时间线错误，需修复后重审。"
+}
+```
+
+**issue type 映射**（本 checker 使用的标准类型）：
+- 战力冲突 / 地点错误 / 角色冲突 / 实体矛盾 → `SETTING_CONFLICT`
+- 时间线问题 / 倒计时错误 / 事件先后矛盾 → `CONTINUITY`
+
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值。
+
+**Ch1 边界处理**: 当审查 Ch1 时，无前章可对比；若 `state.json` 不存在，跳过战力/地点的前后对比，仅做设定集内部一致性检查。
+
 ### 第五步: 标记无效事实（新增）
 
 对于发现的严重级别（`critical`）问题，自动标记到 `invalid_facts`（状态为 `pending`）：
@@ -216,8 +277,9 @@ python -X utf8 "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts/we
 ❌ 通过存在 POWER_CONFLICT（战力崩坏）的章节
 ❌ 忽略未标记的新实体
 ❌ 接受无世界观解释的瞬移
-❌ **降低 TIMELINE_ISSUE 严重度**（时间问题不得降级）
+❌ **降低时间线类 CONTINUITY 问题严重度**（时间问题不得降级）
 ❌ **通过存在严重/高优先级时间线问题的章节**（必须修复）
+❌ **时间线类 CONTINUITY 问题的 `description` 中缺少时间线关键词**（闸门依赖关键词匹配，必须在 description 中包含"时间线/倒计时/时间回跳/事件先后/年龄冲突/时间锚点/时间过渡/时间矛盾/时间流逝/D-"等关键词）
 
 ## 成功标准
 

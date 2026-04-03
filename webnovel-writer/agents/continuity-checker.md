@@ -233,6 +233,100 @@ vs.
 **改进建议**: {count}（建议改进）
 ```
 
+### 评分与 JSON 输出
+
+使用统一扣分制公式（详见 `checker-output-schema.md` "统一评分公式"）：
+- `overall_score = max(0, 100 - sum(deductions))`（critical=25, high=15, medium=8, low=3）
+- `pass = overall_score >= 75`
+
+**JSON 输出**（必须与 Markdown 报告同时输出）：
+
+```json
+{
+  "agent": "continuity-checker",
+  "chapter": 45,
+  "overall_score": 77,
+  "pass": true,
+  "issues": [
+    {
+      "id": "CONT_001",
+      "type": "CONTINUITY",
+      "severity": "high",
+      "location": "第1段",
+      "description": "场景断裂：上章在天云宗大殿，本章直接在血煞秘境深处，无移动/时间过渡",
+      "suggestion": "添加'三日后'等时间标记或移动过程描写",
+      "can_override": false
+    },
+    {
+      "id": "CONT_002",
+      "type": "CONTINUITY",
+      "severity": "medium",
+      "location": "第8段",
+      "description": "前后矛盾：主角称'从未见过此妖兽'，但第30章曾击败同种妖兽",
+      "suggestion": "改为'很少见到'或删除第30章相关记忆",
+      "can_override": false
+    },
+    {
+      "id": "CONT_003",
+      "type": "CONTINUITY",
+      "severity": "medium",
+      "location": "全章",
+      "description": "大纲偏离：大纲要求'险胜'，实际写成'轻松碾压'，难度降低",
+      "suggestion": "增加战斗难度或标记 <deviation reason='加强主角气势'/> ",
+      "can_override": true
+    }
+  ],
+  "metrics": {
+    "transition_grade": "C",
+    "active_threads": 3,
+    "dormant_threads": 1,
+    "forgotten_foreshadowing": 1,
+    "logic_holes": 1,
+    "outline_deviations": 1
+  },
+  "summary": "场景转换评级C，有1处逻辑矛盾和1处大纲偏离，需修复转换和矛盾。"
+}
+```
+
+**issue type 映射**（本 checker 使用的标准类型）：
+- 场景断裂 / 前后矛盾 / 因果缺失 / 大纲偏离 / 逻辑漏洞 / 伏笔遗忘 → `CONTINUITY`
+
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值。
+
+**Ch1 边界处理**: 当审查 Ch1 时，无前章可对比，跳过场景转换和前章连贯检查；若 `state.json` 不存在，跳过情节线追踪和伏笔管理，仅做本章内部逻辑检查。
+
+## 伏笔回收质量评估（扩展）
+
+> 不仅检查伏笔是否按时回收，还评估回收质量。
+
+### 检查规则
+
+1. **回收方式质量**: 当本章回收某伏笔时，评估回收方式
+   - A级：意料之外+情理之中，回收打开新疑问
+   - B级：合理回收，有一定冲击
+   - C级：草率回收（一句话带过/直接说明）
+   - C级回收 → severity: medium（`CONTINUITY` type, description 含"伏笔回收草率"）
+
+2. **回收与主线关联**: 伏笔回收是否与当前主线有关联
+   - 回收推进了主线 → 加分
+   - 回收与主线无关（强行插入） → low
+
+### 章末过渡质量评估（扩展）
+
+> 评估本章结尾到下一章的过渡是否自然。
+
+1. **情绪衔接**: 本章结尾情绪状态是否有利于下章开篇
+2. **信息闭合度**: 本章是否遗留了读者困惑（非悬念的真正困惑）
+3. **时空交代**: 章末是否明确了时间/地点状态（便于下章衔接）
+
+### 主题一致性检查（轻量扩展）
+
+> 轻量级主题检查，非独立 checker。
+
+1. 从大纲中提取本卷/本弧的核心主题关键词
+2. 检查本章是否有至少 1 处与核心主题相关的元素（行动/对话/决策）
+3. 连续 5+ 章无任何主题相关元素 → severity: low（`CONTINUITY` type, description 含"主题脱节"）
+
 ## 禁止事项
 
 ❌ 通过存在重大大纲偏差且无 `<deviation/>` 标记的章节

@@ -58,7 +58,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow co
 ## Review depth
 
 - **Core (default)**: consistency / continuity / ooc / reader-pull
-- **Full (关键章/用户要求)**: core + high-point + pacing
+- **Full (关键章/用户要求)**: core + high-point + pacing + dialogue + density
 
 ## Step 1: 加载参考（按需）
 
@@ -114,6 +114,10 @@ cat "$PROJECT_ROOT/.webnovel/state.json"
 **Full 追加**:
 - `high-point-checker`
 - `pacing-checker`
+- `dialogue-checker`
+- `density-checker`
+- `prose-quality-checker`
+- `emotion-checker`
 
 ## Step 4: 生成审查报告
 
@@ -124,7 +128,7 @@ cat "$PROJECT_ROOT/.webnovel/state.json"
 # 第 {start}-{end} 章质量审查报告
 
 ## 综合评分
-- 爽点密度 / 设定一致性 / 节奏控制 / 人物塑造 / 连贯性 / 追读力
+- 爽点密度 / 设定一致性 / 节奏控制 / 人物塑造 / 连贯性 / 追读力 / 对话质量 / 信息密度 / 文笔质感 / 情感表现
 - 总评与等级
 
 ## 修改优先级
@@ -143,12 +147,16 @@ cat "$PROJECT_ROOT/.webnovel/state.json"
   "end_chapter": {end},
   "overall_score": 48,
   "dimension_scores": {
-    "爽点密度": 8,
-    "设定一致性": 7,
-    "节奏控制": 7,
-    "人物塑造": 8,
-    "连贯性": 9,
-    "追读力": 9
+    "爽点密度": 80,
+    "设定一致性": 70,
+    "节奏控制": 70,
+    "人物塑造": 80,
+    "连贯性": 90,
+    "追读力": 90,
+    "对话质量": 82,
+    "信息密度": 85,
+    "文笔质感": 82,
+    "情感表现": 80
   },
   "severity_counts": {"critical": 1, "high": 2, "medium": 3, "low": 1},
   "critical_issues": ["设定自相矛盾"],

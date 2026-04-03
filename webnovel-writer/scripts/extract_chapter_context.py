@@ -322,7 +322,8 @@ def build_chapter_context_payload(project_root: Path, chapter_num: int) -> Dict[
     outline = extract_chapter_outline(project_root, chapter_num)
 
     prev_summaries = []
-    for prev_ch in range(max(1, chapter_num - 2), chapter_num):
+    summary_window = 3  # align with DataModulesConfig.context_recent_summaries_window
+    for prev_ch in range(max(1, chapter_num - summary_window), chapter_num):
         summary = extract_chapter_summary(project_root, prev_ch)
         prev_summaries.append(f"### 第{prev_ch}章摘要\n{summary}")
 

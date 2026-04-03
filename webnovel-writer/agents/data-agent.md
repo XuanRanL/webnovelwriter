@@ -119,10 +119,15 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" wher
 
 写入内容：
 - 更新 `progress.current_chapter`
-- 更新 `protagonist_state`
-- 更新 `strand_tracker`
+- 更新 `protagonist_state`（注意：`protagonist_state.power` 依赖 SQLite 中存在 `is_protagonist=True` 的实体且有 `realm` 状态变化记录，否则该字段为空）
 - 更新 `disambiguation_warnings/pending`
-- **新增 `chapter_meta`**（钩子/模式/结束状态）
+- **新增 `chapter_meta`**（钩子/模式/结束状态，输出格式见下方接口规范——**必须为扁平对象，不含章节号外层键**）
+
+**strand_tracker 更新**（`state process-chapter` 不自动更新 strand_tracker，需额外调用）：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state update --strand-dominant '{"chapter":{chapter},"dominant":"<quest|relationship|worldbuilding|action|mystery>"}'
+```
+根据本章主线判断 dominant strand 类型，每章必须调用一次。
 
 ### Step E: 生成章节摘要文件（新增）
 
@@ -274,6 +279,14 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 3. **伏笔追踪**：
    - 从本章摘要的 `## 伏笔` 段提取标注
    - 追加到 `设定集/伏笔追踪.md` 对应伏笔线下
+   - **同步写入 state.json**：对每条伏笔变动，调用 CLI 更新 `plot_threads.foreshadowing`（确保 context-agent 可读取）
+   ```bash
+   # 新埋设的伏笔
+   python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state update --add-foreshadowing '{"id":"foreshadow_xxx","description":"伏笔描述","planted_chapter":{chapter},"urgency":30}'
+   # 已有伏笔推进/兑现
+   python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state update --resolve-foreshadowing '{"id":"foreshadow_xxx","resolution":"兑现描述","resolved_chapter":{chapter}}'
+   ```
+   - 若 CLI 不可用或失败，仅写 Markdown 文件（best-effort，不阻断）
 
 4. **资产变动**：
    - 扫描正文中的信用点交易
@@ -287,30 +300,103 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 
 所有追加必须带 `[Ch{N}]` 章节标注。Step K 失败不阻断流程。
 
+## 审查报告持久化（扩展）
+
+> 将每章的审查结果持久化存储，支持趋势分析。
+
+### 存储规则
+
+1. Step 3 完成后，将审查汇总写入 `.webnovel/reviews/ch{NNNN}_review.json`
+2. 内容为 Step 3 聚合输出的完整 JSON（含所有 checker 分数和 issues）
+3. 此文件由主流程在 Step 3 完成时写入，Data Agent 在 Step 5 验证其存在性
+
+### 趋势触发
+
+每 10 章自动检查：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 10
+```
+- 若某 checker 连续 3 章分数下降 → 在 summary 中标注预警
+- 若某 issue type 连续 5 章出现 → 标注为"系统性问题"
+
+## 实体状态交叉验证（扩展）
+
+> 对重大实体状态变更做回验，防止错误传播。
+
+### 验证规则
+
+1. **重大变更定义**: 以下变更为"重大"，需要交叉验证
+   - 境界/等级变化
+   - 角色关系变化（敌→友、友→敌）
+   - 角色死亡/消失
+   - 重要物品归属变化
+
+2. **验证方式**:
+   - 回读原文中对应的描写段落
+   - 确认变更有明确的文本依据（不是推测）
+   - 若无文本依据 → 标记 `confidence: 0.5`，不自动写入
+
+3. **输出**: 在 data-agent 输出中增加
+```json
+{
+  "cross_validated_changes": [
+    {"entity": "主角", "field": "realm", "new_value": "金丹", "text_evidence": "第15段：'金光一闪，丹田处凝结成丹'", "validated": true}
+  ]
+}
+```
+
+## 风格样本采集阈值调整（扩展）
+
+> 从"整章高分才采样"改为"段落级精准采样"。
+
+### 新规则
+
+| 条件 | 采样动作 |
+|------|---------|
+| 整章 review_score ≥ 85 | 全章风格采样（保持原逻辑） |
+| 整章 < 85 但某段被 dialogue-checker 标记为 "voice distinct" | 采样该对话段落 |
+| 整章 < 85 但某段被 high-point-checker 标记为 A 级爽点 | 采样该爽点段落 |
+| 整章 < 85 但某段被 prose-quality-checker 标记有"memorable_expressions" | 采样该段落 |
+| 整章 < 70 且某段被标记为典型问题 | 采样为"负面样本"（知道什么不该写） |
+
 ---
 
 ## 接口规范：chapter_meta (state.json)
 
+**重要**：Data Agent 输出的 `chapter_meta` 必须是**扁平对象**（不含章节号外层键），因为 `state_manager.py` 会自动以 `"{NNNN}"` 为键写入 `state.json["chapter_meta"]`。若 Agent 输出中已包含章节号键，会导致双层嵌套。
+
+Agent 输出格式（正确）：
+```json
+{
+  "chapter_meta": {
+    "hook": {
+      "type": "危机钩",
+      "content": "慕容战天冷笑：明日大比...",
+      "strength": "strong"
+    },
+    "pattern": {
+      "opening": "对话开场",
+      "hook": "危机钩",
+      "emotion_rhythm": "低→高",
+      "info_density": "medium"
+    },
+    "ending": {
+      "time": "前一夜",
+      "location": "萧炎房间",
+      "emotion": "平静准备"
+    }
+  }
+}
+```
+
+state.json 中的最终存储形态（由 state_manager 自动包装）：
 ```json
 {
   "chapter_meta": {
     "0099": {
-      "hook": {
-        "type": "危机钩",
-        "content": "慕容战天冷笑：明日大比...",
-        "strength": "strong"
-      },
-      "pattern": {
-        "opening": "对话开场",
-        "hook": "危机钩",
-        "emotion_rhythm": "低→高",
-        "info_density": "medium"
-      },
-      "ending": {
-        "time": "前一夜",
-        "location": "萧炎房间",
-        "emotion": "平静准备"
-      }
+      "hook": { ... },
+      "pattern": { ... },
+      "ending": { ... }
     }
   }
 }

@@ -80,6 +80,13 @@ Optional (only if they exist):
 
 If 总纲.md lacks volume ranges / core conflict / climax, ask the user to fill those before proceeding.
 
+**创意约束文件完整性检查（Soft warning）**:
+以下文件若缺失，后续 write 流程会降级处理（不阻断 plan）：
+- `设定集/叙事声音.md`（缺失 → style-adapter 使用分题材默认，跨章风格一致性降低）
+- `设定集/情感蓝图.md`（缺失 → emotion-checker 跳过蓝图对标）
+- `设定集/开篇策略.md`（缺失 → Ch1-3 使用 Golden Opening Protocol 通用默认）
+若缺失，在 plan 开始前提示用户："建议先运行 /webnovel-init 补齐设定集"。
+
 ## 2) Build setting baseline from 总纲 + 世界观
 目标：在不推翻现有内容的前提下，让设定集从“骨架模板”进入“可规划可写作”的基线状态。
 
@@ -144,9 +151,9 @@ Must satisfy (hard requirements):
 
 Write output:
 ```bash
-@'
+cat > "$PROJECT_ROOT/大纲/第${volume_id}卷-节拍表.md" << 'EOF'
 {beat_sheet_content}
-'@ | Set-Content -Encoding UTF8 "$PROJECT_ROOT/大纲/第{volume_id}卷-节拍表.md"
+EOF
 ```
 
 Completion criteria:
@@ -169,9 +176,9 @@ Must satisfy (hard requirements):
 
 Write output:
 ```bash
-@'
+cat > "$PROJECT_ROOT/大纲/第${volume_id}卷-时间线.md" << 'EOF'
 {timeline_content}
-'@ | Set-Content -Encoding UTF8 "$PROJECT_ROOT/大纲/第{volume_id}卷-时间线.md"
+EOF
 ```
 
 Completion criteria:
@@ -229,14 +236,26 @@ cat "${SKILL_ROOT}/references/outlining/genre-volume-pacing.md"
 ```
 
 ### 爽点密度规划策略
-Based on genre profile:
-- **常规章节**: 1-2 个小爽点（强度 2-3）
-- **关键章节**: 2-3 个爽点，至少 1 个中爽点（强度 4-5）
-- **高潮章节**: 3-4 个爽点，至少 1 个大爽点（强度 6-7）
+Based on genre profile, **adjusted by project pacing_preference** (from state.json):
 
-**Distribution rule**:
-- 每 5-8 章至少 1 个关键章节
-- 每卷至少 1 个高潮章节（通常在卷末）
+若 `state.json` 包含 `pacing_preference`：
+- **高频密集** (`coolpoint_frequency: "高频密集"`):
+  - 常规章节: 2-3 个小爽点（强度 2-3）
+  - 关键章节: 3-4 个爽点，至少 1 个中爽点（强度 4-5）
+  - 每 3-5 章至少 1 个关键章节
+  - 每卷 `climaxes_per_volume` 个高潮章节
+- **适中** (`coolpoint_frequency: "适中"`, 默认):
+  - 常规章节: 1-2 个小爽点（强度 2-3）
+  - 关键章节: 2-3 个爽点，至少 1 个中爽点（强度 4-5）
+  - 每 5-8 章至少 1 个关键章节
+  - 每卷至少 1 个高潮章节（通常在卷末）
+- **慢热积累** (`coolpoint_frequency: "慢热积累"`):
+  - 常规章节: 0-1 个小爽点，允许纯铺垫章
+  - 关键章节: 2-3 个爽点，至少 1 个中爽点（强度 4-5）
+  - 每 8-12 章至少 1 个关键章节
+  - 每卷 `climaxes_per_volume` 个高潮章节
+
+若 `pacing_preference` 缺失，使用"适中"默认值。
 
 ### 约束触发规划策略
 If idea_bank.json exists:
@@ -361,7 +380,7 @@ Chapter format (include 反派层级 for context-agent):
 - 读者情绪: {压抑|紧张|释放|燃|温暖|震撼|好奇|焦虑}
 - 氛围/情绪色调: {一句话描述本章的感官底色}
 - 场景预案: {2-3个关键场景一句话，如"废品站深夜改装+红光映脸"}
-- 对话种子: {1-2句关键对话方向，如"韩远问'你叫什么名字'"}
+- 对话种子: {1-2句关键对话方向，如"配角A问'你叫什么名字'"}
 - 视觉锚点: {最有画面感的1-2个镜头}
 ```
 
@@ -385,9 +404,9 @@ Chapter format (include 反派层级 for context-agent):
 
 Save after each batch:
 ```bash
-@'
+cat >> "$PROJECT_ROOT/大纲/第${volume_id}卷-详细大纲.md" << 'EOF'
 {batch_content}
-'@ | Add-Content -Encoding UTF8 "$PROJECT_ROOT/大纲/第{volume_id}卷-详细大纲.md"
+EOF
 ```
 
 ## 7) Enrich existing setting files from volume outline

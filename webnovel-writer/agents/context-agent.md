@@ -38,18 +38,19 @@ model: inherit
 - 出场角色（状态、动机、情绪底色、说话风格、红线）
 - 场景与力量约束（地点、可用能力、禁用能力）
 - **时间约束（新增）**（上章时间锚点、本章时间锚点、允许推进跨度、时间过渡要求、倒计时状态）
-- 风格指导（本章类型、参考样本、最近模式、本章建议）
+- 风格指导（本章类型、参考样本、最近模式、本章建议、**叙事声音基准摘要**）
 - 连续性与伏笔（时间/位置/情绪连贯；必须处理/可选伏笔）
-- 追读力策略（未闭合问题 + 钩子类型/强度、微兑现建议、差异化提示）
+- 追读力策略（未闭合问题 + 钩子类型/强度、微兑现建议、差异化提示、**情感蓝图对标**）
 
 2. **Context Contract（内置 Step 1.5）**
 - 目标、阻力、代价、本章变化、未闭合问题、核心冲突一句话
 - 开头类型、情绪节奏、信息密度
 - 是否过渡章（必须按大纲判定，禁止按字数判定）
-- 追读力设计（钩子类型/强度、微兑现清单、爽点模式）
+- 追读力设计（钩子类型/强度、微兑现清单）
+- 爽点规划（必填）：类型（装逼打脸/扮猪吃虎/越级反杀/打脸权威/反派翻车/甜蜜超预期/迪化误解/身份掉马/微兑现）、铺垫来源（前文哪个事件可兑现）、兑现方式（一句话）；过渡章至少1个微兑现
 
 3. **Step 2A 直写提示词**
-- 章节节拍（开场触发 → 推进/受阻 → 反转/兑现 → 章末钩子）
+- 章节节拍：每个 beat 必须包含——字数分配、场景描述（地点+氛围）、情绪曲线位置、感官锚点（至少1个画面）、关键对话方向+语音规则（若有对话）、本 beat 禁止事项
 - 不可变事实清单（大纲事实/设定事实/承接事实）
 - 禁止事项（越级能力、无因果跳转、设定冲突、剧情硬拐）
 - 终检清单（本章必须满足项 + fail 条件）
@@ -84,11 +85,14 @@ model: inherit
 
 ## 关键数据来源
 
-- `state.json`: 进度、主角状态、strand_tracker、chapter_meta、project.genre、plot_threads.foreshadowing
+- `state.json`: 进度、主角状态、strand_tracker、chapter_meta、project.genre、plot_threads.foreshadowing、pacing_preference
 - `index.db`: 实体/别名/关系/状态变化/override_contracts/chase_debt/chapter_reading_power
 - `.webnovel/summaries/ch{NNNN}.md`: 章节摘要（含钩子/结束状态）
 - `.webnovel/context_snapshots/`: 上下文快照（优先复用）
 - `大纲/` 与 `设定集/`
+- `设定集/叙事声音.md`: 全书风格基准（语气/密度/感官/对话比例/风格禁忌）
+- `设定集/情感蓝图.md`: 全书情感基调与关键情感节点
+- `设定集/开篇策略.md`: 前3章策略（仅 Ch1-3 读取）
 
 **钩子数据来源说明**：
 - **章纲的"钩子"字段**：本章应设置的章末钩子（规划用）
@@ -168,10 +172,45 @@ cat "{project_root}/大纲/第{volume_id}卷-时间线.md"
 - 若存在倒计时事件，必须校验推进是否正确（D-N 只能变为 D-(N-1)，不可跳跃）
 - 时间锚点不得回跳（除非明确标注为闪回章节）
 
+### Step 0.7: 叙事声音与情感蓝图读取（新增，必做）
+
+**读取叙事声音基准**：
+```bash
+cat "{project_root}/设定集/叙事声音.md"
+```
+- 提取：视角、语气基调、描写密度、感官侧重、对话比例、风格禁忌
+- 写入任务书第 6 板块"风格指导"的**叙事声音基准摘要**
+- 缺失降级：若文件不存在，使用 genre-profiles 默认值并标注 `narrative_voice_missing=true`
+
+**读取情感蓝图**：
+```bash
+cat "{project_root}/设定集/情感蓝图.md"
+```
+- 提取：全书情感基调、本卷情感节点、情感禁区
+- 若当前章节在情感节点的预计范围内，在任务书第 8 板块标注：`emotion_peak_expected=true, target_emotion={目标情感}`
+- 用于 emotion_rhythm 字段：优先参照情感蓝图的基调而非临时决定
+- 缺失降级：若文件不存在，emotion_rhythm 按章节类型推断
+
+**读取开篇策略**（仅 Ch1-3）：
+```bash
+# 仅当 chapter ≤ 3 时读取
+cat "{project_root}/设定集/开篇策略.md"
+```
+- Ch1-3 时，开篇策略中的设计**覆盖默认的 Golden Opening Protocol**
+- 任务书板块 1 的"必须完成"中追加开篇策略的 chapter1_must_convey
+- 任务书板块 8 的钩子设计使用开篇策略的 chapter1_hook
+- 前 3 章的每章重点来自 first3_chapters_plan
+- Ch4+ 不读取此文件
+
+**读取节奏偏好**：
+- 从 `state.json` 的 `pacing_preference` 字段读取（若存在）
+- 影响任务书板块 8 的爽点密度建议
+- 缺失降级：使用 genre-profiles 默认值
+
 ### Step 1: 读取大纲与状态
 - 大纲：`大纲/卷N/第XXX章.md` 或 `大纲/第{卷}卷-详细大纲.md`
   - 必须优先提取并写入任务书：目标/阻力/代价/反派层级/本章变化/章末未闭合问题/钩子（若存在）
-- `state.json`：progress / protagonist_state / chapter_meta / project.genre
+- `state.json`：progress / protagonist_state / chapter_meta / project.genre / pacing_preference
 
 ### Step 2: 追读力与债务（按需）
 ```bash
@@ -234,6 +273,8 @@ Context Contract 必须字段（不可缺）：
 - `开头类型` / `情绪节奏` / `信息密度`
 - `是否过渡章`
 - `追读力设计`
+- `爽点规划`（类型/铺垫来源/兑现方式；纯铺垫章至少 1 个微兑现）
+- `时间约束`（上章时间锚点/本章时间锚点/允许推进跨度/时间过渡要求/倒计时状态）
 
 ### Step 6: 逻辑红线校验（输出前强制）
 对执行包做一致性自检，任一 fail 则回到 Step 5 重组：
@@ -249,6 +290,51 @@ Context Contract 必须字段（不可缺）：
 - 红线 fail 数 = 0
 - 执行包内包含“不可变事实清单 + 章节节拍 + 终检清单 + 时间约束”
 - Step 2A 在不补问情况下可直接起草正文
+
+---
+
+## 质量反馈注入（扩展）
+
+> 将近期章节的审查反馈注入上下文，帮助 Step 2A 避免重复犯错。
+
+### 数据来源
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 5
+```
+
+### 注入规则
+
+1. **近期高频问题**: 从最近 5 章的 review_metrics 中提取反复出现的 issue type
+   - 如果同一 issue type 连续 3+ 章出现 → 在执行包中增加"重点规避"提示
+   - 示例：`"近3章反复出现 PROSE_FLAT（句式单调），本章请特别注意句式变化"`
+
+2. **近期成功模式**: 从最近 5 章中找到最高分章节的特征
+   - 提取该章的 chapter_meta（开头类型/情绪节奏/钩子类型）
+   - 在执行包中以"参考模式"注入
+
+3. **范文锚定**: 若本项目存在风格样本（score ≥ 85 的章节段落）
+   - 从 style_samples 中提取 1-2 个与本章类型匹配的段落
+   - 在 Step 2A prompt 中以"参考这段文字的质感"方式注入
+   - 不是要求模仿，而是锚定质量标准
+
+### 输出字段
+
+在执行包中增加：
+```json
+{
+  "quality_feedback": {
+    "recurring_issues": ["PROSE_FLAT", "EMOTION_SHALLOW"],
+    "avoidance_notes": ["近3章句式节奏评分偏低，本章注意长短交替"],
+    "success_reference": {
+      "chapter": 42,
+      "score": 93,
+      "pattern": {"opening": "冲突", "emotion_rhythm": "低→高→低"}
+    },
+    "style_anchor": "（范文段落，若有）"
+  }
+}
+```
 
 ---
 

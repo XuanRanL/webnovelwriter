@@ -203,15 +203,64 @@ Mode diversity: Warning - Monotonous pacing
   "chapter": 45,
   "overall_score": 86,
   "pass": true,
-  "issues": [],
+  "issues": [
+    {
+      "id": "HP_001",
+      "type": "PACING",
+      "severity": "medium",
+      "location": "全章",
+      "description": "单调风险：最近5章中装逼打脸占比87.5%，类型过于单一",
+      "suggestion": "增加扮猪吃虎/迪化误解/身份掉马等其他模式",
+      "can_override": true
+    },
+    {
+      "id": "HP_002",
+      "type": "READER_PULL",
+      "severity": "low",
+      "location": "第15段",
+      "description": "爽点铺垫不足：越级反杀缺少前期实力差距展示",
+      "suggestion": "补充对手实力描写（至少1-2段），强化反差效果",
+      "can_override": false
+    }
+  ],
   "metrics": {
     "cool_point_count": 2,
     "cool_point_types": ["迪化误解", "身份掉马"],
     "density_score": 8,
     "type_diversity": 0.9,
     "milestone_present": false,
-    "monotony_risk": false
+    "monotony_risk": false,
+    "cool_value": {
+      "suppression_intensity": 8,
+      "reversal_speed": 7,
+      "logic_completeness": 9,
+      "score": 28,
+      "formula": "8×7/max(1,11-9)=28"
+    }
   },
   "summary": "爽点密度达标，类型分布健康，执行质量稳定。"
 }
+```
+
+**评分规则**: 使用统一扣分制公式（详见 `checker-output-schema.md` "统一评分公式"）：
+- `overall_score = max(0, 100 - sum(deductions))`（critical=25, high=15, medium=8, low=3）
+- `pass = overall_score >= 75`
+
+**扩展字段说明**:
+- `monotony_risk`: 本 checker 私有扩展字段，标记近5章爽点类型是否单调（单一类型 > 80%）
+- `cool_value`: 爽点质量量化评估（压扬比计算），包含 `suppression_intensity`（压制强度）、`reversal_speed`（反转速度）、`logic_completeness`（逻辑完整度），公式: `S×R/max(1,11-L)`
+
+**cool_value 检测规则**:
+1. 对每个已识别的爽点，评估三个维度（1-10分）：
+   - `suppression_intensity`（S）: 铺垫中的压制/蓄势有多强
+   - `reversal_speed`（R）: 反转发生得多快/多出人意料
+   - `logic_completeness`（L）: 反转的逻辑是否完整合理
+2. 计算 `score = S × R / max(1, 11 - L)`
+3. 无爽点的章节此字段可省略
+
+**issue type 映射**:
+- 密度/单调问题 → `PACING`
+- 铺垫不足/执行质量弱 → `READER_PULL`
+
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值。
 ```

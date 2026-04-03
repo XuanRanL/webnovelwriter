@@ -35,7 +35,7 @@ model: inherit
 
 **并行读取**:
 1. `正文/` 下的目标章节
-2. `{project_root}/.webnovel/state.json`（strand_tracker 历史）
+2. `{project_root}/.webnovel/state.json`（strand_tracker 历史 + pacing_preference）
 3. `大纲/`（理解预期弧线结构）
 
 **可选: 使用 status_reporter 进行自动化分析**:
@@ -55,7 +55,14 @@ python -X utf8 "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts/we
 
 **分类规则**:
 - 一章可以有多条情节线的**底色**，但只有**一条主导**
-- 主导 = 占据章节内容 ≥ 60%
+- 主导 = 占据章节内容 ≥ 60%（单章分类阈值）
+
+> **注意区分三个阈值**:
+> - **60%**: 单章主导分类阈值（≥60% 即标记该线为本章主导）
+> - **70%**: 10 章窗口分布上限（最近 10 章内单一线 > 70% 触发 PACING 警告）
+> - **55-65% / 20-30% / 10-20%**: 理想分布参考（见"节奏标准"）
+>
+> 三者互补不矛盾：60% 判定"这一章谁主导"，70% 判定"最近10章是否单调"，理想比例是长期目标。
 
 **Example**:
 ```
@@ -105,9 +112,39 @@ Last Fire chapter: 34 | Current: 46 | Gap: 12 chapters
 Last Constellation: 38 | Current: 46 | Gap: 8 chapters
 ```
 
+### 第三步B: 项目节奏偏好加载（新增）
+
+**若 `state.json` 包含 `pacing_preference`**：
+
+```json
+{
+  "pacing_preference": {
+    "coolpoint_frequency": "高频密集|适中|慢热积累",
+    "overall_pace": "快节奏|中等|慢热型",
+    "climaxes_per_volume": "1-2|2-3|3+"
+  }
+}
+```
+
+**阈值调整规则**：
+
+| 偏好 | Quest 最大连续 | Fire 最大缺席 | 说明 |
+|------|---------------|---------------|------|
+| 快节奏 | 7 章 | 12 章 | 快节奏允许更长 Quest 段 |
+| 中等（默认） | 5 章 | 10 章 | 标准阈值 |
+| 慢热型 | 4 章 | 8 章 | 慢热需要更频繁的感情/世界线穿插 |
+
+| 爽点频率 | 密度检查标准 | 说明 |
+|---------|------------|------|
+| 高频密集 | 每章 ≥2 个微爽点 | 配合 high-point-checker |
+| 适中（默认） | 每章 ≥1 个 | 标准 |
+| 慢热积累 | 每 2-3 章 ≥1 个大爽点 | 允许纯铺垫章 |
+
+**缺失处理**：若 `pacing_preference` 不存在，使用下方默认标准。
+
 ### 第四步: 节奏标准
 
-**每10章理想分布与缺席阈值**:
+**每10章理想分布与缺席阈值**（可被第三步B的项目偏好覆盖）:
 
 | Strand | 理想占比 | 最大缺席 | 超限影响 |
 |--------|---------|---------|---------|
@@ -184,7 +221,7 @@ Constellation: ░░░░░░░░░░░░░░░░░░░░   0%
   - 或揭示{势力/世界观元素}（Constellation）
 
 - [Fire 干旱] 距上次Fire已{count}章，建议补充：
-  - 与李雪/师父/伙伴的互动
+  - 与{配角}/师父/伙伴的互动
   - 不必是专门的感情章，可作为底色穿插
 
 - [Constellation 间隔] 世界观扩展不足，建议：
@@ -200,6 +237,60 @@ Constellation: ░░░░░░░░░░░░░░░░░░░░   0%
 **节奏总评**: {健康/预警/危险}
 **读者疲劳风险**: {低/中/高}
 ```
+
+### 评分与 JSON 输出
+
+使用统一扣分制公式（详见 `checker-output-schema.md` "统一评分公式"）：
+- `overall_score = max(0, 100 - sum(deductions))`（critical=25, high=15, medium=8, low=3）
+- `pass = overall_score >= 75`
+
+**JSON 输出**（必须与 Markdown 报告同时输出）：
+
+```json
+{
+  "agent": "pacing-checker",
+  "chapter": 46,
+  "overall_score": 77,
+  "pass": true,
+  "issues": [
+    {
+      "id": "PACE_001",
+      "type": "PACING",
+      "severity": "high",
+      "location": "全章",
+      "description": "Quest过载：连续7章Quest主导（第40-46章），读者疲劳风险高",
+      "suggestion": "第47章安排Fire（感情互动）或Constellation（世界观扩展）作为主导",
+      "can_override": true
+    },
+    {
+      "id": "PACE_002",
+      "type": "PACING",
+      "severity": "medium",
+      "location": "全章",
+      "description": "Fire干旱：距上次Fire已12章（第34章），角色关系发展停滞",
+      "suggestion": "补充与配角的互动场景，可作为底色穿插在Quest章中",
+      "can_override": true
+    }
+  ],
+  "metrics": {
+    "dominant_strand": "quest",
+    "quest_ratio": 0.80,
+    "fire_ratio": 0.05,
+    "constellation_ratio": 0.15,
+    "consecutive_quest": 7,
+    "fire_gap": 12,
+    "constellation_gap": 8,
+    "fatigue_risk": "high"
+  },
+  "summary": "Quest连续7章过载，Fire干旱12章，建议下章安排感情线或世界观线。"
+}
+```
+
+**issue type**: 本 checker 所有问题统一使用 `PACING` 类型。
+
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值。
+
+**Ch1 边界处理**: 当审查 Ch1 时，无历史数据可分析；若 `state.json` 不存在或无 `strand_tracker`，仅做本章情节线分类，跳过平衡检查和趋势分析。
 
 ## 禁止事项
 

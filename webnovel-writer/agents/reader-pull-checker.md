@@ -9,6 +9,8 @@ model: inherit
 
 > **职责**: 审查"读者为什么会点下一章"，执行 Hard/Soft 约束分层。
 
+> **输出格式**: 遵循 `${CLAUDE_PLUGIN_ROOT}/references/checker-output-schema.md` 统一 JSON Schema
+
 ## 核心参考
 
 - **分类法**: `${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md`
@@ -30,7 +32,17 @@ model: inherit
   "chapter": 100,
   "overall_score": 85,
   "pass": true,
-  "issues": [],
+  "issues": [
+    {
+      "id": "SOFT_HOOK_STRENGTH",
+      "type": "READER_PULL",
+      "severity": "medium",
+      "location": "章末",
+      "description": "钩子强度为weak，建议提升至medium",
+      "suggestion": "将'回去休息了'改为悬念/危机",
+      "can_override": true
+    }
+  ],
   "hard_violations": [],
   "soft_suggestions": [
     {
@@ -59,6 +71,9 @@ model: inherit
   "summary": "硬约束通过，钩子强度偏弱，建议增强章末期待。",
   "override_eligible": true
 }
+```
+
+> **issues[] 合并规则**: `issues` 数组必须汇总 `hard_violations` 和 `soft_suggestions` 中的所有条目。硬约束违规的 `can_override` 固定为 `false`，软建议的 `can_override` 为 `true`。`type` 统一使用 `READER_PULL`。
 ```
 
 ---
@@ -258,19 +273,40 @@ model: inherit
 ## 七、评分规则
 
 ### 7.1 硬约束违规
-- 任何硬约束违规 → 直接未通过
+- 任何硬约束违规 → 直接标记为 `critical` issue，按统一扣分制计入 `overall_score`
 - 必须修复后重新审核
 
-### 7.2 软评分（无硬约束违规时）
+### 7.2 overall_score 计算（统一扣分制）
 
-| 得分 | 结果 |
-|------|------|
-| 85+ | 通过 |
-| 70-84 | 通过（有警告） |
-| 50-69 | 条件通过（可通过 `Override`）|
-| <50 | 未通过 |
+**与其他 7 个 checker 保持一致**，使用 `checker-output-schema.md` 定义的统一扣分制公式：
 
-### 7.3 软评分计算
+```
+overall_score = max(0, 100 - sum(deductions))
+```
+
+| severity | 每个 issue 扣分 |
+|----------|----------------|
+| `critical` | 25 分（硬约束违规：HARD-001/002/003/004） |
+| `high` | 15 分 |
+| `medium` | 8 分（软建议中的主要问题） |
+| `low` | 3 分（软建议中的轻微问题） |
+
+**通过阈值**: `overall_score >= 75` 即 `pass: true`
+
+**硬约束 → severity 映射**:
+- HARD-001（可读性底线）→ `critical`（-25）
+- HARD-002（承诺违背）→ `critical`（-25）
+- HARD-003（节奏灾难）→ `critical`（-25）
+- HARD-004（冲突真空）→ `high`（-15）
+
+**软建议 → severity 映射**:
+- SOFT_NEXT_REASON / SOFT_MICROPAYOFF（核心追读力要素）→ `medium`（-8）
+- SOFT_HOOK_ANCHOR / SOFT_PATTERN_REPEAT（重要追读力要素）→ `medium`（-8）
+- SOFT_HOOK_STRENGTH / SOFT_HOOK_TYPE / SOFT_EXPECTATION_OVERLOAD / SOFT_RHYTHM_NATURALNESS → `low`（-3）
+
+### 7.3 内部分析参考（不影响 overall_score，用于诊断）
+
+以下加权评分仅作为内部诊断参考，写入 `metrics` 中的扩展字段，不替代 `overall_score`：
 
 | 检查项 | 权重 | 问题类型 |
 |--------|------|----------|
@@ -282,6 +318,51 @@ model: inherit
 | 新增期待≤2个 | 10% | EXPECTATION_OVERLOAD |
 | 钩子类型匹配题材 | 5% | TYPE_MISMATCH |
 | 节奏自然性（非机械打点） | 5% | MECHANICAL_PACING |
+
+---
+
+## 开篇吸引力检查（扩展）
+
+> 网文前 200-300 字决定读者是否继续阅读，此模块专项检测开篇质量。
+
+### 检查规则
+
+1. **HARD-005 开头进入速度**: 前 300 字内是否建立了以下至少 2 项：
+   - 冲突/风险/紧张感
+   - 角色辨识度（读者知道"这是谁"）
+   - 场景锚点（读者能"看到"画面）
+   - 好奇驱动（一个让读者想知道答案的问题）
+   - 未满足 2 项 → severity: high
+
+2. **SOFT_OPENING_HOOK**: 前 200 字是否有明确的"阅读钩子"
+   - 危机钩（角色处于危险中）
+   - 悬念钩（抛出未解问题）
+   - 反差钩（打破读者预期）
+   - 情感钩（强烈情绪冲击）
+   - 无钩子 → severity: medium
+
+3. **SOFT_NO_EXPLAIN_OPEN**: 前 300 字是否避免了"解释性开场"
+   - 以设定说明/背景介绍/人物描述开场 → severity: low
+   - 以动作/对话/冲突开场 → 正常
+
+4. **上章钩子回应速度**: 若上章有强钩子（strength=strong），本章前 200 字是否回应
+   - 强钩子未在前 200 字回应 → severity: medium
+   - 强钩子在前 200 字有回应 → 正常
+
+### metrics 扩展
+
+在现有 metrics 基础上增加：
+```json
+{
+  "opening_quality": {
+    "elements_in_300w": ["冲突", "角色辨识度"],
+    "hook_in_200w": true,
+    "hook_type": "危机钩",
+    "explain_opening": false,
+    "prev_hook_response_speed": "within_200w"
+  }
+}
+```
 
 ---
 

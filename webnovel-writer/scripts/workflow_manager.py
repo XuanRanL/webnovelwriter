@@ -111,10 +111,10 @@ def expected_step_owner(command: str, step_id: str) -> str:
     if command == "webnovel-write":
         mapping = {
             "Step 1": "context-agent",
-            "Step 1.5": "webnovel-write-skill",
             "Step 2A": "writer-draft",
             "Step 2B": "style-adapter",
             "Step 3": "review-agents",
+            "Step 3.5": "external-review-agent",
             "Step 4": "polish-agent",
             "Step 5": "data-agent",
             "Step 6": "backup-agent",
@@ -127,8 +127,19 @@ def expected_step_owner(command: str, step_id: str) -> str:
     return "unknown"
 
 
+
+# Steps that can run in parallel — neither requires the other to complete first.
+PARALLEL_GROUPS = {
+    "webnovel-write": [{"Step 3", "Step 3.5"}],
+}
+
+
 def step_allowed_before(command: str, step_id: str, completed_steps: list[Dict[str, Any]]) -> bool:
-    """Check simple ordering constraints by pending sequence."""
+    """Check simple ordering constraints by pending sequence.
+
+    Parallel groups: steps in the same group do not require each other.
+    E.g. Step 3 and Step 3.5 can start independently after Step 2B.
+    """
     sequence = get_pending_steps(command)
     if step_id not in sequence:
         return True
@@ -136,6 +147,14 @@ def step_allowed_before(command: str, step_id: str, completed_steps: list[Dict[s
     expected_index = sequence.index(step_id)
     completed_ids = [str(item.get("id")) for item in completed_steps]
     required_before = sequence[:expected_index]
+
+    # Remove parallel siblings from required_before
+    parallel_groups = PARALLEL_GROUPS.get(command, [])
+    for group in parallel_groups:
+        if step_id in group:
+            required_before = [s for s in required_before if s not in group]
+            break
+
     return all(prev in completed_ids for prev in required_before)
 
 
@@ -497,6 +516,24 @@ def analyze_recovery_options(interrupt_info):
             },
         ]
 
+    if step_id == "Step 3.5":
+        return [
+            {
+                "option": "A",
+                "label": "重新执行外部审查",
+                "risk": "medium",
+                "description": "重新调用 6 模型外部审查（核心模型按 fallback 链重试）",
+                "actions": ["重新执行外部模型审查", "合并内外部分数", "继续 Step 4 润色"],
+            },
+            {
+                "option": "B",
+                "label": "跳过外部审查，使用纯内部分数",
+                "risk": "low",
+                "description": "退化为纯内部分数，后续可补跑外部审查",
+                "actions": ["标记外部审查已跳过", "overall_score 退化为纯内部分数", "继续 Step 4 润色"],
+            },
+        ]
+
     if step_id == "Step 4":
         project_root = find_project_root()
         existing_chapter = find_chapter_file(project_root, chapter_num)
@@ -715,7 +752,8 @@ def get_pending_steps(command):
     """Get command pending step list."""
     if command == "webnovel-write":
         # v2: Step 1 内置 Contract v2，不再单独记录 Step 1.5，避免产生 step_order_violation 噪声。
-        return ["Step 1", "Step 2A", "Step 2B", "Step 3", "Step 4", "Step 5", "Step 6"]
+        # Step 3.5 与 Step 3 并行执行，但需独立记录进度以支持 /webnovel-resume 恢复。
+        return ["Step 1", "Step 2A", "Step 2B", "Step 3", "Step 3.5", "Step 4", "Step 5", "Step 6"]
     if command == "webnovel-review":
         return ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6", "Step 7", "Step 8"]
     return []
