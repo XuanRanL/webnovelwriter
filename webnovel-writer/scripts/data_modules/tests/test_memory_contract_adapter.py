@@ -206,6 +206,57 @@ class TestLoadContext:
         assert isinstance(pack, ContextPack)
         assert pack.chapter == 10
 
+    def test_load_context_includes_protagonist(self, tmp_path):
+        cfg = _make_project(tmp_path)
+        state = {
+            "progress": {"current_chapter": 9},
+            "protagonist_state": {"location": "迦南学院", "power": {"realm": "斗师"}},
+        }
+        cfg.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+        adapter = MemoryContractAdapter(cfg)
+        pack = adapter.load_context(10)
+        assert "protagonist" in pack.sections
+        assert pack.sections["protagonist"]["location"] == "迦南学院"
+        assert "progress" in pack.sections
+
+    def test_load_context_includes_recent_summaries(self, tmp_path):
+        cfg = _make_project(tmp_path)
+        summary_dir = cfg.webnovel_dir / "summaries"
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        (summary_dir / "ch0008.md").write_text("第8章摘要内容", encoding="utf-8")
+        (summary_dir / "ch0009.md").write_text("第9章摘要内容", encoding="utf-8")
+
+        adapter = MemoryContractAdapter(cfg)
+        pack = adapter.load_context(10)
+        assert "recent_summaries" in pack.sections
+        assert "ch0008" in pack.sections["recent_summaries"]
+        assert "ch0009" in pack.sections["recent_summaries"]
+
+    def test_load_context_includes_rules_and_loops(self, tmp_path):
+        cfg = _make_project(tmp_path)
+        from data_modules.memory.schema import MemoryItem
+        from data_modules.memory.store import ScratchpadManager
+
+        store = ScratchpadManager(cfg)
+        store.upsert_item(MemoryItem(
+            id="rule-1", layer="semantic", category="world_rule",
+            subject="力量体系", field="异火", value="23种",
+            status="active", source_chapter=1,
+        ))
+        store.upsert_item(MemoryItem(
+            id="ol-1", layer="semantic", category="open_loop",
+            subject="三年之约", field="", value="萧炎与纳兰嫣然三年之约",
+            status="active", source_chapter=1,
+        ))
+
+        adapter = MemoryContractAdapter(cfg)
+        pack = adapter.load_context(10)
+        assert "active_rules" in pack.sections
+        assert len(pack.sections["active_rules"]) == 1
+        assert "urgent_loops" in pack.sections
+        assert len(pack.sections["urgent_loops"]) == 1
+
 
 class TestCommitChapter:
     def test_commit_chapter_basic(self, tmp_path):

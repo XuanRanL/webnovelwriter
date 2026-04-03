@@ -110,17 +110,71 @@ class MemoryContractAdapter:
         )
 
     def load_context(self, chapter: int, budget_tokens: int = 4000) -> ContextPack:
+        sections: Dict[str, Any] = {}
+
+        # 1. MemoryOrchestrator 基础包
         try:
             orch = self._memory_orchestrator()
             pack = orch.build_memory_pack(chapter)
-            return ContextPack(
-                chapter=chapter,
-                sections=pack,
-                budget_used_tokens=0,  # orchestrator 不计 token，由调用者按需裁剪
-            )
+            sections["memory_pack"] = pack
         except Exception as e:
-            logger.warning("load_context failed: %s", e)
-            return ContextPack(chapter=chapter)
+            logger.warning("load_context: orchestrator failed: %s", e)
+
+        # 2. 章纲摘要
+        try:
+            from chapter_outline_loader import load_chapter_outline
+            outline = load_chapter_outline(self.config.project_root, chapter, max_chars=1500)
+            if outline and not outline.startswith("⚠️"):
+                sections["outline"] = outline
+        except Exception as e:
+            logger.warning("load_context: outline failed: %s", e)
+
+        # 3. 最近摘要
+        try:
+            summaries = {}
+            for prev_ch in range(max(1, chapter - 2), chapter):
+                text = self.read_summary(prev_ch)
+                if text:
+                    summaries[f"ch{prev_ch:04d}"] = text[:500]
+            if summaries:
+                sections["recent_summaries"] = summaries
+        except Exception as e:
+            logger.warning("load_context: summaries failed: %s", e)
+
+        # 4. 主角状态 + 进度
+        try:
+            sm = self._state_manager()
+            sm._load_state()
+            protagonist = sm._state.get("protagonist_state")
+            if protagonist:
+                sections["protagonist"] = protagonist
+            progress = sm._state.get("progress")
+            if progress:
+                sections["progress"] = progress
+        except Exception as e:
+            logger.warning("load_context: state failed: %s", e)
+
+        # 5. 活跃约束（world_rules 前 5 条）
+        try:
+            rules = self.query_rules()
+            if rules:
+                sections["active_rules"] = [r.to_dict() for r in rules[:5]]
+        except Exception as e:
+            logger.warning("load_context: rules failed: %s", e)
+
+        # 6. 紧急伏笔（前 3 条）
+        try:
+            loops = self.get_open_loops()
+            if loops:
+                sections["urgent_loops"] = [l.to_dict() for l in loops[:3]]
+        except Exception as e:
+            logger.warning("load_context: loops failed: %s", e)
+
+        return ContextPack(
+            chapter=chapter,
+            sections=sections,
+            budget_used_tokens=0,
+        )
 
     def query_entity(self, entity_id: str) -> Optional[EntitySnapshot]:
         try:
