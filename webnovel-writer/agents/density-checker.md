@@ -229,7 +229,7 @@ model: inherit
 - 填充段落 / 死段落 / 无推进跨度 / 内心独白过多 → `PADDING`
 - 重复表达 / 冗余描写 → `REPETITION`
 
-> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值。
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 13 个标准枚举值。
 
 **内心独白权责**: 本 checker 负责检测**全局比例**（`inner_monologue_ratio > 0.25`），dialogue-checker 负责检测**局部结构**（连续 3+ 段堆积）。详见 `checker-output-schema.md` "内心独白检查权责划分"。
 ```

@@ -522,7 +522,7 @@ def analyze_recovery_options(interrupt_info):
                 "option": "A",
                 "label": "重新执行外部审查",
                 "risk": "medium",
-                "description": "重新调用 6 模型外部审查（核心模型按 fallback 链重试）",
+                "description": "重新调用 9 模型外部审查（核心模型按 fallback 链重试）",
                 "actions": ["重新执行外部模型审查", "合并内外部分数", "继续 Step 4 润色"],
             },
             {

@@ -262,5 +262,5 @@ Mode diversity: Warning - Monotonous pacing
 - 密度/单调问题 → `PACING`
 - 铺垫不足/执行质量弱 → `READER_PULL`
 
-> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值。
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 13 个标准枚举值。
 ```

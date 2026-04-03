@@ -253,7 +253,7 @@ model: inherit
 - 战力冲突 / 地点错误 / 角色冲突 / 实体矛盾 → `SETTING_CONFLICT`
 - 时间线问题 / 倒计时错误 / 事件先后矛盾 → `CONTINUITY`
 
-> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值。
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 13 个标准枚举值。
 
 **Ch1 边界处理**: 当审查 Ch1 时，无前章可对比；若 `state.json` 不存在，跳过战力/地点的前后对比，仅做设定集内部一致性检查。
 

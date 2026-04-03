@@ -193,7 +193,7 @@ model: inherit
 - `overall_score = max(0, 100 - sum(deductions))`（critical=25, high=15, medium=8, low=3）
 - `pass = overall_score >= 75`
 
-> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值（本 checker 主要使用 `DIALOGUE_FLAT`、`DIALOGUE_INFODUMP`、`DIALOGUE_MONOLOGUE`、`PADDING`）。
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 13 个标准枚举值（本 checker 主要使用 `DIALOGUE_FLAT`、`DIALOGUE_INFODUMP`、`DIALOGUE_MONOLOGUE`、`PADDING`）。
 ```
 
 ## 禁止事项

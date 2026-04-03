@@ -291,7 +291,7 @@ vs.
 **issue type 映射**（本 checker 使用的标准类型）：
 - 场景断裂 / 前后矛盾 / 因果缺失 / 大纲偏离 / 逻辑漏洞 / 伏笔遗忘 → `CONTINUITY`
 
-> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 11 个标准枚举值。
+> `issues[].type` 必须使用 `checker-output-schema.md` 定义的 13 个标准枚举值。
 
 **Ch1 边界处理**: 当审查 Ch1 时，无前章可对比，跳过场景转换和前章连贯检查；若 `state.json` 不存在，跳过情节线追踪和伏笔管理，仅做本章内部逻辑检查。
 
