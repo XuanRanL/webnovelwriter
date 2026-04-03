@@ -55,6 +55,8 @@ allowed-tools: Read Write Edit Grep Bash Task
   - 用途：Step 3 审查输出 schema 定义。
 - `../../references/shared/core-constraints.md`
   - 用途：Step 2 起草硬约束。
+- `references/anti-ai-guide.md`
+  - 用途：Step 2 起草时 anti-AI 预防。
 - `references/polish-guide.md`
   - 用途：Step 4 润色与终检规则。
 - `references/writing/typesetting.md`
@@ -142,6 +144,7 @@ export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-roo
 
 ```bash
 cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
+cat "${SKILL_ROOT}/references/anti-ai-guide.md"
 ```
 
 硬要求：
