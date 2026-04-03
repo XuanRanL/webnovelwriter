@@ -50,9 +50,9 @@ allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
 在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
 
 1. Step 3 的内部 checker 全部返回并汇总出 overall_score（标准/`--fast` 为 10 个，`--minimal` 为 3 个核心 checker）
-2. Step 3.5 的 8 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充5模型失败不阻塞），每模型审查 10 个维度（`--minimal` 模式跳过此条件）
+2. Step 3.5 的 9 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充6模型失败不阻塞），每模型审查 10 个维度（`--minimal` 模式跳过此条件）
 3. 所有 critical 问题已修复，high 问题已修复或有 deviation 记录
-4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部10维度分数+外部8模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
+4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部10维度分数+外部9模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
 5. Step 4 的 `anti_ai_force_check=pass`
 6. Step 5 Data Agent 已完成
 7. Step 6 Git 已提交
@@ -86,7 +86,7 @@ git log --oneline -1 | grep "第${chapter_num}章"
   - 用途：Step 3 审查调用模板、汇总格式、落库 JSON 规范。
   - 触发：Step 3 必读。
 - `references/step-3.5-external-review.md`
-  - 用途：Step 3.5 外部模型审查完整规范（8模型架构/供应商fallback链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
+  - 用途：Step 3.5 外部模型审查完整规范（9模型架构/供应商fallback链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
   - 触发：Step 3.5 必读。
 - `references/step-5-debt-switch.md`
   - 用途：Step 5 债务利息开关规则（默认关闭）。
@@ -336,13 +336,13 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 ```
 
 硬要求：
-- **必须使用 `--model-key all` 一次性执行全部 8 模型**，禁止手动逐个调用（防止遗漏模型）。
-- 核心3模型必须全部成功，补充5模型失败不阻塞。
+- **必须使用 `--model-key all` 一次性执行全部 9 模型**，禁止手动逐个调用（防止遗漏模型）。
+- 核心3模型必须全部成功，补充6模型失败不阻塞。
 - 按 reference 文件中的 Prompt 模板构建 system 消息。
 - 每次 API 调用后验证路由（检查 response.model 字段）。
-- 核心模型 fallback 链：healwrap(2次) → codexcc(1次) → 硅基流动(兜底)。
+- 核心模型四级 fallback 链：nextapi(2次) → healwrap(2次) → codexcc(1次) → 硅基流动(兜底)。
 - 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
-- 生成审查报告必须包含 8 模型 × 10 维度评分矩阵 + 共识问题 + Step 4 修复清单。
+- 生成审查报告必须包含 9 模型 × 10 维度评分矩阵 + 共识问题 + Step 4 修复清单。
 
 调用命令：
 ```bash
@@ -350,14 +350,13 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter {chapter_num} \
   --mode dimensions \
-  --model-key all \
-  --max-concurrent 1
+  --model-key all
 ```
 ⚠️ 脚本仅支持：`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--max-concurrent`, `--rpm-override`。不要传其他参数。
 
 输出：
-- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共8个文件）
-- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 8 模型 × 10 维度矩阵）
+- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共9个文件）
+- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 9 模型 × 10 维度矩阵）
 
 ### Step 4：润色（问题修复优先）
 
@@ -452,7 +451,7 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 1. 章节正文文件存在且非空：`正文/第{chapter_padded}章-{title_safe}.md` 或 `正文/第{chapter_padded}章.md`
 2. Step 3 已产出 `overall_score` 且 `review_metrics` 成功落库
 3. Step 3.5 外部审查已完成（核心3模型必须成功）（`--minimal` 模式跳过此条件）
-4. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部10维度分数+外部8模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
+4. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部10维度分数+外部9模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
 5. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
 6. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
 7. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`

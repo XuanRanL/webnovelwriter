@@ -3,8 +3,8 @@ Step 3.5 External Model Review Script
 Supports two modes:
   - legacy: single prompt, 4-dimension combined review (backward compatible)
   - dimensions: 10 separate dimension prompts, concurrent API calls
-Three-tier fallback: healwrap (primary) → codexcc (backup) → siliconflow (fallback)
-Eight-model architecture: 3 core (kimi/glm/qwen-plus) + 5 supplemental (qwen/deepseek/minimax/doubao/glm4)
+Four-tier fallback: nextapi (primary) → healwrap (secondary) → codexcc (backup) → siliconflow (fallback)
+Nine-model architecture: 3 core (kimi/glm/qwen-plus) + 6 supplemental (qwen/deepseek/minimax/doubao/glm4/minimax-m2.7)
 """
 import json
 import time
@@ -17,6 +17,11 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 PROVIDERS = {
+    "nextapi": {
+        "base_url": "https://api.nextapi.store/v1/chat/completions",
+        "env_key_names": ["NEXTAPI_API_KEY"],
+        "rpm": 999,  # 无限制
+    },
     "healwrap": {
         "base_url": "https://llm-api.healwrap.cn/v1/chat/completions",
         "env_key_names": ["HEALWRAP_API_KEY"],
@@ -74,30 +79,27 @@ class ProviderRateLimiter:
     def acquire(self):
         """Block until it's safe to make the next request."""
         while True:
-            with self._sem_lock:
-                now = time.time()
-                # Purge timestamps older than 60s
-                self._timestamps = [t for t in self._timestamps if now - t < 60.0]
-                if len(self._timestamps) < self.rpm:
-                    # Under RPM limit — check minimum interval
-                    if self._timestamps:
-                        wait = self.min_interval - (now - self._timestamps[-1])
-                        if wait > 0:
-                            # Release lock, wait, then retry
-                            pass
-                        else:
-                            self._timestamps.append(now)
-                            return
-                    else:
-                        self._timestamps.append(now)
-                        return
-                else:
-                    # At RPM limit — must wait for oldest to expire
-                    wait = 60.0 - (now - self._timestamps[0]) + 0.1
-            # Wait outside the lock
-            if 'wait' not in dir() or wait <= 0:
-                wait = self.min_interval
-            time.sleep(max(wait, 0.5))
+            sleep_time = self._try_acquire()
+            if sleep_time == 0:
+                return
+            time.sleep(sleep_time)
+
+    def _try_acquire(self):
+        """Try to acquire a slot. Returns 0 if acquired, or seconds to sleep."""
+        with self._sem_lock:
+            now = time.time()
+            # Purge timestamps older than 60s
+            self._timestamps = [t for t in self._timestamps if now - t < 60.0]
+            if len(self._timestamps) >= self.rpm:
+                # At RPM limit — must wait for oldest to expire
+                return 60.0 - (now - self._timestamps[0]) + 0.1
+            if self._timestamps:
+                wait = self.min_interval - (now - self._timestamps[-1])
+                if wait > 0:
+                    return max(wait, 0.1)
+            # Slot available — record and return
+            self._timestamps.append(now)
+            return 0
 
 # Core models: must succeed, have full fallback chain
 MODELS = {
@@ -115,6 +117,7 @@ MODELS = {
         "tier": "core",
         "role": "严审/逻辑设定",
         "providers": [
+            {"provider": "nextapi", "id": "kimi-k2.5", "name": "Kimi-K2.5"},
             {"provider": "healwrap", "id": "kimi-k2.5", "name": "Kimi-K2.5"},
             {"provider": "codexcc", "id": "kimi-k2.5", "name": "Kimi-K2.5"},
             {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF"},
@@ -125,6 +128,7 @@ MODELS = {
         "tier": "core",
         "role": "编辑/读者感受",
         "providers": [
+            {"provider": "nextapi", "id": "glm-5.0", "name": "GLM-5.0"},
             {"provider": "healwrap", "id": "glm-5", "name": "GLM-5"},
             {"provider": "codexcc", "id": "glm-5", "name": "GLM-5"},
             {"provider": "siliconflow", "id": "Pro/zai-org/GLM-5", "name": "GLM-5-SF"},
@@ -152,6 +156,7 @@ MODELS = {
         "tier": "supplemental",
         "role": "快速参考",
         "providers": [
+            {"provider": "nextapi", "id": "minimax-m2.5", "name": "MiniMax-M2.5"},
             {"provider": "healwrap", "id": "minimax-m2.5", "name": "MiniMax-M2.5"},
         ],
         "timeout": 300,
@@ -169,6 +174,15 @@ MODELS = {
         "role": "文学质感/角色声音",
         "providers": [
             {"provider": "healwrap", "id": "glm-4.7", "name": "GLM-4.7"},
+        ],
+        "timeout": 300,
+    },
+    "minimax-m2.7": {
+        "tier": "supplemental",
+        "role": "对话/情感深度",
+        "providers": [
+            {"provider": "nextapi", "id": "minimax-m2.7", "name": "MiniMax-M2.7"},
+            {"provider": "healwrap", "id": "minimax-m2.7", "name": "MiniMax-M2.7"},
         ],
         "timeout": 300,
     },
@@ -440,6 +454,10 @@ def verify_routing(model_key, provider_name, response_model, requested_model_id=
         req_base = requested_model_id.rsplit("/", 1)[-1].lower()
         if req_base in resp_lower:
             return True, "positive_match"
+        # Normalize version: strip trailing ".0" (e.g. "glm-5.0" → "glm-5")
+        req_normalized = re.sub(r'\.0$', '', req_base)
+        if req_normalized != req_base and req_normalized in resp_lower:
+            return True, "normalized_match"
         # Also try model_key as fallback (e.g. "kimi" in "kimi-k2.5-xxx")
         if model_key.lower() in resp_lower:
             return True, "key_match"
@@ -600,7 +618,7 @@ def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, 
 
         base_url = PROVIDERS[provider_name]["base_url"]
         # healwrap: 2 retries (3 total attempts); codexcc/siliconflow: 0 retries (1 attempt, fail-fast)
-        max_retries = 2 if provider_name == "healwrap" else 0
+        max_retries = 2 if provider_name in ("healwrap", "nextapi") else 0
 
         raw, error, model_actual, usage, attempts = call_api(
             base_url, api_keys[provider_name], provider_cfg["id"],
@@ -642,6 +660,14 @@ CH1_3_SPECIAL_PROMPT = """
 5. 人物名字是否过多让你困惑？
 开篇章节的评分标准应比普通章节更严格。
 """
+
+
+def _call_dim_with_stop(early_stop_event, api_keys, model_key, model_config, dim_key, dim_cfg, chapter_text, context_block, chapter_num):
+    """Wrapper: check early-stop event before calling call_dimension.
+    Supplemental models use this to skip queued dimensions after repeated failures."""
+    if early_stop_event and early_stop_event.is_set():
+        return dim_key, None, "none", "none", None, False, None, [], 0, "early_stop_skipped"
+    return call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_text, context_block, chapter_num)
 
 
 def call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_text, context_block, chapter_num):
@@ -1037,15 +1063,20 @@ def _run_single_model(args, api_keys):
     total_prompt_tokens = 0
     total_completion_tokens = 0
 
-    # 补充层连续失败早停：连续 3 个维度失败后跳过剩余维度
+    # 补充层早停：累计 3 个维度失败后跳过排队中的剩余维度
     is_supplemental = model_config.get("tier") == "supplemental"
-    consecutive_failures = 0
+    early_stop_event = threading.Event() if is_supplemental else None
+    total_dim_failures = 0
     EARLY_STOP_THRESHOLD = 3
+    # 补充层降低维度并发（3），使排队中的 task 能被 early_stop_event 拦截
+    # 核心层保持全并发
+    dim_concurrent = min(max_concurrent, 3) if is_supplemental else max_concurrent
 
-    with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+    with ThreadPoolExecutor(max_workers=dim_concurrent) as executor:
         futures = {}
         for dim_key, dim_cfg in DIMENSIONS.items():
-            f = executor.submit(call_dimension, api_keys, resolved_key, model_config,
+            f = executor.submit(_call_dim_with_stop, early_stop_event,
+                                api_keys, resolved_key, model_config,
                                 dim_key, dim_cfg, chapter_text, context_block, chapter_num)
             futures[f] = dim_key
 
@@ -1054,7 +1085,6 @@ def _run_single_model(args, api_keys):
             full_provider_chain.extend(chain)
 
             if parsed:
-                consecutive_failures = 0
                 dim_score = parsed.get("score", 0)
                 dim_issues = parsed.get("issues", [])
                 scores[dim_key] = dim_score
@@ -1077,19 +1107,16 @@ def _run_single_model(args, api_keys):
                     "elapsed_ms": elapsed,
                 }
             else:
-                consecutive_failures += 1
-                results[dim_key] = {"status": "failed", "error": error}
+                if error == "early_stop_skipped":
+                    results[dim_key] = {"status": "skipped", "error": "early_stop_skipped"}
+                else:
+                    total_dim_failures += 1
+                    results[dim_key] = {"status": "failed", "error": error}
 
-                # 补充层连续失败达阈值 → 取消剩余维度，避免无意义重试
-                if is_supplemental and consecutive_failures >= EARLY_STOP_THRESHOLD:
-                    remaining = [fut for fut in futures if not fut.done()]
-                    for fut in remaining:
-                        fut.cancel()
-                    skipped_dims = [futures[fut] for fut in futures if fut.cancelled()]
-                    for sk_dim in skipped_dims:
-                        results[sk_dim] = {"status": "skipped", "error": f"early_stop_after_{consecutive_failures}_consecutive_failures"}
-                    print(f"[early-stop] {resolved_key}（补充层）连续{consecutive_failures}次失败，跳过剩余{len(skipped_dims)}个维度", file=sys.stderr)
-                    break
+                    # 补充层累计失败达阈值 → 设置 event，排队中的维度启动时立即跳过
+                    if is_supplemental and total_dim_failures >= EARLY_STOP_THRESHOLD and early_stop_event and not early_stop_event.is_set():
+                        early_stop_event.set()
+                        print(f"[early-stop] {resolved_key}（补充层）累计{total_dim_failures}次失败，触发早停", file=sys.stderr)
 
     # Calculate overall
     valid_scores = [s for s in scores.values() if isinstance(s, (int, float))]
@@ -1137,6 +1164,7 @@ def _run_single_model(args, api_keys):
         "metrics": {
             "dimensions_ok": sum(1 for r in results.values() if r.get("status") == "ok"),
             "dimensions_failed": sum(1 for r in results.values() if r.get("status") == "failed"),
+            "dimensions_skipped": sum(1 for r in results.values() if r.get("status") == "skipped"),
             "total_issues": len(all_issues),
         },
         "summary": f"{resolved_key} {len(DIMENSIONS)}维度审查完成，{len(valid_scores)}/{len(DIMENSIONS)}成功，综合{overall}分，{len(all_issues)}个问题",
@@ -1195,7 +1223,7 @@ def main():
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--chapter", required=True, type=int)
     parser.add_argument("--mode", default="legacy", choices=["legacy", "dimensions"])
-    parser.add_argument("--model-key", default="qwen-plus", help="For dimensions mode: qwen-plus/kimi/glm/qwen/deepseek/minimax/doubao/glm4 or 'all' for all models")
+    parser.add_argument("--model-key", default="qwen-plus", help="For dimensions mode: qwen-plus/kimi/glm/qwen/deepseek/minimax/doubao/glm4/minimax-m2.7 or 'all' for all 9 models")
     parser.add_argument("--models", default="qwen-plus,kimi,glm", help="For legacy mode: comma-separated")
     parser.add_argument("--max-concurrent", type=int, default=DEFAULT_MAX_CONCURRENT,
                         help=f"Max parallel dimension calls per model (default: {DEFAULT_MAX_CONCURRENT})")
