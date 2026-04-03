@@ -481,9 +481,13 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
     }
     # Thinking models (qwen-3.5, deepseek-v3.2, doubao-seed-2.0, glm-4.7, etc.) wrap output in <think> tags,
     # consuming most of max_tokens on reasoning. Remove limit to let API use model max.
+    # Thinking models (qwen-3.5, qwen3.5-plus, deepseek-v3.2, doubao-seed-2.0, glm-4.7):
+    # - 需要更高 max_tokens（推理+输出共用 completion token 预算）
+    # - enable_thinking 可靠激活 qwen-3.5 的 thinking，其余模型无害
     model_lower = model_id.lower()
     if any(t in model_lower for t in ("qwen-3", "qwen3", "deepseek", "doubao", "glm-4")):
-        payload["max_tokens"] = 65536  # thinking 模型需要足够空间给推理+输出
+        payload["max_tokens"] = 65536
+        payload["enable_thinking"] = True
     # Acquire rate limiter before first request
     limiter = ProviderRateLimiter.get(provider_name) if provider_name else None
     provider_chain = []
