@@ -1,61 +1,62 @@
 # Step 3.5 外部模型审查规范
 
-## 八模型双层架构
+## 九模型双层架构
 
-### 核心层（必须成功，有 fallback 保障）
+### 核心层（必须成功，四级 fallback 保障）
 
-| 模型 | 角色 | healwrap | codexcc | 硅基流动 |
-|------|------|---------|---------|---------|
-| kimi-k2.5 | 严审/逻辑 | `kimi-k2.5` | `kimi-k2.5` | `Pro/moonshotai/Kimi-K2.5` |
-| glm-5 | 编辑/读者感受 | `glm-5` | `glm-5` | `Pro/zai-org/GLM-5` |
-| qwen3.5-plus | 网文/爽点 | `qwen3.5-plus` | `qwen3.5-plus` | `Qwen/Qwen3.5-397B-A17B` |
+| 模型 | 角色 | nextapi | healwrap | codexcc | 硅基流动 |
+|------|------|---------|---------|---------|---------|
+| kimi-k2.5 | 严审/逻辑 | `kimi-k2.5` | `kimi-k2.5` | `kimi-k2.5` | `Pro/moonshotai/Kimi-K2.5` |
+| glm-5 | 编辑/读者感受 | `glm-5.0` | `glm-5` | `glm-5` | `Pro/zai-org/GLM-5` |
+| qwen3.5-plus | 网文/爽点 | — | `qwen3.5-plus` | `qwen3.5-plus` | `Qwen/Qwen3.5-397B-A17B` |
 
-### 补充层（仅 healwrap，失败不阻塞）
+### 补充层（失败不阻塞）
 
-| 模型 | 角色 |
-|------|------|
-| qwen-3.5 | 宽松锚点 |
-| deepseek-v3.2 | 技术考据 |
-| minimax-m2.5 | 快速参考 |
-| doubao-seed-2.0 | 结构审查/逻辑一致性 |
-| glm-4.7 | 文学质感/角色声音 |
+| 模型 | 角色 | 供应商 |
+|------|------|--------|
+| qwen-3.5 | 宽松锚点 | healwrap |
+| deepseek-v3.2 | 技术考据 | healwrap |
+| minimax-m2.5 | 快速参考 | nextapi → healwrap |
+| doubao-seed-2.0 | 结构审查/逻辑一致性 | healwrap |
+| glm-4.7 | 文学质感/角色声音 | healwrap |
+| minimax-m2.7 | 对话/情感深度 | nextapi → healwrap |
 
 ## 供应商配置
 
-**三级 fallback：**
-- 主力：healwrap (`https://llm-api.healwrap.cn/v1`)，key: HEALWRAP_API_KEY，RPM=10
+**四级 fallback：**
+- 主力：nextapi (`https://api.nextapi.store/v1`)，key: NEXTAPI_API_KEY，RPM=999（无限制），支持 kimi/glm/minimax/minimax-m2.7
+- 次级：healwrap (`https://llm-api.healwrap.cn/v1`)，key: HEALWRAP_API_KEY，RPM=10
 - 备用1：codexcc (`https://api.codexcc.top/v1`)，key: CODEXCC_API_KEY
 - 备用2/兜底：硅基流动 (`https://api.siliconflow.cn/v1`)，key: EMBED_API_KEY
 
 **重试与 fallback 规则：**
-- 核心3模型统一链：healwrap(重试2次) → codexcc(错误1次切) → 硅基流动(兜底)
-- 补充5模型：healwrap(重试2次) → 失败标记 error 继续
+- 核心3模型统一链：nextapi(重试2次) → healwrap(重试2次) → codexcc(错误1次切) → 硅基流动(兜底)
+- 补充层 minimax/minimax-m2.7：nextapi(重试2次) → healwrap(重试2次) → 失败标记 error 继续
+- 补充层 qwen/deepseek/doubao/glm4：healwrap(重试2次) → 失败标记 error 继续
 - 每次 API 调用后**必须验证路由**：检查 response.model 字段是否匹配请求模型
 - 路由错误视为该供应商不可用，不重试直接切下一个
 - 429限流：等6秒后重试；超时：计入重试次数
 
 **并发控制（RPM 安全策略）：**
-- 每模型的10维度以 `--max-concurrent 1` 并发执行（默认值，避免瞬时打满 healwrap RPM=10）
-- 8模型按顺序依次审查（脚本单次调用处理1个模型，由工作流串行/并行调度多模型）
-- 内置 `ProviderRateLimiter`：per-provider 令牌桶限速，自动按 RPM 间隔排队
-- 若遇 429 限流：等6秒后重试（与限速器协同，不会连续触发 429）
+- `--model-key all` 模式：9模型并发 × 每模型10维度并发，ProviderRateLimiter 自动按供应商控制 RPM
+- nextapi RPM=999 无瓶颈；healwrap RPM=10 由 ProviderRateLimiter 令牌桶限速
+- 补充层维度并发自动降至3（启用早停拦截排队中的维度）
 - fallback 到 codexcc/硅基流动不占 healwrap RPM
-- CLI 参数：`--max-concurrent N`（覆盖并发数）、`--rpm-override N`（覆盖 healwrap RPM）
+- CLI 参数：`--max-concurrent N`（覆盖每模型的维度并发数）、`--rpm-override N`（覆盖 healwrap RPM）
 
 **推荐调用策略：**
-- **首选**：`--model-key all` 一次性跑全部8个模型（8模型并发 × 10维度并发，ProviderRateLimiter 自动控制 RPM）
+- **首选**：`--model-key all` 一次性跑全部9个模型（9模型并发 × 维度并发，ProviderRateLimiter 自动控制 RPM）
 - 单模型调用：`--model-key kimi`（调试或补跑单个模型时使用）
-- `--max-concurrent N`：覆盖每模型的维度并发数（默认10，即全部维度同时发出）
+- `--max-concurrent N`：覆盖每模型的维度并发数（默认10；补充层自动降至 min(N, 3)）
 
 **脚本调用命令（Agent 必须使用以下格式）：**
 ```bash
-# 推荐：一次跑全部 8 模型
+# 推荐：一次跑全部 9 模型
 python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter {chapter_num} \
   --mode dimensions \
-  --model-key all \
-  --max-concurrent 1
+  --model-key all
 
 # 补跑单个模型
 python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
@@ -70,7 +71,8 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 不支持 `--chapter-file`、`--outline-file` 等参数，传入会导致脚本直接报错退出。
 
 **补充层早停机制：**
-- 补充层模型连续 3 个维度失败后自动跳过剩余维度
+- 补充层维度并发自动降至3（而非核心层的全并发），使排队中的维度可被拦截
+- 累计 3 个维度失败后触发 `threading.Event`，排队中的维度启动时立即跳过
 - 避免 healwrap 连接中断时的无意义重试（如 minimax 21次失败）
 
 ## 路由验证规则

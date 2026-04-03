@@ -7,6 +7,29 @@
 
 ---
 
+## [2026-04-03] nextapi 供应商集成 + 9模型架构 + 早停修复
+
+**架构变更：**
+- 新增 nextapi 供应商（`https://api.nextapi.store/v1`，RPM=999 无限制）作为主力，支持 kimi/glm/minimax/minimax-m2.7
+- 四级 fallback：nextapi → healwrap → codexcc → 硅基流动
+- 新增模型 minimax-m2.7（对话/情感深度），总计 9 模型（3核心+6补充）
+- healwrap 压力从 90 请求/章降至约 50 请求/章（4模型走 nextapi）
+
+**代码修复：**
+1. **ProviderRateLimiter 竞态条件**：重构 `acquire()` 为 `_try_acquire()` 模式，消除锁外变量使用
+2. **早停机制失效**：`max_concurrent=10` 时全部 future 立即启动，`cancel()` 无效。修复：补充层维度并发降至3 + `threading.Event` 信号 + 累计失败替代连续失败
+3. **nextapi 路由验证**：`glm-5.0` → `glm-5` 版本号归一化匹配
+
+**修改文件：**
+| 文件 | 修改内容 |
+|------|---------|
+| `scripts/external_review.py` | PROVIDERS+MODELS 新增 nextapi/minimax-m2.7；RateLimiter 重构；早停修复；路由 `.0` 归一化 |
+| `skills/webnovel-write/SKILL.md` | 8模型→9模型，fallback 链更新，调用命令去掉 `--max-concurrent 1` |
+| `skills/webnovel-write/references/step-3.5-external-review.md` | 全面重写：九模型双层架构表、四级 fallback、nextapi 描述、早停机制说明 |
+| `.env` | 新增 NEXTAPI_BASE_URL / NEXTAPI_API_KEY |
+
+---
+
 ## [2026-04-03] external_review.py 稳定性修复 + --model-key all 模式
 
 **修复的问题：**
