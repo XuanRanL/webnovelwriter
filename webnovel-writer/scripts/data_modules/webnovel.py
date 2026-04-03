@@ -251,9 +251,8 @@ def main() -> None:
 
     p_review_pipeline = sub.add_parser("review-pipeline", help="转发到 review_pipeline.py")
     p_review_pipeline.add_argument("--chapter", type=int, required=True, help="目标章节号")
-    p_review_pipeline.add_argument("--review-results", required=True, help="checker 原始结果 JSON 文件")
-    p_review_pipeline.add_argument("--aggregated-out", help="聚合结果输出文件")
-    p_review_pipeline.add_argument("--review-metrics-out", help="review_metrics 输出文件")
+    p_review_pipeline.add_argument("--review-results", required=True, help="reviewer 原始结果 JSON 文件")
+    p_review_pipeline.add_argument("--metrics-out", default="", help="metrics 输出文件")
     p_review_pipeline.add_argument("--report-file", default="", help="审查报告路径")
 
     # 兼容：允许 `--project-root` 出现在任意位置（减少 agents/skills 拼命令的出错率）
@@ -316,10 +315,8 @@ def main() -> None:
             "--chapter", str(args.chapter),
             "--review-results", str(args.review_results),
         ]
-        if args.aggregated_out:
-            return_args.extend(["--aggregated-out", str(args.aggregated_out)])
-        if args.review_metrics_out:
-            return_args.extend(["--review-metrics-out", str(args.review_metrics_out)])
+        if args.metrics_out:
+            return_args.extend(["--metrics-out", str(args.metrics_out)])
         if args.report_file:
             return_args.extend(["--report-file", str(args.report_file)])
         raise SystemExit(_run_script("review_pipeline.py", return_args))

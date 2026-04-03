@@ -233,33 +233,25 @@ def test_review_pipeline_builds_artifacts(tmp_path):
     review_results_path.write_text(
         json.dumps(
             {
-                "continuity-checker": {
-                    "agent": "continuity-checker",
-                    "chapter": 20,
-                    "overall_score": 76,
-                    "pass": True,
-                    "issues": [
-                        {
-                            "id": "TIME_001",
-                            "type": "TIMELINE_ISSUE",
-                            "severity": "high",
-                            "location": "第2段",
-                            "description": "时间线回跳",
-                            "suggestion": "补时间锚点",
-                        }
-                    ],
-                    "metrics": {},
-                    "summary": "存在时间线问题",
-                },
-                "consistency-checker": {
-                    "agent": "consistency-checker",
-                    "chapter": 20,
-                    "overall_score": 84,
-                    "pass": True,
-                    "issues": [],
-                    "metrics": {},
-                    "summary": "设定稳定",
-                },
+                "issues": [
+                    {
+                        "severity": "critical",
+                        "category": "timeline",
+                        "location": "第2段",
+                        "description": "时间线回跳",
+                        "evidence": "上章深夜，本章突然中午",
+                        "fix_hint": "补时间过渡",
+                        "blocking": True,
+                    },
+                    {
+                        "severity": "medium",
+                        "category": "ai_flavor",
+                        "location": "第5段",
+                        "description": "'稳住心神'出现2次",
+                        "fix_hint": "替换为具体动作",
+                    },
+                ],
+                "summary": "1个阻断，1个中等",
             },
             ensure_ascii=False,
         ),
@@ -273,10 +265,12 @@ def test_review_pipeline_builds_artifacts(tmp_path):
         report_file="审查报告/第20章.md",
     )
 
-    assert payload["aggregated"]["overall_score"] == 80.0
-    assert payload["aggregated"]["timeline_gate"]["blocked"] is True
-    assert payload["review_metrics"]["report_file"] == "审查报告/第20章.md"
-    assert "timeline_gate:block=True;count=1" in payload["review_metrics"]["notes"]
+    assert payload["review_result"]["blocking_count"] == 1
+    assert payload["review_result"]["has_blocking"] is True
+    assert payload["review_result"]["issues_count"] == 2
+    assert payload["metrics"]["issues_count"] == 2
+    assert payload["metrics"]["blocking_count"] == 1
+    assert payload["metrics"]["report_file"] == "审查报告/第20章.md"
 
 
 def test_review_pipeline_forwards_with_resolved_project_root(monkeypatch, tmp_path):
@@ -308,10 +302,8 @@ def test_review_pipeline_forwards_with_resolved_project_root(monkeypatch, tmp_pa
             "18",
             "--review-results",
             str(review_results),
-            "--aggregated-out",
-            str(tmp_path / "aggregated.json"),
-            "--review-metrics-out",
-            str(tmp_path / "review_metrics.json"),
+            "--metrics-out",
+            str(tmp_path / "metrics.json"),
             "--report-file",
             "审查报告/第18章.md",
         ],
@@ -329,10 +321,8 @@ def test_review_pipeline_forwards_with_resolved_project_root(monkeypatch, tmp_pa
         "18",
         "--review-results",
         str(review_results),
-        "--aggregated-out",
-        str(tmp_path / "aggregated.json"),
-        "--review-metrics-out",
-        str(tmp_path / "review_metrics.json"),
+        "--metrics-out",
+        str(tmp_path / "metrics.json"),
         "--report-file",
         "审查报告/第18章.md",
     ]
@@ -350,22 +340,21 @@ def test_review_pipeline_main_creates_output_directories(tmp_path):
     review_results_path.write_text(
         json.dumps(
             {
-                "consistency-checker": {
-                    "agent": "consistency-checker",
-                    "chapter": 9,
-                    "overall_score": 88,
-                    "pass": True,
-                    "issues": [],
-                    "metrics": {},
-                    "summary": "稳定",
-                }
+                "issues": [
+                    {
+                        "severity": "low",
+                        "category": "other",
+                        "location": "p1",
+                        "description": "小问题",
+                    }
+                ],
+                "summary": "轻微",
             },
             ensure_ascii=False,
         ),
         encoding="utf-8",
     )
 
-    aggregated_out = project_root / ".webnovel" / "tmp" / "review" / "aggregated.json"
     metrics_out = project_root / ".webnovel" / "tmp" / "review" / "metrics.json"
 
     old_argv = sys.argv
@@ -377,9 +366,7 @@ def test_review_pipeline_main_creates_output_directories(tmp_path):
         "9",
         "--review-results",
         str(review_results_path),
-        "--aggregated-out",
-        str(aggregated_out),
-        "--review-metrics-out",
+        "--metrics-out",
         str(metrics_out),
     ]
     try:
@@ -387,5 +374,4 @@ def test_review_pipeline_main_creates_output_directories(tmp_path):
     finally:
         sys.argv = old_argv
 
-    assert aggregated_out.is_file()
     assert metrics_out.is_file()
