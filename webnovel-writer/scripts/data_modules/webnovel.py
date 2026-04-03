@@ -249,6 +249,9 @@ def main() -> None:
     p_extract_context.add_argument("--chapter", type=int, required=True, help="目标章节号")
     p_extract_context.add_argument("--format", choices=["text", "json"], default="text", help="输出格式")
 
+    p_memory_contract = sub.add_parser("memory-contract", help="转发到 memory_cli.py")
+    p_memory_contract.add_argument("args", nargs=argparse.REMAINDER)
+
     p_review_pipeline = sub.add_parser("review-pipeline", help="转发到 review_pipeline.py")
     p_review_pipeline.add_argument("--chapter", type=int, required=True, help="目标章节号")
     p_review_pipeline.add_argument("--review-results", required=True, help="reviewer 原始结果 JSON 文件")
@@ -309,6 +312,8 @@ def main() -> None:
     if tool == "extract-context":
         return_args = [*forward_args, "--chapter", str(args.chapter), "--format", str(args.format)]
         raise SystemExit(_run_script("extract_chapter_context.py", return_args))
+    if tool == "memory-contract":
+        raise SystemExit(_run_script("memory_cli.py", [*forward_args, *rest]))
     if tool == "review-pipeline":
         return_args = [
             *forward_args,
