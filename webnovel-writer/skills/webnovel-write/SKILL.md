@@ -24,13 +24,13 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 ## 模式定义
 
-- `/webnovel-write`：Step 0.5 → Step 1 → Step 2A → Step 2B → Step 3 → Step 4 → Step 5 → Step 6
-- `/webnovel-write --fast`：Step 0.5 → Step 1 → Step 2A → Step 3 → Step 4 → Step 5 → Step 6
-- `/webnovel-write --minimal`：Step 0.5 → Step 1 → Step 2A → Step 2B → Step 3（仅核心 3 个审查器）→ Step 4 → Step 5 → Step 6
+- `/webnovel-write`：Step 0.5 → Step 1 → Step 2 → Step 3 → Step 4 → Step 5 → Step 6
+- `/webnovel-write --fast`：Step 0.5 → Step 1 → Step 2 → Step 3（轻量） → Step 4 → Step 5 → Step 6
+- `/webnovel-write --minimal`：Step 0.5 → Step 1 → Step 2 → Step 4（仅排版） → Step 5 → Step 6
 
 最小产物：
 - 章节正文文件
-- `index.db.review_metrics` 新记录
+- `index.db.review_metrics` 新记录（`--minimal` 除外）
 - `.webnovel/summaries/ch{NNNN}.md`
 - `.webnovel/state.json` 的进度与 `chapter_meta`
 - `.webnovel/memory_scratchpad.json` 的长期记忆事实
@@ -42,7 +42,6 @@ allowed-tools: Read Write Edit Grep Bash Task
 - 禁止改名：标准产物文件名和格式不得私自改写。
 - 禁止伪造审查：Step 3 必须由 Task 子代理执行。
 - 禁止源码探测：CLI 调用方式以本文档和 agent 文档为准，命令失败优先查日志。
-- Workflow step-id 必须使用实现侧真实编号：`Step 0.5`、`Step 1`、`Step 2A`、`Step 2B`、`Step 3`、`Step 4`、`Step 5`、`Step 6`。
 
 ## 引用加载等级
 
@@ -52,18 +51,16 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 ## References
 
-- `references/step-3-review-gate.md`
-  - 用途：Step 3 审查调用模板与落库规范。
-- `references/step-5-debt-switch.md`
-  - 用途：Step 5 债务利息开关规则。
+- `../../references/review-schema.md`
+  - 用途：Step 3 审查输出 schema 定义。
 - `../../references/shared/core-constraints.md`
-  - 用途：Step 2A 起草硬约束。
+  - 用途：Step 2 起草硬约束。
 - `references/polish-guide.md`
   - 用途：Step 4 润色与终检规则。
 - `references/writing/typesetting.md`
   - 用途：Step 4 排版检查。
 - `references/style-adapter.md`
-  - 用途：Step 2B 风格适配规则。
+  - 用途：Step 4 风格适配规则。
 - `references/style-variants.md`
   - 用途：Step 1 差异化设计。
 - `../../references/reading-power-taxonomy.md`
@@ -84,7 +81,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 - `Read/Grep`：读取大纲、状态、正文与参考资料。
 - `Bash`：运行 `webnovel.py` 与相关脚本。
-- `Task`：调用 `context-agent`、审查器与 `data-agent`。
+- `Task`：调用 `context-agent`、`reviewer` 与 `data-agent`。
 
 ## 执行流程
 
@@ -108,21 +105,9 @@ export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-roo
 - `preflight` 必须成功。
 - 任一核心输入缺失立即阻断。
 
-任务记录：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-task --command webnovel-write --chapter {chapter_num} || true
-```
-
 ### Step 0.5：轻量节点预检
 
 目的：在不阻断流程的前提下，对章纲中的结构化节点做轻量一致性提醒。
-
-执行前记录：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 0.5" --step-name "节点预检" || true
-```
 
 规则：
 - 只在当前章详细大纲存在 `CBN/CEN` 时执行。
@@ -137,19 +122,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 - `[NODE_WARNING] CBN 地点与当前状态不一致: 章纲=迦南学院入口, 实际=乌坦城`
 - `[NODE_WARNING] CBN 强度要求与当前境界不一致: 章纲=斗师级压制, 实际=斗者三星`
 
-完成后记录：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 0.5" --artifacts '{"node_precheck":true}' || true
-```
-
 ### Step 1：调用 Context Agent 生成执行包
-
-记录开始：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 1" --step-name "Context Agent" || true
-```
 
 使用 Task 调用 `context-agent`，输入：
 - `chapter`
@@ -159,23 +132,16 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 - 若存在 `NODE_WARNING`，一并传入
 
 硬要求：
-- 输出必须包含任务书、Context Contract、Step 2A 直写提示词。
+- 输出必须包含任务书、Context Contract、Step 2 直写提示词。
 - 执行包中必须纳入长期记忆约束与时间约束。
-- 若章纲提供结构化节点，执行包中必须包含“情节结构”板块与节拍映射。
+- 若章纲提供结构化节点，执行包中必须包含"情节结构"板块与节拍映射。
 
-记录完成：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 1" --artifacts '{"context_package":true}' || true
-```
-
-### Step 2A：起草正文
+### Step 2：起草正文
 
 执行前必须加载：
 
 ```bash
 cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 2A" --step-name "正文起草" || true
 ```
 
 硬要求：
@@ -185,123 +151,75 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 - 中文思维写作，不使用英文框架骨架驱动正文。
 - 若存在结构化节点：正文必须围绕 `CBN -> CPNs -> CEN` 展开，不得跳过必须节点。
 
-完成后记录：
+### Step 3：执行审查
 
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 2A" --artifacts '{"chapter_draft":true}' || true
-```
+使用 Task 调用 `reviewer` agent，输入：
+- `chapter`
+- `chapter_file`（正文文件路径）
+- `project_root`
+- `scripts_dir`
 
-### Step 2B：风格适配（`--fast` 跳过）
-
-执行前加载：
-
-```bash
-cat "${SKILL_ROOT}/references/style-adapter.md"
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 2B" --step-name "风格适配" || true
-```
-
-硬要求：
-- 只改表达，不改事实、事件顺序、人物行为结果、设定规则。
-- 重点消除模板腔、说明腔、机械腔。
-- 若存在结构化节点，不得因风格改写破坏节点顺序和收束方向。
-
-完成后记录：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 2B" --artifacts '{"style_adapted":true}' || true
-```
-
-### Step 3：执行审查并落库
-
-执行前加载：
-
-```bash
-cat "${SKILL_ROOT}/references/step-3-review-gate.md"
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 3" --step-name "审查" || true
-```
-
-调用约束：
-- 必须用 Task 调用审查子代理。
-- 默认使用 `auto` 路由动态选择检查器。
-
-核心审查器：
-- `consistency-checker`
-- `continuity-checker`
-- `ooc-checker`
-
-条件审查器：
-- `reader-pull-checker`
-- `high-point-checker`
-- `pacing-checker`
-
-模式规则：
-- 标准模式与 `--fast`：核心 3 个 + auto 命中的条件审查器
-- `--minimal`：只跑核心 3 个
+reviewer 输出为结构化问题清单 JSON（参见 `review-schema.md`），保存到中间产物路径。
 
 Step 3 中间产物约定：
-- checker 原始结果：`${PROJECT_ROOT}/.webnovel/tmp/review_results.json`
-- 聚合结果：`${PROJECT_ROOT}/.webnovel/tmp/review_aggregated.json`
+- reviewer 原始结果：`${PROJECT_ROOT}/.webnovel/tmp/review_results.json`
 - 落库指标：`${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json`
 
 标准文件流：
 
 ```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" review-pipeline   --chapter {chapter_num}   --review-results "${PROJECT_ROOT}/.webnovel/tmp/review_results.json"   --aggregated-out "${PROJECT_ROOT}/.webnovel/tmp/review_aggregated.json"   --review-metrics-out "${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json"   --report-file "审查报告/第{chapter_num}章审查报告.md"
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" review-pipeline \
+  --chapter {chapter_num} \
+  --review-results "${PROJECT_ROOT}/.webnovel/tmp/review_results.json" \
+  --metrics-out "${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json" \
+  --report-file "审查报告/第{chapter_num}章审查报告.md"
 
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics --data "@${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json"
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics \
+  --data "@${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json"
 ```
 
-硬要求：
-- `review_results.json` 必须保留各 checker 原始结构化结果。
-- `review_aggregated.json` 必须包含 `overall_score`、`issues` 与 `timeline_gate`。
-- `review_metrics.json` 的 `notes` 必须是单个字符串。
-- 若 `review_aggregated.json.timeline_gate.blocked=true`，不得进入 Step 4/5。
-- Step 4 必须直接消费 `review_results.json` 与 `review_aggregated.json`。
+阻断规则：
+- 若存在任何 `blocking=true` 的 issue，不得进入 Step 4/5。
+- 必须先修复 blocking issue 后重新审查，或用户明确覆盖。
 
-完成后记录：
+模式规则：
+- 标准模式：完整审查（全维度）
+- `--fast`：轻量审查（reviewer 仅检查 setting/timeline/continuity 三个维度）
+- `--minimal`：跳过 Step 3
 
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 3" --artifacts '{"review_completed":true}' || true
-```
-
-### Step 4：润色与全文终检
+### Step 4：润色 + 风格适配 + Anti-AI 修复
 
 执行前必须加载：
 
 ```bash
 cat "${SKILL_ROOT}/references/polish-guide.md"
 cat "${SKILL_ROOT}/references/writing/typesetting.md"
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 4" --step-name "润色" || true
+cat "${SKILL_ROOT}/references/style-adapter.md"
 ```
 
 执行顺序：
-1. 修复已知严重问题
-2. 统一段落、节奏、排版
-3. 执行 Anti-AI 与 No-Poison 全文终检
+1. 消费 Step 3 的问题清单，逐条修复非 blocking issue（blocking 已在 Step 3 阻断）
+2. 风格适配：消除模板腔、说明腔、机械腔（原 Step 2B 的职责）
+3. 统一段落、节奏、排版
+4. Anti-AI 全文终检
 
-硬要求：
+风格适配硬要求：
+- 只改表达，不改事实、事件顺序、人物行为结果、设定规则。
+- 若存在结构化节点，不得因风格改写破坏节点顺序和收束方向。
+
+Anti-AI 硬要求：
 - 必须输出 `anti_ai_force_check=pass/fail`
 - `fail` 时不得进入 Step 5
 - 有节点时，不得在润色中删除必须节点对应的情节落点
 
-完成后记录：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 4" --artifacts '{"anti_ai_force_check":"pass"}' || true
-```
+模式规则：
+- `--minimal`：仅排版，跳过问题修复、风格适配和 Anti-AI 终检
 
 ### Step 5：调用 Data Agent 回写结构化数据
-
-执行前记录：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 5" --step-name "Data Agent" || true
-```
 
 使用 Task 调用 `data-agent`，参数：
 - `chapter`
 - `chapter_file`
-- `review_score=Step 3 overall_score`
 - `project_root`
 - `storage_path=.webnovel/`
 - `state_file=.webnovel/state.json`
@@ -314,8 +232,7 @@ Data Agent 默认子步骤全部执行：
 - 提取长期记忆 `memory_facts`
 - 场景切片
 - RAG 向量索引
-- 风格样本评估（仅 `review_score >= 80`）
-- 债务利息（默认关闭）
+- 债务利息（默认关闭，仅用户明确要求或项目显式启用时开启）
 
 失败隔离规则：
 - state/index/summary/memory 写入失败：只重跑 Step 5
@@ -333,18 +250,9 @@ Data Agent 默认子步骤全部执行：
 - 读取最新 timing 记录
 - `TOTAL > 30000ms` 时，输出最慢 2-3 个环节与原因说明
 
-完成后记录：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 5" --artifacts '{"state_json_modified":true,"entities_appeared":true}' || true
-```
-
 ### Step 6：Git 备份
 
-执行前记录：
-
 ```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 6" --step-name "Git 备份" || true
 git add .
 git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 ```
@@ -353,25 +261,17 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 - 所有验证和回写完成后最后执行。
 - commit 失败时，必须说明失败原因与未提交文件范围。
 
-完成后记录：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 6" --artifacts '{"git_status":{"committed":true}}' || true
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-task --artifacts '{"ok":true}' || true
-```
-
 ## 充分性闸门
 
 未满足以下条件前，不得结束流程：
 
 1. 章节正文文件存在且非空。
-2. Step 3 已产出 `${PROJECT_ROOT}/.webnovel/tmp/review_aggregated.json`，其中包含 `overall_score`。
-3. Step 3 的 `review_metrics` 已落库。
-4. 若存在 `timeline_gate.blocked=true`，流程必须停在 Step 3。
-5. Step 4 的 `anti_ai_force_check=pass`。
-6. Step 5 已更新 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`。
-7. Step 5 已写入 `.webnovel/memory_scratchpad.json`。
-8. 若启用观测，已读取最新 timing 记录并给出结论。
+2. Step 3 已产出审查结果并落库（`--minimal` 除外）。
+3. 若存在 `blocking=true` 的 issue，流程必须停在 Step 3。
+4. Step 4 的 `anti_ai_force_check=pass`（`--minimal` 除外）。
+5. Step 5 已更新 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`。
+6. Step 5 已写入 `.webnovel/memory_scratchpad.json`。
+7. 若启用观测，已读取最新 timing 记录并给出结论。
 
 ## 验证与交付
 
@@ -386,7 +286,7 @@ tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || t
 
 成功标准：
 - 章节文件、摘要文件、状态文件、长期记忆暂存文件齐全且内容可读。
-- 审查分数可追溯，`overall_score` 与 Step 5 输入一致。
+- 审查结果可追溯。
 - 润色后未破坏大纲、设定与长期记忆约束。
 
 ## 失败处理
