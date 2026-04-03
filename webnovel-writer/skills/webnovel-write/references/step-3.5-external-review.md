@@ -43,9 +43,9 @@
 - CLI 参数：`--max-concurrent N`（覆盖并发数）、`--rpm-override N`（覆盖 healwrap RPM）
 
 **推荐调用策略：**
-- **首选**：`--model-key all` 一次性跑全部8个模型（脚本内部串行遍历，确保不遗漏）
+- **首选**：`--model-key all` 一次性跑全部8个模型（8模型并发 × 10维度并发，ProviderRateLimiter 自动控制 RPM）
 - 单模型调用：`--model-key kimi`（调试或补跑单个模型时使用）
-- 如果 healwrap RPM 升级到 30+，可设置 `--max-concurrent 4`
+- `--max-concurrent N`：覆盖每模型的维度并发数（默认10，即全部维度同时发出）
 
 **脚本调用命令（Agent 必须使用以下格式）：**
 ```bash

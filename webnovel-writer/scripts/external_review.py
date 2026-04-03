@@ -35,7 +35,8 @@ PROVIDERS = {
 }
 
 # Default concurrency: max dimensions running in parallel per model
-DEFAULT_MAX_CONCURRENT = 1
+# RPM=10 由 ProviderRateLimiter 强制执行，这里只控制线程数
+DEFAULT_MAX_CONCURRENT = 10
 
 
 class ProviderRateLimiter:
@@ -954,26 +955,33 @@ def run_dimensions_mode(args, api_keys):
     chapter_num = args.chapter
     model_key = args.model_key
 
-    # --model-key all: 遍历 MODELS 中全部模型，串行执行
+    # --model-key all: 并发执行全部模型（ProviderRateLimiter 自动控制 RPM）
     if model_key == "all":
         all_model_keys = list(MODELS.keys())
-        print(f"[all-models] 将依次执行 {len(all_model_keys)} 个模型: {', '.join(all_model_keys)}", file=sys.stderr)
+        print(f"[all-models] 并发执行 {len(all_model_keys)} 个模型: {', '.join(all_model_keys)}", file=sys.stderr)
         all_results = {}
-        for mk in all_model_keys:
-            print(f"\n[all-models] === 开始模型: {mk} ({MODELS[mk]['tier']}) ===", file=sys.stderr)
+
+        def _run_model_safe(mk):
             args_copy = argparse.Namespace(**vars(args))
             args_copy.model_key = mk
             try:
+                print(f"[all-models] 开始: {mk} ({MODELS[mk]['tier']})", file=sys.stderr)
                 _run_single_model(args_copy, api_keys)
-                all_results[mk] = "success"
-                print(f"[all-models] {mk}: 完成", file=sys.stderr)
+                print(f"[all-models] 完成: {mk}", file=sys.stderr)
+                return mk, "success"
             except SystemExit:
-                all_results[mk] = "failed"
-                print(f"[all-models] {mk}: 失败（跳过继续）", file=sys.stderr)
+                print(f"[all-models] 失败: {mk}", file=sys.stderr)
+                return mk, "failed"
             except Exception as e:
-                all_results[mk] = f"error: {str(e)[:80]}"
-                print(f"[all-models] {mk}: 异常 {e}", file=sys.stderr)
-        # 汇总输出
+                print(f"[all-models] 异常: {mk} — {e}", file=sys.stderr)
+                return mk, f"error: {str(e)[:80]}"
+
+        with ThreadPoolExecutor(max_workers=len(all_model_keys)) as executor:
+            futures = {executor.submit(_run_model_safe, mk): mk for mk in all_model_keys}
+            for f in as_completed(futures):
+                mk, result = f.result()
+                all_results[mk] = result
+
         summary = {
             "mode": "all-models",
             "chapter": chapter_num,
