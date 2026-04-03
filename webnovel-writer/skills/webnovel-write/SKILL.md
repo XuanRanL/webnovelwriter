@@ -297,6 +297,8 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 - `pacing-checker`（节奏平衡）
 - `dialogue-checker`（对话质量）
 - `density-checker`（信息密度）
+- `prose-quality-checker`（文笔质感）
+- `emotion-checker`（情感表现）
 
 模式说明：
 - 标准/`--fast`：全量 10 个审查器始终执行。

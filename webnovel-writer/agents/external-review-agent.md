@@ -20,15 +20,21 @@ model: inherit
   "chapter": 11,
   "chapter_file": "正文/第0011章-猎人公会.md",
   "project_root": "{PROJECT_ROOT}",
-  "model_key": "qwen-plus|kimi|glm|qwen|deepseek|minimax",
+  "model_key": "qwen-plus|kimi|glm|qwen|deepseek|minimax|doubao|glm4|minimax-m2.7|all",
   "scripts_dir": "{SCRIPTS_DIR}"
 }
 ```
 
-**model_key 说明**:
-- 核心层（必须成功，有 fallback 保障）：`qwen-plus`（网文/爽点）、`kimi`（严审/逻辑）、`glm`（编辑/读者感受）
-- 补充层（仅 healwrap，失败不阻塞）：`qwen`（宽松锚点）、`deepseek`（技术考据）、`minimax`（快速参考）
-- 编排层应为 6 个模型各调用一次本 Agent（或脚本），核心 3 个必须全部成功才能进入 Step 4
+**model_key 说明（九模型双层架构）**:
+- 核心层（必须成功，四级 fallback）：`qwen-plus`（网文/爽点）、`kimi`（严审/逻辑）、`glm`（编辑/读者感受）
+- 补充层（多供应商 fallback，失败不阻塞，累计3维度失败早停）：
+  - `qwen`（宽松锚点）— healwrap → 硅基流动
+  - `deepseek`（技术考据）— healwrap → 硅基流动
+  - `minimax`（快速参考）— nextapi → healwrap → codexcc → 硅基流动
+  - `doubao`（结构审查/逻辑一致性）— healwrap only
+  - `glm4`（文学质感/角色声音）— healwrap → 硅基流动
+  - `minimax-m2.7`（对话/情感深度）— nextapi → healwrap → codexcc
+- **推荐**：使用 `--model-key all` 自动遍历全部 9 模型，禁止手动逐个调用
 
 ## 执行流程
 
@@ -49,7 +55,7 @@ model: inherit
 python -X utf8 "${scripts_dir}/external_review.py" \
   --project-root "${project_root}" \
   --chapter {chapter} \
-  --model-key {model_key} \
+  --model-key all \
   --mode dimensions
 ```
 
@@ -73,7 +79,7 @@ EOF
 
 > **注意**：脚本对每个字段有磁盘 fallback——如果 JSON 中某字段缺失或为空，会自动从 `设定集/`、`正文/`、`.webnovel/` 目录读取。但 agent 应尽量填充完整以减少磁盘 I/O。
 
-脚本会对8个维度并发调用外部模型API，返回8份JSON报告。
+脚本会对10个维度并发调用外部模型API，返回10份JSON报告。
 
 ### 第三步: 交叉验证（不可省略）
 
@@ -89,15 +95,17 @@ EOF
 
 ### 第四步: 输出报告
 
-输出统一格式JSON，agent名称为 `external-{model_key}-{dimension}`：
+输出统一格式JSON，agent名称为 `external-{model_key}`：
 
 ```json
 {
   "agent": "external-qwen",
   "chapter": 11,
   "model_key": "qwen",
-  "model_name": "qwen3.5-plus",
+  "model_requested": "qwen-3.5",
+  "model_actual": "qwen-3.5",
   "provider": "healwrap",
+  "routing_verified": true,
   "overall_score": 88,
   "pass": true,
   "dimension_reports": [
@@ -108,27 +116,48 @@ EOF
       "score": 90,
       "issues": [...],
       "summary": "...",
-      "model": "Kimi-K2.5",
-      "model_actual": "kimi-k2.5",
+      "model": "Qwen-3.5",
+      "model_actual": "qwen-3.5",
       "provider": "healwrap",
       "routing_verified": true,
       "elapsed_ms": 8500
     }
   ],
   "issues": [ ... ],
-  "metrics": {
-    "api_calls": 8,
-    "api_failures": 0,
-    "verified_issues": 3,
-    "unverified_issues": 1,
-    "dismissed_issues": 2
+  "cross_validation": { "verified": 3, "unverified": 1, "dismissed": 2 },
+  "provider_chain": [ ... ],
+  "api_meta": {
+    "final_provider": "healwrap",
+    "elapsed_ms": 25000,
+    "prompt_tokens": 5000,
+    "completion_tokens": 3000,
+    "attempts_total": 10
   },
-  "summary": "总结"
+  "metrics": {
+    "dimensions_ok": 10,
+    "dimensions_failed": 0,
+    "dimensions_skipped": 0
+  }
 }
 ```
 
+## 审查维度（10个）
+
+1. **consistency** — 设定一致性
+2. **continuity** — 连贯性
+3. **ooc** — 人物塑造/OOC
+4. **reader_pull** — 追读力
+5. **high_point** — 爽点密度
+6. **pacing** — 节奏平衡
+7. **dialogue_quality** — 对话质量
+8. **information_density** — 信息密度
+9. **prose_quality** — 文笔质感
+10. **emotion_expression** — 情感表现
+
 ## 失败处理
 
-- 单个维度API调用失败：重试2次，仍失败则标记该维度为 `"status": "failed"`，继续其他维度
-- 全部8个维度失败：输出 `"pass": false, "error": "all_dimensions_failed"`
-- JSON解析失败：重试1次，仍失败则标记 `"status": "parse_error"`
+- 单个维度API调用失败：按 provider fallback 链自动重试（nextapi/healwrap 各重试2次，codexcc/硅基流动 各1次），仍失败则标记该维度为 `"status": "failed"`
+- 幽灵零分（score=0 + 空摘要）：provider 层自动切下一供应商重试；所有供应商都返回 phantom 则标记 `"status": "failed", "error": "phantom_success_score0_empty"`
+- 补充层早停：累计 3 个维度失败后触发 `threading.Event`，跳过剩余排队维度（`"status": "skipped", "error": "early_stop_skipped"`）
+- 全部10个维度失败：输出 `"pass": false, "error": "all_dimensions_failed"`
+- JSON解析失败：标记 `"status": "failed", "error": "json_parse_failed"`

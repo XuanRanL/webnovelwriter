@@ -602,11 +602,15 @@ def extract_json(text):
                         break  # This candidate failed; try next '{' below
         # Move to next '{' after current start
         start = text.find('{', start + 1)
-    # Priority 3: greedy fallback (last resort)
+    # Priority 3: greedy fallback (last resort, flat JSON only)
     m = re.search(r'\{[^{}]*\}', text)
     if m:
         try:
-            return json.loads(m.group(0))
+            parsed = json.loads(m.group(0))
+            # 安全检查：确保提取的是审查结果（含 score 字段），而非嵌套子对象
+            if "score" in parsed:
+                print(f"[extract_json] 使用 greedy fallback 提取（可能不完整）", file=sys.stderr)
+                return parsed
         except json.JSONDecodeError:
             pass
     return None
