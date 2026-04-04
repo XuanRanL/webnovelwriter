@@ -286,7 +286,8 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 
 调用约束：
 - 必须用 `Task` 调用审查 subagent，禁止主流程伪造审查结论。
-- 可并行发起审查，统一汇总 `issues/severity/overall_score`。
+- 可并行发起审查，但**必须等待全部 checker 返回后**才能统一聚合 `issues/severity/overall_score`。
+- **禁止在任何 checker 仍在运行时进入 Step 4**。即使外部审查已完成，内部 checker 未全部返回也不得开始润色。
 
 审查器（标准模式全部执行）：
 - `consistency-checker`（设定一致性）
@@ -359,6 +360,19 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 输出：
 - 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共9个文件）
 - 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 9 模型 × 10 维度矩阵）
+
+### Step 3+3.5 完成闸门（进入 Step 4 前必须通过）
+
+**硬规则：Step 4 不得在 Step 3 或 Step 3.5 有任何子任务仍在运行时开始。**
+
+验证方式：
+1. 逐一检查所有 Step 3 内部 checker 的 Task 状态（`TaskOutput` 或等价轮询），确认每个 checker 都已返回结果（非空输出）。
+2. 确认 Step 3.5 外部审查脚本已退出且 9 个 `external_review_{model_key}_ch{NNNN}.json` 文件已生成。
+3. 按 `step-3-review-gate.md` 的"内外部分数合并规则"计算 `overall_score`（需要内部 + 外部都有分数）。
+4. 生成审查报告（含内部10维度 + 外部9模型×10维度矩阵）。
+5. 落库 `review_metrics`。
+
+**以上 5 步全部完成后，方可进入 Step 4。等待是流程的一部分。**
 
 ### Step 4：润色（问题修复优先）
 
