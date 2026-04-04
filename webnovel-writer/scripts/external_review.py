@@ -25,7 +25,7 @@ PROVIDERS = {
     "healwrap": {
         "base_url": "https://llm-api.healwrap.cn/v1/chat/completions",
         "env_key_names": ["HEALWRAP_API_KEY"],
-        "rpm": 10,
+        "rpm": 8,  # 实测 RPM=10 频繁 429；降到 8 = semaphore(8) + min_interval=7.5s
     },
     "codexcc": {
         "base_url": "https://api.codexcc.top/v1/chat/completions",
@@ -40,15 +40,19 @@ PROVIDERS = {
 }
 
 # Default concurrency: max dimensions running in parallel per model
-# RPM=10 由 ProviderRateLimiter 强制执行，这里只控制线程数
-DEFAULT_MAX_CONCURRENT = 10
+# ProviderRateLimiter 用信号量限制每个供应商的同时在飞连接数（如 healwrap=10）
+# 这里控制每模型的线程数上限，从 10 降至 6 减少线程争抢
+DEFAULT_MAX_CONCURRENT = 6
 
 
 class ProviderRateLimiter:
-    """Thread-safe token-bucket rate limiter, one instance per provider.
+    """Thread-safe hybrid limiter: 并发连接数 + 请求间隔。
 
-    Ensures that across all threads, requests to a given provider
-    respect its RPM (requests per minute) limit.
+    healwrap RPM=10 = 滑动窗口内同时在飞不超过10个 + 每分钟不超过10个请求。
+    - 信号量控制并发上限（防止连接爆炸）
+    - min_interval 控制发送间隔（防止快速 429/403 导致突发流量）
+    - acquire() 在发送前调用：先拿信号量，再等间隔
+    - release() 在整个重试链结束后调用（不是每次重试都释放）
     """
 
     _instances = {}  # provider_name -> ProviderRateLimiter
@@ -72,34 +76,24 @@ class ProviderRateLimiter:
     def __init__(self, provider_name, rpm):
         self.provider_name = provider_name
         self.rpm = rpm
-        self.min_interval = 60.0 / rpm  # seconds between requests
-        self._timestamps = []           # recent request timestamps
-        self._sem_lock = threading.Lock()
+        self._semaphore = threading.Semaphore(rpm)
+        self._interval_lock = threading.Lock()
+        self._last_send = 0.0
+        self._min_interval = 60.0 / rpm  # 7.5s for rpm=8
 
     def acquire(self):
-        """Block until it's safe to make the next request."""
-        while True:
-            sleep_time = self._try_acquire()
-            if sleep_time == 0:
-                return
-            time.sleep(sleep_time)
-
-    def _try_acquire(self):
-        """Try to acquire a slot. Returns 0 if acquired, or seconds to sleep."""
-        with self._sem_lock:
+        """Block until a concurrent slot is free AND min interval since last send."""
+        self._semaphore.acquire()
+        with self._interval_lock:
             now = time.time()
-            # Purge timestamps older than 60s
-            self._timestamps = [t for t in self._timestamps if now - t < 60.0]
-            if len(self._timestamps) >= self.rpm:
-                # At RPM limit — must wait for oldest to expire
-                return 60.0 - (now - self._timestamps[0]) + 0.1
-            if self._timestamps:
-                wait = self.min_interval - (now - self._timestamps[-1])
-                if wait > 0:
-                    return max(wait, 0.1)
-            # Slot available — record and return
-            self._timestamps.append(now)
-            return 0
+            wait = self._min_interval - (now - self._last_send)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_send = time.time()
+
+    def release(self):
+        """Release a concurrent slot after the entire request (including retries) completes."""
+        self._semaphore.release()
 
 # Core models: must succeed, have full fallback chain
 MODELS = {
@@ -494,14 +488,14 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
     if any(t in model_lower for t in ("qwen-3", "qwen3", "deepseek", "doubao", "glm-4")):
         payload["max_tokens"] = 65536
         payload["enable_thinking"] = True
-    # Acquire rate limiter before first request
+    # 整个重试链只占一个 limiter slot（acquire 一次，return/fail 后 release 一次）
     limiter = ProviderRateLimiter.get(provider_name) if provider_name else None
     provider_chain = []
     session = requests.Session()
+    if limiter:
+        limiter.acquire()
     try:
         for attempt in range(max_retries + 1):
-            if limiter:
-                limiter.acquire()
             start_ts = time.time()
             try:
                 resp = session.post(base_url, headers=headers, json=payload, timeout=timeout)
@@ -521,6 +515,11 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
                 elif resp.status_code == 429:
                     provider_chain.append({"attempt": attempt + 1, "result": "rate_limited", "elapsed_ms": elapsed})
                     time.sleep(6)  # 429 wait 6s per spec
+                elif resp.status_code == 403:
+                    # 403 = 模型在该供应商不可用，不重试直接切下一个供应商
+                    err = f"HTTP 403: {resp.text[:200]}"
+                    provider_chain.append({"attempt": attempt + 1, "result": "http_403", "elapsed_ms": elapsed})
+                    return None, err, None, None, provider_chain
                 else:
                     err = f"HTTP {resp.status_code}: {resp.text[:200]}"
                     provider_chain.append({"attempt": attempt + 1, "result": f"http_{resp.status_code}", "elapsed_ms": elapsed})
@@ -554,6 +553,8 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
                     return None, str(e), None, None, provider_chain
         return None, "Max retries", None, None, provider_chain
     finally:
+        if limiter:
+            limiter.release()
         session.close()
 
 

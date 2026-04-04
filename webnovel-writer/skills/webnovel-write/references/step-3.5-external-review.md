@@ -25,7 +25,7 @@
 
 **四级 fallback：**
 - 主力：nextapi (`https://api.nextapi.store/v1`)，key: NEXTAPI_API_KEY，RPM=999（无限制），支持 kimi/glm/minimax/minimax-m2.7
-- 次级：healwrap (`https://llm-api.healwrap.cn/v1`)，key: HEALWRAP_API_KEY，RPM=10
+- 次级：healwrap (`https://llm-api.healwrap.cn/v1`)，key: HEALWRAP_API_KEY，RPM=8（实测10仍频繁429）
 - 备用1：codexcc (`https://api.codexcc.top/v1`)，key: CODEXCC_API_KEY
 - 备用2/兜底：硅基流动 (`https://api.siliconflow.cn/v1`)，key: EMBED_API_KEY
 
@@ -40,16 +40,16 @@
 - 429限流：等6秒后重试；超时：计入重试次数
 
 **并发控制（RPM 安全策略）：**
-- `--model-key all` 模式：9模型并发 × 每模型10维度并发，ProviderRateLimiter 自动按供应商控制 RPM
-- nextapi RPM=999 无瓶颈；healwrap RPM=10 由 ProviderRateLimiter 令牌桶限速
-- 补充层维度并发自动降至3（启用早停拦截排队中的维度）
+- `--model-key all` 模式：9模型并发 × 每模型最多6维度并发（`DEFAULT_MAX_CONCURRENT=6`），ProviderRateLimiter 混合限流（信号量+请求间隔）
+- nextapi RPM=999 无瓶颈；healwrap RPM=8 = 最多8个并发连接 + 每次请求间隔≥7.5秒，整个重试链只占一个槽位，403立即切换不重试
+- 补充层维度并发自动降至 min(6, 3) = 3（启用早停拦截排队中的维度）
 - fallback 到 codexcc/硅基流动不占 healwrap RPM
 - CLI 参数：`--max-concurrent N`（覆盖每模型的维度并发数）、`--rpm-override N`（覆盖 healwrap RPM）
 
 **推荐调用策略：**
 - **首选**：`--model-key all` 一次性跑全部9个模型（9模型并发 × 维度并发，ProviderRateLimiter 自动控制 RPM）
 - 单模型调用：`--model-key kimi`（调试或补跑单个模型时使用）
-- `--max-concurrent N`：覆盖每模型的维度并发数（默认10；补充层自动降至 min(N, 3)）
+- `--max-concurrent N`：覆盖每模型的维度并发数（默认6；补充层自动降至 min(N, 3)）
 
 **脚本调用命令（Agent 必须使用以下格式）：**
 ```bash
