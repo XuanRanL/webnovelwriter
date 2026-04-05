@@ -226,6 +226,9 @@ def main() -> None:
     p_migrate = sub.add_parser("migrate", help="转发到 migrate_state_to_sqlite")
     p_migrate.add_argument("args", nargs=argparse.REMAINDER)
 
+    p_audit = sub.add_parser("audit", help="转发到 chapter_audit (Step 6 审计)")
+    p_audit.add_argument("args", nargs=argparse.REMAINDER)
+
     # Pass-through to scripts
     p_workflow = sub.add_parser("workflow", help="转发到 workflow_manager.py")
     p_workflow.add_argument("args", nargs=argparse.REMAINDER)
@@ -289,6 +292,8 @@ def main() -> None:
         raise SystemExit(_run_data_module("context_manager", [*forward_args, *rest]))
     if tool == "migrate":
         raise SystemExit(_run_data_module("migrate_state_to_sqlite", [*forward_args, *rest]))
+    if tool == "audit":
+        raise SystemExit(_run_data_module("chapter_audit", [*forward_args, *rest]))
 
     if tool == "workflow":
         raise SystemExit(_run_script("workflow_manager.py", [*forward_args, *rest]))

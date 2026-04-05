@@ -30,7 +30,8 @@
 - 备用2/兜底：硅基流动 (`https://api.siliconflow.cn/v1`)，key: EMBED_API_KEY
 
 **重试与 fallback 规则：**
-- 核心3模型统一链：nextapi(重试2次) → healwrap(重试2次) → codexcc(不重试) → 硅基流动(兜底)
+- 核心层 kimi/glm：nextapi(重试2次) → healwrap(重试2次) → codexcc(不重试) → 硅基流动(兜底)
+- 核心层 qwen-plus：healwrap(重试2次) → codexcc(不重试) → 硅基流动(兜底)
 - 补充层 minimax/minimax-m2.7：nextapi(重试2次) → healwrap(重试2次) → codexcc(不重试)
 - 补充层 qwen/deepseek/glm4：healwrap(重试2次) → 硅基流动(兜底)
 - 补充层 doubao：healwrap(重试2次) only（其他供应商无此模型）

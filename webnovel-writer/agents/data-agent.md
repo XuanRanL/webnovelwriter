@@ -241,6 +241,19 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
     "中置信度匹配: 那位前辈 → yaolao (confidence: 0.6)"
   ],
   "errors": [],
+  "step_k_status": {
+    "executed": true,
+    "outcome": "applied | skipped | partial | failed",
+    "reason": "",
+    "applied_additions": [
+      {"file": "设定集/道具与技术.md", "type": "new_entry", "name": "冰灵藤", "marker": "[Ch100]"},
+      {"file": "设定集/伏笔追踪.md", "type": "update", "name": "火莲伏笔推进", "marker": "[Ch100]"}
+    ],
+    "proposed_additions": [
+      {"file": "设定集/世界观.md", "type": "new_location", "name": "北境雪原", "reason": "本章首次出现但信息不足，留待下章确认"}
+    ],
+    "skipped_reasons": []
+  },
   "timing_ms": {
     "A_load_context": 120,
     "B_entity_extract": 18500,
@@ -251,15 +264,23 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
     "G_rag_index": 2800,
     "H_style_sample": 150,
     "I_debt_interest": 0,
-    "TOTAL": 28500
+    "K_settings_sync": 800,
+    "TOTAL": 29300
   },
   "bottlenecks_top3": [
-    {"step": "B_entity_extract", "elapsed_ms": 18500, "ratio": 64.9},
-    {"step": "F_scene_chunking", "elapsed_ms": 6200, "ratio": 21.8},
-    {"step": "G_rag_index", "elapsed_ms": 2800, "ratio": 9.8}
+    {"step": "B_entity_extract", "elapsed_ms": 18500, "ratio": 63.1},
+    {"step": "F_scene_chunking", "elapsed_ms": 6200, "ratio": 21.2},
+    {"step": "G_rag_index", "elapsed_ms": 2800, "ratio": 9.6}
   ]
 }
 ```
+
+**字段说明**：
+- `step_k_status.executed`：Step K 是否执行（即使 best-effort 跳过也要返回 false + reason）
+- `step_k_status.outcome`：`applied`（全部追加成功）/ `skipped`（无需追加）/ `partial`（部分成功）/ `failed`（失败但 best-effort 不阻断）
+- `step_k_status.applied_additions`：实际写入到设定集的条目列表（供 Step 6 Layer B5/B6 对账）
+- `step_k_status.proposed_additions`：识别到但尚未追加的条目（信息不足/模糊），Step 6 可用于 editor_notes 下章提醒
+- `step_k_status.skipped_reasons`：Step K 逐项跳过原因（如"实体信息不足"、"已存在"）
 
 ### Step K: 设定集同步检查（每章执行，best-effort）
 

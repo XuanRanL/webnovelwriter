@@ -117,7 +117,8 @@ def expected_step_owner(command: str, step_id: str) -> str:
             "Step 3.5": "external-review-agent",
             "Step 4": "polish-agent",
             "Step 5": "data-agent",
-            "Step 6": "backup-agent",
+            "Step 6": "audit-agent",
+            "Step 7": "backup-agent",
         }
         return mapping.get(step_id, "webnovel-write-skill")
 
@@ -568,11 +569,47 @@ def analyze_recovery_options(interrupt_info):
                 "label": "从 Step 5 重新开始",
                 "risk": "low",
                 "description": "重新运行 Data Agent（幂等）",
-                "actions": ["重新调用 Data Agent", "继续 Step 6（Git 备份）"],
+                "actions": ["重新调用 Data Agent", "继续 Step 6（Audit Gate）"],
             }
         ]
 
     if step_id == "Step 6":
+        return [
+            {
+                "option": "A",
+                "label": "按 blocking_issues 修复后重跑 audit",
+                "risk": "low",
+                "description": "读取 audit_reports/ch{NNNN}.json，按 remediation 清单逐项修复",
+                "actions": [
+                    f"查看 .webnovel/audit_reports/ch{chapter_num:04d}.json 的 blocking_issues",
+                    "按 remediation 字段指引修复 (通常回到 Step 1/3/4/5)",
+                    "重跑 Step 6: CLI + audit-agent",
+                ],
+            },
+            {
+                "option": "B",
+                "label": "仅重跑 audit-agent (怀疑 agent 本身出错)",
+                "risk": "low",
+                "description": "不动任何产物，只重跑 Step 6 审计",
+                "actions": [
+                    "webnovel.py audit chapter --chapter %d --mode standard" % chapter_num,
+                    "Task(audit-agent, chapter=%d)" % chapter_num,
+                ],
+            },
+            {
+                "option": "C",
+                "label": "强制跳过审计 (高风险)",
+                "risk": "high",
+                "description": "绕过 Step 6 直接进入 Step 7 Git 提交 — 仅在 audit-agent 本身严重故障时使用",
+                "actions": [
+                    "用户显式确认跳过",
+                    "workflow complete-step --step-id 'Step 6' --artifacts '{\"forced_skip\": true}'",
+                    "进入 Step 7",
+                ],
+            },
+        ]
+
+    if step_id == "Step 7":
         return [
             {
                 "option": "A",
@@ -753,7 +790,8 @@ def get_pending_steps(command):
     if command == "webnovel-write":
         # v2: Step 1 内置 Contract v2，不再单独记录 Step 1.5，避免产生 step_order_violation 噪声。
         # Step 3.5 与 Step 3 并行执行，但需独立记录进度以支持 /webnovel-resume 恢复。
-        return ["Step 1", "Step 2A", "Step 2B", "Step 3", "Step 3.5", "Step 4", "Step 5", "Step 6"]
+        # v3: Step 6 = Audit Gate (audit-agent), Step 7 = Git Commit (backup-agent)
+        return ["Step 1", "Step 2A", "Step 2B", "Step 3", "Step 3.5", "Step 4", "Step 5", "Step 6", "Step 7"]
     if command == "webnovel-review":
         return ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6", "Step 7", "Step 8"]
     return []

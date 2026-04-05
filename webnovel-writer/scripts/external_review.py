@@ -362,7 +362,7 @@ DIMENSIONS = {
 {context_block}
 
 严格按JSON输出：
-{{"dimension":"prose_quality","score":0-100,"issues":[{{"id":"PQ_001","type":"PROSE_FLAT/PROSE_CLICHE/PROSE_WEAK_VERB","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+{{"dimension":"prose_quality","score":0-100,"issues":[{{"id":"PQ_001","type":"PROSE_FLAT","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
 
 评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
 
@@ -382,7 +382,7 @@ DIMENSIONS = {
 {context_block}
 
 严格按JSON输出：
-{{"dimension":"emotion_expression","score":0-100,"issues":[{{"id":"EE_001","type":"EMOTION_TELL/EMOTION_JUMP/EMOTION_UNANCHORED","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
+{{"dimension":"emotion_expression","score":0-100,"issues":[{{"id":"EE_001","type":"EMOTION_SHALLOW","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
 
 评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
 

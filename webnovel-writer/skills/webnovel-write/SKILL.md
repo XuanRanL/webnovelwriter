@@ -55,16 +55,21 @@ allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
 4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部10维度分数+外部9模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
 5. Step 4 的 `anti_ai_force_check=pass`
 6. Step 5 Data Agent 已完成
-7. Step 6 Git 已提交
+7. Step 6 Audit Gate 决议 ∈ {approve, approve_with_warnings}（block 禁止进入 Step 7）
+8. Step 7 Git 已提交
 
 验证方式：在开始下一章 Step 0 之前，执行以下检查：
 ```bash
 ls "${PROJECT_ROOT}/正文/第${chapter_padded}章"*.md >/dev/null 2>&1 && \
 test -f "${PROJECT_ROOT}/审查报告/第${chapter_padded}章审查报告.md" && \
 test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md" && \
+test -f "${PROJECT_ROOT}/.webnovel/audit_reports/ch${chapter_padded}.json" && \
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" audit check-decision --chapter ${chapter_num} --require approve,approve_with_warnings && \
 git log --oneline -1 | grep "第${chapter_num}章"
 ```
-任一条件不满足，禁止开始下一章。
+任一条件不满足，禁止开始下一章。新增闸门条件：
+- `audit_reports/ch{NNNN}.json` 存在（Step 6 产物）
+- audit decision 不等于 `block`（审计未通过禁止进入下一章）
 
 **禁止在 checker 运行期间开始下一章的起草。** 等待是流程的一部分，不是浪费时间。
 
@@ -91,6 +96,12 @@ git log --oneline -1 | grep "第${chapter_num}章"
 - `references/step-5-debt-switch.md`
   - 用途：Step 5 债务利息开关规则（默认关闭）。
   - 触发：Step 5 必读。
+- `references/step-6-audit-gate.md`
+  - 用途：Step 6 审计闸门调用模板、执行时序、决议逻辑、产物约定、失败恢复路径。
+  - 触发：Step 6 必读（主流程 + audit-agent 共同消费）。
+- `references/step-6-audit-matrix.md`
+  - 用途：Step 6 七层审计矩阵（A 过程真实性 / B 跨产物一致性 / C 读者体验 / D 作品连续性 / E 创作工艺 / F 题材兑现 / G 跨章趋势），约 70 个检查项。
+  - 触发：Step 6 必读（audit-agent 执行时加载）。
 - `../../references/shared/core-constraints.md`
   - 用途：Step 2A 写作硬约束（大纲即法律 / 设定即物理 / 发明需识别）。
   - 触发：Step 2A 必读。
@@ -175,7 +186,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 ```
 
 要求：
-- `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 3.5` / `Step 4` / `Step 5` / `Step 6`。
+- `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 3.5` / `Step 4` / `Step 5` / `Step 6` / `Step 7`。
 - 任何记录失败只记警告，不阻断写作。
 - 每个 Step 执行结束后，同样需要 `complete-step`（失败不阻断）。
 
@@ -223,9 +234,9 @@ Context Agent 额外输入（必读）：
 - 若 `state` 或大纲不可用，立即阻断并返回缺失项。
 - 输出必须同时包含：
   - 8 板块任务书（核心任务/承接/角色/场景约束/时间约束/风格指导/连续性与伏笔/追读力策略）；
-  - Context Contract 全字段（目标/阻力/代价/本章变化/未闭合问题/开头类型/情绪节奏/信息密度/过渡章判定/追读力设计/爽点规划）；
+  - Context Contract 全字段（目标/阻力/代价/本章变化/未闭合问题/核心冲突一句话/开头类型/情绪节奏/信息密度/是否过渡章/追读力设计/爽点规划/情感锚点规划/时间约束）；
   - Step 2A 可直接消费的“写作执行包”（章节节拍、不可变事实清单、禁止事项、终检清单）。
-- 写作执行包的每个 beat 必须包含：字数分配、场景描述（地点+氛围）、情绪曲线位置、感官锚点（至少1个画面）、关键对话方向+语音规则（若有对话）、本beat禁止事项。
+- 写作执行包的每个 beat 必须包含：字数分配、场景描述（地点+氛围）、情绪曲线位置、感官锚点（至少1个画面）、情感锚点（情感beat：锚点类型+梯度位置）、关键对话方向+语音规则（若有对话）、本beat禁止事项。
 - 合同与任务书出现冲突时，以“大纲与设定约束更严格者”为准。
 
 输出：
@@ -448,7 +459,49 @@ Step 5 失败隔离规则：
 - 所有追加带 `[Ch{N}]` 章节标注
 - 失败不阻断流程
 
-### Step 6：Git 备份（可失败但需说明）
+### Step 6：审计闸门（Audit Gate）
+
+> **定位**：Step 6 是 git 提交前的最后一道防线，跨步骤/跨产物/跨章审链路真实性、承诺兑现、作品连续性。完整规范见 `references/step-6-audit-gate.md` 与 `references/step-6-audit-matrix.md`（audit-agent 必读）。
+
+Step 6 一次调用由两部分组成，**必须全部完成**：
+
+**Part 1 — CLI 结构审计（快速路径，< 5s）**
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  audit chapter --chapter ${chapter_num} --mode ${mode} \
+  --out "${PROJECT_ROOT}/.webnovel/tmp/audit_layer_abg_ch${chapter_padded}.json"
+```
+
+完成 Layer A（过程真实性）、Layer B（跨产物一致性）、Layer G（跨章趋势）的确定性检查。退出码：0=pass / 1=critical fail / 2=warnings / 3=CLI 错误。
+
+**Part 2 — audit-agent 深度审计（60-300s）**
+
+```
+Task(audit-agent, {
+  chapter: <chapter_num>,
+  project_root: <PROJECT_ROOT>,
+  mode: <standard|fast|minimal>,
+  chapter_file: <正文/第NNNN章-*.md>,
+  time_budget_seconds: 300
+})
+```
+
+audit-agent 自动读取 Part 1 的 JSON 输出，完成 Layer C / D / E / F 判断性检查，聚合所有层级，产出最终 `.webnovel/audit_reports/ch{NNNN}.json` 与下章 `editor_notes/ch{NNNN+1}_prep.md`。
+
+**决议规则**：
+- `decision == block` → 按 blocking_issues 的 remediation 修复，重跑对应步骤，**不得进入 Step 7**
+- `decision == approve_with_warnings` → 记录 warnings，进入 Step 7，commit message 附 `[audit:warn:layerX]`
+- `decision == approve` → 直接进入 Step 7
+
+**硬要求**：
+- Part 1 与 Part 2 都必须完成；即使 Part 1 失败，Part 2 仍要执行以给出完整诊断
+- `audit_reports/ch{NNNN}.json` 必须成功写出（不可跳过 editor_notes 与 trend 日志）
+- audit-agent 只读不写（除审计产物），禁止修改正文/设定集/state
+- Step 6 超时（300s）视为未完成，block 进入 Step 7
+- 禁止强制跳过（除非用户显式确认且记录到 forced_skip 字段）
+
+### Step 7：Git 备份（可失败但需说明）
 
 ```bash
 git add .
@@ -456,8 +509,8 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 ```
 
 规则：
-- 提交时机：验证、回写、清理全部完成后最后执行。
-- 提交信息默认中文，格式：`第{chapter_num}章: {title}`。
+- 提交时机：Step 6 审计通过后最后执行。
+- 提交信息默认中文，格式：`第{chapter_num}章: {title}`；若 Step 6 决议为 `approve_with_warnings`，追加 `[audit:warn:layerX]` 后缀。
 - 若 commit 失败，必须给出失败原因与未提交文件范围。
 
 ## 充分性闸门（必须通过）
@@ -471,8 +524,9 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 5. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
 6. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
 7. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`
-8. Step 6 Git 已提交
-9. 若开启性能观测，已读取最新 timing 记录并输出结论
+8. Step 6 审计产物齐全：`audit_reports/ch{chapter_padded}.json`、`editor_notes/ch{next_padded}_prep.md`、`observability/chapter_audit.jsonl` 追加一行；audit decision ∈ {approve, approve_with_warnings}
+9. Step 7 Git 已提交
+10. 若开启性能观测，已读取最新 timing 记录并输出结论
 
 ## 验证与交付
 
@@ -482,8 +536,11 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 test -f "${PROJECT_ROOT}/.webnovel/state.json"
 ls "${PROJECT_ROOT}/正文/第${chapter_padded}章"*.md >/dev/null 2>&1
 test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md"
+test -f "${PROJECT_ROOT}/.webnovel/audit_reports/ch${chapter_padded}.json"
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" audit check-decision --chapter ${chapter_num} --require approve,approve_with_warnings
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 1
 tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || true
+tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/chapter_audit.jsonl" || true
 ```
 
 成功标准：
@@ -507,4 +564,6 @@ tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || t
    - `anti_ai_force_check=fail`：留在 Step 4 继续改写直到 pass，不回退也不跳过；
    - 润色失真：恢复 Step 2A 输出并重做 Step 4；
    - 摘要/状态缺失：只重跑 Step 5；
+   - Step 6 audit block：按 `audit_reports/ch{NNNN}.json` 的 `blocking_issues` 逐项 remediation（通常回到 Step 1/3/3.5/4/5），修复后重跑 Step 6；
+   - Step 6 audit 超时：重跑 audit-agent（增量模式，仅跑未完成 layers）；
 3. 重新执行”验证与交付”全部检查，通过后结束。

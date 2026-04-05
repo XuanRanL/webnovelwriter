@@ -7,6 +7,122 @@
 
 ---
 
+## [2026-04-05] Step 6 审计闸门（7层约70检查项 + Step 7 Git）
+
+**动机**：Ch1 事故暴露 Step 3 审查是"自审自证"——checker 评它自己读的章节，无法检测 subagent fallback、checker 坍缩、Step K 静默跳过、钩子虚标等跨步骤问题。新增 Step 6 审计闸门作为"他审他证"，独立审视 Step 1-5 的执行痕迹与所有产物之间的一致性。目标：写最高质量、让真实读者留下来的小说。
+
+**新增组件**：
+- 新 Step 6「Audit Gate」：audit-agent 七层审计（Layer A 过程真实性 / B 跨产物一致性 / C 读者体验 / D 作品连续性 / E 创作工艺 / F 题材兑现 / G 跨章趋势），约 70 个检查项
+- 原 Step 6「Git 备份」改为 Step 7
+- 混合执行模型：Part 1 CLI 快速结构审计（Layer A/B/G，< 5s）+ Part 2 audit-agent 深度判断（Layer C/D/E/F，60-300s）
+- 闭环质量反馈：`.webnovel/editor_notes/ch{NNNN+1}_prep.md` 由 audit-agent 写入，下章 context-agent 必读
+
+**新增文件**：
+- `agents/audit-agent.md`（子代理规范）
+- `skills/webnovel-write/references/step-6-audit-gate.md`（Part1+Part2 时序、决议规则、产物约定、失败恢复路径）
+- `skills/webnovel-write/references/step-6-audit-matrix.md`（7 层 × ~70 检查项矩阵）
+- `scripts/data_modules/chapter_audit.py`（Layer A/B/G 确定性 CLI）
+- `scripts/data_modules/tests/test_chapter_audit.py`（24 单元测试）
+- `scripts/data_modules/tests/test_webnovel_audit_cli.py`（5 CLI 集成测试）
+
+**修改文件**：
+- `scripts/data_modules/webnovel.py`：新增 `audit` 子命令，转发到 `chapter_audit`
+- `scripts/workflow_manager.py`：
+  - `expected_step_owner`: Step 6 owner = audit-agent, 新增 Step 7 owner = backup-agent
+  - `get_pending_steps`: `[..., 'Step 5', 'Step 6', 'Step 7']`
+  - `get_recovery_options`: Step 5 reference 改为 Step 6 Audit Gate；Step 6 recovery 改为"按 blocking_issues 修复 / 重跑 audit-agent / 强制跳过（高风险）"；新增 Step 7 Git 恢复选项
+- `skills/webnovel-write/SKILL.md`：
+  - 章节间闸门新增 `audit_reports/ch{NNNN}.json` 存在 + `audit check-decision` 通过
+  - `--step-id` 白名单追加 Step 7
+  - 新增 Step 6（审计闸门）与 Step 7（Git 备份）完整章节
+  - 充分性闸门条目扩展到 10 条
+  - 验证与交付 bash 新增 audit 检查
+  - 失败处理新增 Step 6 block / 超时恢复
+  - References 新增 step-6-audit-gate.md 与 step-6-audit-matrix.md
+- `agents/context-agent.md`：输入数据新增 `.webnovel/editor_notes/ch{NNNN}_prep.md`（第 2 章起必读，形成跨章闭环）
+- `agents/data-agent.md`：Step J 输出 schema 新增 `step_k_status`（含 executed / outcome / applied_additions / proposed_additions / skipped_reasons），供 Step 6 Layer B5/B6 对账
+
+**硬约束**：
+- Step 6 Part1 与 Part2 必须全部完成才能判定；Part1 fail 时 Part2 仍执行（给完整诊断）
+- `decision == block` 禁止进入 Step 7；必须按 `blocking_issues[].remediation` 修复后重跑
+- audit-agent 只读不写（除审计产物 audit_reports / editor_notes / observability/chapter_audit.jsonl）
+- 时间预算 300s 硬上限；超时视为"审计未完成"block
+- `--minimal` 模式跳过 Layer A3 9 外部模型 / Layer G 跨章趋势 / editor_notes 写入
+
+**测试结果**：
+- 新增 29 个测试（24 unit + 5 integration）全部通过
+- 不影响现有 `test_workflow_manager.py`（9 passed）与 `test_webnovel_unified_cli.py`（5 passed）
+- 9 个 pre-existing CLI test 失败与本次改动无关（tmp_path 下缺少 `.webnovel/state.json` 的项目定位器问题）
+
+**审计触发命令**：
+```bash
+# Part 1 CLI 快速审计
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  audit chapter --chapter {N} --mode standard \
+  --out "${PROJECT_ROOT}/.webnovel/tmp/audit_layer_abg_ch{NNNN}.json"
+
+# Part 2 audit-agent 深度审计
+Task(audit-agent, {chapter: N, project_root, mode, chapter_file, time_budget_seconds: 300})
+
+# 章节间闸门验证
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  audit check-decision --chapter {N} --require approve,approve_with_warnings
+```
+
+---
+
+## [2026-04-05] 插件 subagent_type 注册修复（workspace 级 .claude/agents/ 兜底）
+
+**症状**：在 Claude Code 会话里调用 `Agent(subagent_type="context-agent"/"data-agent"/"*-checker")` 报错
+`Agent type 'context-agent' not found. Available agents: general-purpose, statusline-setup, Explore, Plan, claude-code-guide`。
+
+**根因链（按发现顺序）**：
+1. **插件被 disable**：`claude plugin list` 显示 `webnovel-writer@webnovel-writer-marketplace Status: ✘ disabled`
+   —— 某次会话里插件被禁用后未重新启用，所有 plugin-scope agents 停止加载。
+2. **cache 版本落后 local fork**：installed cache `5.5.4` 只含 11 个 agent，缺 `emotion-checker.md` 和 `prose-quality-checker.md`
+   （这两个是 fork 里后加的），所以即便启用也拿不到最新的 10 维 checker 全家桶。
+3. **subagent 需要会话重启才生效**：官方文档明示
+   "Subagents are loaded at session start. If you create a subagent by manually adding a file, restart your session or use `/agents` to load it immediately."
+   —— 这意味着启用插件/创建新 agent 后，**本会话仍不可用**，必须新开会话。
+
+**修复（三层）**：
+1. **启用插件**：`claude plugin enable webnovel-writer@webnovel-writer-marketplace`
+2. **workspace 级 standalone 兜底**：将 fork 里的 13 个 agent 复制到 `I:/AI-extention/webnovel-writer/.claude/agents/`
+   —— 项目 scope 优先级高于 plugin scope（3 > 5），从任一书项目子目录 cwd 向上搜索都能命中
+   —— 避免对 cache 同步的依赖，local fork 改动立即生效（下次会话）
+3. **路径修正**：将 standalone 副本里的 `${CLAUDE_PLUGIN_ROOT}` 替换为 fork 绝对路径
+   `I:/AI-extention/webnovel-writer/webnovel-writer`，因为 standalone subagent 运行时无 `CLAUDE_PLUGIN_ROOT` env。
+
+**修改位置**：
+| 位置 | 内容 |
+|------|------|
+| plugin 启用状态 | disabled → enabled（user scope） |
+| `I:/AI-extention/webnovel-writer/.claude/agents/*.md` | 新增 13 个文件（workspace 级 standalone fallback） |
+| 上述文件内的 `${CLAUDE_PLUGIN_ROOT}` | 全部替换为 fork 绝对路径 |
+
+**启用后的 subagent 优先级**（官方文档 `/en/sub-agents`）：
+1. Managed settings（组织级）
+2. `--agents` CLI flag（会话级）
+3. **`.claude/agents/`（项目级）← 本次兜底落点**
+4. `~/.claude/agents/`（用户级）
+5. **Plugin's `agents/` directory（插件级）← 原始来源**
+
+同名 agent 项目级覆盖插件级，因此 workspace fallback 与插件可共存，以 fork 的最新版本为准。
+
+**验收路径**（下次会话）：
+```
+/agents                                     # 确认列表中出现 context-agent/data-agent/*-checker
+Agent(subagent_type="context-agent",        # 调用时不再报 "not found"
+      prompt="...")
+```
+
+**对比：上一次会话（Ch1 写作）**：
+- 当时因本问题 fallback 到 `general-purpose` + 嵌入 agent.md 全文的方式执行
+- 产出质量未受影响（Ch1 combined=93, 16/16 硬约束），但上下文成本高、无工具隔离
+- 本次修复后，下次会话可直接 `subagent_type="context-agent"`，节约 token 并获得 agent 的 `tools: Read, Grep, Bash` 隔离
+
+---
+
 ## [2026-04-03] 幽灵零分修复 + 补充模型 fallback 链
 
 **问题1**：模型返回合法JSON但内容为空（`score:0, summary:""`），被视为有效评分。
