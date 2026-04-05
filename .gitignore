@@ -36,6 +36,9 @@ nul
 
 # Novel project data (local only)
 <example-project-C>/
+<example-project-A>/
+<example-project-D>/
+<example-project-B>/
 
 # Local research / sibling projects (avoid accidental commit)
 .sisyphus/

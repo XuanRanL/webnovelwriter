@@ -7,6 +7,64 @@
 
 ---
 
+## [2026-04-05] v5.6.0 流程对齐 — Step 1.5 内置 + Antigravity 镜像下线
+
+**动机**：Step 6/7 拆分后，仓库里残留两类"历史包袱"导致说明与代码双源不一致：
+1. **Step 1.5 残影**：早期把"Context Contract 生成"作为独立 Step 1.5，但 Context Agent 已经在 Step 1 输出执行包时同步产出 Contract，再立一个 Step 1.5 只是让 pending_steps、流程图、文档三处都要维护"空壳 Step"。
+2. **Antigravity 镜像**：`.claude/commands/`、`.claude/agents/`、`.agents/workflows/` 三处是早期为 Antigravity IDE 兼容而做的硬拷贝。随着主 plugin 注册链路稳定（Claude Code v2.x plugin scope 加载可靠 + workspace 级 `.claude/agents/` 兜底已在 2026-04-05 entry 下方记录），这些镜像已不再被任何入口引用，却在每次改 SKILL.md/agent.md 时成为"必须同步的隐形第 N 处"，实际已经出现 192 行 drift（旧 8 checker/6 model/无 Step 7）。
+
+**本次动作**：
+
+### 1. Step 1.5 → Step 1 内置（概念合并，非行为变化）
+- **文件重命名**：`skills/webnovel-write/references/step-1.5-contract.md` → `skills/webnovel-write/references/context-contract.md`（git 以 94% similarity 识别为 rename，历史保留）
+- **新文件顶部新增定位说明**：
+  > Context Contract 已内置于 Step 1（Context Agent 生成执行包时产出），不再作为独立 Step 存在。本文档提供 Contract 的字段 schema 与校验规则，供 context-agent 引用。
+- **`agents/context-agent.md`**：
+  - Line 17 引用改为 `context-contract.md`
+  - Line 45 文案改为 "Context Contract（内置于 Step 1）"
+- **`scripts/workflow_manager.py`**：`expected_step_owner` 不再注册 `Step 1.5`；`get_pending_steps` 返回 `["Step 1", "Step 2A", ..., "Step 7"]`（无 1.5）；保留 Line 454-456 的历史兼容分支 + 注释说明（读旧 state.json 时能平滑迁移）
+- **`skills/webnovel-resume/SKILL.md` + `references/workflow-resume.md`**：Step 难度表删除 Step 1.5 行，Step 1 注释改为"Context Agent 生成执行包 + 内置 Contract"
+- **`skills/webnovel-query/references/system-data-flow.md`**：流程图删掉 Step 1.5 节点，Step 1 输出附加 Contract 字段说明
+- **`references/genre-profiles.md` + `references/reading-power-taxonomy.md`**：所有 "Step 1.5 Contract" 引用替换为 "Step 1 Context Contract"
+- **`skills/webnovel-write/references/workflow-details.md`**：对应段落文案同步
+
+**注意**：`skills/webnovel-init/SKILL.md` 里独立存在的 "Step 1.5: 叙事声音基准" 是 init skill 的独立概念（不是 write skill 的 Contract 生成），本次不动。
+
+**注意**：`references/context-contract-v2.md` 是 `extract_chapter_context.py` 输出的数据层 schema（`context_contract_version: v2`），与本次创作层 Context Contract 同名不同物，为避免混淆已在该文件顶部加定位说明（见下条 P3）。
+
+### 2. Antigravity 镜像下线
+- **删除目录**：
+  - `.claude/commands/`（webnovel-write.md 等命令拷贝，已 drift 192 行）
+  - `.claude/agents/`（子代理 .md 拷贝）
+  - `.agents/workflows/`（Antigravity workflow 配置）
+- **原因**：
+  - 主 plugin 注册链路已稳定，`/webnovel-write` 等命令直接从 `${CLAUDE_PLUGIN_ROOT}/commands/` 加载，无需镜像
+  - Workspace 级 `.claude/agents/` 兜底方案（见下方 2026-04-05 entry）是**工作空间根目录**级别的 fallback，不在 plugin fork 仓库里，不属于本次删除对象
+  - 每次 SKILL/agent 改动都要三处同步，实际已出现 critical drift（旧决议规则 / 旧 checker 数 / 旧模型表）
+- **迁移确认**：grep 确认 fork 内无任何代码/文档 import 或引用这三个目录，全部入口通过 plugin 的 `commands/` 与 `agents/` 目录加载
+
+### 3. 配套提交
+- 本次改动与 Step 6/7 拆分是同一 v5.6.0 流程对齐的两面，分在两个 commit：
+  - `cadf2a3` — docs: v5.6.0 流程对齐 — Step 1.5 内置到 Step 1 + Step 7 Git 拆分完整辐射修复（12 files, +83/-58, 含 rename）
+  - 前一个 commit 是 Step 6/7 主体实现（见下方 2026-04-05 Step 6 审计闸门条目）
+
+**验收**：
+```bash
+# 确认 Step 1.5 仅在历史兼容分支与审计日志中出现
+grep -rn "Step 1.5" webnovel-writer/{skills,agents,scripts,references}
+# 应只剩 workflow_manager.py 兼容分支 + 本 CUSTOMIZATIONS.md 历史条目
+
+# 确认 Antigravity 镜像彻底清除
+ls .claude/commands/ .claude/agents/ .agents/ 2>&1
+# 应全部 "No such file or directory"
+
+# pending_steps 无 Step 1.5
+python -c "from webnovel_writer.scripts.workflow_manager import get_pending_steps; print(get_pending_steps('webnovel-write'))"
+# 应输出: ['Step 1', 'Step 2A', 'Step 2B', 'Step 3', 'Step 3.5', 'Step 4', 'Step 5', 'Step 6', 'Step 7']
+```
+
+---
+
 ## [2026-04-05] Step 6 审计闸门（7层约70检查项 + Step 7 Git）
 
 **动机**：Ch1 事故暴露 Step 3 审查是"自审自证"——checker 评它自己读的章节，无法检测 subagent fallback、checker 坍缩、Step K 静默跳过、钩子虚标等跨步骤问题。新增 Step 6 审计闸门作为"他审他证"，独立审视 Step 1-5 的执行痕迹与所有产物之间的一致性。目标：写最高质量、让真实读者留下来的小说。

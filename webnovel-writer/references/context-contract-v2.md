@@ -1,4 +1,16 @@
-# Context Contract
+# Context Contract v2（数据层 schema）
+
+> **重要定位说明**：本文档描述的是 `extract_chapter_context.py` 输出的**数据层 JSON schema**（`context_contract_version: v2`），用于 Context Agent 取数与 ranker 排序。
+>
+> **不要与 Step 1 创作层 Context Contract 混淆**：后者是 Context Agent 为当前章节生成的"可执行合同"（目标/阻力/代价/钩子/爽点/情感锚点等创作指令），schema 定义在 `skills/webnovel-write/references/context-contract.md`。
+>
+> | 维度 | 本文档（v2 数据层） | 创作层 Contract |
+> |------|--------------------|-----------------|
+> | 定位 | `extract_chapter_context.py` 输出格式 | Context Agent 在 Step 1 生成的创作指令 |
+> | 生成者 | 确定性脚本 | AI Context Agent |
+> | 消费者 | Context Agent / Writer / Review | Step 2A Writer |
+> | 字段 | meta/sections/template/weights | 目标/阻力/代价/钩子设计/爽点规划/情感锚点/风险预估 |
+> | schema 文件 | 本文件 | `skills/webnovel-write/references/context-contract.md` |
 
 ## 目的
 - 为 `Context Agent`、`Writer`、`Review` 提供统一、可排序、可追踪的上下文契约。
