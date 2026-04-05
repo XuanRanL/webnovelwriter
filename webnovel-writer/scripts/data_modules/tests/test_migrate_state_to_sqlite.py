@@ -125,6 +125,9 @@ def test_migrate_state_verbose_and_dry_run(temp_project, capsys):
 
 def test_migrate_state_cli_main(tmp_path, monkeypatch, capsys):
     project_root = tmp_path
+    # CLI 内部会走 resolve_project_root() → _is_project_root()，
+    # 需要 tmp_path 具备 .webnovel/state.json 才能被识别为项目根。
+    DataModulesConfig.from_project_root(project_root).ensure_dirs()
     args = [
         "migrate_state_to_sqlite",
         "--project-root",

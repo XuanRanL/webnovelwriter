@@ -108,9 +108,12 @@ def test_disambiguation_and_save_state(temp_project):
 
 
 def test_save_state_no_pending(temp_project):
+    # ensure_dirs() 会写入 stub "{}" 作为 project 标志文件（供 project_locator 识别），
+    # save_state() 无 pending 时应早返回、不触碰该文件。
+    initial_content = temp_project.state_file.read_text(encoding="utf-8")
     manager = StateManager(temp_project, enable_sqlite_sync=False)
     manager.save_state()
-    assert not temp_project.state_file.exists()
+    assert temp_project.state_file.read_text(encoding="utf-8") == initial_content
 
 
 def test_save_state_with_sqlite_sync_and_protagonist(temp_project):

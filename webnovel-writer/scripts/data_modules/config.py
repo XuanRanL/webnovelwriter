@@ -314,6 +314,13 @@ class DataModulesConfig:
 
     def ensure_dirs(self):
         self.webnovel_dir.mkdir(parents=True, exist_ok=True)
+        # state.json 是 project_locator._is_project_root() 判定项目根的
+        # 标志文件。若缺失，写入最小合法 JSON（空 dict），保证 .webnovel
+        # 目录可被 resolve_project_root() 识别为 project root。
+        # state_manager._ensure_state_schema() 能从空 dict 派生完整默认
+        # state，不会破坏既有使用模式；save_state() 稍后会原子覆盖。
+        if not self.state_file.exists():
+            self.state_file.write_text("{}\n", encoding="utf-8")
 
     @classmethod
     def from_project_root(cls, project_root: str | Path) -> "DataModulesConfig":
