@@ -14,7 +14,7 @@ model: inherit
 
 - **Taxonomy**: `${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md`
 - **Genre Profile**: `${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md`
-- **Context Contract**: `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/step-1.5-contract.md`
+- **Context Contract**: `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/context-contract.md`
 - **Shared References**: `${CLAUDE_PLUGIN_ROOT}/references/shared/` 为单一事实源；如需枚举/扫描参考文件，遇到 `<!-- DEPRECATED:` 的文件一律跳过。
 
 ## 输入
@@ -42,7 +42,7 @@ model: inherit
 - 连续性与伏笔（时间/位置/情绪连贯；必须处理/可选伏笔）
 - 追读力策略（未闭合问题 + 钩子类型/强度、微兑现建议、差异化提示、**情感蓝图对标**）
 
-2. **Context Contract（内置 Step 1.5）**
+2. **Context Contract（内置于 Step 1）**
 - 目标、阻力、代价、本章变化、未闭合问题、核心冲突一句话
 - 开头类型、情绪节奏、信息密度
 - 是否过渡章（必须按大纲判定，禁止按字数判定）
@@ -258,7 +258,7 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index recent
   - 可用能力 = 当前境界 + 近期获得 + 设定禁用项
 
 ### Step 5: 组装创作执行包（任务书 + Context Contract + 直写提示词）
-输出可直接供 Step 2A 消费的单一执行包，不拆分独立 Step 1.5。
+输出可直接供 Step 2A 消费的单一执行包，Context Contract 内置于 Step 1，无独立 Step。
 
 - 第 7 板块必须包含“伏笔优先级清单”：
   - `必须处理（本章优先）`：`remaining <= 5` 或已超期（`remaining < 0`），全部列出不截断
