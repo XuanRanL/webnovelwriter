@@ -107,6 +107,14 @@ def expected_step_owner(command: str, step_id: str) -> str:
 
     Returns concise owner tags to align with
     `.claude/references/claude-code-call-matrix.md`.
+
+    Note: these owner strings are logging tags used in `call_trace.jsonl`'s
+    `expected_owner` field for observability. Some map to real subagent files
+    under `agents/` (context-agent, external-review-agent, data-agent,
+    audit-agent), while others are conceptual tags for main-skill phases that
+    have no corresponding subagent file (writer-draft, style-adapter,
+    review-agents, polish-agent, backup-agent). Do not treat the absence of a
+    matching agent file as a bug.
     """
     if command == "webnovel-write":
         mapping = {

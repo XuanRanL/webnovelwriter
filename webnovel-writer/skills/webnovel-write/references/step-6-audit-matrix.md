@@ -4,9 +4,11 @@
 
 ## 严重等级定义
 
+> 本节与本文件底部「决议矩阵」共同构成权威规范，二者必须一致。若出现偏差以「决议矩阵」为准。
+
 - **critical**: 任一命中 → 立即 `block`。代表链路执行可疑或作品会崩。
-- **high**: 2+ 命中 → `block`；单独命中 → `approve_with_warnings` 并强制写入 editor_notes。
-- **medium**: 累计 3+ → `approve_with_warnings`。
+- **high**: 3+ 命中 → `block`；1-2 命中 → `approve_with_warnings` 并强制写入 editor_notes。
+- **medium**: 任一命中 → `approve_with_warnings`。
 - **low**: 仅记录，不影响决议。
 
 ## Layer A — 过程真实性（critical 层，抓伪装执行）

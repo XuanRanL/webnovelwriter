@@ -92,18 +92,22 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
 
 ### 第三步：聚合判定
 
-综合所有层级结果产出决议：
+综合所有层级结果产出决议（权威规范见 `step-6-audit-matrix.md` 决议矩阵，本段必须与其保持一致）：
 
 ```
-overall_decision = 
-  block        if any(Layer A critical fail)
-  block        if any(Layer B critical fail)  
-  block        if any(Layer C critical fail)
-  block        if any(Layer D critical fail)
-  block        if count(warnings) >= 5
-  approve_with_warnings  if count(warnings) in [1, 4]
-  approve      if all checks pass
+overall_decision =
+  block                  if any critical fail in Layer A/B/C/D/F
+  block                  if count(high fails across all layers) >= 3
+  approve_with_warnings  if any high fail (1-2)
+  approve_with_warnings  if any medium fail
+  approve_with_warnings  if any warn status check
+  approve                if all checks pass or skipped
 ```
+
+说明：
+- Layer E/G 没有 critical 等级检查项（最高 high），不会单独触发 critical block
+- `low` 等级的 fail 仅记录，不影响决议
+- `skipped` 状态不计入任何 fail 或 warn 计数
 
 ### 第四步：写出产物
 

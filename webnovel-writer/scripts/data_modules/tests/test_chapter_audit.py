@@ -438,3 +438,117 @@ def test_check_result_serialization():
     assert d["id"] == "X1"
     assert d["measured"]["a"] == 1
     assert d["remediation"] == ["do x"]
+
+
+# ==================== 决议矩阵（step-6-audit-matrix.md 对齐）====================
+
+def _mk_check(severity: str, status: str = "fail") -> "object":
+    mod = _load_module()
+    return mod.CheckResult(
+        id=f"T_{severity}", name="test", layer="A",
+        status=status, severity=severity, evidence="synthetic",
+    )
+
+
+def test_derive_decision_approve_when_all_pass():
+    mod = _load_module()
+    assert mod._derive_cli_decision([], [], [], [], []) == "approve"
+
+
+def test_derive_decision_block_on_any_critical_fail():
+    mod = _load_module()
+    decision = mod._derive_cli_decision(
+        [_mk_check("critical")], [], [], [], []
+    )
+    assert decision == "block"
+
+
+def test_derive_decision_single_high_fail_is_warning_not_block():
+    """1-2 个 high fail 应降级为 approve_with_warnings (对齐 matrix 决议矩阵)."""
+    mod = _load_module()
+    decision = mod._derive_cli_decision(
+        [], [_mk_check("high")], [], [], []
+    )
+    assert decision == "approve_with_warnings"
+
+
+def test_derive_decision_two_high_fails_is_warning_not_block():
+    mod = _load_module()
+    decision = mod._derive_cli_decision(
+        [], [_mk_check("high"), _mk_check("high")], [], [], []
+    )
+    assert decision == "approve_with_warnings"
+
+
+def test_derive_decision_three_high_fails_triggers_block():
+    """high fail >= 3 触发 block (matrix 决议矩阵)."""
+    mod = _load_module()
+    decision = mod._derive_cli_decision(
+        [], [_mk_check("high")] * 3, [], [], []
+    )
+    assert decision == "block"
+
+
+def test_derive_decision_medium_fail_is_warning():
+    mod = _load_module()
+    decision = mod._derive_cli_decision(
+        [], [], [_mk_check("medium")], [], []
+    )
+    assert decision == "approve_with_warnings"
+
+
+def test_derive_decision_low_fail_still_degrades_to_warning():
+    mod = _load_module()
+    decision = mod._derive_cli_decision(
+        [], [], [], [_mk_check("low")], []
+    )
+    assert decision == "approve_with_warnings"
+
+
+def test_derive_decision_warn_status_is_warning():
+    mod = _load_module()
+    decision = mod._derive_cli_decision(
+        [], [], [], [], [_mk_check("medium", status="warn")]
+    )
+    assert decision == "approve_with_warnings"
+
+
+def test_decision_to_exit_code_map_is_injective():
+    """exit code 映射必须 approve=0 / block=1 / warn=2，与 docstring 一致."""
+    mod = _load_module()
+    assert mod._DECISION_TO_EXIT_CODE["approve"] == 0
+    assert mod._DECISION_TO_EXIT_CODE["block"] == 1
+    assert mod._DECISION_TO_EXIT_CODE["approve_with_warnings"] == 2
+
+
+def test_cli_chapter_exit_code_matches_decision_block(good_project):
+    """注入 critical fail → cli_decision=block → exit_code=1."""
+    mod = _load_module()
+    # 注入 U+FFFD 触发 A7 critical fail
+    chapter_file = good_project / "正文" / "第0001章-测试章.md"
+    chapter_file.write_text("乱\ufffd码", encoding="utf-8")
+
+    out_path = good_project / ".webnovel" / "tmp" / "audit_block.json"
+    from types import SimpleNamespace
+    args = SimpleNamespace(
+        project_root=str(good_project),
+        chapter=1, mode="standard", out=str(out_path),
+    )
+    code = mod._cmd_chapter(args)
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    # JSON 和 exit code 必须一致
+    assert data["cli_decision"] == "block"
+    assert code == 1
+
+
+def test_run_audit_summary_has_new_severity_counts(good_project):
+    """run_audit summary 应含 medium_fails / low_fails 字段."""
+    mod = _load_module()
+    report = mod.run_audit(good_project, 1, mode="standard")
+    summary = report["summary"]
+    assert "critical_fails" in summary
+    assert "high_fails" in summary
+    assert "medium_fails" in summary
+    assert "low_fails" in summary
+    assert "warnings" in summary
+    assert "total_checks" in summary

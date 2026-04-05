@@ -18,10 +18,16 @@ CLI 子命令:
 - check-decision → 读取已存在的 audit_reports/ch{NNNN}.json 并验证决议
 - write-editor-notes → 辅助: 根据 audit 结果生成 editor_notes/ch{NNNN+1}_prep.md
 
-退出码:
-- 0 = 全部通过
-- 1 = 有 critical fail (block)
-- 2 = 有 warnings 但无 critical (approve_with_warnings)
+决议规则 (与 step-6-audit-matrix.md 决议矩阵保持一致):
+- 任一 critical fail                    → block
+- high fail 数量 >= 3                   → block
+- 其他 high / medium / low fail 或 warn → approve_with_warnings
+- 全部 pass / skipped                   → approve
+
+退出码 (与 cli_decision 一一对应):
+- 0 = approve (全部通过)
+- 1 = block (critical fail 或 high fails >= 3)
+- 2 = approve_with_warnings (有 high/medium/low fail 或 warn)
 - 3 = CLI 自身错误 (脚本 bug / 文件缺失等)
 """
 from __future__ import annotations
@@ -1053,6 +1059,40 @@ def _run_layer_g(project_root: Path, chapter: int) -> LayerResult:
     return LayerResult(layer="G", score=_score_from_checks(checks), checks=checks)
 
 
+def _derive_cli_decision(
+    critical_fails: List[CheckResult],
+    high_fails: List[CheckResult],
+    medium_fails: List[CheckResult],
+    low_fails: List[CheckResult],
+    warnings: List[CheckResult],
+) -> str:
+    """根据 fail/warn 计数派生 cli_decision.
+
+    权威规范: step-6-audit-matrix.md 决议矩阵。
+    - 任一 critical fail                → block
+    - high fail 数量 >= 3               → block
+    - 有 high/medium/low fail 或 warn   → approve_with_warnings
+    - 全部 pass/skipped                 → approve
+
+    注: CLI 仅覆盖 Layer A/B/G，最终决议由 audit-agent 合并 C/D/E/F 后重新聚合。
+    """
+    if critical_fails:
+        return "block"
+    if len(high_fails) >= 3:
+        return "block"
+    if high_fails or medium_fails or low_fails or warnings:
+        return "approve_with_warnings"
+    return "approve"
+
+
+# cli_decision → CLI 退出码 (与 docstring 顶部一致)
+_DECISION_TO_EXIT_CODE = {
+    "approve": 0,
+    "block": 1,
+    "approve_with_warnings": 2,
+}
+
+
 def run_audit(project_root: Path, chapter: int, mode: str = "standard") -> Dict[str, Any]:
     """运行 Layer A/B/G 全部检查，返回字典供主流程/agent 消费."""
     layer_a = _run_layer_a(project_root, chapter)
@@ -1063,23 +1103,23 @@ def run_audit(project_root: Path, chapter: int, mode: str = "standard") -> Dict[
     else:
         layer_g = _run_layer_g(project_root, chapter)
 
-    # 决议: 仅基于 Layer A/B (Layer G 为警告性质)
     all_checks = layer_a.checks + layer_b.checks + layer_g.checks
     critical_fails = [c for c in all_checks if c.status == "fail" and c.severity == "critical"]
     high_fails = [c for c in all_checks if c.status == "fail" and c.severity == "high"]
+    medium_fails = [c for c in all_checks if c.status == "fail" and c.severity == "medium"]
+    low_fails = [c for c in all_checks if c.status == "fail" and c.severity == "low"]
     warnings = [c for c in all_checks if c.status == "warn"]
 
-    # CLI 的决议是临时的，最终决议由 audit-agent 聚合 C/D/E/F 后给出
-    if critical_fails:
-        cli_decision = "block"
-    elif high_fails:
-        cli_decision = "block"
-    elif len(warnings) >= 5:
-        cli_decision = "approve_with_warnings"
-    elif warnings:
-        cli_decision = "approve_with_warnings"
-    else:
-        cli_decision = "approve"
+    cli_decision = _derive_cli_decision(
+        critical_fails, high_fails, medium_fails, low_fails, warnings
+    )
+
+    # blocking_issues 仅收纳会触发 block 的项:
+    # - 任一 critical fail
+    # - high fails >= 3 时全部 high fails
+    blocking_issues: List[CheckResult] = list(critical_fails)
+    if len(high_fails) >= 3:
+        blocking_issues.extend(high_fails)
 
     return {
         "chapter": chapter,
@@ -1096,10 +1136,12 @@ def run_audit(project_root: Path, chapter: int, mode: str = "standard") -> Dict[
         "summary": {
             "critical_fails": len(critical_fails),
             "high_fails": len(high_fails),
+            "medium_fails": len(medium_fails),
+            "low_fails": len(low_fails),
             "warnings": len(warnings),
             "total_checks": len(all_checks),
         },
-        "blocking_issues": [c.to_dict() for c in critical_fails + high_fails],
+        "blocking_issues": [c.to_dict() for c in blocking_issues],
         "warnings": [c.to_dict() for c in warnings],
     }
 
@@ -1151,11 +1193,8 @@ def _cmd_chapter(args) -> int:
     # 同时输出 JSON 到 stdout
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
-    if report["summary"]["critical_fails"] > 0:
-        return 1
-    if report["summary"]["warnings"] > 0 or report["summary"]["high_fails"] > 0:
-        return 2
-    return 0
+    # 从 cli_decision 反推退出码，确保 JSON 与 exit code 语义一致
+    return _DECISION_TO_EXIT_CODE.get(report["cli_decision"], 3)
 
 
 def _cmd_check_decision(args) -> int:
