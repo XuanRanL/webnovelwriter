@@ -4,8 +4,9 @@
 
 请改为按 Step 加载以下文件：
 
-- Step 1.5：`references/step-1.5-contract.md`
+- Step 1（Context Contract 内置）：`references/context-contract.md`
 - Step 3：`references/step-3-review-gate.md`
+- Step 3.5：`references/step-3.5-external-review.md`
 - Step 5：`references/step-5-debt-switch.md`
 
 说明：

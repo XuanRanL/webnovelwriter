@@ -1,6 +1,6 @@
 # 题材配置档案 (Genre Profiles)
 
-> **定位**：本文档定义各题材的追读力配置参数，供 Step 1.5 / Context Agent / Checkers 读取。
+> **定位**：本文档定义各题材的追读力配置参数，供 Context Agent / Checkers 读取。
 >
 > **原则**：配置用于"调整权重和建议"，不做硬性裁决。
 >
@@ -650,9 +650,8 @@ override_config:
 
 ### 3.1 加载时机
 
-1. **Step 1.5**：根据 `state.json → project.genre` 加载对应profile
-2. **Context Agent**：将profile相关字段注入创作任务书
-3. **Checkers**：根据profile调整检测阈值和建议权重
+1. **Step 1（Context Agent）**：根据 `state.json → project.genre` 加载对应profile，将profile相关字段注入创作任务书
+2. **Checkers**：根据profile调整检测阈值和建议权重
 
 ### 3.2 多标签支持（预留）
 

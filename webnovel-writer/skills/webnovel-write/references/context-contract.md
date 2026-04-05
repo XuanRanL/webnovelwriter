@@ -1,8 +1,10 @@
-# Step 1.5 Contract Template
+# Context Contract Template
+
+> **定位**：Context Contract 已内置于 Step 1（Context Agent 生成执行包时产出），不再作为独立 Step 存在。本文档提供 Contract 的字段 schema 与校验规则，供 context-agent 引用。
 
 ## 目标
 
-把 `extract_chapter_context.py` 的上下文与 guidance 收束成“可执行合同”，直接驱动 Step 2A。
+把 `extract_chapter_context.py` 的上下文与 guidance 收束成”可执行合同”，直接驱动 Step 2A。
 
 ## 必填输出结构（Scene-Sequel 最小闭环）
 

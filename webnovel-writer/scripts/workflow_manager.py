@@ -451,6 +451,8 @@ def analyze_recovery_options(interrupt_info):
 
     step_id = current_step["id"]
 
+    # 注：Step 1.5 已在 v5.6.0 前内置到 Step 1（Context Agent 生成执行包时产出 Context Contract）。
+    # 保留 "Step 1.5" 作为历史兼容分支，避免读取旧 workflow_state.json 时断裂；新流程不会再写入该 id。
     if step_id in {"Step 1", "Step 1.5"}:
         return [
             {

@@ -86,27 +86,31 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
 ## 每章数据链
 
 ```
-1. Context Agent 组装创作任务书
+1. Step 1 Context Agent 组装创作执行包（内置 Context Contract）
    → 读取 state.json（精简版：进度/配置）
    → SQL 查询 index.db（核心实体/按需实体）
    → RAG 检索（相关场景）
-
-2. Step 1.5 章节设计
+   → 生成 8 板块任务书 + Context Contract + Step 2A 直写提示词
    → 选开头/钩子/爽点模式（避开最近3章）
 
-3. Writer 生成章节内容
-   → 2A 粗稿（纯正文）
-   → 2B 风格适配（可选）
+2. Writer 生成章节内容
+   → Step 2A 粗稿（纯正文）
+   → Step 2B 风格适配（--fast/--minimal 跳过）
 
-4. 审查 (6 个 Agent 并行)
-   → 爽点/一致性/节奏/OOC/连贯性/追读力检查
-   → 输出审查报告
+3. Step 3 内部审查 (10 个 Checker 并行)
+   → 一致性/连贯性/OOC/追读力/爽点密度/节奏/对话/信息密度/文笔质感/情感表现
+   → 输出内部审查分数
 
-5. 网文化润色
-   → 基于审查报告修复问题
-   → 强化口感规则
+4. Step 3.5 外部模型审查（9 模型双层架构）
+   → 核心3（kimi/glm/qwen-plus）+ 补充6
+   → 每模型 10 维度评分
+   → 输出 9 模型 × 10 维度评分矩阵
 
-6. Data Agent 处理数据链
+5. Step 4 网文化润色
+   → 基于内外审查报告修复问题
+   → 强化口感规则 + Anti-AI 终检
+
+6. Step 5 Data Agent 处理数据链
    → AI 实体提取（替代 XML 标签解析）
    → 实体消歧（置信度策略）
    → 写入 index.db（实体/别名/状态变化/关系）
@@ -115,7 +119,11 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
    → 向量嵌入 (RAG)
    → 风格样本评估
 
-7. Git 备份（强制）
+7. Step 6 审计闸门 Audit Gate（7 层 ~70 检查项）
+   → CLI Part 1 + audit-agent Part 2
+   → 过程真实性/跨产物一致性/读者体验/作品连续性/创作工艺/题材兑现/跨章趋势
+
+8. Step 7 Git 备份（强制）
 ```
 
 > `update_state.py` 用于手动/脚本化更新 `progress`/`protagonist_state`/`strand_tracker` 等字段；主流程通常由 Data Agent 在处理数据链时同步推进进度。

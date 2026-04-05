@@ -90,14 +90,15 @@ cat "${SKILL_ROOT}/references/system-data-flow.md"
 
 | Step | 难度 | 恢复策略 |
 |------|------|---------|
-| Step 1 | ⭐ | 直接重新执行 |
-| Step 1.5 | ⭐ | 重新设计 |
+| Step 1 | ⭐ | 直接重新执行（Context Agent 生成执行包 + 内置 Contract） |
 | Step 2A | ⭐⭐ | 删除半成品，重新开始 |
 | Step 2B | ⭐⭐ | 继续适配或回到 2A |
-| Step 3 | ⭐⭐⭐ | 用户决定：重审或跳过 |
+| Step 3 | ⭐⭐⭐ | 用户决定：重审或跳过（10 个内部 checker） |
+| Step 3.5 | ⭐⭐⭐ | 用户决定：重审或跳过（9 个外部模型） |
 | Step 4 | ⭐⭐ | 继续润色或删除重写 |
-| Step 5 | ⭐⭐ | 重新运行（幂等） |
-| Step 6 | ⭐⭐⭐ | 检查暂存区，决定提交/回滚 |
+| Step 5 | ⭐⭐ | 重新运行（幂等；state.json / index.db / summaries 写入） |
+| Step 6 | ⭐⭐⭐ | 审计闸门——重跑 audit-agent 或按 issues 回修 |
+| Step 7 | ⭐ | Git 备份——检查暂存区，决定提交/回滚 |
 
 ## Step 4: 检测中断状态
 
@@ -125,14 +126,14 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow dete
 🔴 检测到中断任务：
 
 任务：/webnovel-write 7
-中断位置：Step 2 - 章节内容生成中
+中断位置：Step 2A - 章节内容生成中
 
 已完成：
-  ✅ Step 1: 上下文加载
+  ✅ Step 1: Context Agent 生成创作执行包
 
 未完成：
-  ⏸️ Step 2: 章节内容（已写1500字）
-  ⏹️ Step 3-7: 未开始
+  ⏸️ Step 2A: 章节正文（已写1500字）
+  ⏹️ Step 2B-7: 未开始
 
 恢复选项：
 A) 删除半成品，从Step 1重新开始（推荐）
@@ -166,21 +167,32 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "$PROJECT_ROOT" workflow clea
 
 ## 特殊场景
 
-### Step 6 中断（成本高）
+### Step 3 / Step 3.5 中断（审查子代理失败）
 
 ```
 恢复选项：
-A) 重新执行双章审查（成本：~$0.15）⚠️
-B) 跳过审查，继续下一章（可后续补审）
+A) 只重跑失败的 checker / 外部模型（最小回滚）
+B) 全量重跑 Step 3 + Step 3.5（成本高，但最稳）
+C) 若核心3外部模型全部失败 → 按 fallback 链切换供应商重试
 ```
 
-### Step 4 中断（部分状态）
+### Step 5 中断（Data Agent 部分状态）
 
 ```
-⚠️ state.json 可能部分更新
+⚠️ state.json / index.db / summaries 可能部分更新
 
-A) 检查并修复 state.json
-B) 回滚到上一章（安全）
+A) 仅重跑 Step 5（幂等），不回滚 Step 1-4
+B) 若 G/H 子步骤（RAG/style）因 --scenes 失败 → 只补跑 G/H
+C) 回滚到上一章（安全，但丢失 Step 1-4 成果）
+```
+
+### Step 6 中断（审计闸门）
+
+```
+恢复选项：
+A) 重跑 audit-agent（如仅 Part 2 失败）
+B) 按 critical issue 修回对应 Step，再次进入 Step 6
+C) 强制通过闸门（仅当 critical=0 且用户显式批准）
 ```
 
 ### 长时间中断（>1小时）

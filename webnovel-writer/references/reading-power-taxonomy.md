@@ -1,6 +1,6 @@
 # 追读力分类标准 (Reading Power Taxonomy)
 
-> **定位**：本文档定义"追读力"相关的统一分类标准，供 Step 1.5 / Context Agent / Checkers 共享使用。
+> **定位**：本文档定义"追读力"相关的统一分类标准，供 Context Agent / Checkers 共享使用。
 >
 > **原则**：所有分类用于"指导性建议"，不做硬性评分裁决。
 >
