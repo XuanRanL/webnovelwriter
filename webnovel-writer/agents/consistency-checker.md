@@ -129,6 +129,36 @@ model: inherit
    → VIOLATION: Time regression without flashback marker
 ```
 
+### 第二步半: 典故引用一致性检查（条件执行）
+
+**条件**：仅当 `设定集/典故引用库.md` 存在时执行本步。不存在则跳过。
+
+**并行读取**（追加）:
+- `设定集/典故引用库.md`（引用总库与本卷规划表）
+- `设定集/原创诗词口诀.md`（原创口诀使用规划）
+- `大纲/第{volume_id}卷-详细大纲.md` 中本章的"引用锚点"字段
+
+**校验项**:
+
+1. **锚点兑现检查**: 大纲引用锚点标注了本章应使用的引用，正文是否兑现？
+   - 锚点存在但正文未引用 → low（允许跳过，但应记录 deviation）
+   - 正文引用了锚点未标注的内容 → low（临时引用可接受但需警示密度）
+
+2. **引用内容正确性**: 正文中的引用原文是否与引用库登记一致？
+   - 引用文字错误（错字/漏字/张冠李戴） → high（SETTING_CONFLICT）
+   - 出处归属错误（把《道德经》的话说成《庄子》的） → medium（SETTING_CONFLICT）
+
+3. **引用密度合规**: 单章引用总数是否超过上限（2处）？
+   - 单章 ≤2 处 → 正常
+   - 单章 3 处 → medium（SETTING_CONFLICT，"超过引用密度上限"）
+   - 单章 ≥4 处 → high（炫学风险）
+
+4. **伏笔引用时序**: 若引用承载伏笔功能，引用时机是否符合规划？
+   - 提前泄露本该后续揭示的完整内容 → high（SETTING_CONFLICT，破坏伏笔节奏）
+   - 例：O01 古谣规划 Ch15 只给两句，但 Ch5 就给了全文 → 严重问题
+
+**issue type**: 引用内容错误/密度违规/伏笔时序错误 → `SETTING_CONFLICT`
+
 ### 第三步: 实体一致性检查
 
 **对所有章节中检测到的新实体**:
@@ -243,7 +273,10 @@ model: inherit
     "power_violations": 1,
     "location_errors": 1,
     "timeline_issues": 1,
-    "entity_conflicts": 0
+    "entity_conflicts": 0,
+    "reference_anchor_misses": 0,
+    "reference_content_errors": 0,
+    "reference_density_violations": 0
   },
   "summary": "发现1处战力违规、1处地点错误和1处严重时间线错误，需修复后重审。"
 }
