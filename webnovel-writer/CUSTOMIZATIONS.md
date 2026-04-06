@@ -7,6 +7,34 @@
 
 ---
 
+## [2026-04-06] 典故引用系统修复 — 链路断裂 + 双仓库同步 + Step 3.5 覆盖
+
+**问题根因**：典故引用功能仅在 C: 运行时实现，未同步 git 且关键组件（context-agent/polish-guide/外部审查）未更新，导致：
+1. context-agent 不知道典故引用库 → 不推荐引用 → Step 2A 收不到推荐 → 整个链路断裂
+2. 3 个 checker 的典故引用审查代码未进 git → 重建时丢失
+3. Step 3.5 的 9 个外部模型完全不评估引用质量
+4. Step 4 的 polish-guide 无引用修复指引
+
+**修复文件**：
+| 文件 | 修改内容 |
+|------|---------|
+| `references/writing/classical-references.md` | 同步到 git（新文件，196 行） |
+| `agents/consistency-checker.md` | 同步"第二步半: 典故引用一致性检查"+metrics 3 字段 |
+| `agents/prose-quality-checker.md` | 同步"第三步半: 引用自然度检测"+metrics 3 字段 |
+| `agents/density-checker.md` | 同步"第八步半: 引用段落信息增量检查" |
+| `agents/context-agent.md` | 数据来源加典故引用库+原创诗词口诀（条件读取）；执行流程加读取步骤；输出格式 board 6 加"典故引用推荐"字段 |
+| `skills/webnovel-write/references/polish-guide.md` | PROSE_FLAT 修复动作加引用化用指引；STYLE 修复动作加载体合规指引 |
+| `scripts/external_review.py` | prose_quality 维度 prompt 加第 7 点（引用自然度，条件性） |
+| `skills/webnovel-write/references/step-3.5-external-review.md` | 浮动典故引用段落归入"文笔质感"维度定义 |
+
+**设计决策（不改的理由）**：
+- context-contract.md 不加引用字段 → 引用推荐属操作指引，放任务书 board 6 即可
+- audit-matrix/audit-agent 不加引用检查 → Step 3 已覆盖内容审查，审计只做跨步骤一致性
+- data-agent Step K 不追踪引用 → Plan 流程的"引用回写"已处理库维护
+- 不加第 11 外部审查维度 → 多数章节无引用，独立维度制造噪音；引用质感归入文笔质感
+
+---
+
 ## [2026-04-06] 全流程审计修复（8 代理并行调查）
 
 **审计范围**：8 个并行调查代理覆盖 Step 0-7 全流程、10 个 checker 代理、3 个 skill、4 个脚本、20 个 reference 文件。
