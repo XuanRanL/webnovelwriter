@@ -162,15 +162,28 @@ hook_strength: "strong"
 
 - 按地点/时间/视角切分场景
 - 每个场景生成摘要 (50-100字)
+- **必须写入 index.db**：切片完成后调用 `upsert-scenes` 持久化到 scenes 表
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index upsert-scenes \
+  --chapter {chapter_num} \
+  --scenes '[{"scene_index":0,"start_line":1,"end_line":30,"location":"地点","summary":"摘要","characters":["角色A","角色B"]}, ...]'
+```
 
 ### Step G: 向量嵌入
 
+直接传 Step F 输出的 scenes（含 `scene_index`/`start_line`/`end_line`），CLI 会自动从章节文件按行号提取正文内容。
+
 ```bash
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" rag index-chapter \
-  --chapter 100 \
-  --scenes '[...]' \
-  --summary "本章摘要文本"
+  --chapter {chapter_num} \
+  --chapter-file "{chapter_file}" \
+  --scenes '[{"scene_index":0,"start_line":1,"end_line":30},{"scene_index":1,"start_line":31,"end_line":84}, ...]'
 ```
+
+- `--chapter-file`：章节正文路径，scene 缺 `content` 时自动按 `start_line/end_line` 提取正文文本
+- `--summary`：可选，省略时自动读取 `summaries/ch{NNNN}.md`
+- scenes JSON 可直接复用 Step F 的 `upsert-scenes` 输出（含 `scene_index`/`start_line`/`end_line`）
 
 **父子索引规则**：
 - 父块: `chunk_type='summary'`, `chunk_id='ch0100_summary'`
@@ -386,26 +399,59 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 **重要**：Data Agent 输出的 `chapter_meta` 必须是**扁平对象**（不含章节号外层键），因为 `state_manager.py` 会自动以 `"{NNNN}"` 为键写入 `state.json["chapter_meta"]`。若 Agent 输出中已包含章节号键，会导致双层嵌套。
 
+**chapter_meta 必须包含以下 21 个字段**（audit B9 检查项，缺失 > 30% 判 fail）：
+
+| 字段 | 类型 | 来源说明 |
+|------|------|---------|
+| `chapter` | int | 章号（整数，如 2） |
+| `title` | str | 章节标题（如"担保"） |
+| `word_count` | int | 正文字数 |
+| `summary` | str | 一句话剧情摘要 |
+| `hook_strength` | str | 钩子强度（weak/medium/strong） |
+| `scene_count` | int | 场景数量 |
+| `key_beats` | list[str] | 关键节拍（用正文原句） |
+| `characters` | list[str] | 出场角色名 |
+| `locations` | list[str] | 场景地点 |
+| `created_at` | str | ISO 时间戳 |
+| `updated_at` | str | ISO 时间戳 |
+| `protagonist_state` | str | 主角当前状态描述 |
+| `location_current` | str | 章末主角所在地点 |
+| `power_realm` | str | 主角当前境界 |
+| `golden_finger_level` | int/str | 金手指等级/状态 |
+| `time_anchor` | str | 时间锚点（如"甲子57年·秋分"） |
+| `end_state` | str | 章末状态描述 |
+| `foreshadowing_planted` | list[str] | 本章埋设的伏笔 |
+| `foreshadowing_paid` | list[str] | 本章兑现的伏笔 |
+| `strand_dominant` | str | 主导情节线（quest/fire/constellation） |
+| `review_score` | float | 审查综合分 |
+| `checker_scores` | dict | 各 checker 分数 |
+
 Agent 输出格式（正确）：
 ```json
 {
   "chapter_meta": {
-    "hook": {
-      "type": "危机钩",
-      "content": "慕容战天冷笑：明日大比...",
-      "strength": "strong"
-    },
-    "pattern": {
-      "opening": "对话开场",
-      "hook": "危机钩",
-      "emotion_rhythm": "低→高",
-      "info_density": "medium"
-    },
-    "ending": {
-      "time": "前一夜",
-      "location": "萧炎房间",
-      "emotion": "平静准备"
-    }
+    "chapter": 99,
+    "title": "章节标题",
+    "word_count": 2850,
+    "summary": "一句话剧情摘要",
+    "hook_strength": "strong",
+    "scene_count": 4,
+    "key_beats": ["关键节拍1", "关键节拍2"],
+    "characters": ["角色A", "角色B"],
+    "locations": ["地点1", "地点2"],
+    "created_at": "2026-04-05T10:00:00Z",
+    "updated_at": "2026-04-05T10:00:00Z",
+    "protagonist_state": "已觉醒，待入学",
+    "location_current": "教务处",
+    "power_realm": "空亡命格(已觉醒)",
+    "golden_finger_level": 0,
+    "time_anchor": "甲子57年·秋分",
+    "end_state": "获得院长担保，明日午时前安全",
+    "foreshadowing_planted": ["手杖裂缝甲子纹路"],
+    "foreshadowing_paid": ["玉佩灼痕延续"],
+    "strand_dominant": "quest",
+    "review_score": 93.0,
+    "checker_scores": {"设定一致性": 100, "连贯性": 97}
   }
 }
 ```
@@ -415,13 +461,16 @@ state.json 中的最终存储形态（由 state_manager 自动包装）：
 {
   "chapter_meta": {
     "0099": {
-      "hook": { ... },
-      "pattern": { ... },
-      "ending": { ... }
+      "chapter": 99,
+      "title": "章节标题",
+      "word_count": 2850,
+      "...": "..."
     }
   }
 }
 ```
+
+> **兼容说明**：旧版使用嵌套 `{hook, pattern, ending}` 结构，已废弃。新规范使用上述扁平 21 字段结构，与 audit B9 检查项完全对齐。`hook_strength` 字段替代原 `hook.strength`，`end_state` 替代原 `ending` 子对象。
 
 ---
 

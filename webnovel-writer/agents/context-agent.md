@@ -126,10 +126,16 @@ SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" where
 ```
 
-### Step 0: ContextManager 快照优先
+### Step 0: ContextManager 快照优先（必做，失败则阻断）
 ```bash
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" context -- --chapter {NNNN}
 ```
+
+**硬要求**：此命令会自动生成/更新 `.webnovel/context_snapshots/ch{NNNN}.json`。命令执行后必须验证文件存在：
+```bash
+test -f "{project_root}/.webnovel/context_snapshots/ch{NNNN}.json" && echo "snapshot OK" || echo "FAIL: snapshot 未生成"
+```
+若 snapshot 未生成，立即报错阻断，不继续后续步骤。该文件是 Step 6 审计 A1 检查项的必需产物。
 
 ### Step 0.5: Context Contract 上下文包（内置）
 ```bash
