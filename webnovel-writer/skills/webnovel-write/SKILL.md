@@ -1,7 +1,7 @@
 ---
 name: webnovel-write
 description: Writes webnovel chapters (default 2200-3500 words). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
-allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
+allowed-tools: Read Write Edit Grep Bash Task
 ---
 
 # Chapter Writing (Structured Workflow)
@@ -139,6 +139,9 @@ git log --oneline -1 | grep "第${chapter_num}章"
   - 触发：场景空泛、空间方位不清、切场突兀。
 - `references/writing/desire-description.md`
   - 触发：主角目标弱、欲望驱动力不足。
+- `references/writing/classical-references.md`
+  - 用途：典故/诗词/史料/原创口诀/互联网梗的融入技巧、密度控制、"典故即伏笔"技法、项目设定集模板。
+  - 触发：Step 1 设计引用方案时 / 审查命中"引用生硬/炫学/出处错误" / Step 4 修复引用问题。
 
 ## 工具策略（按需）
 
@@ -173,8 +176,15 @@ export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-roo
 
 **硬门槛**：`preflight` 必须成功。它统一校验 `CLAUDE_PLUGIN_ROOT` 派生出的 `SKILL_ROOT` / `SCRIPTS_DIR`、`webnovel.py`、`extract_chapter_context.py` 和解析出的 `PROJECT_ROOT`。任一失败都立即阻断。
 
+典故引用库检查（非阻断，仅提示）：
+```bash
+test -f “${PROJECT_ROOT}/设定集/典故引用库.md” && echo “典故引用库: 已就绪” || echo “典故引用库: 未创建（建议创建以提升文化质感，模板见 references/writing/classical-references.md）”
+test -f “${PROJECT_ROOT}/设定集/原创诗词口诀.md” && echo “原创诗词口诀: 已就绪” || echo “原创诗词口诀: 未创建（可选）”
+```
+
 输出：
-- “已就绪输入”与“缺失输入”清单；缺失则阻断并提示先补齐。
+- “已就绪输入”与”缺失输入”清单；缺失则阻断并提示先补齐。
+- 典故引用库存在状态（不阻断，仅提示建议）。
 
 ### Step 0.5：工作流断点记录（best-effort，不阻断）
 
@@ -192,7 +202,13 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 
 ### Search Tool 使用规则（全流程适用）
 
-WebSearch/WebFetch 触发规则：
+**搜索统一使用 Tavily 直连 API 脚本**（`${SCRIPTS_DIR}/tavily_search.py`），禁止使用 MCP 工具（WebSearch/WebFetch）。
+
+**两种搜索模式**：
+- **快速搜索**（大多数场景）：`python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" search "查询词" --max 5`
+- **深度研究**（复杂专业领域）：`python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" research "研究问题" --model pro`
+
+搜索触发规则：
 - **强制触发**：涉及专业领域（机甲技术/军事/科学/法律）→ 搜索术语和真实细节
 - **强制触发**：需要特定案例或参考（如"真实驾驶舱布局""地下通道地质结构"）→ 搜索具体资料
 - **推荐触发**：章节类型特殊（战斗/情感/揭秘/追逐/谈判）→ 搜索该类型写作技巧
@@ -209,11 +225,11 @@ WebSearch/WebFetch 触发规则：
 搜索结果归档：有价值的专业信息保存到 `调研笔记/` 对应主题文件，供后续章节复用。
 
 **Search 失败处理协议（硬规则）**：
-如果 WebSearch 工具调用失败（返回错误/不可用/超时）：
+如果 `tavily_search.py` 执行失败（API key 缺失/全部 key 耗尽/网络超时）：
 1. 立即停止当前工作
-2. 告知用户："WebSearch 工具不可用，需要您提供搜索能力"
-3. 建议用户配置 Tavily MCP / Brave Search MCP，或手动提供搜索结果
-4. 等待用户配置完成或手动提供信息后再继续
+2. 告知用户搜索脚本执行失败及具体错误信息
+3. 建议用户检查 API key 配置（环境变量 `TAVILY_API_KEYS` / `.env` 文件 / `~/.claude.json`）
+4. 等待用户修复配置后再继续
 5. 不要跳过搜索步骤直接继续——搜索获取的专业细节直接影响质量
 
 ### Step 1：Context Agent（内置 Context Contract，生成直写执行包）
@@ -227,6 +243,8 @@ WebSearch/WebFetch 触发规则：
 Context Agent 额外输入（必读）：
 - `设定集/伏笔追踪.md`（所有"活跃"伏笔线，确保长线伏笔不被遗忘）
 - `设定集/道具与技术.md`（带章节时间线，防止引用"还没出现的"道具）
+- `设定集/典故引用库.md`（若存在：检查本章大纲是否有引用锚点，推荐 0-2 条引用并标注载体与融入方式。无锚点时输出"本章不引用"。若不存在：跳过）
+- `设定集/原创诗词口诀.md`（若存在：原创口诀优先级高于外部典故，检查本章是否命中使用规划。若不存在：跳过）
 - `大纲/第N卷-节拍表.md`（本卷宏观节奏锚点）
 - 相关角色卡的"语音规则"段落（注入 beat 的对话风格指导）
 
@@ -240,7 +258,17 @@ Context Agent 额外输入（必读）：
 - 合同与任务书出现冲突时，以“大纲与设定约束更严格者”为准。
 
 输出：
-- 单一“创作执行包”（任务书 + Context Contract + 直写提示词），供 Step 2A 直接消费。Context Contract 内置于 Step 1，无独立 Step。
+- 单一”创作执行包”（任务书 + Context Contract + 直写提示词），供 Step 2A 直接消费。Context Contract 内置于 Step 1，无独立 Step。
+
+Step 1 完成后必须验证 context_snapshot 存在（Step 6 A1 审计依赖此文件）：
+```bash
+test -f “${PROJECT_ROOT}/.webnovel/context_snapshots/ch${chapter_padded}.json” && echo “snapshot OK”
+```
+若不存在，手动补跑：
+```bash
+python -X utf8 “${SCRIPTS_DIR}/webnovel.py” --project-root “${PROJECT_ROOT}” context -- --chapter ${chapter_num}
+```
+补跑后仍不存在时，需手动创建 v1 格式 snapshot（payload 含 8 板块 + contract 12 字段），确保 Step 6 A1 不会因缺失而 fail。
 
 开篇黄金协议（Ch1-3 专用，叠加在标准流程之上）：
 - Ch1：主角在前 500 字内出场且用行动展示（非旁白介绍）
@@ -264,12 +292,27 @@ cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 - 禁止占位符正文（如 `[TODO]`、`[待补充]`）。
 - 保留承接关系：若上章有明确钩子，本章必须回应（可部分兑现）。
 - 爽点密度约束：每 800 字至少安排 1 个微爽点（信息揭示/小胜/认可/逆转/兑现）；纯铺垫章允许降至每 1200 字 1 个，但全章不得为零。
+- 典故引用融入：若 Context Agent 在执行包中推荐了引用（0-2 条），按推荐的载体和融入方式写入正文。化用 > 引用，角色内化 > 旁白注释。判断不适合时可跳过——**允许不用**。无推荐时不主动引用。（详见 `references/writing/classical-references.md`）
 
 中文思维写作约束（硬规则）：
 - **禁止"先英后中"**：不得先用英文工程化骨架（如 ABCDE 分段、Summary/Conclusion 框架）组织内容，再翻译成中文。
 - **中文叙事单元优先**：以"动作、反应、代价、情绪、场景、关系位移"为基本叙事单元，不使用英文结构标签驱动正文生成。
 - **禁止英文结论话术**：正文、审查说明、润色说明、变更摘要、最终报告中不得出现 Overall / PASS / FAIL / Summary / Conclusion 等英文结论标题。
 - **英文仅限机器标识**：CLI flag（`--fast`）、checker id（`consistency-checker`）、DB 字段名（`anti_ai_force_check`）、JSON 键名等不可改的接口名保持英文，其余一律使用简体中文。
+
+U+FFFD 编码验证（写入后立即执行）：
+```bash
+python -c "
+import glob, pathlib, sys
+files = glob.glob('${PROJECT_ROOT}/正文/第${chapter_padded}章*.md')
+if not files: sys.exit('No chapter file found')
+t = pathlib.Path(files[0]).read_text(encoding='utf-8')
+n = t.count('\ufffd')
+print(f'FFFD check: {n} corrupted chars in {files[0]}')
+sys.exit(1 if n > 0 else 0)
+"
+```
+若检测到 U+FFFD（通常因上下文压缩截断中文字符），立即用 Grep 定位损坏位置，用 Edit 修复，修复后重新验证。**禁止带 FFFD 进入下一步。**
 
 输出：
 - 章节草稿（可进入 Step 2B 或 Step 3）。
@@ -287,6 +330,8 @@ cat "${SKILL_ROOT}/references/style-adapter.md"
 
 输出：
 - 风格化正文（覆盖原章节文件）。
+
+U+FFFD 编码验证（同 Step 2A，风格转译后再次执行，确保转译未引入损坏）。
 
 ### Step 3：审查（全量审查，必须由 Task 子代理执行）
 
@@ -357,6 +402,40 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 - 核心模型四级 fallback 链：nextapi(2次) → healwrap(2次) → codexcc(1次) → 硅基流动(兜底)。
 - 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
 - 生成审查报告必须包含 9 模型 × 10 维度评分矩阵 + 共识问题 + Step 4 修复清单。
+
+**上下文文件准备（调用脚本前必须完成）**：
+
+脚本从 `{PROJECT_ROOT}/.webnovel/tmp/external_context_ch{chapter_padded}.json` 加载上下文。若文件不存在，脚本仍可运行但外部模型缺少项目上下文，评审质量严重下降。主流程必须在调用脚本前构建此文件，包含 9 个字段：
+
+```bash
+# 收集设定集、大纲、前章正文，写入 context JSON
+python -c "
+import json, pathlib
+pr = pathlib.Path('${PROJECT_ROOT}')
+def read(p):
+    f = pr / p
+    return f.read_text(encoding='utf-8') if f.exists() else ''
+ctx = {
+    'outline_excerpt': read('大纲/总纲.md')[:3000],
+    'protagonist_card': read('设定集/主角卡.md'),
+    'golden_finger_card': read('设定集/金手指设计.md'),
+    'female_lead_card': read('设定集/女主卡.md'),
+    'villain_design': read('设定集/反派设计.md'),
+    'power_system': read('设定集/力量体系.md'),
+    'world_settings': read('设定集/世界观.md')[:5000],
+    'protagonist_state': json.loads((pr/'.webnovel/state.json').read_text(encoding='utf-8')).get('protagonist_state',{}),
+    'prev_chapters_text': '\\n---\\n'.join(
+        f.read_text(encoding='utf-8') for f in sorted((pr/'正文').glob('第*章*.md'))[:${chapter_num}]
+    )[:15000]
+}
+out = pr / '.webnovel/tmp/external_context_ch${chapter_padded}.json'
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(json.dumps(ctx, ensure_ascii=False, indent=2), encoding='utf-8')
+print(f'Context written: {out} ({out.stat().st_size} bytes)')
+"
+```
+
+若上述脚本失败，手动从设定集文件读取并用 `Write` 工具写入 JSON。**禁止跳过此步骤直接调用 external_review.py**。
 
 调用命令：
 ```bash

@@ -93,7 +93,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 review_metrics 文件字段约束（当前工作流约定只传以下字段）：
 - `start_chapter`（int）、`end_chapter`（int）：单章时二者相等
 - `overall_score`（float）：必填
-- `dimension_scores`（Dict[str, float]）：按已启用 checker 计算，**刻度 0-100**（与各 checker 的 `overall_score` 同刻度，直接取各 checker 的 `overall_score` 值）
+- `dimension_scores`（Dict[str, float]）：按已启用 checker 计算，**刻度 0-100**（与各 checker 的 `overall_score` 同刻度，直接取各 checker 的 `overall_score` 值）。**键名映射**：爽点密度 / 设定一致性 / 节奏控制 / 人物塑造 / 连贯性 / 追读力 / 对话质量 / 信息密度 / 文笔质感 / 情感表现（注意："人物塑造"非"人物OOC"，"节奏控制"非"节奏平衡"，与 step-3.5 外部审查维度名对齐）
 - `severity_counts`（Dict[str, int]）：键为 critical / high / medium / low
 - `critical_issues`（List[str]）
 - `report_file`（str）

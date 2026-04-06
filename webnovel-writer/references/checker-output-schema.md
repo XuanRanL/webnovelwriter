@@ -169,7 +169,10 @@ overall_score = max(0, 100 - sum(deductions))
     "power_violations": 0,
     "location_errors": 1,
     "timeline_issues": 0,
-    "entity_conflicts": 0
+    "entity_conflicts": 0,
+    "reference_anchor_misses": 0,
+    "reference_content_errors": 0,
+    "reference_density_violations": 0
   }
 }
 ```
@@ -275,7 +278,10 @@ overall_score = max(0, 100 - sum(deductions))
     "abstract_words_per_1k": 1.8,
     "style_consistency": "consistent",
     "memorable_expressions": 1,
-    "stale_metaphors": 2
+    "stale_metaphors": 2,
+    "reference_naturalness_score": 85,
+    "forced_references": 0,
+    "reference_carrier_violations": 0
   }
 }
 ```
@@ -294,6 +300,9 @@ overall_score = max(0, 100 - sum(deductions))
 - `style_consistency`：文风一致性（consistent/minor_shift/broken）
 - `memorable_expressions`：令人印象深刻的原创表达数量
 - `stale_metaphors`：陈腐比喻数量
+- `reference_naturalness_score`：引用自然度评分（0-100），检测"正如XX所言"等生硬引用模式（条件字段，仅当 `设定集/典故引用库.md` 存在时输出）
+- `forced_references`：生硬引用数量
+- `reference_carrier_violations`：载体不合规数量（引用未通过合理载体融入正文）
 
 ### emotion-checker
 ```json
