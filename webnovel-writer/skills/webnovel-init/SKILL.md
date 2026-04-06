@@ -1,7 +1,7 @@
 ---
 name: webnovel-init
 description: 深度初始化网文项目。通过分阶段交互收集完整创作信息，生成可直接进入规划与写作的项目骨架与约束文件。
-allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
+allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion
 ---
 
 # Project Initialization (Deep Mode)
@@ -16,7 +16,7 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
 
 1. 先收集，再生成；未过充分性闸门，不执行 `init_project.py`。
 2. 分波次提问，每轮只问“当前缺失且会阻塞下一步”的信息。
-3. 允许调用 `Read/Grep/Bash/Task/AskUserQuestion/WebSearch/WebFetch` 辅助收集。
+3. 允许调用 `Read/Grep/Bash/Task/AskUserQuestion` 辅助收集（搜索通过 Bash 调用 `tavily_search.py`）。
 4. 用户已明确的信息不重复问；冲突信息优先让用户裁决。
 5. Deep 模式优先完整性，允许慢一点，但禁止漏关键字段。
 
@@ -120,11 +120,10 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
 - `Bash`：执行 `init_project.py`、文件存在性检查、最小验证命令。
 - `Task`：拆分并行子任务（如题材映射、约束包候选生成、文件验证）。
 - `AskUserQuestion`：用于关键分歧裁决、候选方案选择、最终确认。
-- `WebSearch`：用于检索最新市场趋势、平台风向、题材数据（可带域名过滤）。
-- `WebFetch`：用于抓取已确定来源页面内容并做事实核验。
+- `Bash`（Tavily 搜索）：通过 `${SCRIPTS_DIR}/tavily_search.py` 直连 Tavily API，支持快速搜索（`search`）和深度研究（`research`），禁止使用 MCP 工具（WebSearch/WebFetch）。
 - 外部检索触发条件：
   - 用户明确要求参考市场趋势或平台风向；
-  - 创意约束需要“时间敏感依据”；
+  - 创意约束需要”时间敏感依据”；
   - 对题材信息存在明显不确定。
 
 ## 交互流程（Deep）
@@ -159,7 +158,13 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 
 ### Search Tool 使用规则（init阶段高频使用）
 
+**搜索统一使用 Tavily 直连 API 脚本**（`${SCRIPTS_DIR}/tavily_search.py`），禁止使用 MCP 工具（WebSearch/WebFetch）。
+
 init 阶段搜索是一次性投入、长期受益，应高频使用：
+
+**两种搜索模式**：
+- **快速搜索**：`python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" search "查询词" --max 5`
+- **深度研究**：`python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" research "研究问题" --model pro`
 
 每个 Step 的具体搜索内容：
 - Step 1：搜索同题材近期爆款（"网文 {题材} 2025 2026 爆款 卖点"），了解市场竞争和差异化空间
@@ -169,7 +174,7 @@ init 阶段搜索是一次性投入、长期受益，应高频使用：
 - Step 5：搜索反套路趋势（"网文 {题材} 套路 反套路 2025 2026"）
 每个 Step 至少 1 次 search，关键 Step（1/4/5）推荐 2-3 次。
 
-Search 失败处理：立即停止，要求用户配置 Tavily/Brave Search MCP 或手动提供搜索结果。
+Search 失败处理：立即停止，检查 Tavily API key 配置（环境变量 / `.env` / `~/.claude.json`）。
 
 调研笔记：搜索到的有价值信息保存到 `调研笔记/题材参考.md`，供后续 plan/write 复用。
 
@@ -575,8 +580,19 @@ python "${SCRIPTS_DIR}/webnovel.py" init \
 
 **配套文件创建（必做）**：
 - `设定集/道具与技术.md`：创建带章节时间线模板头的空文件
-- `设定集/伏笔追踪.md`：创建带分类模板的空文件
+- `设定集/伏笔追踪.md`：创建带分类模板的空文件（含"典故伏笔"分类段）
 - `设定集/资产变动表.md`：创建带表头的空文件
+
+**典故引用库创建（推荐，非阻断）**：
+- `设定集/典故引用库.md`：基于题材和世界观，创建带模板的引用库初稿。包含：
+  - 使用规则（全卷上限/单章上限/允许不用）
+  - 按题材预填的引用分类（如修仙文→道经/佛偈/诗词；都市文→网梗/流行语/历史典故；历史文→正史/野史/诗词）
+  - 每类 2-3 条种子引用（从 Step 4 世界观 + Step 5 创意约束中提取）
+  - 空的"第N卷引用规划总表"（待 plan 阶段填充）
+  - 指向 `原创诗词口诀.md` 的索引段
+- `设定集/原创诗词口诀.md`：创建带模板的空文件，含格式说明（世界内来源/全文/伏笔解析/分批释放规划/使用约束）
+- 若用户明确表示不需要引用，标注"不启用"并跳过（记录到 state.json）
+- 模板格式详见 `webnovel-write/references/writing/classical-references.md` 第六节
 
 **语音规则格式**（每个角色卡必须包含）：
 ```markdown
@@ -621,6 +637,7 @@ test -d "{project_root}/调研笔记"
 - **`情感蓝图.md` 存在且包含情感基调+至少2个情感节点**。
 - **`开篇策略.md` 存在且包含开篇类型+第1章设计+前3章蓝图**。
 - 配套文件已创建：`道具与技术.md`、`伏笔追踪.md`、`资产变动表.md`。
+- 典故引用库已创建或明确标注不启用：`典故引用库.md`、`原创诗词口诀.md`（推荐但非阻断）。
 - `总纲.md` 已填核心主线、约束字段与主题内核。
 - `idea_bank.json` 已写入且包含 opening_strategy 且与最终选定方案一致。
 

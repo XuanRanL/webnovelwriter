@@ -1,7 +1,7 @@
 ---
 name: webnovel-plan
 description: Builds volume and chapter outlines from the total outline, inherits creative constraints, and prepares writing-ready chapter plans. Use when the user asks for outlining or runs /webnovel-plan.
-allowed-tools: Read Write Edit Grep Bash Task WebSearch WebFetch
+allowed-tools: Read Write Edit Grep Bash Task
 ---
 
 # Outline Planning
@@ -76,6 +76,8 @@ Optional (only if they exist):
 - `设定集/世界观.md`
 - `设定集/力量体系.md`
 - `设定集/主角卡.md`
+- `设定集/典故引用库.md`（若存在：本卷引用规划的输入源）
+- `设定集/原创诗词口诀.md`（若存在：原创口诀优先于外部典故）
 - `.webnovel/idea_bank.json` (inherit constraints)
 
 If 总纲.md lacks volume ranges / core conflict / climax, ask the user to fill those before proceeding.
@@ -112,20 +114,24 @@ If 总纲.md lacks volume ranges / core conflict / climax, ask the user to fill 
 
 目标：在规划本卷章纲前，通过搜索获取专业知识和创作参考，确保大纲有真实细节支撑。
 
+**搜索统一使用 Tavily 直连 API 脚本**（`${SCRIPTS_DIR}/tavily_search.py`），禁止使用 MCP 工具。
+
 ```
 卷前调研（至少5次search）：
 1. 搜索本卷涉及的专业领域（2-3次）
-   - 如第1卷："机甲拆解 技术 废品回收""遗迹暴走 失控机甲 设定参考"
-   - 如第2卷："太空探索 遗迹考古 星际航行 物理原理"
+   python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" search "机甲拆解 技术 废品回收" --max 5
+   python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" search "遗迹暴走 失控机甲 设定参考" --max 5
 2. 搜索同题材近6个月内爆款的节奏和创新点（1-2次）
-   - "科幻机甲 网文 2025 2026 热门 爆款 节奏"
+   python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" search "科幻机甲 网文 2025 2026 热门 爆款 节奏" --max 5
 3. 搜索本卷关键场景类型的写作技巧（1-2次）
-   - "机甲战斗场景 描写技巧""谈判场景 张力 网文"
-4. 将调研结果保存到 调研笔记/ 对应主题文件
-5. 在后续Step中引用调研笔记作为参考输入
+   python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" search "机甲战斗场景 描写技巧" --max 5
+4. 复杂专业领域用深度研究模式
+   python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" research "太空探索遗迹考古的物理原理和技术细节" --model pro
+5. 将调研结果保存到 调研笔记/ 对应主题文件
+6. 在后续Step中引用调研笔记作为参考输入
 ```
 
-Search 失败处理：同 webnovel-write 的失败协议——立即停止，要求用户配置搜索工具。
+Search 失败处理：同 webnovel-write 的失败协议——立即停止，检查 Tavily API key 配置。
 
 ## 3) Select volume
 - Offer choices from 总纲.md (卷名 + 章节范围).
@@ -141,8 +147,10 @@ cat "${SKILL_ROOT}/../../templates/output/大纲-卷节拍表.md"
 ```
 
 执行前搜索（推荐）：
-- 搜索本卷题材的经典节拍结构："网文 {题材} 节奏 节拍 结构"
-- 搜索本卷核心爽点类型的设计技巧："网文 {爽点类型} 写法 案例"
+```bash
+python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" search "网文 {题材} 节奏 节拍 结构" --max 5
+python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" search "网文 {爽点类型} 写法 案例" --max 5
+```
 
 Must satisfy (hard requirements):
 - **中段反转（必填）**：不得留空；若无，写 `无（理由：...）`
@@ -300,6 +308,11 @@ Use this template and fill from 总纲 + idea_bank:
 | 章节 | 操作 | 伏笔内容 |
 |------|------|---------|
 
+## 引用规划（若 `设定集/典故引用库.md` 存在）
+> 从引用库中选取本卷适合的引用，标注章节、载体、伏笔功能。全卷 10-15 处，单章上限 2 处。
+| 章 | 引用内容 | 类型/编号 | 载体 | 伏笔 |
+|----|---------|----------|------|------|
+
 ## 约束触发规划（如有）
 - 反套路规则：每 N 章触发一次
 - 硬约束：贯穿全卷
@@ -382,6 +395,7 @@ Chapter format (include 反派层级 for context-agent):
 - 场景预案: {2-3个关键场景一句话，如"废品站深夜改装+红光映脸"}
 - 对话种子: {1-2句关键对话方向，如"配角A问'你叫什么名字'"}
 - 视觉锚点: {最有画面感的1-2个镜头}
+- 引用锚点: {若引用库存在且本章在引用规划中：编号+"原文"（载体，伏笔说明）/ 无引用库或本章不引用则省略此字段}
 ```
 
 **时间字段说明**：
@@ -422,6 +436,7 @@ EOF
 - 新增角色：写入对应角色卡或角色组条目（含首次出场章、关系、红线）。
 - 新增势力/地点/规则：写入世界观或力量体系对应章节。
 - 新增反派层级信息：写入反派设计并保持小/中/大层级一致。
+- 典故引用回写（若 `典故引用库.md` 存在）：将卷骨架"引用规划"段的条目增量写入引用库的"第N卷引用规划总表"。若章纲中有"引用锚点"引用了引用库中未登记的新引用，追加到对应分类。同时将承载伏笔的引用条目登记到 `伏笔追踪.md` 的"典故伏笔"分类。
 
 冲突处理（硬规则）：
 - 若卷纲新增信息与总纲或已确认设定冲突，标记 `BLOCKER` 并停止 state 更新。

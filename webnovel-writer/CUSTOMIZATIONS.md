@@ -7,61 +7,139 @@
 
 ---
 
-## [2026-04-05] v5.6.0 流程对齐 — Step 1.5 内置 + Antigravity 镜像下线
+## [2026-04-06] 全流程审计修复（8 代理并行调查）
 
-**动机**：Step 6/7 拆分后，仓库里残留两类"历史包袱"导致说明与代码双源不一致：
-1. **Step 1.5 残影**：早期把"Context Contract 生成"作为独立 Step 1.5，但 Context Agent 已经在 Step 1 输出执行包时同步产出 Contract，再立一个 Step 1.5 只是让 pending_steps、流程图、文档三处都要维护"空壳 Step"。
-2. **Antigravity 镜像**：`.claude/commands/`、`.claude/agents/`、`.agents/workflows/` 三处是早期为 Antigravity IDE 兼容而做的硬拷贝。随着主 plugin 注册链路稳定（Claude Code v2.x plugin scope 加载可靠 + workspace 级 `.claude/agents/` 兜底已在 2026-04-05 entry 下方记录），这些镜像已不再被任何入口引用，却在每次改 SKILL.md/agent.md 时成为"必须同步的隐形第 N 处"，实际已经出现 192 行 drift（旧 8 checker/6 model/无 Step 7）。
+**审计范围**：8 个并行调查代理覆盖 Step 0-7 全流程、10 个 checker 代理、3 个 skill、4 个脚本、20 个 reference 文件。
 
-**本次动作**：
+**修复项**：
 
-### 1. Step 1.5 → Step 1 内置（概念合并，非行为变化）
-- **文件重命名**：`skills/webnovel-write/references/step-1.5-contract.md` → `skills/webnovel-write/references/context-contract.md`（git 以 94% similarity 识别为 rename，历史保留）
-- **新文件顶部新增定位说明**：
-  > Context Contract 已内置于 Step 1（Context Agent 生成执行包时产出），不再作为独立 Step 存在。本文档提供 Contract 的字段 schema 与校验规则，供 context-agent 引用。
-- **`agents/context-agent.md`**：
-  - Line 17 引用改为 `context-contract.md`
-  - Line 45 文案改为 "Context Contract（内置于 Step 1）"
-- **`scripts/workflow_manager.py`**：`expected_step_owner` 不再注册 `Step 1.5`；`get_pending_steps` 返回 `["Step 1", "Step 2A", ..., "Step 7"]`（无 1.5）；保留 Line 454-456 的历史兼容分支 + 注释说明（读旧 state.json 时能平滑迁移）
-- **`skills/webnovel-resume/SKILL.md` + `references/workflow-resume.md`**：Step 难度表删除 Step 1.5 行，Step 1 注释改为"Context Agent 生成执行包 + 内置 Contract"
-- **`skills/webnovel-query/references/system-data-flow.md`**：流程图删掉 Step 1.5 节点，Step 1 输出附加 Contract 字段说明
-- **`references/genre-profiles.md` + `references/reading-power-taxonomy.md`**：所有 "Step 1.5 Contract" 引用替换为 "Step 1 Context Contract"
-- **`skills/webnovel-write/references/workflow-details.md`**：对应段落文案同步
+| 严重度 | 文件 | 问题 | 修复 |
+|--------|------|------|------|
+| CRITICAL | `agents/audit-agent.md` | 决议矩阵与 `step-6-audit-matrix.md` 不一致：缺 Layer F、用 `warnings` 代替 `high/medium`、阈值错误 | 对齐为权威源（matrix.md）的完整决议逻辑 |
+| HIGH | `references/checker-output-schema.md` | consistency-checker 3 个引用 metrics + prose-quality-checker 3 个引用 metrics 未在 schema 中定义 | 补齐 6 个字段定义 + 说明 |
+| HIGH | `references/step-3-review-gate.md` | `dimension_scores` 键名映射未文档化，易与 checker 描述名混淆 | 补充完整键名映射（人物塑造≠人物OOC，节奏控制≠节奏平衡） |
 
-**注意**：`skills/webnovel-init/SKILL.md` 里独立存在的 "Step 1.5: 叙事声音基准" 是 init skill 的独立概念（不是 write skill 的 Contract 生成），本次不动。
+**未修复项（有 fallback 或低风险）**：
+- `init_project.py` 缺 `pacing_preference` 三字段：plan SKILL.md 已有"缺失则用适中默认"fallback
+- `context` 命令 `--` 分隔符：webnovel.py 268-270 行自动 strip，无害
+- ooc-checker/high-point-checker 缺 `chapter_file` 格式声明：不影响运行
 
-**注意**：`references/context-contract-v2.md` 是 `extract_chapter_context.py` 输出的数据层 schema（`context_contract_version: v2`），与本次创作层 Context Contract 同名不同物，为避免混淆已在该文件顶部加定位说明（见下条 P3）。
+---
 
-### 2. Antigravity 镜像下线
-- **删除目录**：
-  - `.claude/commands/`（webnovel-write.md 等命令拷贝，已 drift 192 行）
-  - `.claude/agents/`（子代理 .md 拷贝）
-  - `.agents/workflows/`（Antigravity workflow 配置）
-- **原因**：
-  - 主 plugin 注册链路已稳定，`/webnovel-write` 等命令直接从 `${CLAUDE_PLUGIN_ROOT}/commands/` 加载，无需镜像
-  - Workspace 级 `.claude/agents/` 兜底方案（见下方 2026-04-05 entry）是**工作空间根目录**级别的 fallback，不在 plugin fork 仓库里，不属于本次删除对象
-  - 每次 SKILL/agent 改动都要三处同步，实际已出现 critical drift（旧决议规则 / 旧 checker 数 / 旧模型表）
-- **迁移确认**：grep 确认 fork 内无任何代码/文档 import 或引用这三个目录，全部入口通过 plugin 的 `commands/` 与 `agents/` 目录加载
+## [2026-04-06] Tavily 直连 API 迁移（MCP → tavily_search.py）
 
-### 3. 配套提交
-- 本次改动与 Step 6/7 拆分是同一 v5.6.0 流程对齐的两面，分在两个 commit：
-  - `cadf2a3` — docs: v5.6.0 流程对齐 — Step 1.5 内置到 Step 1 + Step 7 Git 拆分完整辐射修复（12 files, +83/-58, 含 rename）
-  - 前一个 commit 是 Step 6/7 主体实现（见下方 2026-04-05 Step 6 审计闸门条目）
+**改动文件**：三个 SKILL.md 移除 WebSearch/WebFetch，搜索规则改用 `tavily_search.py search/research`。
+详见下方 "[2026-03-29] Search Tool 全环节集成" 的 `[2026-04-06 更新]` 段落。
 
-**验收**：
-```bash
-# 确认 Step 1.5 仅在历史兼容分支与审计日志中出现
-grep -rn "Step 1.5" webnovel-writer/{skills,agents,scripts,references}
-# 应只剩 workflow_manager.py 兼容分支 + 本 CUSTOMIZATIONS.md 历史条目
+---
 
-# 确认 Antigravity 镜像彻底清除
-ls .claude/commands/ .claude/agents/ .agents/ 2>&1
-# 应全部 "No such file or directory"
+## [2026-04-06] 典故引用系统（通用 skill 级别 + 镇妖谱项目级别）
 
-# pending_steps 无 Step 1.5
-python -c "from webnovel_writer.scripts.workflow_manager import get_pending_steps; print(get_pending_steps('webnovel-write'))"
-# 应输出: ['Step 1', 'Step 2A', 'Step 2B', 'Step 3', 'Step 3.5', 'Step 4', 'Step 5', 'Step 6', 'Step 7']
-```
+**动机**：让经典引用（典籍/哲学/诗词/史料/原创口诀/互联网梗）成为世界观的一部分而非装饰品。引用在大纲阶段规划（引用锚点），由 Context Agent 推荐，Step 2A 按需融入。核心创新："典故即伏笔"——看似无害的引经据典实际承载长线伏笔。**通用设计**：skill 级写作指南适用于所有小说项目，项目级文件（典故引用库/原创口诀）为可选模板。
+
+**新增文件（skill 级，通用）**：
+| 文件 | 说明 |
+|------|------|
+| `references/writing/classical-references.md` | 通用写作指南：6 类引用密度等级、融入技法、"典故即伏笔"技法、项目设定集模板、常见错误修复 |
+
+**修改文件（skill 级，通用）**：
+| 文件 | 修改内容 |
+|------|---------|
+| `skills/webnovel-write/SKILL.md` | Step 0 新增典故引用库存在性检查（非阻断）；Context Agent 输入改为条件读取（若存在）；Step 2A 新增引用融入指导；References 索引新增 classical-references.md |
+
+**新增文件（镇妖谱项目级）**：
+| 文件 | 说明 |
+|------|------|
+| `镇妖谱/设定集/典故引用库.md` | 7 类约 40 条引用总库 + 密度规则 + 第 1 卷 14 处引用规划表 |
+| `镇妖谱/设定集/原创诗词口诀.md` | 4 组世界内原创口诀（空亡者古谣/镇妖谱铭文/六甲空亡歌完整版/"算过了"进化谱系）|
+
+**修改文件（镇妖谱项目级）**：
+| 文件 | 修改内容 |
+|------|---------|
+| `镇妖谱/设定集/伏笔追踪.md` | 新增"典故伏笔"分类（9 条，M02/M03/M04/M05/D01/D04/O01/O02/O03）|
+| `镇妖谱/大纲/第1卷-详细大纲.md` | Ch4/Ch5/Ch9/Ch10/Ch15/Ch37/Ch44/Ch50 新增"引用锚点"字段 |
+
+---
+
+## [2026-04-06] Ch3 数据完整性审计修复（5项）
+
+**问题1（严重）：审查报告外部矩阵与 JSON 文件不匹配**
+- **根因**：部分模型经历 fallback 重试（healwrap→codexcc→硅基流动），不同 provider 返回不同分数。报告矩阵在首批结果返回时冻结，JSON 文件被后续重试覆盖。两组数据脱节。且 qwen（第9模型）在报告生成后才完成，未纳入矩阵。
+- **修复**：从 9 个 JSON 文件重建报告矩阵，补入 qwen 列，更新 "8/9" → "9/9"，外部平均从 90.5 修正为 91.2（overall_score 仍为 93，无变化）。添加注释说明 0 分维度含义。
+
+**问题2（中等）：Ch1/Ch2 chapter_meta 重复键**
+- **根因**：Data Agent 早期同时写入 padded ("0001") 和 numeric ("1") 两种键。后续只写 padded，旧数据未清理。
+- **修复**：删除 "1"/"2" 键，保留 "0001"/"0002"。state.json 减少约 130 行冗余。
+
+**问题3（中等）：review_metrics 维度名不一致**
+- **根因**：Ch3 构建 review_metrics.json 时直接用 ooc-checker 原生标签 "人物OOC"，而 Ch1/Ch2 和 state.json 统一用 "人物塑造"。
+- **修复**：修正为 "人物塑造"，重新落库。
+
+**问题4（轻微）：review_metrics notes 过时**
+- **根因**：Notes 在 Step 3 落库时冻结，Step 4 anti-AI check 通过后未回写。Ch3 还遗留 "8/9(qwen pending)"。
+- **修复**：更新为 "external_models=9/9(all_success); anti_ai_force_check=pass"，重新落库。
+
+**问题5（轻微）：前次修复未提交 Git**
+
+**修改文件**：
+| 文件 | 修改内容 |
+|------|---------|
+| `镇妖谱/审查报告/第0003章审查报告.md` | 从 JSON 重建 9 模型 × 10 维度矩阵 |
+| `镇妖谱/.webnovel/state.json` | 删除 "1"/"2" 重复键 |
+| `镇妖谱/.webnovel/tmp/review_metrics.json` | "人物OOC"→"人物塑造" + notes 更新 |
+| `镇妖谱/.webnovel/index.db` | review_metrics 重新落库 |
+
+---
+
+## [2026-04-06] Ch3 三项根因修复 — chapter_meta 补全 + 外部审查 context 准备 + FFFD 防护
+
+**问题1：Ch3 chapter_meta 仅 15/30 字段（B9 审计警告）**
+- **根因**：Ch3 由主流程手动构建 chapter_meta，使用了旧的 15 字段格式（含 `file`/`strand`/`pov`/`key_events`/`foreshadowing_advanced` 等非标字段），与 Ch1/Ch2 由 Data Agent 写入的 30 字段扁平结构不一致。`state_manager.py` 接受任意 dict 无校验。
+- **修复**：重写 `state.json` 中 `chapter_meta["0003"]` 为完整 30 字段结构，与 Ch1/Ch2 格式对齐（含 summary/hook_content/scene_count/key_beats/checker_scores/opening/emotion_rhythm/info_density/ending_*）。同时修复了该条目中的 U+FFFD 损坏（"青[FFFD][FFFD]院"→"青丘院"）。
+
+**问题2：Step 3.5 外部审查缺少 context 文件准备步骤**
+- **根因**：`SKILL.md` Step 3.5 直接调用 `external_review.py`，但脚本期望 `.webnovel/tmp/external_context_ch{NNNN}.json` 已存在。`external-review-agent.md` 明确要求 agent 在调用前写入该文件，但 SKILL.md 从未将此步骤纳入流程。Ch3 首次暴露此问题（Ch1/Ch2 可能因 context 为空而仍能运行但评审质量受损）。
+- **修复**：在 `SKILL.md` Step 3.5 调用命令前新增"上下文文件准备"段落，包含从设定集/大纲/前章正文自动构建 9 字段 context JSON 的 Python 脚本，并标注"禁止跳过"。
+
+**问题3：U+FFFD 编码损坏无早期检测**
+- **根因**：Claude Code 上下文压缩可能截断中文 UTF-8 字节序列，产生 U+FFFD 替换字符。Step 6 的 A7 检查（`chapter_audit.py:check_A7_encoding_clean`）能检测但太晚——损坏已写入正文文件。Step 2A/2B 写入后无校验。
+- **修复**：在 `SKILL.md` Step 2A 输出后和 Step 2B 输出后各新增 U+FFFD 编码验证步骤。检测到 FFFD 时立即阻断并修复，禁止带损坏进入下一步。
+
+**修改文件**：
+| 文件 | 修改内容 |
+|------|---------|
+| `镇妖谱/.webnovel/state.json` | `chapter_meta["0003"]` 从 15 字段重写为 30 字段完整结构 |
+| `skills/webnovel-write/SKILL.md` | Step 3.5 新增 context 文件准备步骤 |
+| `skills/webnovel-write/SKILL.md` | Step 2A/2B 输出后新增 FFFD 编码验证 |
+
+---
+
+## [2026-04-06] 三项根因修复 — chapter_meta 格式 + snapshot 保障 + A1 v2 兼容
+
+**问题1：data-agent chapter_meta 格式与 audit B9 不匹配**
+- **根因**：`data-agent.md` 定义嵌套 `{hook, pattern, ending}` 结构，`state-schema.md` 示例同样是嵌套结构，但 `chapter_audit.py` B9 检查期望 21 字段扁平结构。两份规范从未同步。
+- **修复**：更新 `data-agent.md` 接口规范为 21 字段扁平结构（含完整字段表），同步更新 `state-schema.md` 示例。
+
+**问题2：context_snapshot 未自动生成**
+- **根因**：`context-agent.md` Step 0 调用 `context --` CLI 可生成 snapshot，但 prompt 未明确要求验证文件存在，AI agent 可能跳过或 CLI 失败时无反馈。SKILL.md 也未界定 snapshot 的验证职责。
+- **修复**：`context-agent.md` Step 0 增加存在性验证硬要求（`test -f` + 失败阻断）；`SKILL.md` Step 1 末尾增加 snapshot 验证与补跑机制。
+
+**问题3：A1 审计检查不识别 v2 格式 Contract**
+- **根因**：ContextManager 生成 v2 snapshot（meta + sections），Contract 信息分布在 `core.content.chapter_outline` 中，但 A1 检查只在 `payload.contract` 和 `context_package.json` 中找。
+- **修复**：`chapter_audit.py` A1 增加 v2 fallback：检测 `meta.context_contract_version` 后从 `core.content.chapter_outline` 提取 8 个 contract 关键字段。
+
+**修改文件**：
+| 文件 | 修改内容 |
+|------|---------|
+| `agents/data-agent.md` | 接口规范从嵌套→21字段扁平结构，含完整字段表+示例 |
+| `templates/output/state-schema.md` | chapter_meta 示例改为扁平结构 |
+| `agents/context-agent.md` | Step 0 增加 snapshot 验证硬要求 |
+| `skills/webnovel-write/SKILL.md` | Step 1 输出增加 snapshot 验证+补跑 |
+| `scripts/data_modules/chapter_audit.py` | A1 增加 v2 contract fallback 识别逻辑 |
+
+**验证**：
+- ch0001 A1: fail → pass（v2 格式, 9 板块, 8 字段）
+- ch0002 A1: pass（v1 格式, 8 板块, 12 字段，无回归）
 
 ---
 
@@ -570,23 +648,30 @@ Agent(subagent_type="context-agent",        # 调用时不再报 "not found"
 **改动文件：**
 | 文件 | 改动 |
 |------|------|
-| `skills/webnovel-write/SKILL.md` | frontmatter 加 WebSearch WebFetch + Search规则段落（触发条件+各Step搜索内容+失败即停协议+调研笔记归档） |
-| `skills/webnovel-plan/SKILL.md` | frontmatter 加 WebSearch WebFetch + 新增 Step 2.5 卷前调研（必做） + Step 4 search触发 |
+| `skills/webnovel-write/SKILL.md` | Search规则段落（触发条件+各Step搜索内容+失败即停协议+调研笔记归档） |
+| `skills/webnovel-plan/SKILL.md` | 新增 Step 2.5 卷前调研（必做） + Step 4 search触发 |
 | `skills/webnovel-init/SKILL.md` | 新增 Search 使用规则段落（各Step具体搜索内容+高频要求） + 验证标准增加调研笔记目录 |
-| `agents/data-agent.md` | Step K 增加调研笔记归档（WebSearch结果保存到调研笔记/主题文件） |
+| `agents/data-agent.md` | Step K 增加调研笔记归档 |
 | `skills/webnovel-write/references/step-3-review-gate.md` | 同步推送fork（时间线闸门修改） |
 
 **核心机制：**
-1. WebSearch 在 init/plan/write 三个环节全部启用
-2. Search 失败处理协议：失败即停→要求用户配置Tavily/Brave MCP→不跳过
-3. 卷前调研会（Step 2.5）：每卷规划前集中搜索专业领域+爆款+场景技巧
-4. 调研笔记归档：搜索结果按主题保存到 `调研笔记/` 目录，跨章复用
-5. init 阶段高频搜索：每 Step 至少1次，关键 Step 2-3次
+1. **Tavily 直连 API**：全部搜索通过 `scripts/tavily_search.py` 执行，禁止使用 MCP 工具（WebSearch/WebFetch）
+2. 两种模式：`search`（快速搜索）/ `research --model pro`（深度研究）
+3. Search 失败处理协议：失败即停→检查 API key 配置→不跳过
+4. 卷前调研会（Step 2.5）：每卷规划前集中搜索专业领域+爆款+场景技巧
+5. 调研笔记归档：搜索结果按主题保存到 `调研笔记/` 目录，跨章复用
+6. init 阶段高频搜索：每 Step 至少1次，关键 Step 2-3次
+
+**[2026-04-06 更新] 从 MCP 迁移到 Tavily 直连 API：**
+- 三个 SKILL.md 的 `allowed-tools` 移除 WebSearch/WebFetch
+- 搜索规则段落全部改用 `tavily_search.py` 命令行调用
+- 失败协议从"配置 MCP"改为"检查 API key"
+- data-agent.md / selling-points.md / market-positioning.md 的 WebSearch 引用同步修改
 
 **SKILL.md 改动点（合并时注意）：**
-- webnovel-write: frontmatter + Step 0.5后插入Search规则段落（在Step 1之前）
-- webnovel-plan: frontmatter(新增行) + Step 2和3之间插入Step 2.5 + Step 4 beat前加search触发
-- webnovel-init: Step 1前插入Search规则段落 + 验证脚本增加调研笔记目录检查
+- webnovel-write: frontmatter（不含 WebSearch/WebFetch） + Step 0.5后插入Search规则段落（在Step 1之前）
+- webnovel-plan: frontmatter（不含 WebSearch/WebFetch） + Step 2和3之间插入Step 2.5 + Step 4 beat前加search触发
+- webnovel-init: frontmatter（不含 WebSearch/WebFetch） + Step 1前插入Search规则段落 + 验证脚本增加调研笔记目录检查
 
 ---
 
