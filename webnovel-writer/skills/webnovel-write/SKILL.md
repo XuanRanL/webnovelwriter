@@ -464,6 +464,13 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 
 **以上 5 步全部完成后，方可进入 Step 4。等待是流程的一部分。**
 
+**Step 3→4 闸门强制验证**（在标记 Step 3 完成前必须执行）：
+1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，最多等待10分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。
+2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：核心3模型文件必须存在且非空，补充模型缺失可接受。
+3. 聚合分数：内部10个 checker 取平均；外部已成功模型取平均；合并 `round(internal * 0.6 + external * 0.4)`。
+4. 写审查报告 + 落库 review_metrics。
+**违规后果**：跳过此验证直接进入 Step 4，Step 6 审计 A2 检查项将检测到 checker 坍缩并可能 block 提交。
+
 ### Step 4：润色（问题修复优先）
 
 执行前必须加载：

@@ -130,12 +130,19 @@ MODELS = {
         "timeout": 300,
     },
     # Supplemental models: multi-provider fallback, failure doesn't block
+    # NOTE: Supplemental models use siliconflow (RPM=30) as PRIMARY to avoid
+    # healwrap (RPM=8) bottleneck. When --model-key all runs 9 models,
+    # putting 5+ models on healwrap primary causes semaphore exhaustion
+    # (5×3 concurrent = 15 slots needed, only 8 available → cascading timeouts).
+    # Distribution: nextapi handles kimi/glm/minimax/minimax-m2.7 (RPM=999),
+    # healwrap handles qwen-plus core only (RPM=8, 10 dims fits fine),
+    # siliconflow handles qwen/deepseek/glm4/doubao supplemental (RPM=30).
     "qwen": {
         "tier": "supplemental",
         "role": "宽松锚点",
         "providers": [
-            {"provider": "healwrap", "id": "qwen-3.5", "name": "Qwen-3.5"},
             {"provider": "siliconflow", "id": "Qwen/Qwen3.5-397B-A17B", "name": "Qwen3.5-397B-SF"},
+            {"provider": "healwrap", "id": "qwen-3.5", "name": "Qwen-3.5"},
         ],
         "timeout": 300,
     },
@@ -143,8 +150,8 @@ MODELS = {
         "tier": "supplemental",
         "role": "技术考据",
         "providers": [
-            {"provider": "healwrap", "id": "deepseek-v3.2", "name": "DeepSeek-V3.2"},
             {"provider": "siliconflow", "id": "Pro/deepseek-ai/DeepSeek-V3.2", "name": "DeepSeek-V3.2-SF"},
+            {"provider": "healwrap", "id": "deepseek-v3.2", "name": "DeepSeek-V3.2"},
         ],
         "timeout": 300,
     },
@@ -164,6 +171,8 @@ MODELS = {
         "role": "结构审查/逻辑一致性",
         "providers": [
             {"provider": "healwrap", "id": "doubao-seed-2.0", "name": "Doubao-Seed-2.0"},
+            {"provider": "codexcc", "id": "doubao-seed-2.0", "name": "Doubao-Seed-2.0"},
+            {"provider": "siliconflow", "id": "Pro/bytedance/Doubao-Seed-2.0", "name": "Doubao-Seed-2.0-SF"},
         ],
         "timeout": 300,
     },
@@ -171,8 +180,8 @@ MODELS = {
         "tier": "supplemental",
         "role": "文学质感/角色声音",
         "providers": [
-            {"provider": "healwrap", "id": "glm-4.7", "name": "GLM-4.7"},
             {"provider": "siliconflow", "id": "Pro/zai-org/GLM-4.7", "name": "GLM-4.7-SF"},
+            {"provider": "healwrap", "id": "glm-4.7", "name": "GLM-4.7"},
         ],
         "timeout": 300,
     },
@@ -1109,11 +1118,13 @@ def _run_single_model(args, api_keys):
     total_prompt_tokens = 0
     total_completion_tokens = 0
 
-    # 补充层早停：累计 3 个维度失败后跳过排队中的剩余维度
+    # 补充层早停：累计失败后跳过排队中的剩余维度
+    # 补充层阈值=2（快速放弃，节省 healwrap/siliconflow 配额给其他模型）
+    # 核心层阈值=5（容忍更多失败，确保核心模型尽力返回）
     is_supplemental = model_config.get("tier") == "supplemental"
     early_stop_event = threading.Event() if is_supplemental else None
     total_dim_failures = 0
-    EARLY_STOP_THRESHOLD = 3
+    EARLY_STOP_THRESHOLD = 2 if is_supplemental else 5
     # 补充层降低维度并发（3），使排队中的 task 能被 early_stop_event 拦截
     # 核心层保持全并发
     dim_concurrent = min(max_concurrent, 3) if is_supplemental else max_concurrent
