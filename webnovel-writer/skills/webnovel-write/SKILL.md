@@ -405,7 +405,7 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 
 **上下文文件准备（调用脚本前必须完成）**：
 
-脚本从 `{PROJECT_ROOT}/.webnovel/tmp/external_context_ch{chapter_padded}.json` 加载上下文。若文件不存在，脚本仍可运行但外部模型缺少项目上下文，评审质量严重下降。主流程必须在调用脚本前构建此文件，包含 9 个字段：
+脚本从 `{PROJECT_ROOT}/.webnovel/tmp/external_context_ch{chapter_padded}.json` 加载上下文。**若文件不存在，脚本将报错退出（exit 1）**。主流程必须在调用脚本前构建此文件，包含 9 个字段：
 
 ```bash
 # 收集设定集、大纲、前章正文，写入 context JSON
@@ -520,6 +520,24 @@ Step 5 失败隔离规则：
 - `.webnovel/index.db`
 - `.webnovel/summaries/ch{chapter_padded}.md`
 - `.webnovel/observability/data_agent_timing.jsonl`（观测日志）
+
+**数据完整性后验证（Step 5 完成后必须执行）**：
+```python
+# 用 Bash 执行以下 Python 验证，任一项 FAIL 则必须立即补修
+import json, re
+with open('.webnovel/state.json','r',encoding='utf-8') as f: s=json.load(f)
+meta = s['chapter_meta'][f'{chapter:04d}']
+# 1. checker_scores 非空
+assert meta.get('checker_scores') and len(meta['checker_scores']) >= 3, 'FAIL: checker_scores empty'
+# 2. word_count 准确（用标准方法重算对比，误差<=2%）
+with open(chapter_file,'r',encoding='utf-8') as f: text=f.read()
+actual = len(re.findall(r'[\u4e00-\u9fff]', text))
+assert abs(meta['word_count'] - actual) / actual < 0.02, f'FAIL: word_count {meta["word_count"]} vs actual {actual}'
+# 3. strand_tracker 与 chapter_meta 一致
+history = s['strand_tracker']['history']
+tracker_strand = [h for h in history if h['chapter']==chapter][0]['dominant']
+assert tracker_strand == meta['strand_dominant'].lower(), f'FAIL: strand mismatch {tracker_strand} vs {meta["strand_dominant"]}'
+```
 
 性能要求：
 - 读取 timing 日志最近一条；
