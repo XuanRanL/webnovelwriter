@@ -342,24 +342,27 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 
 调用约束：
 - 必须用 `Task` 调用审查 subagent，禁止主流程伪造审查结论。
-- 可并行发起审查，但**必须等待全部 checker 返回后**才能统一聚合 `issues/severity/overall_score`。
+- **标准/--fast 模式必须 5+5 分批启动**（详见 `step-3-review-gate.md`），禁止 10 个 checker 同时并发。
+- 必须等待全部 checker 返回后才能统一聚合 `issues/severity/overall_score`。
 - **禁止在任何 checker 仍在运行时进入 Step 4**。即使外部审查已完成，内部 checker 未全部返回也不得开始润色。
 
-审查器（标准模式全部执行）：
-- `consistency-checker`（设定一致性）
-- `continuity-checker`（连贯性）
-- `ooc-checker`（人物OOC）
-- `reader-pull-checker`（追读力）
-- `high-point-checker`（爽点密度）
-- `pacing-checker`（节奏平衡）
-- `dialogue-checker`（对话质量）
-- `density-checker`（信息密度）
-- `prose-quality-checker`（文笔质感）
-- `emotion-checker`（情感表现）
+审查器（标准模式全部执行，5+5 分批）：
+- Batch 1（核心优先，5个并发）：
+  - `consistency-checker`（设定一致性）
+  - `continuity-checker`（连贯性）
+  - `ooc-checker`（人物OOC）
+  - `reader-pull-checker`（追读力）
+  - `high-point-checker`（爽点密度）
+- Batch 2（Batch 1 全部返回后启动，5个并发）：
+  - `pacing-checker`（节奏平衡）
+  - `dialogue-checker`（对话质量）
+  - `density-checker`（信息密度）
+  - `prose-quality-checker`（文笔质感）
+  - `emotion-checker`（情感表现）
 
 模式说明：
-- 标准/`--fast`：全量 10 个审查器始终执行。
-- `--minimal`：固定核心 3 个（consistency/continuity/ooc）。
+- 标准/`--fast`：全量 10 个审查器，5+5 分批执行。
+- `--minimal`：固定核心 3 个（consistency/continuity/ooc），单批并发。
 
 审查指标落库（必做）：
 ```bash
@@ -465,7 +468,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 **以上 5 步全部完成后，方可进入 Step 4。等待是流程的一部分。**
 
 **Step 3→4 闸门强制验证**（在标记 Step 3 完成前必须执行）：
-1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，最多等待10分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。
+1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，每批最多等待10分钟，总超时20分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。注意：5+5 分批模式下，Batch 1 全部返回后再启动 Batch 2，每批独立计时。
 2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：核心3模型文件必须存在且非空，补充模型缺失可接受。
 3. 聚合分数：内部10个 checker 取平均；外部已成功模型取平均；合并 `round(internal * 0.6 + external * 0.4)`。
 4. 写审查报告 + 落库 review_metrics。
