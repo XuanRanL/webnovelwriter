@@ -582,6 +582,8 @@ class StatusReporter:
         total = len(history)
 
         for entry in history:
+            if not isinstance(entry, dict):
+                continue
             strand = (entry.get("strand") or entry.get("dominant") or "").lower()
             if strand in ["quest", "主线", "战斗", "任务"]:
                 quest_count += 1
@@ -602,6 +604,8 @@ class StatusReporter:
         quest_streak = 0
         max_quest_streak = 0
         for entry in history:
+            if not isinstance(entry, dict):
+                continue
             strand = (entry.get("strand") or entry.get("dominant") or "").lower()
             if strand in ["quest", "主线", "战斗", "任务"]:
                 quest_streak += 1
@@ -616,6 +620,8 @@ class StatusReporter:
         fire_gap = 0
         max_fire_gap = 0
         for entry in history:
+            if not isinstance(entry, dict):
+                continue
             strand = (entry.get("strand") or entry.get("dominant") or "").lower()
             if strand in ["fire", "感情", "感情线", "互动"]:
                 max_fire_gap = max(max_fire_gap, fire_gap)
@@ -631,6 +637,8 @@ class StatusReporter:
         const_gap = 0
         max_const_gap = 0
         for entry in history:
+            if not isinstance(entry, dict):
+                continue
             strand = (entry.get("strand") or entry.get("dominant") or "").lower()
             if strand in ["constellation", "世界观", "背景", "势力"]:
                 max_const_gap = max(max_const_gap, const_gap)

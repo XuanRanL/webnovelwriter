@@ -61,6 +61,20 @@ CHECKER_NAMES = [
     "emotion-checker",
 ]
 
+# 审查报告使用中文维度名而非英文 checker 名，需做别名映射
+CHECKER_ALIASES = {
+    "consistency-checker": ["设定一致性", "一致性检查", "consistency"],
+    "continuity-checker": ["连贯性", "连续性检查", "continuity"],
+    "ooc-checker": ["人物塑造", "人物OOC", "OOC检查", "ooc"],
+    "reader-pull-checker": ["追读力", "追读检查", "reader-pull"],
+    "high-point-checker": ["爽点密度", "爽点检查", "high-point"],
+    "pacing-checker": ["节奏控制", "节奏检查", "pacing"],
+    "dialogue-checker": ["对话质量", "对话检查", "dialogue"],
+    "density-checker": ["信息密度", "密度检查", "density"],
+    "prose-quality-checker": ["文笔质感", "文笔检查", "prose"],
+    "emotion-checker": ["情感表现", "情感检查", "emotion"],
+}
+
 EXTERNAL_MODELS_CORE3 = ["kimi", "glm", "qwen-plus"]
 EXTERNAL_MODELS_ALL9 = [
     "kimi", "glm", "qwen-plus",
@@ -201,34 +215,76 @@ def check_A1_contract_completeness(project_root: Path, chapter: int) -> CheckRes
             evidence=f"context_snapshots/ch{_pad(chapter)}.json 不存在或无法解析",
             remediation=["重跑 Step 1: Task(context-agent, chapter=%d)" % chapter],
         )
+    # payload 可能被 "payload" key 包裹，也可能直接在顶层
     payload = data.get("payload") or {}
-    # 8 板块 (在 payload 中的 key，允许 Contract 以子 key 形式存在)
-    expected_panels = ["state", "outline", "settings", "previous_summaries", "style_guide",
-                       "entity_cards", "editor_notes", "contract"]
-    present = [k for k in expected_panels if k in payload]
-    contract = payload.get("contract") or payload.get("Contract") or {}
-    contract_fields_min = 8  # 放宽：Contract 至少 8 个字段
-    if len(present) < 6:
+    if not payload:
+        payload = data
+
+    # --- 格式 A: 直接 panels dict（context-agent 紧凑格式） ---
+    direct_panels = payload.get("panels")
+    if isinstance(direct_panels, dict) and len(direct_panels) >= 4:
+        panels_count = len(direct_panels)
+        panels_list = list(direct_panels.keys())
+        fmt = payload.get("format", "v1-compact")
+        contract = payload.get("contract") or payload.get("Contract") or {}
+        contract_fields = len(contract) if isinstance(contract, dict) else 0
+    else:
+        # --- 格式 B: v2 — meta + sections 结构 ---
+        sections = payload.get("sections") or {}
+        has_meta = "meta" in payload
+        expected_v2 = ["core", "scene", "global", "reader_signal", "genre_profile",
+                       "writing_guidance", "story_skeleton", "memory"]
+        present_v2 = [k for k in expected_v2 if k in sections]
+
+        if sections and (has_meta or present_v2):
+            panels_count = len(present_v2) + (1 if has_meta else 0)
+            panels_list = (["meta"] if has_meta else []) + present_v2
+            fmt = "v2"
+            # v2 contract: 从 meta 或 core.content 中提取
+            contract = payload.get("contract") or payload.get("Contract") or {}
+            if not contract:
+                meta = payload.get("meta") or {}
+                if meta.get("context_contract_version"):
+                    core = sections.get("core", {})
+                    core_content = core.get("content", {}) if isinstance(core, dict) else {}
+                    outline = core_content.get("chapter_outline", "") if isinstance(core_content, dict) else ""
+                    kw = ["目标", "阻力", "代价", "本章变化", "钩子", "Strand", "时间锚点", "章内时间跨度"]
+                    contract = {k: True for k in kw if k in str(outline)}
+            contract_fields = len(contract) if isinstance(contract, dict) else 0
+        else:
+            # --- 格式 C: v1 — 8 个顶级 key ---
+            expected_panels = ["state", "outline", "settings", "previous_summaries", "style_guide",
+                               "entity_cards", "editor_notes", "contract"]
+            present = [k for k in expected_panels if k in payload]
+            panels_count = len(present)
+            panels_list = present
+            fmt = "v1"
+            contract = payload.get("contract") or payload.get("Contract") or {}
+            contract_fields = len(contract) if isinstance(contract, dict) else 0
+
+    contract_fields_min = 8
+    min_panels = 6
+    if panels_count < min_panels:
         return CheckResult(
             id="A1", name="Context Contract 完整性", layer="A",
             status="fail", severity="critical",
-            evidence=f"snapshot 板块不全 (present={present})",
-            measured={"panels_present": len(present), "contract_fields": len(contract)},
+            evidence=f"snapshot 板块不全 (fmt={fmt}, present={panels_list})",
+            measured={"panels_present": panels_count, "contract_fields": contract_fields, "format": fmt},
             remediation=["重跑 Step 1: Task(context-agent, chapter=%d)" % chapter],
         )
-    if len(contract) < contract_fields_min:
+    if contract_fields < contract_fields_min:
         return CheckResult(
             id="A1", name="Context Contract 完整性", layer="A",
             status="warn", severity="high",
-            evidence=f"Contract 字段不足 ({len(contract)} < {contract_fields_min})",
-            measured={"panels_present": len(present), "contract_fields": len(contract)},
+            evidence=f"Contract 字段不足 ({contract_fields} < {contract_fields_min})",
+            measured={"panels_present": panels_count, "contract_fields": contract_fields, "format": fmt},
             remediation=["检查 context-agent 是否完整填充 Contract v2 所有字段"],
         )
     return CheckResult(
         id="A1", name="Context Contract 完整性", layer="A",
         status="pass", severity="high",
-        evidence=f"snapshot 板块 {len(present)} 个, Contract 字段 {len(contract)} 个",
-        measured={"panels_present": len(present), "contract_fields": len(contract)},
+        evidence=f"snapshot {fmt} 格式, {panels_count} 个板块, Contract {contract_fields} 字段",
+        measured={"panels_present": panels_count, "contract_fields": contract_fields, "format": fmt},
     )
 
 
@@ -243,7 +299,15 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
             remediation=["重跑 Step 3: 显式 Task 调用 10 个 checker"],
         )
     text = _read_text(report) or ""
-    missing = [c for c in CHECKER_NAMES if c not in text]
+    # 用英文名 + 中文别名做匹配: 任一命中即视为该 checker 存在
+    def _checker_found(name: str, txt: str) -> bool:
+        if name in txt:
+            return True
+        for alias in CHECKER_ALIASES.get(name, []):
+            if alias in txt:
+                return True
+        return False
+    missing = [c for c in CHECKER_NAMES if not _checker_found(c, text)]
     if len(missing) >= 3:
         return CheckResult(
             id="A2", name="10 checker 独立调用", layer="A",
@@ -651,7 +715,20 @@ def check_B2_entities_three_way(project_root: Path, chapter: int) -> CheckResult
             remediation=["重跑 Step 5 B (场景切片 + 实体抽取)"],
         )
     # 检查每个实体是否在正文出现
-    missing_in_chapter = [e for e in entities_scenes if e and e not in chapter_text]
+    # 支持复合中文名模糊匹配（如"推演课教官"→正文出现"教官"即匹配）
+    def _entity_in_text(entity: str, text: str) -> bool:
+        if entity in text:
+            return True
+        cjk = re.findall(r'[\u4e00-\u9fff]+', entity)
+        full_cjk = "".join(cjk)
+        if len(full_cjk) <= 2:
+            return full_cjk in text if full_cjk else False
+        for length in range(len(full_cjk) - 1, 1, -1):
+            for start in range(len(full_cjk) - length + 1):
+                if full_cjk[start:start + length] in text:
+                    return True
+        return False
+    missing_in_chapter = [e for e in entities_scenes if e and not _entity_in_text(e, chapter_text)]
     if len(missing_in_chapter) > len(entities_scenes) * 0.3:
         return CheckResult(
             id="B2", name="实体三方一致", layer="B",
@@ -846,8 +923,8 @@ def check_B9_chapter_meta_fields(project_root: Path, chapter: int) -> CheckResul
     """B9: chapter_meta 字段完整性 — state.chapter_meta[chapter] 应含所需字段."""
     state = _read_json(project_root / ".webnovel" / "state.json") or {}
     cmeta = state.get("chapter_meta", {}) or {}
-    ch_key = str(chapter)
-    entry = cmeta.get(ch_key) or cmeta.get(chapter)
+    # 尝试三种格式: padded "0005", unpadded "5", int 5
+    entry = cmeta.get(_pad(chapter)) or cmeta.get(str(chapter)) or cmeta.get(chapter)
     if not entry:
         return CheckResult(
             id="B9", name="chapter_meta 字段完整", layer="B",

@@ -1012,9 +1012,25 @@ def run_dimensions_mode(args, api_keys):
         print(f"[all-models] 并发执行 {len(all_model_keys)} 个模型: {', '.join(all_model_keys)}", file=sys.stderr)
         all_results = {}
 
+        # 预加载共享数据（一次读取，所有线程复用，避免9次重复IO）
+        context_file = project_root / ".webnovel" / "tmp" / f"external_context_ch{chapter_num:04d}.json"
+        if context_file.exists():
+            _shared_context = json.loads(context_file.read_text(encoding="utf-8"))
+        else:
+            print(json.dumps({"error": f"Context file not found: {context_file}. Agent must prepare context before calling script."}), file=sys.stderr)
+            _shared_context = {}
+        chapters_dir = project_root / "正文"
+        ch_files = list(chapters_dir.glob(f"第{chapter_num:04d}章*.md"))
+        _shared_chapter_text = ch_files[0].read_text(encoding="utf-8") if ch_files else None
+        if not _shared_chapter_text:
+            print(json.dumps({"error": f"Chapter {chapter_num} not found"}))
+            sys.exit(1)
+
         def _run_model_safe(mk):
             args_copy = argparse.Namespace(**vars(args))
             args_copy.model_key = mk
+            args_copy._preloaded_context = _shared_context
+            args_copy._preloaded_chapter_text = _shared_chapter_text
             try:
                 print(f"[all-models] 开始: {mk} ({MODELS[mk]['tier']})", file=sys.stderr)
                 _run_single_model(args_copy, api_keys)
@@ -1027,7 +1043,8 @@ def run_dimensions_mode(args, api_keys):
                 print(f"[all-models] 异常: {mk} — {e}", file=sys.stderr)
                 return mk, f"error: {str(e)[:80]}"
 
-        with ThreadPoolExecutor(max_workers=len(all_model_keys)) as executor:
+        # 限制模型并发数为4，避免线程池过大（每模型内部还有维度并发）
+        with ThreadPoolExecutor(max_workers=min(len(all_model_keys), 4)) as executor:
             futures = {executor.submit(_run_model_safe, mk): mk for mk in all_model_keys}
             for f in as_completed(futures):
                 mk, result = f.result()
@@ -1061,21 +1078,25 @@ def _run_single_model(args, api_keys):
 
     model_config = MODELS[resolved_key]
 
-    # Load context
-    context_file = project_root / ".webnovel" / "tmp" / f"external_context_ch{chapter_num:04d}.json"
-    if context_file.exists():
-        context_data = json.loads(context_file.read_text(encoding="utf-8"))
-    else:
-        print(json.dumps({"error": f"Context file not found: {context_file}. Agent must prepare context before calling script."}), file=sys.stderr)
-        context_data = {}
+    # 优先使用预加载数据（all-models 模式由调用方预加载，避免重复IO）
+    context_data = getattr(args, '_preloaded_context', None)
+    chapter_text = getattr(args, '_preloaded_chapter_text', None)
 
-    # Load chapter text
-    chapters_dir = project_root / "正文"
-    ch_files = list(chapters_dir.glob(f"第{chapter_num:04d}章*.md"))
-    if not ch_files:
-        print(json.dumps({"error": f"Chapter {chapter_num} not found"}))
-        sys.exit(1)
-    chapter_text = ch_files[0].read_text(encoding="utf-8")
+    if context_data is None:
+        context_file = project_root / ".webnovel" / "tmp" / f"external_context_ch{chapter_num:04d}.json"
+        if context_file.exists():
+            context_data = json.loads(context_file.read_text(encoding="utf-8"))
+        else:
+            print(json.dumps({"error": f"Context file not found: {context_file}. Agent must prepare context before calling script."}), file=sys.stderr)
+            context_data = {}
+
+    if chapter_text is None:
+        chapters_dir = project_root / "正文"
+        ch_files = list(chapters_dir.glob(f"第{chapter_num:04d}章*.md"))
+        if not ch_files:
+            print(json.dumps({"error": f"Chapter {chapter_num} not found"}))
+            sys.exit(1)
+        chapter_text = ch_files[0].read_text(encoding="utf-8")
 
     context_block = build_context_block(context_data, project_root=project_root, chapter_num=chapter_num)
 
