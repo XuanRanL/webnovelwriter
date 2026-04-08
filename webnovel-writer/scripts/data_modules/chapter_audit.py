@@ -83,6 +83,11 @@ EXTERNAL_MODELS_ALL9 = [
 ]
 
 DATA_AGENT_STEPS_REQUIRED = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]  # K 为 best-effort
+EXTERNAL_REVIEW_EXPECTED_DIMENSIONS = 10
+WORKFLOW_REQUIRED_STEPS = {
+    "webnovel-write": ["Step 1", "Step 2A", "Step 2B", "Step 3", "Step 3.5", "Step 4", "Step 5", "Step 6", "Step 7"],
+    "webnovel-review": ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6", "Step 7", "Step 8"],
+}
 
 # ==================== 数据结构 ====================
 
@@ -176,6 +181,45 @@ def _find_review_report(project_root: Path, chapter: int) -> Optional[Path]:
     if p2.exists():
         return p2
     return None
+
+
+def _chapter_meta_entry(project_root: Path, chapter: int) -> Dict[str, Any]:
+    state_path = project_root / ".webnovel" / "state.json"
+    state = _read_json(state_path) or {}
+    chapter_meta = state.get("chapter_meta") or {}
+    for key in (_pad(chapter), str(chapter), f"{chapter:04d}"):
+        value = chapter_meta.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _load_external_review_results(project_root: Path, chapter: int) -> Dict[str, Dict[str, Any]]:
+    tmp_dir = project_root / ".webnovel" / "tmp"
+    if not tmp_dir.exists():
+        return {}
+
+    results: Dict[str, Dict[str, Any]] = {}
+    pattern = re.compile(rf"^external_review_(.+)_ch{_pad(chapter)}\.json$")
+    for path in tmp_dir.glob(f"external_review_*_ch{_pad(chapter)}.json"):
+        data = _read_json(path)
+        if not isinstance(data, dict):
+            continue
+        match = pattern.match(path.name)
+        model_key = str(data.get("model_key") or (match.group(1) if match else "")).strip()
+        if not model_key:
+            continue
+        results[model_key] = {"path": path, "data": data}
+    return results
+
+
+def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+    if not ts or not isinstance(ts, str):
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        return None
 
 
 def _score_from_checks(checks: List[CheckResult]) -> int:
@@ -289,17 +333,18 @@ def check_A1_contract_completeness(project_root: Path, chapter: int) -> CheckRes
 
 
 def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
-    """A2: 10 checker 独立调用 — 审查报告中必须出现所有 10 个 checker 名称."""
+    """A2: internal checker coverage should be visible in both report text and state.json."""
     report = _find_review_report(project_root, chapter)
     if report is None:
         return CheckResult(
-            id="A2", name="10 checker 独立调用", layer="A",
+            id="A2", name="10 checker ??????", layer="A",
             status="fail", severity="critical",
-            evidence=f"审查报告 第{_pad(chapter)}章审查报告.md 不存在",
-            remediation=["重跑 Step 3: 显式 Task 调用 10 个 checker"],
+            evidence="review report is missing",
+            remediation=["rerun Step 3 with all 10 internal checkers"],
         )
+
     text = _read_text(report) or ""
-    # 用英文名 + 中文别名做匹配: 任一命中即视为该 checker 存在
+
     def _checker_found(name: str, txt: str) -> bool:
         if name in txt:
             return True
@@ -307,110 +352,339 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
             if alias in txt:
                 return True
         return False
+
+    def _normalize_checker_snippet(line: str) -> str:
+        cleaned = line.lower()
+        for checker_name in CHECKER_NAMES:
+            cleaned = cleaned.replace(checker_name.lower(), " ")
+            for alias in CHECKER_ALIASES.get(checker_name, []):
+                cleaned = cleaned.replace(str(alias).lower(), " ")
+        cleaned = re.sub(r"(?<![\w.])(100(?:\.0+)?|[1-9]?\d(?:\.\d+)?)(?![\w.])", " ", cleaned)
+        cleaned = re.sub(r"[|:：\-*_`#()\[\]{}]+", " ", cleaned)
+        cleaned = re.sub(
+            r"\b(?:batch|score|checker|internal|review|low|medium|high|critical|warn|pass)\b",
+            " ",
+            cleaned,
+        )
+        tokens = [
+            token
+            for token in re.findall(r"[a-z][a-z0-9_.-]+|[\u4e00-\u9fff]{2,}", cleaned)
+            if len(token) >= 2
+        ]
+        return " ".join(tokens)
+
+    def _extract_checker_score(line: str) -> Optional[float]:
+        numbers = re.findall(r"(?<![\w.])(100(?:\.0+)?|[1-9]?\d(?:\.\d+)?)(?![\w.])", line)
+        if not numbers:
+            return None
+        try:
+            return float(numbers[0])
+        except Exception:
+            return None
+
     missing = [c for c in CHECKER_NAMES if not _checker_found(c, text)]
+    chapter_meta = _chapter_meta_entry(project_root, chapter)
+    checker_scores = chapter_meta.get("checker_scores") or {}
+    state_checker_count = 0
+    if isinstance(checker_scores, dict):
+        state_checker_count = len([k for k, v in checker_scores.items() if v is not None])
+
+    report_rows: Dict[str, List[str]] = {}
+    report_score_map: Dict[str, float] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        for checker_name in CHECKER_NAMES:
+            if not _checker_found(checker_name, line):
+                continue
+            report_rows.setdefault(checker_name, []).append(line)
+            if checker_name not in report_score_map:
+                score = _extract_checker_score(line)
+                if score is not None:
+                    report_score_map[checker_name] = score
+            break
+
+    score_values: List[float] = []
+    for checker_name in CHECKER_NAMES:
+        value = None
+        if isinstance(checker_scores, dict):
+            candidate = checker_scores.get(checker_name)
+            if isinstance(candidate, (int, float)):
+                value = float(candidate)
+        if value is None:
+            value = report_score_map.get(checker_name)
+        if isinstance(value, (int, float)):
+            score_values.append(float(value))
+
+    unique_scores = sorted({round(v, 1) for v in score_values})
+    normalized_snippets = []
+    for checker_name in CHECKER_NAMES:
+        joined = " ".join(report_rows.get(checker_name, []))
+        normalized = _normalize_checker_snippet(joined)
+        if normalized:
+            normalized_snippets.append(normalized)
+
+    duplicate_snippet_counts: Dict[str, int] = {}
+    for snippet in normalized_snippets:
+        duplicate_snippet_counts[snippet] = duplicate_snippet_counts.get(snippet, 0) + 1
+    duplicated_snippets = [s for s, count in duplicate_snippet_counts.items() if count >= 3]
+
+    measured = {
+        "present_count": len(CHECKER_NAMES) - len(missing),
+        "missing": missing,
+        "state_checker_scores_count": state_checker_count,
+        "unique_scores": unique_scores,
+        "duplicated_snippets": duplicated_snippets,
+    }
     if len(missing) >= 3:
         return CheckResult(
-            id="A2", name="10 checker 独立调用", layer="A",
+            id="A2", name="10 checker ??????", layer="A",
             status="fail", severity="critical",
-            evidence=f"审查报告缺少 checker: {missing}",
-            measured={"present_count": len(CHECKER_NAMES) - len(missing), "missing": missing},
-            remediation=["重跑 Step 3: Task(consistency-checker, ...) 等 10 个 checker 全部显式调用"],
+            evidence=f"review report is missing checker entries: {missing}",
+            measured=measured,
+            remediation=["rerun Step 3 with all 10 internal checkers"],
         )
     if missing:
         return CheckResult(
-            id="A2", name="10 checker 独立调用", layer="A",
+            id="A2", name="10 checker ??????", layer="A",
             status="warn", severity="high",
-            evidence=f"审查报告缺少 {len(missing)} 个 checker: {missing}",
-            measured={"present_count": len(CHECKER_NAMES) - len(missing), "missing": missing},
-            remediation=["补跑缺失的 checker"],
+            evidence=f"review report is missing checker entries: {missing}",
+            measured=measured,
+            remediation=["backfill the missing checker runs"],
+        )
+    if len(score_values) >= 8 and len(unique_scores) <= 2:
+        return CheckResult(
+            id="A2", name="10 checker ??????", layer="A",
+            status="fail", severity="critical",
+            evidence=f"checker scores collapsed into only {len(unique_scores)} distinct values: {unique_scores}",
+            measured=measured,
+            remediation=["rerun Step 3 and ensure each checker produces an independent judgment"],
+        )
+    if duplicated_snippets:
+        return CheckResult(
+            id="A2", name="10 checker ??????", layer="A",
+            status="fail", severity="critical",
+            evidence="checker review snippets look duplicated across multiple checkers",
+            measured=measured,
+            remediation=["rerun Step 3 and inspect for checker prompt collapse or copy-paste reuse"],
+        )
+    if state_checker_count and state_checker_count < 8:
+        return CheckResult(
+            id="A2", name="10 checker ??????", layer="A",
+            status="warn", severity="high",
+            evidence=f"state.json only persisted {state_checker_count} checker scores",
+            measured=measured,
+            remediation=["inspect Step 5 and ensure checker_scores are persisted into chapter_meta"],
         )
     return CheckResult(
-        id="A2", name="10 checker 独立调用", layer="A",
+        id="A2", name="10 checker ??????", layer="A",
         status="pass", severity="high",
-        evidence="审查报告含全部 10 个 checker",
-        measured={"present_count": 10, "missing": []},
+        evidence="review report contains all 10 checkers",
+        measured=measured,
     )
 
-
 def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
-    """A3: 9 外部模型真实性 — 审查报告应出现核心 3 模型 (kimi/glm/qwen-plus) 或 3.5 产出至少 3 个模型评分."""
+    """A3: external review must have durable JSON evidence, not just markdown mentions."""
     report = _find_review_report(project_root, chapter)
-    if report is None:
+    external_results = _load_external_review_results(project_root, chapter)
+    if report is None and not external_results:
         return CheckResult(
-            id="A3", name="外部模型审查完整性", layer="A",
+            id="A3", name="??????????????", layer="A",
             status="fail", severity="high",
-            evidence="审查报告不存在",
-            remediation=["重跑 Step 3.5: python external_review.py --chapter %d --model-key all" % chapter],
+            evidence="review report and external review JSON are both missing",
+            remediation=["rerun Step 3.5 for all external models"],
         )
+
+    if external_results:
+        valid_models: List[str] = []
+        core_present: List[str] = []
+        partial_models: List[str] = []
+        unrouted_models: List[str] = []
+        phantom_models: List[str] = []
+        invalid_core: Dict[str, List[str]] = {}
+        invalid_supplemental: Dict[str, List[str]] = {}
+        for model_key, payload in external_results.items():
+            data = payload.get("data") or {}
+            dimension_reports = data.get("dimension_reports") or []
+            ok_dims = [d for d in dimension_reports if d.get("status") == "ok"]
+            expected_dimensions = EXTERNAL_REVIEW_EXPECTED_DIMENSIONS
+            model_issues: List[str] = []
+            routing_verified = data.get("routing_verified") is True
+            if not routing_verified:
+                unrouted_models.append(model_key)
+                model_issues.append("routing_unverified")
+
+            if len(ok_dims) < expected_dimensions:
+                partial_models.append(model_key)
+                model_issues.append(f"incomplete_dimensions:{len(ok_dims)}/{expected_dimensions}")
+
+            model_phantom_hits = 0
+            for item in dimension_reports:
+                summary = str(item.get("summary") or "").strip()
+                score = item.get("score")
+                status = str(item.get("status") or "")
+                if status == "ok" and isinstance(score, (int, float)) and float(score) == 0 and not summary:
+                    model_phantom_hits += 1
+            if model_phantom_hits:
+                phantom_models.append(model_key)
+                model_issues.append(f"phantom_zero_dimensions:{model_phantom_hits}")
+
+            if not model_issues:
+                valid_models.append(model_key)
+                if model_key in EXTERNAL_MODELS_CORE3:
+                    core_present.append(model_key)
+            elif model_key in EXTERNAL_MODELS_CORE3:
+                invalid_core[model_key] = model_issues
+            else:
+                invalid_supplemental[model_key] = model_issues
+
+        measured = {
+            "core_present": sorted(core_present),
+            "all_present": sorted(valid_models),
+            "partial_models": sorted(partial_models),
+            "unrouted_models": sorted(unrouted_models),
+            "phantom_models": sorted(phantom_models),
+            "invalid_core": invalid_core,
+            "invalid_supplemental": invalid_supplemental,
+        }
+        missing_core = [m for m in EXTERNAL_MODELS_CORE3 if m not in core_present]
+        if missing_core or invalid_core:
+            details = {key: invalid_core[key] for key in sorted(invalid_core)}
+            return CheckResult(
+                id="A3", name="??????????????", layer="A",
+                status="fail", severity="critical",
+                evidence=f"core external models missing or invalid: missing={missing_core}, invalid={details}",
+                measured=measured,
+                remediation=["rerun Step 3.5 for all core external models"],
+            )
+        if len(valid_models) < len(EXTERNAL_MODELS_ALL9):
+            missing_models = [m for m in EXTERNAL_MODELS_ALL9 if m not in valid_models]
+            extra_issues = []
+            if invalid_supplemental:
+                extra_issues.append(f"invalid_supplemental={sorted(invalid_supplemental)}")
+            return CheckResult(
+                id="A3", name="??????????????", layer="A",
+                status="warn", severity="high",
+                evidence="external review model coverage is incomplete: "
+                f"missing={missing_models}" + (f", {'; '.join(extra_issues)}" if extra_issues else ""),
+                measured=measured,
+                remediation=["backfill the missing external model reviews"],
+            )
+        return CheckResult(
+            id="A3", name="??????????????", layer="A",
+            status="pass", severity="high",
+            evidence=f"{len(valid_models)} external review JSON files are valid",
+            measured=measured,
+        )
+
     text = _read_text(report) or ""
     present = [m for m in EXTERNAL_MODELS_ALL9 if m in text.lower() or m in text]
     core_present = [m for m in EXTERNAL_MODELS_CORE3 if m in text.lower() or m in text]
-
-    # 检查是否有 phantom zero (评分为 0 且摘要为空)
-    # 简单方法: 搜索 "评分: 0" 或 "score.*0" + 周围 200 字符内没有内容
     phantom_hits = 0
-    zero_pattern = re.compile(r"(?:评分|score)[^\n]{0,10}[:：]\s*0\b")
-    for m in zero_pattern.finditer(text):
-        start = max(0, m.start() - 50)
-        end = min(len(text), m.end() + 300)
+    zero_pattern = re.compile(
+        r"(?:kimi|glm|qwen-plus|minimax|minimax-m2\.7|doubao|qwen|glm4|deepseek)[^\n]{0,40}[:：]\s*0(?:\.0+)?(?:\b|$)",
+        re.IGNORECASE,
+    )
+    for match in zero_pattern.finditer(text):
+        start = max(0, match.start() - 50)
+        end = min(len(text), match.end() + 300)
         snippet = text[start:end]
-        # 如果 0 分且周围没有实质内容（< 100 字符），判定为 phantom
         if len(snippet.replace(" ", "").replace("\n", "")) < 150:
             phantom_hits += 1
 
-    if len(core_present) < 2:
+    measured = {"core_present": core_present, "all_present": present, "phantom_zeros": phantom_hits}
+    if len(core_present) < len(EXTERNAL_MODELS_CORE3):
         return CheckResult(
-            id="A3", name="外部模型审查完整性", layer="A",
+            id="A3", name="??????????????", layer="A",
             status="fail", severity="critical",
-            evidence=f"核心 3 模型仅出现 {core_present}",
-            measured={"core_present": core_present, "all_present": present, "phantom_zeros": phantom_hits},
-            remediation=["重跑 Step 3.5: python external_review.py --chapter %d --model-key all" % chapter],
+            evidence="review report does not prove all core external models ran",
+            measured=measured,
+            remediation=["persist external review JSON instead of relying on markdown only"],
         )
     if phantom_hits > 0:
         return CheckResult(
-            id="A3", name="外部模型审查完整性", layer="A",
+            id="A3", name="??????????????", layer="A",
             status="fail", severity="critical",
-            evidence=f"检测到 {phantom_hits} 处幽灵零分（score=0 且摘要空）",
-            measured={"core_present": core_present, "phantom_zeros": phantom_hits},
-            remediation=["重跑 Step 3.5 的失败模型: python external_review.py --chapter %d --model-key <失败key>" % chapter],
+            evidence="review report contains likely phantom zero scores",
+            measured=measured,
+            remediation=["rerun Step 3.5 for the failed external models"],
         )
     if len(present) < 3:
         return CheckResult(
-            id="A3", name="外部模型审查完整性", layer="A",
+            id="A3", name="??????????????", layer="A",
             status="warn", severity="high",
-            evidence=f"仅 {len(present)} 个模型参评 (核心 3 已齐)",
-            measured={"core_present": core_present, "all_present": present},
-            remediation=["考虑补跑 6 个次级模型以提升审查覆盖度"],
+            evidence="review report implies too few external model reviews",
+            measured=measured,
+            remediation=["persist external review JSON instead of relying on markdown only"],
         )
     return CheckResult(
-        id="A3", name="外部模型审查完整性", layer="A",
+        id="A3", name="??????????????", layer="A",
         status="pass", severity="high",
-        evidence=f"{len(present)} 个模型参评 (核心 3 齐)",
-        measured={"core_present": core_present, "all_present": present, "phantom_zeros": 0},
+        evidence="review report shows external review coverage, but JSON evidence is preferred",
+        measured=measured,
     )
 
-
 def check_A4_data_agent_steps(project_root: Path, chapter: int) -> CheckResult:
-    """A4: Data Agent 子步完整性 — data_agent_timing.jsonl 必须含本章的 Step A-J."""
+    """A4: data agent timing must show either aggregate timing_ms or per-step markers."""
     timing_path = project_root / ".webnovel" / "observability" / "data_agent_timing.jsonl"
     rows = _read_jsonl(timing_path)
     if not rows:
         return CheckResult(
-            id="A4", name="Data Agent 子步完整性", layer="A",
+            id="A4", name="Data Agent ????????", layer="A",
             status="fail", severity="high",
-            evidence="data_agent_timing.jsonl 不存在或为空",
-            remediation=["重跑 Step 5: Task(data-agent, chapter=%d)" % chapter],
+            evidence="data_agent_timing.jsonl is missing or empty",
+            remediation=["rerun Step 5 for this chapter"],
         )
+
     chapter_rows = [r for r in rows if r.get("chapter") == chapter]
     if not chapter_rows:
         return CheckResult(
-            id="A4", name="Data Agent 子步完整性", layer="A",
+            id="A4", name="Data Agent ????????", layer="A",
             status="warn", severity="medium",
-            evidence=f"data_agent_timing 无 chapter={chapter} 记录",
-            remediation=["确认 Data Agent 调用时传入了 chapter 参数"],
+            evidence=f"no data-agent timing rows found for chapter {chapter}",
+            remediation=["ensure Step 5 writes chapter-scoped timing rows"],
         )
-    # 读取 tool_name 推断子步
-    tools = set(r.get("tool_name", "") for r in chapter_rows)
+
+    tools = {str(r.get("tool_name") or "") for r in chapter_rows if r.get("tool_name")}
+    timing_rows = [r for r in chapter_rows if isinstance(r.get("timing_ms"), dict)]
+    if timing_rows:
+        latest = timing_rows[-1]
+        timing_ms = latest.get("timing_ms") or {}
+        present_steps = sorted({str(key).split("_", 1)[0] for key in timing_ms.keys() if "_" in str(key)})
+        if "J" not in present_steps:
+            present_steps.append("J")
+        missing_core = [step for step in list("ABCDEFGH") if step not in present_steps]
+        missing_optional = [step for step in ("I", "K") if step not in present_steps]
+        measured = {
+            "chapter_rows": len(chapter_rows),
+            "tools_count": len(tools),
+            "steps_found": present_steps,
+            "total_ms": timing_ms.get("TOTAL"),
+        }
+        if missing_core:
+            return CheckResult(
+                id="A4", name="Data Agent ????????", layer="A",
+                status="fail", severity="high",
+                evidence=f"timing_ms is missing core data-agent steps: {missing_core}",
+                measured=measured,
+                remediation=["rerun Step 5 and ensure the aggregate timing row includes steps A-H"],
+            )
+        if missing_optional:
+            return CheckResult(
+                id="A4", name="Data Agent ????????", layer="A",
+                status="warn", severity="medium",
+                evidence=f"timing_ms is missing optional data-agent steps: {missing_optional}",
+                measured=measured,
+                remediation=["record why optional steps were skipped or persist them in timing_ms"],
+            )
+        return CheckResult(
+            id="A4", name="Data Agent ????????", layer="A",
+            status="pass", severity="medium",
+            evidence=f"timing_ms captured data-agent steps: {present_steps}",
+            measured=measured,
+        )
+
     step_markers_found = []
     for step_letter in DATA_AGENT_STEPS_REQUIRED:
         marker = f"step_{step_letter.lower()}"
@@ -418,19 +692,18 @@ def check_A4_data_agent_steps(project_root: Path, chapter: int) -> CheckResult:
             step_markers_found.append(step_letter)
     if len(step_markers_found) < 5:
         return CheckResult(
-            id="A4", name="Data Agent 子步完整性", layer="A",
+            id="A4", name="Data Agent ????????", layer="A",
             status="warn", severity="medium",
-            evidence=f"仅识别出 {len(step_markers_found)} 个 Data Agent 子步 (tools={len(tools)})",
+            evidence=f"only found {len(step_markers_found)} legacy data-agent step markers",
             measured={"chapter_rows": len(chapter_rows), "tools_count": len(tools), "steps_found": step_markers_found},
-            remediation=["确认 data-agent 记录完整 Step A-J 的 tool_name"],
+            remediation=["prefer aggregate timing_ms rows, or persist a fuller legacy step trace"],
         )
     return CheckResult(
-        id="A4", name="Data Agent 子步完整性", layer="A",
+        id="A4", name="Data Agent ????????", layer="A",
         status="pass", severity="medium",
-        evidence=f"Data Agent 记录 {len(chapter_rows)} 条，识别 {len(step_markers_found)} 个子步",
+        evidence=f"legacy data-agent markers detected for steps: {step_markers_found}",
         measured={"chapter_rows": len(chapter_rows), "steps_found": step_markers_found},
     )
-
 
 def check_A5_fallback_detection(project_root: Path, chapter: int) -> CheckResult:
     """A5: Subagent fallback 检测 — call_trace.jsonl 不得出现 general-purpose fallback."""
@@ -475,56 +748,125 @@ def check_A5_fallback_detection(project_root: Path, chapter: int) -> CheckResult
 
 
 def check_A6_workflow_timing(project_root: Path, chapter: int) -> CheckResult:
-    """A6: Workflow 步骤时序 — workflow_state.json 中 Step 1~5 时间戳必须单调递增."""
+    """A6: workflow state must preserve an ordered, violation-free chapter trace."""
     ws_path = project_root / ".webnovel" / "workflow_state.json"
     data = _read_json(ws_path)
     if data is None:
         return CheckResult(
-            id="A6", name="Workflow 步骤时序", layer="A",
-            status="skipped", severity="medium",
-            evidence="workflow_state.json 不存在",
+            id="A6", name="Workflow ??????", layer="A",
+            status="warn", severity="high",
+            evidence="workflow_state.json is missing",
         )
-    task = data.get("current_task") or {}
-    # 也允许从 history 中找已完成任务
-    completed = task.get("completed_steps") or []
-    if not completed:
-        # 尝试从 history
+
+    snapshot = None
+    current_task = data.get("current_task") or {}
+    if (current_task.get("args") or {}).get("chapter_num") == chapter:
+        snapshot = current_task
+    else:
         history = data.get("history") or []
-        for h in reversed(history):
-            if h.get("args", {}).get("chapter_num") == chapter:
-                completed = h.get("completed_steps") or []
+        for item in reversed(history):
+            args = item.get("args") or {}
+            if item.get("chapter") == chapter or args.get("chapter_num") == chapter:
+                snapshot = item
                 break
-    if not completed:
+    if snapshot is None:
         return CheckResult(
-            id="A6", name="Workflow 步骤时序", layer="A",
-            status="skipped", severity="medium",
-            evidence=f"无章节 {chapter} 的 completed_steps",
+            id="A6", name="Workflow ??????", layer="A",
+            status="warn", severity="high",
+            evidence=f"no workflow snapshot found for chapter {chapter}",
         )
-    # 提取时间戳
+
+    command = str(snapshot.get("command") or "webnovel-write")
+    sequence = WORKFLOW_REQUIRED_STEPS.get(command, [])
+    completed = snapshot.get("completed_steps") or []
+    failed_steps = snapshot.get("failed_steps") or []
+    current_step = snapshot.get("current_step") or {}
+    task_status = snapshot.get("status")
+    completed_ids = [str(item.get("id")) for item in completed]
+
+    if task_status == "failed" or failed_steps:
+        reason = snapshot.get("failure_reason") or (failed_steps[-1].get("failure_reason") if failed_steps else "unknown")
+        return CheckResult(
+            id="A6", name="Workflow ??????", layer="A",
+            status="fail", severity="critical",
+            evidence=f"workflow already failed: {reason}",
+            measured={"failed_steps": [step.get("id") for step in failed_steps]},
+            remediation=["repair the failed step and resume from the last stable state"],
+        )
+    if not completed and not current_step:
+        return CheckResult(
+            id="A6", name="Workflow ??????", layer="A",
+            status="fail", severity="critical",
+            evidence=f"chapter {chapter} has no completed_steps and no active step",
+            remediation=["restart workflow tracking so Step 0.5 persists workflow state"],
+        )
+
+    if task_status == "completed":
+        expected_steps = sequence or completed_ids
+    elif current_step and current_step.get("id") in sequence:
+        expected_steps = sequence[:sequence.index(current_step["id"])]
+    else:
+        expected_steps = completed_ids
+
+    missing_steps = [step for step in expected_steps if step not in completed_ids]
+    if missing_steps:
+        return CheckResult(
+            id="A6", name="Workflow ??????", layer="A",
+            status="fail", severity="critical",
+            evidence=f"workflow is missing required steps: {missing_steps}",
+            measured={"completed_steps": completed_ids, "missing_steps": missing_steps},
+            remediation=["rerun the missing workflow steps in the planned order"],
+        )
+
     timestamps = []
-    for s in completed:
-        ts = s.get("completed_at") or s.get("started_at")
+    for step in completed:
+        ts = step.get("completed_at") or step.get("started_at")
         if ts:
-            timestamps.append((s.get("id", "?"), ts))
+            timestamps.append((str(step.get("id", "?")), ts))
     violations = []
     for i in range(1, len(timestamps)):
         if timestamps[i][1] < timestamps[i - 1][1]:
-            violations.append(f"{timestamps[i - 1][0]}→{timestamps[i][0]}")
+            violations.append(f"{timestamps[i - 1][0]}->{timestamps[i][0]}")
+
+    trace_rows = _read_jsonl(project_root / ".webnovel" / "observability" / "call_trace.jsonl")
+    trace_start = _parse_iso(snapshot.get("started_at"))
+    trace_end = _parse_iso(snapshot.get("completed_at") or snapshot.get("failed_at"))
+    invalid_events = []
+    for row in trace_rows:
+        payload = row.get("payload") or {}
+        trace_chapter = payload.get("chapter") or payload.get("chapter_num") or (payload.get("args") or {}).get("chapter_num")
+        if trace_chapter != chapter:
+            continue
+        row_ts = _parse_iso(row.get("timestamp"))
+        if trace_start and row_ts and row_ts < trace_start:
+            continue
+        if trace_end and row_ts and row_ts > trace_end:
+            continue
+        if row.get("event") in {"step_order_violation", "step_complete_rejected", "task_complete_rejected", "step_start_rejected"}:
+            invalid_events.append(str(row.get("event")))
+
+    if invalid_events:
+        return CheckResult(
+            id="A6", name="Workflow ??????", layer="A",
+            status="fail", severity="critical",
+            evidence=f"workflow trace contains invalid events: {sorted(set(invalid_events))}",
+            measured={"invalid_events": invalid_events, "completed_steps": completed_ids},
+            remediation=["clear the failed task and rerun the chapter workflow in order"],
+        )
     if violations:
         return CheckResult(
-            id="A6", name="Workflow 步骤时序", layer="A",
+            id="A6", name="Workflow ??????", layer="A",
             status="fail", severity="high",
-            evidence=f"时间戳非单调: {violations}",
+            evidence=f"workflow timestamps are not monotonic: {violations}",
             measured={"violations": violations},
-            remediation=["重跑可疑步骤; 检查系统时钟"],
+            remediation=["rerun the suspicious steps and check system time"],
         )
     return CheckResult(
-        id="A6", name="Workflow 步骤时序", layer="A",
+        id="A6", name="Workflow ??????", layer="A",
         status="pass", severity="medium",
-        evidence=f"{len(timestamps)} 个 step 时间戳单调",
-        measured={"steps_count": len(timestamps)},
+        evidence=f"workflow recorded {len(timestamps)} ordered steps with no invalid trace events",
+        measured={"steps_count": len(timestamps), "completed_steps": completed_ids},
     )
-
 
 def check_A7_encoding_clean(project_root: Path, chapter: int) -> CheckResult:
     """A7: 编码清洁 — 正文不得出现 U+FFFD 替换字符或长串乱码."""
@@ -788,13 +1130,12 @@ def check_B3_foreshadowing_three_way(project_root: Path, chapter: int) -> CheckR
 
 
 def check_B4_review_metrics_consistency(project_root: Path, chapter: int) -> CheckResult:
-    """B4: review_metrics 数值一致 — index.db review_metrics 表与审查报告分数一致."""
     db_path = project_root / ".webnovel" / "index.db"
     if not db_path.exists():
         return CheckResult(
-            id="B4", name="review_metrics 一致性", layer="B",
+            id="B4", name="review_metrics ??????", layer="B",
             status="skipped", severity="medium",
-            evidence="index.db 不存在",
+            evidence="index.db is missing",
         )
     try:
         conn = sqlite3.connect(str(db_path))
@@ -807,51 +1148,56 @@ def check_B4_review_metrics_consistency(project_root: Path, chapter: int) -> Che
         conn.close()
     except Exception as exc:
         return CheckResult(
-            id="B4", name="review_metrics 一致性", layer="B",
+            id="B4", name="review_metrics ??????", layer="B",
             status="skipped", severity="medium",
-            evidence=f"review_metrics 查询失败: {exc}",
+            evidence=f"review_metrics query failed: {exc}",
         )
     if not row:
         return CheckResult(
-            id="B4", name="review_metrics 一致性", layer="B",
+            id="B4", name="review_metrics ??????", layer="B",
             status="warn", severity="medium",
-            evidence=f"review_metrics 表无章节 {chapter} 数据",
-            remediation=["重跑 index save-review-metrics"],
+            evidence=f"review_metrics has no row for chapter {chapter}",
+            remediation=["rerun index save-review-metrics"],
         )
+
     db_score = row[0]
-    # 从审查报告中提取分数
     review = _find_review_report(project_root, chapter)
-    text = _read_text(review) if review else ""
-    text = text or ""
+    text = (_read_text(review) if review else "") or ""
     report_score = None
-    m = re.search(r"(?:总分|综合评分|overall[_ ]?score)[^\n]{0,20}[:：]\s*(\d+(?:\.\d+)?)", text, re.IGNORECASE)
-    if m:
+    for pattern in (
+        r"(?im)^\s*(?:overall[_ ]?score|score total)\s*[:：]?\s*[*_~`]*\s*(\d+(?:\.\d+)?)",
+        r"(?:overall[_ ]?score|score total)[^\n]{0,30}[:：]?\s*[*_~`]*\s*(\d+(?:\.\d+)?)",
+        r"(?im)^(?!\s*[-*])\s*[^0-9\n]{0,20}[:：]?\s*[*_~`]*\s*(\d+(?:\.\d+)?)\s*$",
+    ):
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
         try:
-            report_score = float(m.group(1))
+            report_score = float(match.group(1))
+            break
         except Exception:
             report_score = None
     if report_score is None:
         return CheckResult(
-            id="B4", name="review_metrics 一致性", layer="B",
+            id="B4", name="review_metrics ??????", layer="B",
             status="warn", severity="medium",
-            evidence=f"审查报告未找到总分字段 (db_score={db_score})",
+            evidence=f"review report score was not found (db_score={db_score})",
         )
     diff = abs(float(db_score) - report_score)
     if diff > 3:
         return CheckResult(
-            id="B4", name="review_metrics 一致性", layer="B",
+            id="B4", name="review_metrics ??????", layer="B",
             status="fail", severity="high",
-            evidence=f"db_score={db_score} vs report_score={report_score}, 差异 {diff}",
+            evidence=f"db_score={db_score} vs report_score={report_score}, diff={diff}",
             measured={"db_score": db_score, "report_score": report_score, "diff": diff},
-            remediation=["重跑 index save-review-metrics"],
+            remediation=["rerun index save-review-metrics"],
         )
     return CheckResult(
-        id="B4", name="review_metrics 一致性", layer="B",
+        id="B4", name="review_metrics ??????", layer="B",
         status="pass", severity="medium",
-        evidence=f"db_score={db_score} ≈ report_score={report_score}",
+        evidence=f"db_score={db_score} ~= report_score={report_score}",
         measured={"db_score": db_score, "report_score": report_score, "diff": diff},
     )
-
 
 def check_B7_outline_to_chapter(project_root: Path, chapter: int) -> CheckResult:
     """B7: 章纲兑现 — 大纲/节拍表中本章的关键点应在正文中找到."""
@@ -1126,6 +1472,9 @@ def _run_layer_b(project_root: Path, chapter: int) -> LayerResult:
     ]
     return LayerResult(layer="B", score=_score_from_checks(checks), checks=checks)
 
+
+# Updated 2026-04: stronger evidence-based overrides for critical checks.
+# These later definitions intentionally override earlier text-only versions.
 
 def _run_layer_g(project_root: Path, chapter: int) -> LayerResult:
     checks = [

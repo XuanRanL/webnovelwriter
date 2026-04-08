@@ -134,6 +134,18 @@ def _resolve_project_root_from_global_registry(
     if not isinstance(workspaces, dict) or not workspaces:
         return None
 
+    git_root = _find_git_root(base)
+
+    def _workspace_key_allowed(ws_key: str) -> bool:
+        if git_root is None:
+            return True
+        try:
+            ws_path = normalize_windows_path(ws_key).expanduser().resolve()
+        except Exception:
+            return True
+        # Do not let an outer workspace registry entry leak into a nearer nested git repo.
+        return ws_path == git_root or git_root in ws_path.parents
+
     hints: list[Path] = []
     env_ws = os.environ.get(ENV_CLAUDE_PROJECT_DIR)
     if env_ws:
@@ -146,6 +158,8 @@ def _resolve_project_root_from_global_registry(
     for hint in hints:
         key = _normcase_path_key(hint)
         entry = workspaces.get(key)
+        if isinstance(key, str) and not _workspace_key_allowed(key):
+            entry = None
         if isinstance(entry, dict):
             raw = entry.get("current_project_root")
             if isinstance(raw, str) and raw.strip():
@@ -162,6 +176,8 @@ def _resolve_project_root_from_global_registry(
         best_len = -1
         for ws_key in workspaces.keys():
             if not isinstance(ws_key, str) or not ws_key:
+                continue
+            if not _workspace_key_allowed(ws_key):
                 continue
             ws_key_norm = os.path.normcase(ws_key)
             if hint_key == ws_key_norm or hint_key.startswith(ws_key_norm.rstrip("\\") + "\\"):
@@ -379,6 +395,10 @@ def resolve_project_root(explicit_project_root: Optional[str] = None, *, cwd: Op
     base = (cwd or Path.cwd()).resolve()
     git_root = _find_git_root(base)
 
+    for candidate in _candidate_roots(base, stop_at=git_root):
+        if _is_project_root(candidate):
+            return candidate.resolve()
+
     # Workspace pointer fallback (for layouts where `.claude` is in workspace root and projects are subdirs).
     pointer_root = _resolve_project_root_from_pointer(base, stop_at=git_root)
     if pointer_root is not None:
@@ -395,10 +415,6 @@ def resolve_project_root(explicit_project_root: Optional[str] = None, *, cwd: Op
     )
     if reg_root is not None:
         return reg_root
-
-    for candidate in _candidate_roots(base, stop_at=git_root):
-        if _is_project_root(candidate):
-            return candidate.resolve()
 
     raise FileNotFoundError(
         "Unable to locate webnovel project root. Expected `.webnovel/state.json` under the current directory, "

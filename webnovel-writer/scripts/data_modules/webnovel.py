@@ -89,7 +89,7 @@ def _run_data_module(module: str, argv: list[str]) -> int:
 
 def _run_script(script_name: str, argv: list[str]) -> int:
     """
-    Run a script under `.claude/scripts/` via a subprocess.
+    Run a script under the current `scripts/` directory via a subprocess.
 
     用途：兼容没有 main() 的脚本（例如 workflow_manager.py）。
     """

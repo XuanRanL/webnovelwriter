@@ -2,6 +2,7 @@
 # Python >= 3.10 required
 
 # 核心依赖
+requests>=2.28.0        # HTTP 客户端（external_review.py 外部模型审查）
 aiohttp>=3.8.0          # 异步 HTTP 客户端（API 调用）
 filelock>=3.0.0         # 文件锁（状态文件并发控制）
 pydantic>=2.0.0         # Schema 校验

@@ -57,8 +57,8 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion
 ### narrative
 
 - `references/narrative-voice-guide.md`
-  - 用途：Step 1.5 叙事声音设计指导，含各题材推荐配置与风格样本。
-  - 触发：Step 1.5 必读。
+  - 用途：初始化阶段建立叙事声音基准，含各题材推荐配置与风格样本。
+  - 触发：Step 1 规划风格锚点时必读，后续由 `/write` 的 Step 1 内置消费。
 
 ### worldbuilding
 
@@ -202,9 +202,9 @@ Search 失败处理：立即停止，检查 Tavily API key 配置（环境变量
 - 优先让用户自由描述，再二次结构化确认。
 - 若用户卡住，给 2-4 个候选方向供选。
 
-### Step 1.5：叙事声音基准
+### Step 1：叙事声音基准
 
-> **目的**：建立全书统一的风格锚点，供后续 style-adapter 和 prose-quality-checker 作为跨章一致性基准。缺失此基准会导致跨章风格漂移、Anti-AI检测不过。
+> **目的**：在初始化阶段建立全书统一的风格锚点，供后续 `/write` 的 Step 1、style-adapter 和 prose-quality-checker 作为跨章一致性基准。缺失此基准会导致跨章风格漂移、Anti-AI 检测不过。
 
 收集项（必收）：
 - 叙述视角（第一人称/第三人称有限/第三人称全知）

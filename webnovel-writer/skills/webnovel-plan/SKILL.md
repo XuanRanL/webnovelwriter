@@ -222,21 +222,12 @@ Extract for current genre:
 - 钩子类型偏好
 
 ### Strand Weave 规划策略
-Based on genre profile, distribute chapters:
-- **Quest Strand** (主线推进): 55-65% 章节
-  - 目标明确、进展可见、有阶段性成果
-  - 例：突破境界、完成任务、获得宝物
-- **Fire Strand** (情感/关系): 20-30% 章节
-  - 人物关系变化、情感冲突、团队动态
-  - 例：与女主互动、师徒矛盾、兄弟背叛
-- **Constellation Strand** (世界/谜团): 10-20% 章节
-  - 世界观揭示、伏笔埋设、谜团推进
-  - 例：发现古老秘密、揭示反派阴谋、世界真相
 
-**Weaving pattern** (recommended):
-- 每 3-5 章切换主导 Strand
-- 高潮章节可多 Strand 交织
-- 卷末 3-5 章集中 Quest Strand
+**Strand 比例与 Weaving 规则详见规范源：**
+```bash
+cat "${SKILL_ROOT}/../../references/shared/strand-weave-pattern.md"
+```
+基于 genre profile 分配三线（Quest/Fire/Constellation）章节比例，遵循规范源中的切换阈值和交织模式。
 
 For 电竞/直播文/克苏鲁, apply dedicated volume pacing template:
 ```bash

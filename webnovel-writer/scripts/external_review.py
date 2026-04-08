@@ -943,7 +943,7 @@ def _compute_cross_validation(all_issues):
       - unverified: issue flagged by only 1 dimension
       - dismissed: 0 (requires cross-model data, handled at aggregation layer)
 
-    When used at the aggregation layer (across 8 models), the caller should
+    When used at the aggregation layer (across all configured models), the caller should
     re-run cross-validation across all model results for true consensus.
     """
     if not all_issues:

@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 import sys
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -167,6 +168,25 @@ def step_allowed_before(command: str, step_id: str, completed_steps: list[Dict[s
     return all(prev in completed_ids for prev in required_before)
 
 
+def missing_required_before(command: str, step_id: str, completed_steps: list[Dict[str, Any]]) -> list[str]:
+    """Return the missing prerequisite steps before `step_id`."""
+    sequence = get_pending_steps(command)
+    if step_id not in sequence:
+        return []
+
+    expected_index = sequence.index(step_id)
+    completed_ids = {str(item.get("id")) for item in completed_steps}
+    required_before = sequence[:expected_index]
+
+    parallel_groups = PARALLEL_GROUPS.get(command, [])
+    for group in parallel_groups:
+        if step_id in group:
+            required_before = [s for s in required_before if s not in group]
+            break
+
+    return [step for step in required_before if step not in completed_ids]
+
+
 def _new_task(command: str, args: Dict[str, Any]) -> Dict[str, Any]:
     started_at = now_iso()
     return {
@@ -216,6 +236,30 @@ def _mark_task_failed(state: Dict[str, Any], reason: str):
     task["failure_reason"] = reason
 
 
+def _task_history_entry(state: Dict[str, Any], task: Dict[str, Any], *, status: Optional[str] = None) -> Dict[str, Any]:
+    history = state.setdefault("history", [])
+    return {
+        "task_id": f"task_{len(history) + 1:03d}",
+        "command": task.get("command"),
+        "chapter": (task.get("args") or {}).get("chapter_num"),
+        "status": status or task.get("status"),
+        "started_at": task.get("started_at"),
+        "completed_at": task.get("completed_at"),
+        "failed_at": task.get("failed_at"),
+        "failure_reason": task.get("failure_reason"),
+        "args": deepcopy(task.get("args") or {}),
+        "artifacts": deepcopy(task.get("artifacts") or {}),
+        "completed_steps": deepcopy(task.get("completed_steps") or []),
+        "failed_steps": deepcopy(task.get("failed_steps") or []),
+    }
+
+
+def _pending_required_steps(task: Dict[str, Any]) -> list[str]:
+    sequence = get_pending_steps(str(task.get("command") or ""))
+    completed_ids = {str(item.get("id")) for item in task.get("completed_steps", [])}
+    return [step_id for step_id in sequence if step_id not in completed_ids]
+
+
 def start_task(command, args):
     """Start a new task."""
     state = load_state()
@@ -252,19 +296,68 @@ def start_step(step_id, step_name, progress_note=None):
         return
 
     command = str(task.get("command") or "")
+    current_step = task.get("current_step")
+    if current_step and current_step.get("id") == step_id and current_step.get("status") in {
+        STEP_STATUS_STARTED,
+        STEP_STATUS_RUNNING,
+    }:
+        current_step["running_at"] = now_iso()
+        if progress_note:
+            current_step["progress_note"] = progress_note
+        task["last_heartbeat"] = now_iso()
+        save_state(state)
+        safe_append_call_trace(
+            "step_reentered",
+            {
+                "step_id": step_id,
+                "command": command,
+                "chapter": task.get("args", {}).get("chapter_num"),
+                "progress_note": progress_note,
+            },
+        )
+        print(f"↻ {step_id} 继续运行")
+        return
+
+    if current_step and current_step.get("status") in {STEP_STATUS_STARTED, STEP_STATUS_RUNNING}:
+        safe_append_call_trace(
+            "step_start_rejected",
+            {
+                "step_id": step_id,
+                "command": command,
+                "chapter": task.get("args", {}).get("chapter_num"),
+                "reason": "active_step_running",
+                "active_step_id": current_step.get("id"),
+            },
+        )
+        print(f"⚠️ 当前仍在执行 {current_step.get('id')}，拒绝启动 {step_id}")
+        return
+
     if not step_allowed_before(command, step_id, task.get("completed_steps", [])):
+        missing_steps = missing_required_before(command, step_id, task.get("completed_steps", []))
         safe_append_call_trace(
             "step_order_violation",
             {
                 "step_id": step_id,
                 "command": command,
+                "chapter": task.get("args", {}).get("chapter_num"),
                 "completed_steps": [row.get("id") for row in task.get("completed_steps", [])],
+                "missing_steps": missing_steps,
             },
         )
+        safe_append_call_trace(
+            "step_start_rejected",
+            {
+                "step_id": step_id,
+                "command": command,
+                "chapter": task.get("args", {}).get("chapter_num"),
+                "reason": "step_order_violation",
+                "missing_steps": missing_steps,
+            },
+        )
+        print(f"⚠️ Step 顺序不合法，缺少前置步骤: {missing_steps}")
+        return
 
     owner = expected_step_owner(command, step_id)
-
-    _finalize_current_step_as_failed(task, reason="step_replaced_before_completion")
 
     started_at = now_iso()
     task["current_step"] = {
@@ -343,6 +436,59 @@ def complete_step(step_id, artifacts_json=None):
     print(f"✅ {step_id} 完成")
 
 
+def fail_step(step_id, reason="step_marked_failed", artifacts_json=None):
+    """Mark the active step as failed and fail the task for diagnostics/recovery."""
+    state = load_state()
+    task = state.get("current_task")
+    if not task or not task.get("current_step"):
+        print("⚠️ 无活动 Step")
+        return
+
+    current_step = task["current_step"]
+    if current_step.get("id") != step_id:
+        print(f"⚠️ 当前 Step 为 {current_step.get('id')}，与 {step_id} 不一致，拒绝标记失败")
+        safe_append_call_trace(
+            "step_fail_rejected",
+            {
+                "requested_step_id": step_id,
+                "active_step_id": current_step.get("id"),
+                "command": task.get("command"),
+            },
+        )
+        return
+
+    if artifacts_json:
+        try:
+            artifacts = json.loads(artifacts_json)
+            current_step["artifacts"] = artifacts
+            task["artifacts"].update(artifacts)
+        except json.JSONDecodeError as exc:
+            print(f"⚠️ Artifacts JSON 解析失败: {exc}")
+
+    current_step = dict(current_step)
+    current_step["status"] = STEP_STATUS_FAILED
+    current_step["failed_at"] = now_iso()
+    current_step["failure_reason"] = reason
+    task.setdefault("failed_steps", []).append(current_step)
+    task["current_step"] = None
+    task["status"] = TASK_STATUS_FAILED
+    task["failed_at"] = current_step["failed_at"]
+    task["failure_reason"] = reason
+    task["last_heartbeat"] = now_iso()
+
+    save_state(state)
+    safe_append_call_trace(
+        "step_failed",
+        {
+            "step_id": step_id,
+            "command": task.get("command"),
+            "chapter": task.get("args", {}).get("chapter_num"),
+            "reason": reason,
+        },
+    )
+    print(f"⚠️ {step_id} 已标记失败: {reason}")
+
+
 def complete_task(final_artifacts_json=None):
     """Mark task completed."""
     state = load_state()
@@ -351,7 +497,51 @@ def complete_task(final_artifacts_json=None):
         print("⚠️ 无活动任务")
         return
 
-    _finalize_current_step_as_failed(task, reason="task_completed_with_active_step")
+    if task.get("status") == TASK_STATUS_FAILED:
+        safe_append_call_trace(
+            "task_complete_rejected",
+            {
+                "command": task.get("command"),
+                "chapter": task.get("args", {}).get("chapter_num"),
+                "reason": "task_already_failed",
+            },
+        )
+        print("⚠️ 任务已处于失败状态，拒绝标记完成")
+        return
+
+    current_step = task.get("current_step")
+    if current_step and current_step.get("status") in {STEP_STATUS_STARTED, STEP_STATUS_RUNNING}:
+        reason = "task_complete_rejected_active_step"
+        _mark_task_failed(state, reason=reason)
+        save_state(state)
+        safe_append_call_trace(
+            "task_complete_rejected",
+            {
+                "command": task.get("command"),
+                "chapter": task.get("args", {}).get("chapter_num"),
+                "reason": "active_step_running",
+                "active_step_id": current_step.get("id"),
+            },
+        )
+        print(f"⚠️ 当前仍有活动 Step {current_step.get('id')}，任务已标记失败")
+        return
+
+    missing_steps = _pending_required_steps(task)
+    if missing_steps:
+        reason = "task_complete_rejected_missing_steps:" + ",".join(missing_steps)
+        _mark_task_failed(state, reason=reason)
+        save_state(state)
+        safe_append_call_trace(
+            "task_complete_rejected",
+            {
+                "command": task.get("command"),
+                "chapter": task.get("args", {}).get("chapter_num"),
+                "reason": "missing_required_steps",
+                "missing_steps": missing_steps,
+            },
+        )
+        print(f"⚠️ 任务缺少必需步骤，已标记失败: {missing_steps}")
+        return
 
     task["status"] = TASK_STATUS_COMPLETED
     task["completed_at"] = now_iso()
@@ -364,17 +554,8 @@ def complete_task(final_artifacts_json=None):
             print(f"⚠️ Final artifacts JSON 解析失败: {exc}")
 
     state["last_stable_state"] = extract_stable_state(task)
-    if "history" not in state:
-        state["history"] = []
-    state["history"].append(
-        {
-            "task_id": f"task_{len(state['history']) + 1:03d}",
-            "command": task["command"],
-            "chapter": task["args"].get("chapter_num"),
-            "status": TASK_STATUS_COMPLETED,
-            "completed_at": task["completed_at"],
-        }
-    )
+    state.setdefault("history", [])
+    state["history"].append(_task_history_entry(state, task, status=TASK_STATUS_COMPLETED))
 
     state["current_task"] = None
     save_state(state)
@@ -383,8 +564,8 @@ def complete_task(final_artifacts_json=None):
         {
             "command": task.get("command"),
             "chapter": task.get("args", {}).get("chapter_num"),
-            "completed_steps": len(task.get("completed_steps", [])),
-            "failed_steps": len(task.get("failed_steps", [])),
+            "completed_steps": [step.get("id") for step in task.get("completed_steps", [])],
+            "failed_steps": [step.get("id") for step in task.get("failed_steps", [])],
         },
     )
     print("🎀 任务完成")
@@ -785,6 +966,11 @@ def load_state():
     if state.get("current_task"):
         state["current_task"].setdefault("failed_steps", [])
         state["current_task"].setdefault("retry_count", 0)
+    for item in state.get("history", []):
+        item.setdefault("args", {})
+        item.setdefault("artifacts", {})
+        item.setdefault("completed_steps", [])
+        item.setdefault("failed_steps", [])
     return state
 
 
@@ -846,7 +1032,14 @@ if __name__ == "__main__":
     p_complete_step = subparsers.add_parser("complete-step", help="完成 Step")
     add_project_root_arg(p_complete_step)
     p_complete_step.add_argument("--step-id", required=True, help="Step ID")
+    p_complete_step.add_argument(
+        "--status",
+        choices=["completed", "failed"],
+        default="completed",
+        help="完成状态（默认 completed）",
+    )
     p_complete_step.add_argument("--artifacts", help="Artifacts JSON")
+    p_complete_step.add_argument("--reason", default="step_marked_failed", help="失败原因（仅 failed 时使用）")
 
     p_complete_task = subparsers.add_parser("complete-task", help="完成任务")
     add_project_root_arg(p_complete_task)
@@ -879,7 +1072,10 @@ if __name__ == "__main__":
     elif args.action == "start-step":
         start_step(args.step_id, args.step_name, args.note)
     elif args.action == "complete-step":
-        complete_step(args.step_id, args.artifacts)
+        if args.status == "failed":
+            fail_step(args.step_id, args.reason, args.artifacts)
+        else:
+            complete_step(args.step_id, args.artifacts)
     elif args.action == "complete-task":
         complete_task(args.artifacts)
     elif args.action == "fail-task":

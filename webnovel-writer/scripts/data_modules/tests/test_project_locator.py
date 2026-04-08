@@ -4,11 +4,20 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _ensure_scripts_on_path() -> None:
     scripts_dir = Path(__file__).resolve().parents[2]
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_claude_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEBNOVEL_CLAUDE_HOME", str(tmp_path / "claude-home"))
+    monkeypatch.delenv("CLAUDE_HOME", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
 
 
 def test_resolve_project_root_prefers_cwd_project(tmp_path):
@@ -103,4 +112,28 @@ def test_resolve_project_root_ignores_stale_pointer_and_fallbacks(tmp_path):
 
     resolved = resolve_project_root(cwd=workspace)
     assert resolved == default_project.resolve()
+
+
+def test_resolve_project_root_ignores_outer_registry_for_nested_git_repo(tmp_path):
+    _ensure_scripts_on_path()
+
+    from project_locator import resolve_project_root, update_global_registry_current_project
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    project_root = workspace / "NovelA"
+    (project_root / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (project_root / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
+    update_global_registry_current_project(workspace_root=workspace, project_root=project_root)
+
+    nested_repo = workspace / "scratch" / "repo"
+    (nested_repo / ".git").mkdir(parents=True, exist_ok=True)
+    nested_dir = nested_repo / "sub" / "dir"
+    nested_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        resolve_project_root(cwd=nested_dir)
+        assert False, "Expected FileNotFoundError for nested git repo without its own project"
+    except FileNotFoundError:
+        pass
 

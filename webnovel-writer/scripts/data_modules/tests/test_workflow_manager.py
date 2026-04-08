@@ -17,6 +17,23 @@ def _load_module():
     return workflow_manager
 
 
+def _run_full_write_workflow(module, chapter_num):
+    module.start_task("webnovel-write", {"chapter_num": chapter_num})
+    for step_id, step_name in [
+        ("Step 1", "Context"),
+        ("Step 2A", "Draft"),
+        ("Step 2B", "Style"),
+        ("Step 3", "Review"),
+        ("Step 3.5", "External Review"),
+        ("Step 4", "Polish"),
+        ("Step 5", "Data"),
+        ("Step 6", "Audit"),
+        ("Step 7", "Backup"),
+    ]:
+        module.start_step(step_id, step_name)
+        module.complete_step(step_id)
+
+
 def test_workflow_lifecycle_and_trace(tmp_path, monkeypatch):
     module = _load_module()
     monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
@@ -24,15 +41,15 @@ def test_workflow_lifecycle_and_trace(tmp_path, monkeypatch):
     webnovel_dir = tmp_path / ".webnovel"
     webnovel_dir.mkdir(parents=True, exist_ok=True)
 
-    module.start_task("webnovel-write", {"chapter_num": 7})
-    module.start_step("Step 1", "Context")
-    module.complete_step("Step 1", json.dumps({"state_json_modified": True}, ensure_ascii=False))
+    _run_full_write_workflow(module, 7)
     module.complete_task(json.dumps({"review_completed": True}, ensure_ascii=False))
 
     state = module.load_state()
     assert state["current_task"] is None
     assert state["history"][-1]["status"] == module.TASK_STATUS_COMPLETED
     assert state["last_stable_state"]["artifacts"]["review_completed"] is True
+    assert state["history"][-1]["args"]["chapter_num"] == 7
+    assert state["history"][-1]["completed_steps"][-1]["id"] == "Step 7"
 
     trace_path = module.get_call_trace_path()
     assert trace_path.exists()
@@ -69,6 +86,8 @@ def test_complete_step_rejects_mismatch_step_id(tmp_path, monkeypatch):
     webnovel_dir.mkdir(parents=True, exist_ok=True)
 
     module.start_task("webnovel-write", {"chapter_num": 9})
+    module.start_step("Step 1", "Context")
+    module.complete_step("Step 1")
     module.start_step("Step 2A", "Draft")
     module.complete_step("Step 2B")
 
@@ -92,14 +111,39 @@ def test_workflow_step_owner_and_order_violation_trace(tmp_path, monkeypatch):
     module.start_task("webnovel-write", {"chapter_num": 12})
     module.start_step("Step 3", "Review")
 
+    state = module.load_state()
+    assert state["current_task"]["current_step"] is None
+
     trace_path = module.get_call_trace_path()
     lines = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     events = [row.get("event") for row in lines]
     assert "step_order_violation" in events
+    assert "step_start_rejected" in events
 
-    step_started = [row for row in lines if row.get("event") == "step_started"]
-    assert step_started
-    assert step_started[-1].get("payload", {}).get("expected_owner") == "review-agents"
+    rejected = [row for row in lines if row.get("event") == "step_start_rejected"]
+    assert rejected
+    assert rejected[-1].get("payload", {}).get("reason") == "step_order_violation"
+
+
+def test_start_step_rejects_when_another_step_running(tmp_path, monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+
+    module.start_task("webnovel-write", {"chapter_num": 13})
+    module.start_step("Step 1", "Context")
+    module.start_step("Step 2A", "Draft")
+
+    state = module.load_state()
+    assert state["current_task"]["current_step"]["id"] == "Step 1"
+
+    trace_path = module.get_call_trace_path()
+    lines = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rejected = [row for row in lines if row.get("event") == "step_start_rejected"]
+    assert rejected
+    assert rejected[-1]["payload"]["reason"] == "active_step_running"
 
 
 def test_safe_append_call_trace_logs_failure(monkeypatch, caplog):
@@ -144,6 +188,73 @@ def test_workflow_reentry_does_not_duplicate_history(tmp_path, monkeypatch):
 
     task = state.get("current_task") or {}
     assert int(task.get("retry_count", 0)) >= 2
+
+
+def test_complete_task_rejects_missing_required_steps(tmp_path, monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+
+    module.start_task("webnovel-write", {"chapter_num": 21})
+    module.start_step("Step 1", "Context")
+    module.complete_step("Step 1")
+    module.complete_task()
+
+    state = module.load_state()
+    task = state["current_task"]
+    assert task is not None
+    assert task["status"] == module.TASK_STATUS_FAILED
+    assert "Step 7" in task["failure_reason"]
+
+    trace_path = module.get_call_trace_path()
+    lines = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rejected = [row for row in lines if row.get("event") == "task_complete_rejected"]
+    assert rejected
+    assert rejected[-1]["payload"]["reason"] == "missing_required_steps"
+
+
+def test_complete_task_rejects_active_step(tmp_path, monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+
+    module.start_task("webnovel-write", {"chapter_num": 22})
+    module.start_step("Step 1", "Context")
+    module.complete_task()
+
+    state = module.load_state()
+    task = state["current_task"]
+    assert task is not None
+    assert task["status"] == module.TASK_STATUS_FAILED
+    assert task["current_step"] is None
+
+
+def test_fail_step_marks_task_failed_and_records_trace(tmp_path, monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+
+    webnovel_dir = tmp_path / ".webnovel"
+    webnovel_dir.mkdir(parents=True, exist_ok=True)
+
+    module.start_task("webnovel-write", {"chapter_num": 23})
+    module.start_step("Step 1", "Context")
+    module.fail_step("Step 1", "context_failed", json.dumps({"warnings_count": 3}, ensure_ascii=False))
+
+    state = module.load_state()
+    task = state["current_task"]
+    assert task is not None
+    assert task["status"] == module.TASK_STATUS_FAILED
+    assert task["current_step"] is None
+    assert task["failed_steps"][-1]["id"] == "Step 1"
+    assert task["failed_steps"][-1]["artifacts"]["warnings_count"] == 3
+
+    trace_path = module.get_call_trace_path()
+    lines = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert any(row.get("event") == "step_failed" for row in lines)
 
 
 def test_cleanup_artifacts_requires_confirm(tmp_path, monkeypatch):

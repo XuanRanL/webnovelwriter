@@ -10,11 +10,11 @@ alwaysApply: true
 
 - workspace_root: I:\AI-extention\webnovel-writer
 - current_project_root: I:\AI-extention\webnovel-writer\<example-project-C>
-- 插件目录: C:\Users\Windows\.claude\plugins\cache\webnovel-writer-marketplace\webnovel-writer\5.5.4
+- 插件目录: C:\Users\Windows\.claude\plugins\cache\webnovel-writer-marketplace\webnovel-writer\5.6.0
 
 ## 禁止跳步赶进度（硬约束）
 
-每章必须独立走完完整流程（Step 0→1→2A→2B→3→3.5→4→5→6），不得跳过任何Step。
+每章必须独立走完完整流程（Step 0→1→2A→2B→3→3.5→4→5→6→7），不得跳过任何Step。
 
 **历史违规记录：**
 1. Ch7-10：跳过审查子代理
@@ -32,10 +32,10 @@ alwaysApply: true
 
 ## 每章必须跑完整审查流程
 
-- 每章必须并行启动审查子代理（8个维度全部执行）
+- 每章必须并行启动审查子代理（10个维度全部执行）
 - 等待所有审查器返回后汇总评分
 - 有可修复的 medium 以上问题就修改正文，然后重跑对应审查器做第二轮
-- 确认没有明显提升空间后才进入 Data Agent 和 Git
+- 确认没有明显提升空间后才进入 Data Agent → 审计闸门 → Git
 - 任何情况都不能为了速度牺牲质量
 
 ## 审查评分目标
@@ -47,36 +47,42 @@ alwaysApply: true
 
 ## Step 3.5 外部模型审查配置
 
-**八模型双层架构：**
+**九模型双层架构：**
 
-核心层（必须成功，有 fallback 保障）：
-- kimi-k2.5（严审/逻辑设定）
-- glm-5（编辑/读者感受）
-- qwen3.5-plus（网文/爽点结构）
+核心层（必须成功，四级 fallback 保障）：
+- kimi-k2.5（严审/逻辑设定）— nextapi → healwrap → codexcc → 硅基流动
+- glm-5（编辑/读者感受）— nextapi → healwrap → codexcc → 硅基流动
+- qwen3.5-plus（网文/爽点结构）— healwrap → codexcc → 硅基流动
 
-补充层（仅 healwrap，失败不阻塞）：
-- qwen-3.5（宽松锚点）
-- deepseek-v3.2（技术考据）
-- minimax-m2.5（快速参考）
-- doubao-seed-2.0（结构审查/逻辑一致性）
-- glm-4.7（文学质感/角色声音）
+补充层（失败不阻塞，累计3维度失败早停）：
+- qwen-3.5（宽松锚点）— healwrap → 硅基流动
+- deepseek-v3.2（技术考据）— healwrap → 硅基流动
+- minimax-m2.5（快速参考）— nextapi → healwrap → codexcc → 硅基流动
+- doubao-seed-2.0（结构审查/逻辑一致性）— healwrap only
+- glm-4.7（文学质感/角色声音）— healwrap → 硅基流动
+- minimax-m2.7（对话/情感深度）— nextapi → healwrap → codexcc
 
-**供应商（三级 fallback）：**
-- 主力：healwrap (`https://llm-api.healwrap.cn/v1`)，key: HEALWRAP_API_KEY，RPM=10
+**供应商（四级 fallback）：**
+- 主力：nextapi (`https://api.nextapi.store/v1`)，key: NEXTAPI_API_KEY，RPM=999（无限制）
+- 次级：healwrap (`https://llm-api.healwrap.cn/v1`)，key: HEALWRAP_API_KEY，RPM=8
 - 备用1：codexcc (`https://api.codexcc.top/v1`)，key: CODEXCC_API_KEY
 - 备用2/兜底：硅基流动 (`https://api.siliconflow.cn/v1`)，key: EMBED_API_KEY
 
 硅基流动模型名映射：kimi→`Pro/moonshotai/Kimi-K2.5`，glm→`Pro/zai-org/GLM-5`，qwen-plus→`Qwen/Qwen3.5-397B-A17B`
 
 **重试与 fallback 规则：**
-- 核心3模型统一链：healwrap(重试2次) → codexcc(错误1次切) → 硅基流动(兜底)
-- 补充5模型：healwrap(重试2次) → 连续3维度失败自动早停 → 标记 error 继续
+- 核心层 kimi/glm：nextapi(2次) → healwrap(2次) → codexcc(不重试) → 硅基流动(兜底)
+- 核心层 qwen-plus：healwrap(2次) → codexcc(不重试) → 硅基流动(兜底)
+- 补充层 minimax/minimax-m2.7：nextapi(2次) → healwrap(2次) → codexcc(不重试)
+- 补充层 qwen/deepseek/glm4：healwrap(2次) → 硅基流动(兜底)
+- 补充层 doubao：healwrap(2次) only
+- 幽灵零分（score=0+空摘要）：provider 层自动检测并切下一供应商重试
 - 每次 API 调用后**必须验证路由**：检查 response.model 字段是否匹配请求模型，路由错误视为该供应商不可用，不重试直接切下一个
 - 429限流：等6秒后重试；超时：计入重试次数
 - 连接错误(10054)：关闭旧连接重建 Session，等8秒后重试
 
 **调用方式（硬规则）：**
-- **必须**使用 `--model-key all` 一次性跑全部8个模型，禁止手动逐个调用（防遗漏）
+- **必须**使用 `--model-key all` 一次性跑全部9个模型，禁止手动逐个调用（防遗漏）
 - 脚本仅支持：`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--max-concurrent`, `--rpm-override`
 - 不要传 `--chapter-file`、`--outline-file` 等不存在的参数
 ```bash
@@ -84,8 +90,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter {chapter_num} \
   --mode dimensions \
-  --model-key all \
-  --max-concurrent 1
+  --model-key all
 ```
 
 **外审 Prompt 要求（升级版）：**
@@ -96,11 +101,11 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 model_actual（响应中实际模型）、routing_verified（bool）、provider_chain（尝试链路记录）、api_meta（elapsed_ms/tokens/attempts/final_provider）
 
 **审查报告格式：**
-- 8模型评分矩阵（可用模型 × 10维度）
+- 9模型评分矩阵（可用模型 × 10维度）
 - 共识问题（>=3模型指出的同类问题 = 真问题）
 - Step 4 修复清单（从共识问题筛选 severity >= medium）
 
-**执行要求：** 每章 Step 3（10个内部checker）+ Step 3.5（8个外部模型×10维度）通过后，核心3模型全部返回后才进入 Step 4
+**执行要求：** 每章 Step 3（10个内部checker）+ Step 3.5（9个外部模型×10维度）通过后，核心3模型全部返回后才进入 Step 4
 
 ## 开篇黄金协议（Ch1-3 专用，叠加在标准流程之上）
 
@@ -152,7 +157,8 @@ model_actual（响应中实际模型）、routing_verified（bool）、provider_
 3. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
 4. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
 5. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{NNNN}.md`
-6. 审查报告 .md 文件已生成（含内部 + 外部评分矩阵）
+6. Step 6 审计闸门通过（approve 或 approve_with_warnings），block 则不得 Git
+7. 审查报告 .md 文件已生成（含内部 + 外部评分矩阵）
 
 ## 插件自定义改动
 
