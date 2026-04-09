@@ -94,6 +94,9 @@ class StateManager:
     # v5.0 引入的实体类型
     ENTITY_TYPES = ["角色", "地点", "物品", "势力", "招式"]
 
+    # 章节状态机（单调递进）
+    CHAPTER_STATUS_ORDER = ["chapter_drafted", "chapter_reviewed", "chapter_committed"]
+
     def __init__(self, config=None, enable_sqlite_sync: bool = True):
         """
         初始化状态管理器
@@ -615,6 +618,39 @@ class StateManager:
             self._pending_progress_chapter = max(self._pending_progress_chapter, chapter)
         if words > 0:
             self._pending_progress_words_delta += int(words)
+
+    # ==================== 章节状态管理 ====================
+
+    def get_chapter_status(self, chapter: int) -> Optional[str]:
+        """查询章节状态。"""
+        statuses = self._state.get("progress", {}).get("chapter_status", {})
+        return statuses.get(str(chapter))
+
+    def set_chapter_status(self, chapter: int, status: str) -> None:
+        """设置章节状态（单调递进，不可回退）。"""
+        if status not in self.CHAPTER_STATUS_ORDER:
+            raise ValueError(f"无效状态: {status}，有效值: {self.CHAPTER_STATUS_ORDER}")
+
+        current = self.get_chapter_status(chapter)
+        if current is not None:
+            current_idx = self.CHAPTER_STATUS_ORDER.index(current)
+            new_idx = self.CHAPTER_STATUS_ORDER.index(status)
+            if new_idx < current_idx:
+                raise ValueError(
+                    f"章节 {chapter} 状态不可回退: {current} -> {status}"
+                )
+            if new_idx == current_idx:
+                return  # 幂等
+
+        progress = self._state.setdefault("progress", {})
+        chapter_status = progress.setdefault("chapter_status", {})
+        chapter_status[str(chapter)] = status
+        self._save_state()
+
+    def _save_state(self) -> None:
+        """直接持久化当前内存状态到 state.json（轻量写入，不走 pending 合并）。"""
+        self.config.ensure_dirs()
+        atomic_write_json(self.config.state_file, self._state, backup=False)
 
     # ==================== 实体管理 (v5.1 SQLite-first) ====================
 
@@ -1260,6 +1296,16 @@ def main():
     process_parser.add_argument("--chapter", type=int, required=True, help="章节号")
     process_parser.add_argument("--data", required=True, help="JSON 格式的处理结果")
 
+    # 查询章节状态
+    status_get_parser = subparsers.add_parser("get-chapter-status")
+    status_get_parser.add_argument("--chapter", type=int, required=True)
+
+    # 设置章节状态
+    status_set_parser = subparsers.add_parser("set-chapter-status")
+    status_set_parser.add_argument("--chapter", type=int, required=True)
+    status_set_parser.add_argument("--status", required=True,
+        choices=["chapter_drafted", "chapter_reviewed", "chapter_committed"])
+
     argv = normalize_global_project_root(sys.argv[1:])
     args = parser.parse_args(argv)
     command_started_at = time.perf_counter()
@@ -1359,6 +1405,18 @@ def main():
         warnings = manager.process_chapter_result(args.chapter, validated.model_dump(by_alias=True))
         manager.save_state()
         emit_success({"chapter": args.chapter, "warnings": warnings}, message="chapter_processed", chapter=args.chapter)
+
+    elif args.command == "get-chapter-status":
+        manager._load_state()
+        status = manager.get_chapter_status(args.chapter)
+        emit_success({"chapter": args.chapter, "status": status},
+                     message="chapter_status")
+
+    elif args.command == "set-chapter-status":
+        manager._load_state()
+        manager.set_chapter_status(args.chapter, args.status)
+        emit_success({"chapter": args.chapter, "status": args.status},
+                     message="chapter_status_set")
 
     else:
         emit_error("UNKNOWN_COMMAND", "未指定有效命令", suggestion="请查看 --help")
