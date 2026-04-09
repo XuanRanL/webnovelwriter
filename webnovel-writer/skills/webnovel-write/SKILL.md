@@ -202,7 +202,7 @@ cat "${SKILL_ROOT}/references/style-adapter.md"
 
 执行顺序：
 1. 消费 Step 3 的问题清单，逐条修复非 blocking issue（blocking 已在 Step 3 阻断）
-2. 风格适配：消除模板腔、说明腔、机械腔（原 Step 2B 的职责）
+2. 风格适配：消除模板腔、说明腔、机械腔
 3. 统一段落、节奏、排版
 4. Anti-AI 全文终检
 
