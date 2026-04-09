@@ -91,7 +91,7 @@ def _run_script(script_name: str, argv: list[str]) -> int:
     """
     Run a script under `.claude/scripts/` via a subprocess.
 
-    用途：兼容没有 main() 的脚本（例如 workflow_manager.py）。
+    用途：兼容没有 main() 的脚本。
     """
     script_path = _scripts_dir() / script_name
     if not script_path.is_file():

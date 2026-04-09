@@ -220,6 +220,7 @@ KNOWN_DELETED_FILES = [
     "checker-output-schema.md",
     "workflow_manager.py",
     "webnovel-resume",
+    "golden_three_checker.py",
 ]
 
 _KNOWN_CLI_EXCEPTIONS = {}

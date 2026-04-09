@@ -154,6 +154,12 @@ cat "${SKILL_ROOT}/references/anti-ai-guide.md"
 - 中文思维写作，不使用英文框架骨架驱动正文。
 - 若存在结构化节点：正文必须围绕 `CBN -> CPNs -> CEN` 展开，不得跳过必须节点。
 
+状态推进：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" state set-chapter-status --chapter {chapter_num} --status chapter_drafted
+```
+
 ### Step 3：执行审查
 
 使用 Task 调用 `reviewer` agent，输入：
@@ -218,6 +224,12 @@ Anti-AI 硬要求：
 模式规则：
 - `--minimal`：仅排版，跳过问题修复、风格适配和 Anti-AI 终检
 
+状态推进（`--minimal` 除外）：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" state set-chapter-status --chapter {chapter_num} --status chapter_reviewed
+```
+
 ### Step 5：调用 Data Agent 回写结构化数据
 
 使用 Task 调用 `data-agent`，参数：
@@ -253,6 +265,12 @@ Data Agent 默认子步骤全部执行：
 - 读取最新 timing 记录
 - `TOTAL > 30000ms` 时，输出最慢 2-3 个环节与原因说明
 
+状态推进：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" state set-chapter-status --chapter {chapter_num} --status chapter_committed
+```
+
 ### Step 6：Git 备份
 
 ```bash
@@ -269,17 +287,17 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 未满足以下条件前，不得结束流程：
 
 1. 章节正文文件存在且非空。
-2. Step 3 已产出审查结果并落库（`--minimal` 除外）。
-3. 若存在 `blocking=true` 的 issue，流程必须停在 Step 3。
-4. Step 4 的 `anti_ai_force_check=pass`（`--minimal` 除外）。
-5. Step 5 已更新 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`。
-6. Step 5 已写入 `.webnovel/memory_scratchpad.json`。
+2. `chapter_status` 已推进到 `chapter_drafted`（Step 2 完成）。
+3. Step 3 已产出审查结果并落库（`--minimal` 除外）。
+4. 若存在 `blocking=true` 的 issue，流程必须停在 Step 3。
+5. Step 4 的 `anti_ai_force_check=pass`（`--minimal` 除外），`chapter_status` 已推进到 `chapter_reviewed`。
+6. Step 5 已更新 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`、`memory_scratchpad.json`，`chapter_status` 已推进到 `chapter_committed`。
 7. 若启用观测，已读取最新 timing 记录并给出结论。
 
 ## 验证与交付
 
 ```bash
-test -f "${PROJECT_ROOT}/.webnovel/state.json"
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" state get-chapter-status --chapter {chapter_num}
 test -f "${PROJECT_ROOT}/正文/第${chapter_padded}章.md"
 test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md"
 test -f "${PROJECT_ROOT}/.webnovel/memory_scratchpad.json"
@@ -288,6 +306,7 @@ tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || t
 ```
 
 成功标准：
+- `chapter_status` 为 `chapter_committed`（`--minimal` 模式下至少为 `chapter_drafted`）。
 - 章节文件、摘要文件、状态文件、长期记忆暂存文件齐全且内容可读。
 - 审查结果可追溯。
 - 润色后未破坏大纲、设定与长期记忆约束。

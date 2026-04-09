@@ -340,12 +340,11 @@
 
 ### 5.1 与现有 checker 的对接
 
-| 现有 Checker | 使用的 Taxonomy |
-|--------------|----------------|
-| `reader-pull-checker` | 钩子类型、钩子强度、Hard-002 |
-| `high-point-checker` | 爽点模式、微兑现 |
-| `pacing-checker` | Hard-003 (节奏灾难) |
-| `continuity-checker` | Hard-001 (可读性底线) |
+| 审查维度 (reviewer) | 使用的 Taxonomy |
+|---------------------|----------------|
+| continuity | Hard-001 (可读性底线)、Hard-002 (结构完整) |
+| pacing | Hard-003 (节奏灾难)、爽点模式、微兑现 |
+| ai_flavor | 钩子类型、钩子强度 |
 
 ### 5.2 输出字段映射
 
