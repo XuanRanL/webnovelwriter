@@ -310,12 +310,16 @@ class ContextManager:
         low_score_ranges: List[Dict[str, Any]] = []
         for row in review_trend.get("recent_ranges", []):
             score = row.get("overall_score")
-            if isinstance(score, (int, float)) and float(score) < 75:
+            notes = row.get("notes", "")
+            has_blocking = "blocking=" in notes and "blocking=0" not in notes
+            is_low_score = isinstance(score, (int, float)) and float(score) < 75
+            if is_low_score or has_blocking:
                 low_score_ranges.append(
                     {
                         "start_chapter": row.get("start_chapter"),
                         "end_chapter": row.get("end_chapter"),
-                        "overall_score": score,
+                        "overall_score": score if isinstance(score, (int, float)) else 0.0,
+                        "notes": notes,
                     }
                 )
 
