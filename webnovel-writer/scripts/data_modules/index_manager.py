@@ -39,7 +39,7 @@ from pathlib import Path
 
 from runtime_compat import enable_windows_utf8_stdio
 from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -205,43 +205,6 @@ class ReviewMetrics:
     notes: str = ""
 
 
-@dataclass
-class ReviewAggregateResult:
-    """Step 3 审查聚合结果"""
-
-    chapter: int
-    start_chapter: int
-    end_chapter: int
-    selected_checkers: List[str] = field(default_factory=list)
-    checkers: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    issues: List[Dict[str, Any]] = field(default_factory=list)
-    overall_score: float = 0.0
-    severity_counts: Dict[str, int] = field(default_factory=dict)
-    critical_issues: List[str] = field(default_factory=list)
-    dimension_scores: Dict[str, float] = field(default_factory=dict)
-    overall: Dict[str, Any] = field(default_factory=dict)
-    notes: str = ""
-    timeline_gate: Dict[str, Any] = field(default_factory=dict)
-
-    def to_review_metrics(self, report_file: str = "") -> ReviewMetrics:
-        notes = str(self.notes or "")
-        timeline_gate = self.timeline_gate or {}
-        if timeline_gate:
-            gate_note = (
-                f"timeline_gate:block={bool(timeline_gate.get('blocked', False))};"
-                f"count={int(timeline_gate.get('blocking_issue_count', 0) or 0)}"
-            )
-            notes = f"{notes} | {gate_note}" if notes else gate_note
-        return ReviewMetrics(
-            start_chapter=self.start_chapter,
-            end_chapter=self.end_chapter,
-            overall_score=self.overall_score,
-            dimension_scores=self.dimension_scores,
-            severity_counts=self.severity_counts,
-            critical_issues=self.critical_issues,
-            report_file=report_file,
-            notes=notes,
-        )
 
 
 @dataclass
@@ -675,136 +638,6 @@ class IndexManager(IndexChapterMixin, IndexEntityMixin, IndexDebtMixin, IndexRea
 
 
 
-def _normalize_checker_issue(issue: object) -> dict:
-    if not isinstance(issue, dict):
-        return {}
-    return {
-        "id": str(issue.get("id") or ""),
-        "type": str(issue.get("type") or ""),
-        "severity": str(issue.get("severity") or "medium"),
-        "location": str(issue.get("location") or ""),
-        "description": str(issue.get("description") or ""),
-        "suggestion": str(issue.get("suggestion") or ""),
-        "can_override": bool(issue.get("can_override", False)),
-    }
-
-
-def _build_timeline_gate(issues: List[Dict[str, Any]]) -> Dict[str, Any]:
-    blocking = []
-    for issue in issues:
-        if not isinstance(issue, dict):
-            continue
-        issue_type = str(issue.get("type") or "").strip()
-        severity = str(issue.get("severity") or "").strip().lower()
-        if issue_type == "TIMELINE_ISSUE" and severity in {"critical", "high"}:
-            blocking.append(issue)
-    return {
-        "blocked": bool(blocking),
-        "blocking_issue_count": len(blocking),
-        "blocking_issues": blocking,
-    }
-
-
-def _aggregate_checker_results(chapter: int, raw_data: object) -> dict:
-    if isinstance(raw_data, dict) and isinstance(raw_data.get("checkers"), dict):
-        checker_map = dict(raw_data.get("checkers") or {})
-    elif isinstance(raw_data, dict):
-        checker_map = dict(raw_data)
-    elif isinstance(raw_data, list):
-        checker_map = {}
-        for item in raw_data:
-            if isinstance(item, dict):
-                agent = str(item.get("agent") or "").strip()
-                if agent:
-                    checker_map[agent] = item
-    else:
-        checker_map = {}
-
-    selected_checkers: list[str] = []
-    issues: list[dict] = []
-    severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-    critical_issues: list[str] = []
-    dimension_scores: dict[str, float] = {}
-    score_values: list[float] = []
-    aggregated_checkers: dict[str, dict] = {}
-
-    dimension_alias = {
-        "consistency-checker": "consistency",
-        "continuity-checker": "continuity",
-        "ooc-checker": "ooc",
-        "reader-pull-checker": "reader_pull",
-        "high-point-checker": "high_point",
-        "pacing-checker": "pacing",
-    }
-
-    for agent, payload in checker_map.items():
-        if not isinstance(payload, dict):
-            continue
-        selected_checkers.append(agent)
-        score = payload.get("overall_score")
-        try:
-            numeric_score = float(score)
-            score_values.append(numeric_score)
-            dimension_scores[dimension_alias.get(agent, agent)] = round(numeric_score, 2)
-        except (TypeError, ValueError):
-            numeric_score = None
-
-        raw_issues = payload.get("issues") or []
-        normalized_issues = []
-        critical_count = 0
-        high_count = 0
-        for raw_issue in raw_issues:
-            issue = _normalize_checker_issue(raw_issue)
-            if not issue:
-                continue
-            normalized_issues.append(issue)
-            issues.append({**issue, "agent": agent, "chapter": chapter})
-            severity = issue.get("severity") or "medium"
-            if severity not in severity_counts:
-                severity = "medium"
-            severity_counts[severity] += 1
-            if severity == "critical":
-                critical_count += 1
-                if issue.get("description"):
-                    critical_issues.append(issue["description"])
-            elif severity == "high":
-                high_count += 1
-
-        aggregated_checkers[agent] = {
-            "score": numeric_score,
-            "pass": bool(payload.get("pass", False)),
-            "critical": critical_count,
-            "high": high_count,
-        }
-
-    overall_score = round(sum(score_values) / len(score_values), 2) if score_values else 0.0
-    timeline_gate = _build_timeline_gate(issues)
-    overall = {
-        "score": overall_score,
-        "pass": severity_counts["critical"] == 0 and not timeline_gate.get("blocked", False),
-        "critical_total": severity_counts["critical"],
-        "high_total": severity_counts["high"],
-        "can_proceed": severity_counts["critical"] == 0 and not timeline_gate.get("blocked", False),
-    }
-
-    notes = "selected_checkers=" + ",".join(selected_checkers)
-    result = ReviewAggregateResult(
-        chapter=chapter,
-        start_chapter=chapter,
-        end_chapter=chapter,
-        selected_checkers=selected_checkers,
-        checkers=aggregated_checkers,
-        issues=issues,
-        overall_score=overall_score,
-        severity_counts=severity_counts,
-        critical_issues=critical_issues,
-        dimension_scores=dimension_scores,
-        overall=overall,
-        notes=notes,
-        timeline_gate=timeline_gate,
-    )
-    return asdict(result)
-
 
 def main():
     import argparse
@@ -959,15 +792,6 @@ def main():
 
     review_trend_parser = subparsers.add_parser("get-review-trend-stats")
     review_trend_parser.add_argument("--last-n", type=int, default=5)
-
-    review_aggregate_parser = subparsers.add_parser("aggregate-review-results")
-    review_aggregate_parser.add_argument("--chapter", type=int, required=True)
-    review_aggregate_parser.add_argument("--data", required=True, help="JSON 格式的 checker 原始结果列表或映射")
-
-    review_materialize_parser = subparsers.add_parser("materialize-review-metrics")
-    review_materialize_parser.add_argument("--chapter", type=int, required=True)
-    review_materialize_parser.add_argument("--data", required=True, help="JSON 格式的 checker 原始结果列表或映射")
-    review_materialize_parser.add_argument("--report-file", default="", help="审查报告路径")
 
     checklist_score_save_parser = subparsers.add_parser("save-writing-checklist-score")
     checklist_score_save_parser.add_argument("--data", required=True, help="JSON 格式的写作清单评分数据")
@@ -1314,17 +1138,6 @@ def main():
     elif args.command == "list-invalid":
         rows = manager.list_invalid_facts(args.status)
         emit_success(rows, message="invalid_list")
-
-    elif args.command == "aggregate-review-results":
-        data = load_json_arg(args.data)
-        aggregated = _aggregate_checker_results(args.chapter, data)
-        emit_success(aggregated, message="review_results_aggregated", chapter=args.chapter)
-
-    elif args.command == "materialize-review-metrics":
-        data = load_json_arg(args.data)
-        aggregated = ReviewAggregateResult(**_aggregate_checker_results(args.chapter, data))
-        metrics = aggregated.to_review_metrics(report_file=args.report_file)
-        emit_success(asdict(metrics), message="review_metrics_materialized", chapter=args.chapter)
 
     elif args.command == "save-review-metrics":
         data = load_json_arg(args.data)

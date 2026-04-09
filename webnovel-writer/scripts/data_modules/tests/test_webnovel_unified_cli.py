@@ -170,54 +170,6 @@ def test_quality_trend_report_writes_to_book_root_when_input_is_workspace_root(t
 
 
 
-def test_index_aggregate_review_results_forwards_with_resolved_project_root(monkeypatch, tmp_path):
-    module = _load_webnovel_module()
-
-    book_root = (tmp_path / "book").resolve()
-    called = {}
-
-    def _fake_resolve(explicit_project_root=None):
-        return book_root
-
-    def _fake_run_data_module(module_name, argv):
-        called["module_name"] = module_name
-        called["argv"] = list(argv)
-        return 0
-
-    monkeypatch.setattr(module, "_resolve_root", _fake_resolve)
-    monkeypatch.setattr(module, "_run_data_module", _fake_run_data_module)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "webnovel",
-            "--project-root",
-            str(tmp_path),
-            "index",
-            "aggregate-review-results",
-            "--chapter",
-            "12",
-            "--data",
-            '{"continuity-checker":{"overall_score":80}}',
-        ],
-    )
-
-    with pytest.raises(SystemExit) as exc:
-        module.main()
-
-    assert int(exc.value.code or 0) == 0
-    assert called["module_name"] == "index_manager"
-    assert called["argv"] == [
-        "--project-root",
-        str(book_root),
-        "aggregate-review-results",
-        "--chapter",
-        "12",
-        "--data",
-        '{"continuity-checker":{"overall_score":80}}',
-    ]
-
-
 
 
 
