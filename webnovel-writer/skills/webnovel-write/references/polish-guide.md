@@ -22,16 +22,15 @@ purpose: 章节生成后的润色阶段加载，基于审查报告修复问题 +
 ```json
 {
   "chapter_file": "正文/第0123章-章节标题.md",
-  "overall_score": 82,
   "issues": [
-    {"agent": "consistency-checker", "type": "POWER_CONFLICT", "severity": "critical", "location": "第6段", "suggestion": "境界越权"},
-    {"agent": "ooc-checker", "type": "OOC", "severity": "high", "location": "第9段", "suggestion": "角色口吻偏离"}
+    {"severity": "critical", "category": "setting", "location": "第6段", "description": "境界越权", "evidence": "当前斗者使用斗师技能", "fix_hint": "改为当前境界可用技能", "blocking": true},
+    {"severity": "high", "category": "character", "location": "第9段", "description": "角色口吻偏离", "evidence": "萧炎使用书面语", "fix_hint": "改为符合角色性格的口语"}
   ],
-  "pass": true
+  "summary": "1个阻断，1个高优"
 }
 ```
 
-`chapter_file` 必须是当前章节的实际文件路径；若项目尚未迁移到带标题文件名，也可传 `正文/第0123章.md`。
+`chapter_file` 必须是当前章节的实际文件路径；若项目尚未迁移到带标题文件名，也可传 `正文/第0123章.md`。issue 格式参见 `review-schema.md`。
 
 ## 2. 执行顺序（必须按序）
 
