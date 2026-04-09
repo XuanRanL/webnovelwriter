@@ -16,6 +16,30 @@ VALID_CATEGORIES = {
     "continuity", "setting", "character", "timeline",
     "ai_flavor", "logic", "pacing", "other",
 }
+SCORE_CATEGORIES = (
+    "continuity",
+    "setting",
+    "character",
+    "timeline",
+    "ai_flavor",
+    "logic",
+    "pacing",
+    "other",
+)
+SEVERITY_PENALTIES = {
+    "critical": 35.0,
+    "high": 15.0,
+    "medium": 6.0,
+    "low": 2.0,
+}
+
+
+def _clamp_score(value: float) -> float:
+    return round(max(0.0, min(100.0, value)), 2)
+
+
+def _issue_penalty(issue: "ReviewIssue") -> float:
+    return float(SEVERITY_PENALTIES.get(issue.severity, SEVERITY_PENALTIES["medium"]))
 
 
 @dataclass
@@ -58,6 +82,49 @@ class ReviewResult:
     def has_blocking(self) -> bool:
         return self.blocking_count > 0
 
+    @property
+    def severity_counts(self) -> Dict[str, int]:
+        counts = {level: 0 for level in ("critical", "high", "medium", "low")}
+        for issue in self.issues:
+            severity = issue.severity if issue.severity in counts else "medium"
+            counts[severity] += 1
+        return counts
+
+    @property
+    def categories(self) -> List[str]:
+        return sorted(set(i.category for i in self.issues))
+
+    @property
+    def critical_issues(self) -> List[str]:
+        return [
+            issue.description
+            for issue in self.issues
+            if issue.severity == "critical" and issue.description
+        ]
+
+    def _build_dimension_scores(self) -> Dict[str, float]:
+        scores = {category: 100.0 for category in SCORE_CATEGORIES}
+        for issue in self.issues:
+            category = issue.category if issue.category in scores else "other"
+            scores[category] = _clamp_score(scores[category] - _issue_penalty(issue))
+        return scores
+
+    def _build_notes(self, categories: List[str]) -> str:
+        parts: List[str] = []
+        if self.summary:
+            parts.append(self.summary)
+        parts.append(f"issues={self.issues_count}")
+        parts.append(f"blocking={self.blocking_count}")
+        if categories:
+            parts.append("categories=" + ",".join(categories))
+        return " | ".join(parts)
+
+    def _calculate_overall_score(self) -> float:
+        score = 100.0
+        for issue in self.issues:
+            score -= _issue_penalty(issue)
+        return _clamp_score(score)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "chapter": self.chapter,
@@ -68,10 +135,19 @@ class ReviewResult:
             "summary": self.summary,
         }
 
-    def to_metrics_dict(self) -> Dict[str, Any]:
-        categories = sorted(set(i.category for i in self.issues))
+    def to_metrics_dict(self, report_file: str = "") -> Dict[str, Any]:
+        categories = self.categories
+        severity_counts = self.severity_counts
         return {
             "chapter": self.chapter,
+            "start_chapter": self.chapter,
+            "end_chapter": self.chapter,
+            "overall_score": self._calculate_overall_score(),
+            "dimension_scores": self._build_dimension_scores(),
+            "severity_counts": severity_counts,
+            "critical_issues": self.critical_issues,
+            "report_file": report_file,
+            "notes": self._build_notes(categories),
             "issues_count": self.issues_count,
             "blocking_count": self.blocking_count,
             "categories": categories,

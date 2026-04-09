@@ -102,7 +102,16 @@ def test_review_result_to_metrics_dict():
     )
     metrics = result.to_metrics_dict()
     assert metrics["chapter"] == 10
+    assert metrics["start_chapter"] == 10
+    assert metrics["end_chapter"] == 10
     assert metrics["issues_count"] == 2
     assert metrics["blocking_count"] == 1
     assert "continuity" in metrics["categories"]
     assert "ai_flavor" in metrics["categories"]
+    assert metrics["severity_counts"]["critical"] == 1
+    assert metrics["severity_counts"]["high"] == 1
+    assert metrics["critical_issues"] == ["d1"]
+    assert metrics["report_file"] == ""
+    assert metrics["overall_score"] < 100
+    assert metrics["dimension_scores"]["continuity"] < 100
+    assert metrics["dimension_scores"]["ai_flavor"] < 100

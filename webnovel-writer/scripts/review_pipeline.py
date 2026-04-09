@@ -36,9 +36,7 @@ def build_review_artifacts(
 ) -> Dict[str, Any]:
     raw = json.loads(review_results_path.read_text(encoding="utf-8"))
     result = parse_review_output(chapter=chapter, raw=raw)
-    metrics = result.to_metrics_dict()
-    if report_file:
-        metrics["report_file"] = report_file
+    metrics = result.to_metrics_dict(report_file=report_file)
 
     return {
         "chapter": chapter,

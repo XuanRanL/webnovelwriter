@@ -268,8 +268,14 @@ def test_review_pipeline_builds_artifacts(tmp_path):
     assert payload["review_result"]["blocking_count"] == 1
     assert payload["review_result"]["has_blocking"] is True
     assert payload["review_result"]["issues_count"] == 2
+    assert payload["metrics"]["start_chapter"] == 20
+    assert payload["metrics"]["end_chapter"] == 20
     assert payload["metrics"]["issues_count"] == 2
     assert payload["metrics"]["blocking_count"] == 1
+    assert payload["metrics"]["severity_counts"]["critical"] == 1
+    assert payload["metrics"]["severity_counts"]["medium"] == 1
+    assert payload["metrics"]["critical_issues"] == ["时间线回跳"]
+    assert payload["metrics"]["overall_score"] < 100
     assert payload["metrics"]["report_file"] == "审查报告/第20章.md"
 
 

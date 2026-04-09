@@ -28,6 +28,28 @@
 
 ## 指标沉淀
 
-每次审查写入 `index.db.review_metrics`：
-- `chapter, issues_count, blocking_count, categories, timestamp`
-- 用于趋势观测，不用于 gate 决策
+统一审查 agent 的原始输出保存为 `review_results.json`，保留完整 `issues` 列表。
+
+随后由 `review-pipeline` 生成 `review_metrics.json`，用于写入 `index.db.review_metrics`。
+该文件同时包含两类信息：
+
+- **落库兼容字段**：
+  - `start_chapter`
+  - `end_chapter`
+  - `overall_score`（由问题严重度推导的兼容分）
+  - `dimension_scores`
+  - `severity_counts`
+  - `critical_issues`
+  - `report_file`
+  - `notes`
+- **v6 观测字段**：
+  - `chapter`
+  - `issues_count`
+  - `blocking_count`
+  - `categories`
+  - `timestamp`
+
+说明：
+- `review_metrics` 表仍沿用现有 dashboard / trend / context 消费的兼容 schema。
+- `overall_score` 仅用于趋势观测与排序，不替代原始 issue 清单。
+- gate 决策仍以 `blocking=true` 和 issue 明细为准。

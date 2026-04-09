@@ -222,10 +222,7 @@ KNOWN_DELETED_FILES = [
     "webnovel-resume",
 ]
 
-# webnovel-review SKILL.md 仍有大量 workflow 命令，需单独重构（Phase 1 遗漏）
-_KNOWN_CLI_EXCEPTIONS = {
-    "webnovel-review": {"workflow"},
-}
+_KNOWN_CLI_EXCEPTIONS = {}
 
 
 @pytest.mark.parametrize("prompt_file", ALL_PROMPT_FILES, ids=lambda f: f.name)
@@ -234,3 +231,25 @@ def test_no_stale_references(prompt_file: Path):
     text = _read_text(prompt_file)
     found = [name for name in KNOWN_DELETED_FILES if name in text]
     assert not found, f"{prompt_file.name}: 残留引用已删除文件 {found}"
+
+
+def test_webnovel_review_skill_uses_unified_reviewer_pipeline():
+    """webnovel-review 必须与 webnovel-write 使用同一套 reviewer + review-pipeline 链路。"""
+    skill_text = _read_text(SKILLS_DIR / "webnovel-review" / "SKILL.md")
+
+    assert "`reviewer`" in skill_text
+    assert "review-pipeline" in skill_text
+    assert ".webnovel/tmp/review_results.json" in skill_text
+    assert ".webnovel/tmp/review_metrics.json" in skill_text
+
+    for legacy_agent in (
+        "consistency-checker",
+        "continuity-checker",
+        "ooc-checker",
+        "reader-pull-checker",
+        "high-point-checker",
+        "pacing-checker",
+    ):
+        assert legacy_agent not in skill_text
+
+    assert " workflow " not in skill_text
