@@ -7,6 +7,29 @@
 
 ---
 
+## [2026-04-08] CLI审计三项误报根治 — chapter_audit.py A1/B1/B9
+
+**问题根因**：CLI审计（chapter_audit.py）三处检查逻辑未适配当前数据格式，导致每次写章都block：
+1. A1：context snapshot格式从v1升级到v2（payload.sections），但CLI仍查旧格式8个独立键 → present永远=0 → critical fail
+2. B1：key_beats提取用正则匹配所有YAML列表项（包括state_changes等），分母膨胀10倍 → 匹配率虚低 → high fail
+3. B9：chapter_meta键名查'7'或7，但实际存储用zero-padded '0007' → 永远查不到 → high fail
+
+**修复文件**：
+| 文件 | 修改位置 | 修改内容 |
+|------|---------|---------|
+| `scripts/data_modules/chapter_audit.py` | 行198-212 (A1) | 新增v2格式支持：先检查`payload.sections`（v2），回退到旧格式独立键（v1） |
+| `scripts/data_modules/chapter_audit.py` | 行565-577 (B1) | 用YAML解析器提取`key_beats`字段，回退到正则仅匹配`key_beats:`段落下的列表项 |
+| `scripts/data_modules/chapter_audit.py` | 行852-853 (B9) | 查找链改为`f'{chapter:04d}'` → `str(chapter)` → `chapter`，支持所有键格式 |
+
+**修复效果**：
+- 修复前：CLI决议 = **block**（critical=1, high=2）
+- 修复后：CLI决议 = **approve_with_warnings**（critical=0, high=0）
+- B9误报完全消除，A1/B1从fail降为warn
+
+**注意**：此修改在插件缓存目录（`C:/Users/Windows/.claude/plugins/cache/...`），插件更新时会被覆盖。合并上游时需重新应用。
+
+---
+
 ## [2026-04-06] 典故引用系统修复 — 链路断裂 + 双仓库同步 + Step 3.5 覆盖
 
 **问题根因**：典故引用功能仅在 C: 运行时实现，未同步 git 且关键组件（context-agent/polish-guide/外部审查）未更新，导致：
