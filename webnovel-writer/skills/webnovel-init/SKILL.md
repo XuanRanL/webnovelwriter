@@ -15,98 +15,41 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
 ## 执行原则
 
 1. 先收集，再生成；未过充分性闸门，不执行 `init_project.py`。
-2. 分波次提问，每轮只问“当前缺失且会阻塞下一步”的信息。
+2. 分波次提问，每轮只问”当前缺失且会阻塞下一步”的信息。
 3. 允许调用 `Read/Grep/Bash/Task/AskUserQuestion/WebSearch/WebFetch` 辅助收集。
 4. 用户已明确的信息不重复问；冲突信息优先让用户裁决。
 5. Deep 模式优先完整性，允许慢一点，但禁止漏关键字段。
 
-## 引用加载等级（strict, lazy）
+## 引用加载策略
 
-采用分级加载，避免一次性灌入全部资料：
+### md 必读
 
-- L0：未确认任务前，不预加载参考。
-- L1：每个阶段仅加载该阶段“必读”文件。
-- L2：仅在题材、金手指、创意约束触发条件满足时加载扩展参考。
-- L3：市场趋势类、时效类资料仅在用户明确要求时加载。
+| Step | Trigger | Reference |
+|------|---------|-----------|
+| Step 1 | always | `references/system-data-flow.md` |
+| Step 1 | always | `references/genre-tropes.md` |
+| 卖点/题材采集 | always | `references/genre-profiles.md` |
 
-路径约定：
-- `references/...` 相对当前 skill 目录（`${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/...`）。
-- `templates/...` 相对插件根目录（`${CLAUDE_PLUGIN_ROOT}/templates/...`）。
+### md 按需
 
-默认加载清单：
-- L1（启动前）：`references/genre-tropes.md`
-- L2（按需）：
-  - 题材模板：`templates/genres/{genre}.md`
-  - 金手指：`../../templates/golden-finger-templates.md`
-  - 世界观：`references/worldbuilding/faction-systems.md`
-  - 创意约束：按下方“逐文件引用清单”触发加载
-- L3（显式请求）：
-  - `references/creativity/market-trends-2026.md`
+| Step | Trigger | Reference |
+|------|---------|-----------|
+| Step 2 | 用户人物扁平 | `references/worldbuilding/character-design.md` |
+| Step 4 | always | `references/worldbuilding/faction-systems.md` |
+| Step 4 | 涉及修仙/玄幻/高武/异能 | `references/worldbuilding/power-systems.md` |
+| Step 4 | always | `references/worldbuilding/world-rules.md` |
+| Step 5 | always | `references/creativity/creativity-constraints.md` |
+| Step 5 | always | `references/creativity/selling-points.md` |
+| Step 5 | 复合题材 | `references/creativity/creative-combination.md` |
+| Step 5 | 卡顿 | `references/creativity/inspiration-collection.md` |
+| Step 5 | 题材映射命中 | `references/creativity/anti-trope-*.md` |
+| Step 6 | always | `references/worldbuilding/setting-consistency.md` |
 
-## References（逐文件引用清单）
+### CSV 检索
 
-### 根目录
-
-- `references/genre-tropes.md`
-  - 用途：Step 1 题材归一化、题材特征提示。
-  - 触发：所有项目必读。
-- `references/system-data-flow.md`
-  - 用途：初始化产物与后续 `/plan`、`/write` 的数据流一致性检查。
-  - 触发：Step 1 预检必读。
-
-### worldbuilding
-
-- `references/worldbuilding/character-design.md`
-  - 用途：Step 2 角色维度补问（目标、缺陷、动机、反差）。
-  - 触发：用户人物信息抽象或扁平时加载。
-- `references/worldbuilding/faction-systems.md`
-  - 用途：Step 4 势力格局与组织层级设计。
-  - 触发：Step 4 默认加载。
-- `references/worldbuilding/power-systems.md`
-  - 用途：Step 4 力量体系类型与边界定义。
-  - 触发：涉及修仙/玄幻/高武/异能时加载。
-- `references/worldbuilding/setting-consistency.md`
-  - 用途：Step 6 一致性复述前做设定冲突检查。
-  - 触发：Step 6 默认加载。
-- `references/worldbuilding/world-rules.md`
-  - 用途：Step 4 世界规则与禁忌项收束。
-  - 触发：Step 4 默认加载。
-
-### creativity
-
-- `references/creativity/creativity-constraints.md`
-  - 用途：Step 5 创意约束包主 schema。
-  - 触发：Step 5 必读。
-- `references/creativity/category-constraint-packs.md`
-  - 用途：Step 5 按平台/题材选择约束包模板。
-  - 触发：Step 5 必读。
-- `references/creativity/creative-combination.md`
-  - 用途：复合题材（A+B）融合规则。
-  - 触发：用户选择复合题材时加载。
-- `references/creativity/inspiration-collection.md`
-  - 用途：用户卡住时提供卖点/钩子候选。
-  - 触发：Step 1 或 Step 5 卡顿时加载。
-- `references/creativity/selling-points.md`
-  - 用途：Step 5 卖点生成与筛选。
-  - 触发：Step 5 必读。
-- `references/creativity/market-positioning.md`
-  - 用途：目标读者/平台定位与商业化语义统一。
-  - 触发：Step 1 用户提及平台或商业目标时加载。
-- `references/creativity/market-trends-2026.md`
-  - 用途：时间敏感市场趋势参考。
-  - 触发：仅用户明确要求“参考当下趋势”时加载。
-- `references/creativity/anti-trope-xianxia.md`
-  - 用途：反套路库（修仙/玄幻/高武/西幻）。
-  - 触发：题材命中对应映射时加载。
-- `references/creativity/anti-trope-urban.md`
-  - 用途：反套路库（都市/历史）。
-  - 触发：题材命中对应映射时加载。
-- `references/creativity/anti-trope-game.md`
-  - 用途：反套路库（游戏/科幻/末世）。
-  - 触发：题材命中对应映射时加载。
-- `references/creativity/anti-trope-rules-mystery.md`
-  - 用途：反套路库（规则/悬疑/灵异/克苏鲁）。
-  - 触发：题材命中对应映射时加载。
+| Step | Trigger | 检索命令 |
+|------|---------|---------|
+| 角色/书名/势力设定 | 用户开始设定命名 | `python -X utf8 “${SCRIPTS_DIR}/reference_search.py” --skill init --table 命名规则 --query “{命名对象} {题材}” --genre {题材}` |
 
 ## 工具策略（按需）
 
