@@ -13,6 +13,29 @@ allowed-tools: Read Grep Write Edit Bash Task AskUserQuestion
 - 把审查指标写入 `index.db`，并把审查记录写回 `state.json`。
 - 若存在关键问题，明确交给用户决定是否立即返工。
 
+## 常见误区
+
+- ❌ 没看 reviewer 原始 JSON 就直接口头总结
+- ❌ 有 blocking issue 仍将流程视为通过
+- ❌ 把 report 文件生成等同于已落库（`save-review-metrics` 未跑）
+- ❌ 主流程伪造 `overall_score` 或审查结论
+- ❌ 按需参考一次性全部读完
+
+## 优先级链
+
+1. 用户明确要求（最高）
+2. `blocking=true` 硬门槛
+3. 项目私有约束（设定集、已有剧情）
+4. skill 默认流程
+5. reference 建议（最低）
+
+## 决策树入口
+
+- 若项目根不合法或缺少 `.webnovel/state.json` → **阻断**
+- 若正文文件不存在 → **阻断**
+- 若 reviewer 返回 `blocking=true` issue → 进入 Step 6 用户裁决
+- 若所有 issue 均为非 blocking → 正常落库，流程结束
+
 ## 执行流程
 
 ### Step 1：解析项目根目录并建立环境变量
@@ -30,25 +53,26 @@ export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WOR
 
 ### Step 2：按需加载参考资料
 
-必读：
+#### md 必读
 
-```bash
-cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
-cat "${SKILL_ROOT}/../../references/review-schema.md"
-```
+| Trigger | Reference |
+|---------|-----------|
+| always | `references/shared/core-constraints.md` |
+| always | `references/review-schema.md` |
 
-按需加载：
+#### md 按需
 
-```bash
-cat "${SKILL_ROOT}/../../references/shared/cool-points-guide.md"
-cat "${SKILL_ROOT}/../../references/shared/strand-weave-pattern.md"
-cat "${SKILL_ROOT}/references/common-mistakes.md"
-cat "${SKILL_ROOT}/references/pacing-control.md"
-```
+| Trigger | Reference |
+|---------|-----------|
+| 审查涉及爽点或钩子分析 | `references/shared/cool-points-guide.md` |
+| 审查涉及多线交织 | `references/shared/strand-weave-pattern.md` |
+| blocking issue 需用户决策 (Step 6) | `references/review/blocking-override-guidelines.md` |
 
-规则：
-- 先判定 Core 或 Full 审查深度，再加载对应参考
-- 不得在未触发时一次性读完全部资料
+#### CSV 检索
+
+| Trigger | 检索命令 |
+|---------|---------|
+| ai_flavor issue ≥ 3 | `python -X utf8 "${SCRIPTS_DIR}/reference_search.py" --skill review --query "AI味 反例 替换"` |
 
 ### Step 3：加载项目状态与待审正文
 
