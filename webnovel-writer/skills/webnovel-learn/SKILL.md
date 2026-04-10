@@ -43,3 +43,24 @@ allowed-tools: Read Write Bash
 ## 约束
 - 不删除旧记录，仅追加
 - 避免完全重复的 description（可去重）
+
+## 去重规则
+
+- 追加前扫描已有 `patterns` 数组
+- 若存在 `pattern_type` + `description` 完全相同的记录，跳过并告知用户
+- 部分相似不去重，由用户判断
+
+## 成功标准
+
+- `project_memory.json` 存在且格式合法
+- 新 pattern 已追加到 `patterns` 数组
+- 输出包含 `status: success` 和完整 `learned` 对象
+
+## 失败恢复
+
+| 故障 | 恢复方式 |
+|------|---------|
+| `project_memory.json` 不存在 | 自动初始化 `{"patterns": []}` 后继续 |
+| JSON 解析失败 | 不写入脏数据，告知用户文件损坏并建议手动修复 |
+| `state.json` 缺失导致无法获取章节号 | 使用 `source_chapter: null`，不阻断 |
+| 用户输入无法归类 | 使用 `pattern_type: "other"`，不阻断 |
