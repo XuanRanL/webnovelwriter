@@ -1,5 +1,9 @@
 # 审查输出 Schema（v6）
 
+> **主服务 skill**: `webnovel-write` Step 3、`webnovel-review` Step 4
+> **内容层级**: 流程闸门 / schema 定义
+> **关键原则**: reviewer 输出 JSON 是审查唯一事实源；`review-pipeline` 负责 report + metrics 落库；主 skill 不应伪造 `overall_score`。
+
 统一审查 Agent 输出格式。替代原 checker-output-schema.md 的评分制。
 
 ## 核心变化
