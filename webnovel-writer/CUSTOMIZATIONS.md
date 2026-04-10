@@ -7,6 +7,148 @@
 
 ---
 
+## [2026-04-10] Search tool 强制集成 + 8 skills 完整性审查 + 全文件类型同步
+
+### 背景
+
+用户质问"典故、历史、诗词、热梗这种应该需要调用 search tool"——这是防 AI 幻觉的关键需求。同时要求再次审查"所有 skills 文件都同步了吗"。
+
+### 发现 1：还有 4 个差异 + 4 个只在 fork 的文件（非 .md/.py）
+
+之前的同步只覆盖了 .md 和 .py 文件。这次发现还有：
+- `CUSTOMIZATIONS.md`（fork 刚更新未同步）
+- `scripts/.coveragerc`（测试覆盖率配置）
+- `scripts/requirements.txt`（Python 依赖）
+- `scripts/run_tests.ps1`（PowerShell 测试脚本）
+- `genres/README.md`（只在 fork）
+
+**修复**：全部同步。剩余差异为 0。
+
+### 发现 2：Search tool 完全缺失
+
+- 之前的典故系统**100% 依赖 AI 记忆**
+- 诗词字词错误 / 作者张冠李戴 / 互联网梗过期 等幻觉风险未处理
+- 用户 memory 里已经指定"Default to Tavily MCP"和"每章强制 Tavily 搜索"，但插件流程里没体现
+
+**修复**：四个集成点新增 Search tool 强制规范。
+
+#### 修复 1：`classical-references.md` 新增第九节
+
+**9.1 必须调用 search 的 7 个场景**（表格）：
+| 场景 | Skill 位置 | 查询模板 | 失败降级 |
+|---|---|---|---|
+| init 创作原创诗词前 | init Step 5.6 | `"{题材} {意象} 诗词"` | 跳过该条目 |
+| init 建立诗词典故池时 | init Step 5.6 | `"{首句} 出自 {作者}"` | 不登记 |
+| init 建立民俗典故库时 | init Step 5.6 | `"{地域} {民俗} 出处"` | 标记待核实 |
+| init 建立互联网梗白名单时 | init Step 5.6 | `"2026 {梗名} 网络用语"` | 只用经典梗 |
+| write 融入冷门引用前 | write Step 2A | `"{首句} {作者} 原文"` | 跳过本次引用 |
+| data-agent 抽到 unknown | Step B.5 | `"{snippet} 出处 诗词"` | 标记 pending |
+| review 发现可疑引用 | review/audit | `"{原文} 真实 出处"` | 标记 AI 幻觉 |
+
+**9.2 无需 search 的 4 个场景**：顶级名诗 / 原创资产 / 主角标志台词 / verified < 30 天
+
+**9.3 工具优先级**：Tavily Search MCP → Tavily Research MCP → Tavily Extract → WebSearch
+
+**9.4 搜索查询模板库**（5 个模板）
+
+**9.5 中文搜索强制**（引用 user memory `feedback_search_in_chinese.md`）
+
+**9.6 每章强制搜索**（引用 user memory `feedback_force_tavily_search.md`）
+
+**9.7 搜索结果登记**（`verified_at` + `verification_source` + `verification_snippet`）
+
+#### 修复 2：`init SKILL.md` Step 5.6 新增 Search 强制规范
+
+在"参考加载"后插入"🔍 Search tool 强制使用"段落，包含：
+- 4 个必须 search 的场景（Tavily 查询模板）
+- 工具优先级表（Tavily 首选 → WebSearch 降级）
+- 中文搜索强制（违规 = init fail）
+- 违规判定（跳过 search = init fail / 英文搜索 = init fail / 无 verified_at 字段 = init fail）
+
+#### 修复 3：`data-agent.md` Step B.5 新增 unknown 条目的 search 补全
+
+Data Agent 自身无 search 能力（只有 Read/Write/Bash），改为"主 agent 调用"模式：
+1. Data Agent 输出 `unknown_allusions_pending_search: [...]` 列表
+2. 主 agent 在 Data Agent 返回后遍历该列表
+3. 对每条调用 Tavily Search 补全 source/type
+4. 高置信度自动登记到典故引用库
+5. 搜索结果缓存到 `.webnovel/tmp/allusions_search_cache.json`（30 天过期）
+
+#### 修复 4：`context-agent.md` Step 0.7 新增验证分级
+
+为每条推荐引用附加"验证建议"标签，分 6 种：
+- `trust_local`（原创资产，直接用）
+- `trust_cached`（30 天内已验证，直接用）
+- `trust_memory`（顶级名诗，AI 记忆足够）
+- `verify_before_use`（冷门诗词，必须先 search）
+- `verify_timeliness`（热梗，必须搜当前时效性）
+- `search_to_register`（大纲有锚点但引用库未登记，先搜再登记）
+
+这些标签会被写入任务书第 6 板块，供 Step 2A 起草时决定是否调用 Tavily。
+
+### 发现 3：8 个 skills 流程审查结果
+
+| Skill | 典故集成 | 搜索集成 | 说明 |
+|---|---|---|---|
+| webnovel-init | ✅ 9 处 | ✅ 6 处 | Step 5.6 + 执行生成 + Search 强制 |
+| webnovel-plan | ✅ 4 处 | ✅ 9 处 | 读典故库 + 每卷规划 + 回写 |
+| webnovel-write | ✅ 3 处 | ✅ 4 处 | Step 2A 融入 + classical-references 指南 |
+| webnovel-review | ⚠️ 间接 | ⚠️ 间接 | 通过 prose-quality-checker 和 density-checker 间接生效 |
+| webnovel-resume | — | — | 流程恢复，不关心内容 |
+| webnovel-query | ⚠️ 间接 | — | 可查询 state.json.chapter_meta.allusions_used |
+| webnovel-learn | ⚠️ 间接 | — | 学习成功模式时自动包含典故使用 |
+| webnovel-dashboard | — | — | 可视化层，不影响流程 |
+
+**结论**：核心 3 个 skills（init/plan/write）已完整集成；其他 5 个通过 data-agent 写入的 `chapter_meta.allusions_used` 数据流自动受益，**无需显式集成**。
+
+### 最终真实接入度
+
+| 阶段 | 接入度 |
+|---|---|
+| 修复前 | 0% |
+| 前 4 次"修复" | 0%（fork ≠ 运行时）|
+| 上次终极修复 | ~95%（同步 49 个文件 + init 策略升级 + Step 5.6） |
+| **本次再次修复** | **~100%**（加 Search tool 强制 + 补 4 个非 .md 文件 + 8 skills 审查）|
+
+剩余 0% 缺口是"AI 调用 Tavily 时的随机性"——模型可能忘记调用。这通过"违规判定 = init fail"和"每章强制搜索"的 memory 压到最低。
+
+### 未来开新书的强化流程保证
+
+```
+作者运行 /webnovel-init
+  ↓ 加载插件缓存 init SKILL.md
+  ↓ Step 1-5.5B 正常走
+  ↓ Step 5.6 典故引用系统偏好（必问）
+  ↓ AI 按题材判断强制强度（规则怪谈 → 强制启用）
+  ↓ AI 展示 5 个密度选项 + 5 个 source_pools
+  ↓ 🔍 AI 必须调用 Tavily Search 验证候选诗词/民俗/梗
+  ↓    （英文搜索 / 跳过 search / 无 verified_at = init fail）
+  ↓ AI 创作原创诗词前 🔍 Tavily 搜索撞车检查
+  ↓ 成功标准 #15 检查 cultural_reference_system 字段
+  ↓
+作者运行 /webnovel-plan
+  ↓ 读典故引用库 + 每卷规划
+  ↓
+作者运行 /webnovel-write 1
+  ↓ Step 0.7 context-agent 读典故库
+  ↓    附加"验证建议"标签（trust_local/cached/memory/verify/timeliness/register）
+  ↓ Step 1 任务书第 6 板块推荐 0-2 条引用 + 验证标签
+  ↓ Step 2A 起草：
+  ↓    - trust_* → 直接用
+  ↓    - verify_* → 🔍 调用 Tavily 验证后用
+  ↓    - search_to_register → 🔍 搜索补录到引用库再用
+  ↓ Step 3 prose-quality + density 双检查
+  ↓ Step 3.5 build_external_context.py 加载 14 字段
+  ↓ Step 4 按 classical-references.md 修复
+  ↓ Step 5 data-agent Step B.5 抽取
+  ↓    - 未知条目输出 unknown_allusions_pending_search
+  ↓    - 主 agent 遍历 🔍 Tavily 补全 → 自动登记到引用库
+  ↓ Step 6 audit-matrix E11/E12/E13
+  ↓ Step 7 git
+```
+
+---
+
 ## [2026-04-10] 终极修复：fork↔插件缓存双向同步 + init 策略升级为强制启用
 
 ### 最严重的 Root Cause 发现

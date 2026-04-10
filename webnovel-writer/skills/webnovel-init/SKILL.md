@@ -387,7 +387,49 @@ Search 失败处理：立即停止，检查 Tavily API key 配置（环境变量
 - 根据 Step 2 角色骨架推荐"角色文学图腾"的候选诗词
 - 用户必须做出明确选择（或明确拒绝并给出理由）
 
-**参考加载（L1 必读）**：`${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/classical-references.md` — 完整的引用类型分级、融入技法、密度控制、"典故即伏笔"技法
+**参考加载（L1 必读）**：`${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/writing/classical-references.md` — 完整的引用类型分级、融入技法、密度控制、"典故即伏笔"技法、**Search tool 强制使用规范（第九节）**
+
+**🔍 Search tool 强制使用（防 AI 幻觉 + 时效性）**：
+
+> 见 `classical-references.md` 第九节完整规范。AI 记忆的典故、诗词、民俗常有字词错误、作者错误、时代错位等幻觉；互联网热梗时效性强。**本项目追求"最高质量"的典故系统不能依赖 AI 记忆——必须通过 search tool 实时验证**。
+
+**init Step 5.6 阶段必须调用 Tavily Search 的 4 个场景**：
+
+1. **建立外部诗词典故来源池时**：每条候选诗词必须 search 验证
+   ```
+   Tavily query: "{诗词首句} 作者 {claimed_author} 原文"
+   验证点：字词准确、作者正确、出处正确
+   失败则不登记
+   ```
+
+2. **建立民俗典故库时**：每条民俗条目必须 search 验证
+   ```
+   Tavily query: "{地域} {民俗元素} 典故 出处"
+   验证点：民俗真实存在、地域正确
+   失败则标记"待人工核实"
+   ```
+
+3. **创作原创诗词草稿前**：必须搜索撞车检查
+   ```
+   Tavily query: '"{original_draft_first_line}"'  # 引号精确匹配
+   若搜索返回已存在相同首句的作品 → 重写
+   ```
+
+4. **建立互联网梗白名单时**（若启用互联网梗来源池）：必须搜索当前时效性
+   ```
+   Tavily query: "2026 {meme_name} 网络用语 最新使用"
+   time_range: "month"
+   若梗已过时（3 个月无引用）→ 移出白名单
+   ```
+
+**工具优先级**：Tavily Search MCP（首选）→ Tavily Research MCP → WebSearch（降级）
+
+**中文搜索强制**：见 user memory `feedback_search_in_chinese.md`——中文小说项目所有搜索必须用中文，禁止用英文。
+
+**违规判定**：
+- AI 跳过以上任何一个 search 场景直接创建典故库 → init fail
+- AI 用英文搜索 → init fail
+- AI 登记的典故条目无 `verified_at` 和 `verification_source` 字段 → init fail
 
 输出：
 - 将 `cultural_reference_system` 字段写入 `idea_bank.json`（详细 schema 见"执行生成"段落）

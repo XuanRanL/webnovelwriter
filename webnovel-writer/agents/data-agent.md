@@ -139,6 +139,27 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" wher
 - 引用库存在但本章无引用 → 输出 `allusions_used: []`，正常
 - Data Agent 自身不具备精细 NLP → 只做字符串匹配，不做语义推断
 
+**🔍 unknown 条目的 search 补全（主 agent 调用）**：
+
+Data Agent 自身无 search 能力（只有 Read/Write/Bash），但若扫描发现未登记的诗词样片段：
+1. 先记录为 `id: unknown` + 原文 snippet，不阻断主流程
+2. 在 Data Agent 的输出报告中增加 `unknown_allusions_pending_search: [...]` 字段
+3. **主 agent 在 Data Agent 返回后**，必须遍历 `unknown_allusions_pending_search`，对每条调用 Tavily Search：
+   ```
+   Tavily query: "{snippet} 出处 诗词"  # 中文查询
+   max_results: 3
+   ```
+4. 搜索结果处理：
+   - 高置信度（多个来源一致且 score > 0.8）→ 自动补全 source/type 字段，标记 `auto_registered: true`
+   - 中置信度 → 记录 `suggested_source` 字段，标记 `needs_manual_review: true`，提交给作者审核
+   - 低置信度/搜索失败 → 保留 `id: unknown`，只记录 snippet
+5. 自动补全的条目由主 agent 追加到 `设定集/典故引用库.md` 的对应分类下（带 `verified_at` 时间戳）
+
+**避免重复搜索**：
+- 同一 snippet 在同一项目内只搜索一次
+- 搜索结果缓存到 `.webnovel/tmp/allusions_search_cache.json`
+- 缓存过期时间 30 天
+
 ### Step C: 实体消歧处理
 
 **置信度策略**:
