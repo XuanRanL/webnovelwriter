@@ -22,6 +22,37 @@ allowed-tools: Read Write Edit Grep Bash Task
 4. Step 4 只做问题修复与终检，不回写结构化数据。
 5. 任一步失败优先最小补跑，不重跑整条链路。
 
+## 常见误区
+
+- ❌ 认为本章简单就跳过 Step 3 审查
+- ❌ blocking issue 还在时继续 Step 4 / Step 5
+- ❌ 把全部 references 一次性读完再起草
+- ❌ 用文件存在性替代 `chapter_status` 判断
+- ❌ 润色时改动事件顺序、设定结果或节点收束方向
+- ❌ Step 5 失败后直接开始下一章（状态还在 `chapter_reviewed`）
+- ❌ 把全部 reference 一次性读完再开始写
+
+## 优先级链
+
+当多个指令来源冲突时，按以下顺序裁决：
+
+1. 用户明确要求（最高）
+2. 状态机 / `chapter_status` / `blocking` 硬门槛
+3. 项目私有约束（总纲、设定集、已有剧情、长期记忆）
+4. skill 默认流程
+5. reference 建议（最低）
+
+## 决策树入口
+
+在进入 Step 0.5 之前，先判断：
+
+- 若 `preflight` 失败或项目根不合法 → **阻断**，先修环境
+- 若当前章缺少章纲或章纲关键字段缺失 → **阻断**，请求用户补全
+- 若 Step 3 返回 `blocking=true` → 进入"修复 → 重审"循环，不得进入 Step 4/5
+- 若 Step 4 `anti_ai_force_check=fail` → 回到 Step 4 修复，不得进入 Step 5
+- 若 Step 5 仅数据回写失败 → 只补跑 Step 5，不回退 Step 1-4
+- 若用户要求跳过某步骤但不在模式定义允许范围内 → 拒绝并说明原因
+
 ## 模式定义
 
 - `/webnovel-write`：Step 0.5 → Step 1 → Step 2 → Step 3 → Step 4 → Step 5 → Step 6
@@ -43,41 +74,37 @@ allowed-tools: Read Write Edit Grep Bash Task
 - 禁止伪造审查：Step 3 必须由 Task 子代理执行。
 - 禁止源码探测：CLI 调用方式以本文档和 agent 文档为准，命令失败优先查日志。
 
-## 引用加载等级
+## 引用加载策略
 
+加载等级：
 - L0：未进入对应步骤前，不加载参考资料。
 - L1：只加载当前步骤必读文件。
 - L2：仅在触发条件满足时加载条件参考。
 
-## References
+### md 必读（L1，直接 Read）
 
-- `../../references/review-schema.md`
-  - 用途：Step 3 审查输出 schema 定义。
-- `../../references/shared/core-constraints.md`
-  - 用途：Step 2 起草硬约束。
-- `references/anti-ai-guide.md`
-  - 用途：Step 2 起草时 anti-AI 预防。
-- `references/polish-guide.md`
-  - 用途：Step 4 润色与终检规则。
-- `references/writing/typesetting.md`
-  - 用途：Step 4 排版检查。
-- `references/style-adapter.md`
-  - 用途：Step 4 风格适配规则。
-- `references/style-variants.md`
-  - 用途：Step 1 差异化设计。
-- `../../references/reading-power-taxonomy.md`
-  - 用途：Step 1 追读力设计。
-- `../../references/genre-profiles.md`
-  - 用途：Step 1 题材节奏与钩子偏好。
-- `references/writing/genre-hook-payoff-library.md`
-  - 用途：Step 1 特定题材快速库。
+| Step | Trigger | Reference |
+|------|---------|-----------|
+| Step 1 | always | `references/reading-power-taxonomy.md` |
+| Step 1 | always | `references/genre-profiles.md` |
+| Step 1 | always | `references/style-variants.md` |
+| Step 2 | always | `references/shared/core-constraints.md` |
+| Step 2 | always | `references/anti-ai-guide.md` |
+| Step 3 | always | `references/review-schema.md`（reviewer agent 内部使用） |
+| Step 4 | always | `references/polish-guide.md` |
+| Step 4 | always | `references/writing/typesetting.md` |
+| Step 4 | always | `references/style-adapter.md` |
 
-问题定向参考：
-- `references/writing/combat-scenes.md`
-- `references/writing/dialogue-writing.md`
-- `references/writing/emotion-psychology.md`
-- `references/writing/scene-description.md`
-- `references/writing/desire-description.md`
+### CSV 检索（L2，调用 `reference_search.py`）
+
+| Step | Trigger | 检索命令 |
+|------|---------|---------|
+| Step 2 | 本章有新角色首次出场 | `python -X utf8 "${SCRIPTS_DIR}/reference_search.py" --skill write --table 命名规则 --query "角色命名" --genre {题材}` |
+| Step 2 | 本章有战斗/对峙场景 | `... --skill write --query "战斗描写" --genre {题材}` |
+| Step 2 | 本章有多角色对话 | `... --skill write --query "对话声线 口吻区分"` |
+| Step 2 | 本章有情感/心理描写 | `... --skill write --query "情感描写 心理"` |
+| Step 2 | 本章涉及高频桥段 | `... --skill write --table 场景写法 --query "{桥段类型}"` |
+| Step 4 | ai_flavor issue 存在 | `... --skill write --query "AI味 反例 替换"` |
 
 ## 工具策略
 
