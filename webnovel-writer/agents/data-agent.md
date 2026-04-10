@@ -92,6 +92,53 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" wher
 
 **Data Agent 直接执行** (无需调用外部 LLM)。
 
+### Step B.5: 典故使用抽取（条件执行）
+
+> **目的**：记录本章实际使用的典故/诗词/民俗/原创口诀，用于增量更新引用库、跨章密度追踪、以及为 Step 6 audit-agent 的 E11 审计项提供数据源。
+
+**触发条件**：`设定集/典故引用库.md` 或 `设定集/原创诗词口诀.md` 至少一个存在。两文件都不存在时，跳过此步并输出 `allusions_used: []`。
+
+**执行策略**：
+
+1. **加载引用库索引**：
+   ```bash
+   test -f "{project_root}/设定集/典故引用库.md" && cat "{project_root}/设定集/典故引用库.md"
+   test -f "{project_root}/设定集/原创诗词口诀.md" && cat "{project_root}/设定集/原创诗词口诀.md"
+   ```
+2. **从引用库提取关键词字典**：每条引用的 `snippet`（原文）、`id`（编号如 S01/O01）、`source`（出处）
+3. **扫描本章正文**：
+   - 精确匹配原文字段（2 字以上）
+   - 出处名匹配（如"诗经·蓼莪"）
+   - 近似匹配（按书名号/引号/"正如...所言"等引导语）
+4. **对每条命中记录**：
+   - `id`：引用库编号；无法匹配时填 `unknown`
+   - `snippet`：正文中实际出现的片段（10-30字）
+   - `type`：诗词/民俗/经典/歌谣/史料/原创/梗
+   - `source`：出处（如"诗经·蓼莪"或"老陈遗诗"）
+   - `carrier`：载体（心里一闪/环境音/墙上字画/对话/标志台词 等）
+   - `function`：功能（剧情推进/角色塑造/氛围/伏笔 任一）
+   - `is_original`：是否为原创资产（对应 `原创诗词口诀.md` 里的条目）
+5. **计算本章典故密度**：
+   - `total_count`：本章引用总数
+   - `per_category`：按类型分组计数
+6. **若检测到 `unknown` 条目**：记录 warning，提示"本章出现未登记的引用，请人工补入引用库"
+
+**输出写入 `chapter_meta.allusions_used`**（见下方接口规范第 22 个字段）。
+
+**回写引用库的 "第 N 卷引用规划总表"**（best-effort，失败不阻断）：
+- 若引用库的表格有"实际使用"列，将本章章号写入该列对应的行
+- CLI 命令（若未来实现）：
+  ```bash
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
+    allusions update-usage --chapter {N} --data '{...}'
+  ```
+- 当前无 CLI 时，只写入 chapter_meta，引用库表格由人工定期同步
+
+**降级规则**：
+- 两个引用库文件都不存在 → 直接输出 `allusions_used: []`，不报错
+- 引用库存在但本章无引用 → 输出 `allusions_used: []`，正常
+- Data Agent 自身不具备精细 NLP → 只做字符串匹配，不做语义推断
+
 ### Step C: 实体消歧处理
 
 **置信度策略**:
@@ -399,7 +446,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 **重要**：Data Agent 输出的 `chapter_meta` 必须是**扁平对象**（不含章节号外层键），因为 `state_manager.py` 会自动以 `"{NNNN}"` 为键写入 `state.json["chapter_meta"]`。若 Agent 输出中已包含章节号键，会导致双层嵌套。
 
-**chapter_meta 必须包含以下 21 个字段**（audit B9 检查项，缺失 > 30% 判 fail）：
+**chapter_meta 必须包含以下 22 个字段**（audit B9 检查项，缺失 > 30% 判 fail）：
 
 | 字段 | 类型 | 来源说明 |
 |------|------|---------|
@@ -425,6 +472,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `strand_dominant` | str | 主导情节线（quest/fire/constellation） |
 | `review_score` | float | 审查综合分 |
 | `checker_scores` | dict | 各 checker 分数 |
+| `allusions_used` | list[dict] | **本章引用的典故列表（Step B.5 产出），每条含 id/snippet/type/source/carrier/function/is_original 字段；无引用库或无引用时为空数组** |
 
 Agent 输出格式（正确）：
 ```json
@@ -451,7 +499,27 @@ Agent 输出格式（正确）：
     "foreshadowing_paid": ["玉佩灼痕延续"],
     "strand_dominant": "quest",
     "review_score": 93.0,
-    "checker_scores": {"设定一致性": 100, "连贯性": 97}
+    "checker_scores": {"设定一致性": 100, "连贯性": 97},
+    "allusions_used": [
+      {
+        "id": "S01",
+        "snippet": "蓼蓼者莪",
+        "type": "诗词",
+        "source": "诗经·蓼莪",
+        "carrier": "主角心里一闪",
+        "function": "伏笔",
+        "is_original": false
+      },
+      {
+        "id": "O01",
+        "snippet": "三十八任归，白布各覆眉",
+        "type": "原创",
+        "source": "老陈遗诗",
+        "carrier": "账册扉页题词",
+        "function": "伏笔",
+        "is_original": true
+      }
+    ]
   }
 }
 ```

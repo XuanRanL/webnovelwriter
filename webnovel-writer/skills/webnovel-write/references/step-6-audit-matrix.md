@@ -96,6 +96,13 @@ Step 4 anti-AI 的补充。用 regex/grep 做硬指标。
 | E8 | 空间方位清晰 | 关键动作场景方位词锚定 | 战斗场景方位明确 | high | Step 4 补方位 |
 | E9 | 对白辨识度 | 不同角色对白词汇/语气差异 | 关键角色有辨识 | medium | Step 4 调语音 |
 | E10 | 潜台词密度 | 对白中"没说出口"占比 | ≥ 20%（避免全大白话）| medium | Step 4 加潜台词 |
+| E11 | 典故使用真实性 | 对照 prose-quality-checker 的 `reference_naturalness_score` 与 `chapter_meta.allusions_used`；若 checker 给出非空评分但 allusions_used 为空/缺失，判为 subagent fallback 或未抽取；若二者都为空且正文肉眼可见典故，判为漏抽 | 两侧一致（同有或同无）；若有值，数量差 ≤ 1 | medium | Step 4 重跑 prose-quality-checker + data-agent Step B.5 |
+| E12 | 典故密度合规 | 统计 `chapter_meta.allusions_used` 条数 vs `classical-references.md` 规定（单章上限 2 处）；统计近 5 章累计 vs 卷级上限 15 处 | 本章 ≤ 2；近 5 章 ≤ 3 | low | 规划调整或下章少用 |
+| E13 | 典故载体合规 | 逐条检查 `allusions_used[*].carrier` 与角色设定（如主角话少 → 主角直接引用诗词 ≥ 3 处判 high；互联网梗的 carrier 不能是主角）| 无违规载体 | medium | Step 4 改写载体 |
+
+> **E11-E13 触发条件**：`设定集/典故引用库.md` 或 `设定集/原创诗词口诀.md` 至少一个存在时执行；两者都不存在时 skip（不扣分）。
+>
+> **数据依赖**：依赖 data-agent Step B.5 产出的 `chapter_meta.allusions_used` 字段。若 Step 5 未产出该字段（如 chapter_meta 缺字段 > 30% 已被 B9 fail），E11-E13 同步 skip。
 
 ## Layer F — 题材兑现（项目特定，动态生成）
 

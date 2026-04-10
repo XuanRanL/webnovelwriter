@@ -416,30 +416,9 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 
 ```bash
 # 鏀堕泦璁惧畾闆嗐€佸ぇ绾层€佸墠绔犳鏂囷紝鍐欏叆 context JSON
-python -c "
-import json, pathlib
-pr = pathlib.Path('${PROJECT_ROOT}')
-def read(p):
-    f = pr / p
-    return f.read_text(encoding='utf-8') if f.exists() else ''
-ctx = {
-    'outline_excerpt': read('澶х翰/鎬荤翰.md')[:3000],
-    'protagonist_card': read('璁惧畾闆?涓昏鍗?md'),
-    'golden_finger_card': read('璁惧畾闆?閲戞墜鎸囪璁?md'),
-    'female_lead_card': read('璁惧畾闆?濂充富鍗?md'),
-    'villain_design': read('璁惧畾闆?鍙嶆淳璁捐.md'),
-    'power_system': read('璁惧畾闆?鍔涢噺浣撶郴.md'),
-    'world_settings': read('璁惧畾闆?涓栫晫瑙?md')[:5000],
-    'protagonist_state': json.loads((pr/'.webnovel/state.json').read_text(encoding='utf-8')).get('protagonist_state',{}),
-    'prev_chapters_text': '\\n---\\n'.join(
-        f.read_text(encoding='utf-8') for f in sorted((pr/'姝ｆ枃').glob('绗?绔?.md'))[:${chapter_num}]
-    )[:15000]
-}
-out = pr / '.webnovel/tmp/external_context_ch${chapter_padded}.json'
-out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text(json.dumps(ctx, ensure_ascii=False, indent=2), encoding='utf-8')
-print(f'Context written: {out} ({out.stat().st_size} bytes)')
-"
+python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \r
+  --project-root "${PROJECT_ROOT}" \r
+  --chapter ${chapter_num}
 ```
 
 鑻ヤ笂杩拌剼鏈け璐ワ紝鎵嬪姩浠庤瀹氶泦鏂囦欢璇诲彇骞剁敤 `Write` 宸ュ叿鍐欏叆 JSON銆?*绂佹璺宠繃姝ゆ楠ょ洿鎺ヨ皟鐢?external_review.py**銆?
