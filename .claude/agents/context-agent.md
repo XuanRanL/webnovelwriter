@@ -345,6 +345,96 @@ Context Contract 必须字段（不可缺）：
 - 执行包内包含“不可变事实清单 + 章节节拍 + 终检清单 + 时间约束”
 - Step 2A 在不补问情况下可直接起草正文
 
+### Step 7: 执行包持久化（必做，失败则阻断）
+
+创作执行包除了作为 agent 文本输出供 Step 2A 直接消费外，**必须同步写入磁盘**作为可追溯的权威快照。**由助手脚本 `build_execution_package.py` 负责落盘 + schema 校验**，agent 只需把三段 dict（`task_brief` / `context_contract` / `step_2a_write_prompt`）序列化为 JSON 通过 stdin 传入。这样 agent 不需要构造复杂 Python 字面量。
+
+**输出路径**（两份由脚本保证同时存在且非空）：
+- `.webnovel/context/ch{NNNN}_context.json` — 结构化执行包（供 Step 6 审计、Step 5 data-agent 交叉验证、断点恢复）
+- `.webnovel/context/ch{NNNN}_context.md` — 人可读版本（供作者检查与跨章比对）
+
+**落盘方式**（将三段 JSON 通过 stdin 传给助手脚本）：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
+  --chapter ${chapter_num} \
+  --project-root "${PROJECT_ROOT}" \
+  --chapter-title "本章标题" \
+  --narrative-version "v3" \
+  --word-count-target "2400-3200" \
+  --is-transition-chapter false \
+  <<'EXECJSON'
+{
+  "task_brief": {
+    "core_task": {
+      "goal": "...",
+      "obstacle": "...",
+      "cost": "...",
+      "core_conflict_one_line": "...",
+      "must_complete": ["..."],
+      "forbidden": ["..."],
+      "villain_level": "..."
+    },
+    "catch_last_chapter": {"last_chapter_hook": "...", "reader_expectation": "...", "opening_suggestion": "..."},
+    "characters_on_stage": [{"name": "...", "state": "...", "motivation": "...", "voice_rules": "..."}],
+    "scene_and_power_constraints": {"locations": ["..."], "available_abilities": ["..."], "forbidden_abilities": ["..."]},
+    "time_constraints": {"last_chapter_anchor": "...", "current_chapter_anchor": "...", "allowed_advance": "...", "transition_notes": "...", "countdown_state": "..."},
+    "style_guide": {"narrative_voice_summary": "...", "emotional_blueprint_anchor": "...", "classical_reference_recommendations": []},
+    "continuity_and_foreshadowing": {"must_address": [], "optional_foreshadowing": []},
+    "reader_pull_strategy": {"unclosed_questions": [], "hook_type": "...", "hook_strength": "...", "micro_payoffs": [], "emotional_blueprint_target": "..."}
+  },
+  "context_contract": {
+    "goal": "...",
+    "obstacle": "...",
+    "cost": "...",
+    "chapter_change": "...",
+    "unclosed_questions": [],
+    "core_conflict_one_line": "...",
+    "opening_type": "...",
+    "emotion_rhythm": "...",
+    "information_density": "...",
+    "is_transition_chapter": false,
+    "reader_pull_design": {},
+    "cool_points_plan": [],
+    "emotional_anchors_plan": {},
+    "time_constraints": {}
+  },
+  "step_2a_write_prompt": {
+    "chapter_beats": [{"beat": 1, "word_count": 500, "location": "...", "emotion": "...", "action": "..."}],
+    "immutable_facts": [],
+    "forbidden_items": [],
+    "final_check_list": []
+  },
+  "quality_feedback": {
+    "recurring_issues": [],
+    "avoidance_notes": [],
+    "success_reference": null,
+    "style_anchor": ""
+  }
+}
+EXECJSON
+```
+
+**上述命令执行后**：助手脚本会自动完成
+1. 读取 stdin JSON
+2. 校验三段（`task_brief` / `context_contract` / `step_2a_write_prompt`）非空
+3. 拼装完整 pkg 对象（加上 chapter/title/generated_at/version 等元数据）
+4. 写 `.webnovel/context/ch{NNNN}_context.json`
+5. 写 `.webnovel/context/ch{NNNN}_context.md`（人读版本，JSON 段落嵌 fenced code）
+6. 回读 JSON 确认三段非空（post-check）
+7. 非零退出码表示失败：1=参数错误 / 2=JSON 解析错误 / 3=schema 校验失败 / 4=IO 失败
+
+**硬要求**：
+- 助手脚本必须返回 exit=0，否则 context-agent 必须返回 `ok: false` 给主 agent，并阻断 Step 2A 启动
+- 主 agent 在 Step 1 complete-step 的 artifact 中必须包含 `{"ok": true, "file": ".webnovel/context/ch{NNNN}_context.json", "snapshot": ".webnovel/context_snapshots/ch{NNNN}.json"}`，不可只写 `{"v2": true}` 或 `{"ok": true}`
+- 禁止绕过助手脚本用 `cat > file <<'EOF'` 手写 JSON——手写极易漏 section 或类型错误，schema 校验会 fail
+
+**为什么必须落盘**：
+1. **跨章可追溯**：Ch3 审查时可以回看 Ch1 的执行包，验证伏笔预约是否按计划落实
+2. **Step 6 审计 A1 依赖**：Layer A1 检查 context_contract 的多来源提取，其中之一就是 `context/chNNNN_context.json`
+3. **断点恢复**：若 Step 2A 被中断，Step 2A 可从本文件重新起草而不需要重跑 context-agent
+4. **editor_notes 比对**：Step 6 写下章 prep 时要比对前章"规划 vs 实现"，没有持久化的执行包就只能 best-effort
+
 ---
 
 ## 质量反馈注入（扩展）
@@ -407,4 +497,5 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 11. ✅ **时间约束板块完整**（上章时间锚点、本章时间锚点、允许推进跨度、过渡要求、倒计时状态）
 12. ✅ **时间逻辑红线通过**（无回跳、无倒计时跳跃、大跨度有过渡要求）
 13. ✅ **情感锚点规划完整**（情感场景已识别、锚点类型已分配、高强度情感有梯度路径、跨章惯性有衔接方案、Show:Tell目标已设定）
+14. ✅ **执行包已落盘**：`.webnovel/context/ch{NNNN}_context.json` 与 `.webnovel/context/ch{NNNN}_context.md` 同时存在且非空；JSON 的 task_brief / context_contract / step_2a_write_prompt 三键均非空
 14. ✅ **情感beat有执行指令**（情感场景所在beat包含锚点类型+梯度位置，非仅"情绪上升/下降"）

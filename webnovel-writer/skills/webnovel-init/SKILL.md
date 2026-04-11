@@ -784,7 +784,64 @@ find "{project_root}/设定集" -maxdepth 1 -type f -name "*.md"
 test -f "{project_root}/大纲/总纲.md"
 test -f "{project_root}/.webnovel/idea_bank.json"
 test -d "{project_root}/调研笔记"
+test -f "{project_root}/.webnovel/hygiene_check.py"  # Step 7 commit 前强制闸门
 ```
+
+**hygiene_check 部署**（init 最后必做）：
+
+```bash
+# 部署框架版 hygiene_check shim — 写到项目 .webnovel/ 下
+cat > "{project_root}/.webnovel/hygiene_check.py" <<'PYSHIM'
+#!/usr/bin/env python3
+"""项目 hygiene_check 入口 shim — 转发到框架版并加载项目本地扩展。
+
+解析顺序：
+  1. $CLAUDE_PLUGIN_ROOT/scripts/hygiene_check.py
+  2. 向上走祖先目录，查找 webnovel-writer/scripts/hygiene_check.py
+  3. ~/.claude/plugins/cache/*/webnovel-writer/*/scripts/hygiene_check.py
+     （glob 所有版本，按 mtime 降序取最新——容忍 5.6.0 → 5.7.0 版本升级）
+"""
+import os, sys
+from pathlib import Path
+
+def resolve_framework_script() -> Path:
+    env_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if env_root:
+        p = Path(env_root) / "scripts" / "hygiene_check.py"
+        if p.exists():
+            return p
+    here = Path(__file__).resolve()
+    for ancestor in [here.parent, *here.parents]:
+        cand = ancestor / "webnovel-writer" / "scripts" / "hygiene_check.py"
+        if cand.exists():
+            return cand
+    plugin_cache = Path.home() / ".claude" / "plugins" / "cache"
+    if plugin_cache.exists():
+        candidates = sorted(
+            plugin_cache.glob("*/webnovel-writer/*/scripts/hygiene_check.py"),
+            key=lambda p: p.stat().st_mtime if p.exists() else 0,
+            reverse=True,
+        )
+        if candidates:
+            return candidates[0]
+    raise SystemExit("ERROR: 找不到框架版 hygiene_check.py。请设置 CLAUDE_PLUGIN_ROOT。")
+
+def main():
+    framework = resolve_framework_script()
+    sys.path.insert(0, str(framework.parent))
+    import hygiene_check as hc
+    sys.argv = [str(framework)] + sys.argv[1:]
+    if "--project-root" not in sys.argv:
+        sys.argv.extend(["--project-root", str(Path(__file__).resolve().parent.parent)])
+    sys.exit(hc.main())
+
+if __name__ == "__main__":
+    main()
+PYSHIM
+chmod +x "{project_root}/.webnovel/hygiene_check.py" 2>/dev/null || true
+```
+
+项目本地扩展（可选）：若项目有额外检查需求，可创建 `.webnovel/hygiene_check_local.py` 并定义 `run(root, chapter, report)` 函数。框架版会自动加载。
 
 成功标准：
 - `state.json` 存在且关键字段不为空（title/genre/target_words/target_chapters）。

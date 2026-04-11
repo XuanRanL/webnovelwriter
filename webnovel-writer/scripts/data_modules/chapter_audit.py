@@ -784,13 +784,24 @@ def check_A6_workflow_timing(project_root: Path, chapter: int) -> CheckResult:
             evidence="workflow_state.json is missing",
         )
 
+    # Audit-agent only cares about the webnovel-write or webnovel-review task
+    # for this chapter. Helper entries like "ch2-hygiene" share the same
+    # chapter number but have a different command — we must exclude them,
+    # otherwise A6 silently picks the wrong snapshot and reports bogus
+    # "1 ordered step" evidence.
+    primary_commands = {"webnovel-write", "webnovel-review"}
     snapshot = None
     current_task = data.get("current_task") or {}
-    if (current_task.get("args") or {}).get("chapter_num") == chapter:
+    if (
+        current_task.get("command") in primary_commands
+        and (current_task.get("args") or {}).get("chapter_num") == chapter
+    ):
         snapshot = current_task
     else:
         history = data.get("history") or []
         for item in reversed(history):
+            if item.get("command") not in primary_commands:
+                continue
             args = item.get("args") or {}
             if item.get("chapter") == chapter or args.get("chapter_num") == chapter:
                 snapshot = item

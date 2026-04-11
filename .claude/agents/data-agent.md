@@ -139,6 +139,66 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" wher
 - 引用库存在但本章无引用 → 输出 `allusions_used: []`，正常
 - Data Agent 自身不具备精细 NLP → 只做字符串匹配，不做语义推断
 
+**输出 schema 硬约束**（执行完毕前必须自检，不合规则必须修正后再写入 state.json）：
+
+`allusions_used` 必须是 JSON array，每个元素是 **object**（禁止 string/number 等原始类型），且包含以下 7 个必需字段：
+
+| 字段 | 类型 | 约束 |
+|---|---|---|
+| `id` | string | 引用库编号（S01/O01 等）或 `unknown` |
+| `snippet` | string | 正文中实际出现的片段（10-30 字，非空） |
+| `type` | string | 枚举：`诗词` / `民俗` / `经典` / `歌谣` / `史料` / `原创` / `梗` |
+| `source` | string | 出处（非空；unknown 条目填 `pending_search`） |
+| `carrier` | string | 载体（`心里一闪` / `环境` / `对话` / `标志台词` / `墙上字画` 等） |
+| `function` | string | 枚举：`剧情推进` / `角色塑造` / `氛围` / `伏笔` |
+| `is_original` | boolean | 是否原创资产 |
+
+**自检 Python 片段**（Data Agent 在 Step B.5 末尾必做）：
+
+```python
+import sys
+REQUIRED_KEYS = {"id", "snippet", "type", "source", "carrier", "function", "is_original"}
+VALID_TYPES = {"诗词", "民俗", "经典", "歌谣", "史料", "原创", "梗"}
+VALID_FUNCTIONS = {"剧情推进", "角色塑造", "氛围", "伏笔"}
+
+def validate_allusions(allusions):
+    if not isinstance(allusions, list):
+        return [f"allusions_used 必须是 list，得到 {type(allusions).__name__}"]
+    errors = []
+    for i, item in enumerate(allusions):
+        if not isinstance(item, dict):
+            errors.append(f"allusions_used[{i}] 必须是 dict，得到 {type(item).__name__} ({item!r})")
+            continue
+        missing = REQUIRED_KEYS - set(item.keys())
+        if missing:
+            errors.append(f"allusions_used[{i}] 缺字段: {sorted(missing)}")
+        if item.get("type") and item["type"] not in VALID_TYPES:
+            errors.append(f"allusions_used[{i}].type 非法值: {item['type']} (allowed: {VALID_TYPES})")
+        if item.get("function") and item["function"] not in VALID_FUNCTIONS:
+            errors.append(f"allusions_used[{i}].function 非法值: {item['function']} (allowed: {VALID_FUNCTIONS})")
+        for k in ("snippet", "source", "carrier", "id"):
+            v = item.get(k)
+            if not isinstance(v, str) or not v.strip():
+                errors.append(f"allusions_used[{i}].{k} 必须是非空字符串")
+        if not isinstance(item.get("is_original"), bool):
+            errors.append(f"allusions_used[{i}].is_original 必须是 bool")
+    return errors
+
+errs = validate_allusions(allusions_used)
+if errs:
+    print("❌ allusions_used schema 校验失败：", file=sys.stderr)
+    for e in errs:
+        print(f"  - {e}", file=sys.stderr)
+    print("提示：若本章实际有引用但格式简化（如 Ch1 的 list[str]），必须补全为 7 字段对象后再写入。", file=sys.stderr)
+    sys.exit(1)
+```
+
+**违规后果**：
+- 若 schema 校验 fail，**禁止写入 state.json**，向主 agent 返回 `ok: false, error: "allusions_schema_violation"`
+- 主 agent 必须重跑 data-agent 直到 schema pass，或手动补齐后再写
+- Ch1 风格的 `["蓼蓼者莪", "镜匣", "走字"]` 字符串列表一律 REJECT
+- hygiene_check H17 在 commit 前会再次校验，双层防御
+
 **🔍 unknown 条目的 search 补全（主 agent 调用）**：
 
 Data Agent 自身无 search 能力（只有 Read/Write/Bash），但若扫描发现未登记的诗词样片段：
@@ -467,7 +527,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 **重要**：Data Agent 输出的 `chapter_meta` 必须是**扁平对象**（不含章节号外层键），因为 `state_manager.py` 会自动以 `"{NNNN}"` 为键写入 `state.json["chapter_meta"]`。若 Agent 输出中已包含章节号键，会导致双层嵌套。
 
-**chapter_meta 必须包含以下 22 个字段**（audit B9 检查项，缺失 > 30% 判 fail）：
+**chapter_meta schema 分两层定义**：
+
+### 第一层 · Core 22 必需字段（audit B9 硬依赖，缺失 > 30% 判 fail）
 
 | 字段 | 类型 | 来源说明 |
 |------|------|---------|
@@ -494,6 +556,44 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `review_score` | float | 审查综合分 |
 | `checker_scores` | dict | 各 checker 分数 |
 | `allusions_used` | list[dict] | **本章引用的典故列表（Step B.5 产出），每条含 id/snippet/type/source/carrier/function/is_original 字段；无引用库或无引用时为空数组** |
+
+### 第二层 · Extended 26 扩展字段（允许但不强制；B9 不检查；为长线质量积累服务）
+
+| 字段 | 类型 | 用途 |
+|---|---|---|
+| `chapter_title` | str | title 的别名；只在迁移期保留，二选一即可 |
+| `overall_score` | int/float | 合并后加权分（int(internal*0.6 + external*0.4)）；与 review_score 互补 |
+| `external_avg` | float | Step 3.5 九模型平均分（排除 failed 模型） |
+| `anti_ai_force_check` | str | Step 4 终检结果：pass / fail |
+| `mode` | str | 写作模式：standard / fast / minimal |
+| `narrative_version` | str | 当前叙事版本（v1/v2/v3） |
+| `pattern` | dict | 本章开头/情绪/钩子 pattern 摘要 |
+| `pov_character` | str | 第一人称主角名 |
+| `pov_mode` | str | first / third / omniscient |
+| `emotion_rhythm` | str | 情绪节奏曲线（如"克制→震撼→压抑→温暖→警醒"） |
+| `strand` | str | strand 细分（与 strand_dominant 配合） |
+| `strand_sub` | str | 次级 strand |
+| `hook` | dict | 本章钩子详情：type/content/strength |
+| `hook_type` | str | 钩子类型快捷字段 |
+| `hook_content` | str | 钩子一句话描述 |
+| `ending` | dict | 章末状态详情（与 end_state 互补） |
+| `time_span` | str | 章内时间跨度 |
+| `cool_points` | list | 爽点落点记录 |
+| `micro_face_slap` | dict | 微打脸场景记录 |
+| `villain_level` | str | 本章反派层级 |
+| `upgrade_meta_independent` | bool | 金手指升级是否独立 |
+| `upgrade_meta_quote` | str | 金手指升级独白原句 |
+| `typed_reference_slots` | dict | 分类引用槽（如 literary/historical/internet_meme） |
+| `new_entities` | list | 本章新登场实体 |
+| `unresolved_questions` | list | 章末未闭合问题 |
+| `_hygiene_applied` | str | hygiene_check 应用标记（格式：`<timestamp>: <fix>`） |
+
+**数据写入规则**：
+- Core 22 字段：**必须全部写入**（缺失由 data-agent 用默认值占位，但不能为 None/空字符串）
+- Extended 26 字段：**按实际情况写入**，不强制；缺失不 fail
+- `allusions_used` 遵循 Step B.5 的 schema 硬约束（见上方）
+- Core 层字段如 `review_score` 与 Extended 层 `overall_score` 不同：`review_score` 是 Step 3 内部均分，`overall_score` 是合并后加权分；两者同时存在不矛盾
+- `foreshadowing_added` / `foreshadowing_resolved` 为历史别名，写入时必须用 `foreshadowing_planted` / `foreshadowing_paid`（hygiene_check H8 会阻断同时存在）
 
 Agent 输出格式（正确）：
 ```json
