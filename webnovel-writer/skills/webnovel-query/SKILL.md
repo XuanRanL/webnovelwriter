@@ -13,10 +13,10 @@ allowed-tools: Read Grep Bash AskUserQuestion
 ## 项目根保护
 
 ```bash
-export WORKSPACE_ROOT=”${CLAUDE_PROJECT_DIR:-$PWD}”
-export SCRIPTS_DIR=”${CLAUDE_PLUGIN_ROOT}/scripts”
-export SKILL_ROOT=”${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query”
-export PROJECT_ROOT=”$(python “${SCRIPTS_DIR}/webnovel.py” --project-root “${WORKSPACE_ROOT}” where)”
+export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
+export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT}/skills/webnovel-query"
+export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
 ```
 
 - `PROJECT_ROOT` 必须包含 `.webnovel/state.json`
@@ -36,14 +36,14 @@ export PROJECT_ROOT=”$(python “${SCRIPTS_DIR}/webnovel.py” --project-root 
 
 ## 引用加载策略
 
-先识别查询类型，再按需加载：
+先识别查询类型，再按需加载。路径说明：`references/` 指 skill 私有 `skills/webnovel-query/references/`；`../../references/` 指共享 references。
 
-| 查询类型 | Reference |
-|---------|-----------|
-| 所有查询 | `references/system-data-flow.md` |
-| 伏笔分析 | `references/advanced/foreshadowing.md` |
-| 节奏分析 | `references/shared/strand-weave-pattern.md` |
-| 格式查询 | `references/tag-specification.md` |
+| 查询类型 | Reference | 实际路径 |
+|---------|-----------|---------|
+| 所有查询 | 数据流规范 | `${SKILL_ROOT}/references/system-data-flow.md` |
+| 伏笔分析 | 伏笔分析 | `${SKILL_ROOT}/references/advanced/foreshadowing.md` |
+| 节奏分析 | Strand 模式 | `${SKILL_ROOT}/../../references/shared/strand-weave-pattern.md` |
+| 格式查询 | 标签规范 | `${SKILL_ROOT}/references/tag-specification.md` |
 
 不得同时加载两个以上 L2 文件，除非用户请求明确跨多类型。
 
@@ -51,7 +51,7 @@ export PROJECT_ROOT=”$(python “${SCRIPTS_DIR}/webnovel.py” --project-root 
 
 1. **识别查询类型**：根据用户关键词匹配上表
 2. **加载参考**：只加载该类型需要的 reference
-3. **加载数据**：`cat “$PROJECT_ROOT/.webnovel/state.json”`
+3. **加载数据**：`cat "$PROJECT_ROOT/.webnovel/state.json"`
 4. **确认上下文充足**：查询类型已识别 + 参考已加载 + state 已加载
 5. **执行查询**：按类型检索对应数据源
 6. **格式化输出**：按下方模板输出

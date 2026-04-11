@@ -83,17 +83,19 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 ### md 必读（L1，直接 Read）
 
-| Step | Trigger | Reference |
-|------|---------|-----------|
-| Step 1 | always | `references/reading-power-taxonomy.md` |
-| Step 1 | always | `references/genre-profiles.md` |
-| Step 1 | always | `references/style-variants.md` |
-| Step 2 | always | `references/shared/core-constraints.md` |
-| Step 2 | always | `references/anti-ai-guide.md` |
-| Step 3 | always | `references/review-schema.md`（reviewer agent 内部使用） |
-| Step 4 | always | `references/polish-guide.md` |
-| Step 4 | always | `references/writing/typesetting.md` |
-| Step 4 | always | `references/style-adapter.md` |
+路径说明：`../../references/` 指共享 references；`references/` 指 skill 私有 `skills/webnovel-write/references/`。
+
+| Step | Trigger | Reference | 实际路径 |
+|------|---------|-----------|---------|
+| Step 1 | always | 追读力分类 | `${SKILL_ROOT}/../../references/reading-power-taxonomy.md` |
+| Step 1 | always | 题材配置 | `${SKILL_ROOT}/../../references/genre-profiles.md` |
+| Step 1 | always | 风格差异化 | `${SKILL_ROOT}/references/style-variants.md` |
+| Step 2 | always | 核心约束 | `${SKILL_ROOT}/../../references/shared/core-constraints.md` |
+| Step 2 | always | Anti-AI 预防 | `${SKILL_ROOT}/references/anti-ai-guide.md` |
+| Step 3 | always | 审查 schema | `${SKILL_ROOT}/../../references/review-schema.md`（reviewer 内部使用） |
+| Step 4 | always | 润色指南 | `${SKILL_ROOT}/references/polish-guide.md` |
+| Step 4 | always | 排版规则 | `${SKILL_ROOT}/references/writing/typesetting.md` |
+| Step 4 | always | 风格适配 | `${SKILL_ROOT}/references/style-adapter.md` |
 
 ### CSV 检索（L2，调用 `reference_search.py`）
 
