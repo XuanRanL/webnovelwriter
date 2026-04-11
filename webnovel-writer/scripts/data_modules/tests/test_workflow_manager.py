@@ -19,6 +19,19 @@ def _load_module():
 
 def _run_full_write_workflow(module, chapter_num):
     module.start_task("webnovel-write", {"chapter_num": chapter_num})
+    # Each step is completed with a minimal but semantically-valid artifact
+    # (REQUIRED_ARTIFACT_FIELDS validation was added to prevent fake workflow logging).
+    semantic_artifacts = {
+        "Step 1": {"ok": True, "file": ".webnovel/context/ch0007_context.json"},
+        "Step 2A": {"ok": True, "word_count": 2500},
+        "Step 2B": {"style_applied": True},
+        "Step 3": {"overall_score": 90, "checker_count": 10},
+        "Step 3.5": {"external_avg": 88.5, "models_ok": ["kimi", "glm"]},
+        "Step 4": {"anti_ai_force_check": "pass", "polish_report": ".webnovel/polish_reports/ch0007.md"},
+        "Step 5": {"state_modified": True, "entities": 5},
+        "Step 6": {"decision": "approve", "audit_report": ".webnovel/audit_reports/ch0007.json"},
+        "Step 7": {"commit": "abc1234", "branch": "master"},
+    }
     for step_id, step_name in [
         ("Step 1", "Context"),
         ("Step 2A", "Draft"),
@@ -31,7 +44,7 @@ def _run_full_write_workflow(module, chapter_num):
         ("Step 7", "Backup"),
     ]:
         module.start_step(step_id, step_name)
-        module.complete_step(step_id)
+        module.complete_step(step_id, json.dumps(semantic_artifacts[step_id], ensure_ascii=False))
 
 
 def test_workflow_lifecycle_and_trace(tmp_path, monkeypatch):
@@ -87,9 +100,9 @@ def test_complete_step_rejects_mismatch_step_id(tmp_path, monkeypatch):
 
     module.start_task("webnovel-write", {"chapter_num": 9})
     module.start_step("Step 1", "Context")
-    module.complete_step("Step 1")
+    module.complete_step("Step 1", json.dumps({"file": ".webnovel/context/ch0009_context.json"}, ensure_ascii=False))
     module.start_step("Step 2A", "Draft")
-    module.complete_step("Step 2B")
+    module.complete_step("Step 2B", json.dumps({"word_count": 2500}, ensure_ascii=False))
 
     state = module.load_state()
     current_step = state["current_task"]["current_step"]
@@ -199,7 +212,7 @@ def test_complete_task_rejects_missing_required_steps(tmp_path, monkeypatch):
 
     module.start_task("webnovel-write", {"chapter_num": 21})
     module.start_step("Step 1", "Context")
-    module.complete_step("Step 1")
+    module.complete_step("Step 1", json.dumps({"file": ".webnovel/context/ch0021_context.json"}, ensure_ascii=False))
     module.complete_task()
 
     state = module.load_state()

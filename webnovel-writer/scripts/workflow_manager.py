@@ -150,6 +150,91 @@ OPTIONAL_PRECEDING_STEPS = {
     "webnovel-write": {"Step 2A"},
 }
 
+# Artifact semantic-field whitelist — complete-step must set at least one of these
+# fields for each step. Pure placeholder artifacts like {"v2": true} or {"ok": true}
+# with no semantic payload are rejected. See SKILL.md Step 0.5 "artifact 语义字段白名单".
+# This closes the Ch2-style "fake workflow completion" bug where someone manually
+# patched workflow_state.json to mark steps done without real evidence.
+REQUIRED_ARTIFACT_FIELDS = {
+    "webnovel-write": {
+        "Step 1": ["file", "snapshot", "context_file"],
+        "Step 2A": ["word_count"],
+        "Step 2B": ["style_applied", "deviation_notes"],
+        "Step 3": ["overall_score", "checker_count", "internal_avg", "review_score"],
+        "Step 3.5": ["external_avg", "models_ok", "external_models_ok"],
+        "Step 4": ["anti_ai_force_check", "polish_report", "fixes"],
+        "Step 5": ["state_modified", "entities", "foreshadowing", "scene_count", "chapter_meta_fields"],
+        "Step 6": ["decision", "audit_report", "audit_decision"],
+        "Step 7": ["commit", "branch", "commit_sha"],
+    }
+}
+
+# Fields that on their own are NOT sufficient (must pair with at least one semantic field).
+PLACEHOLDER_ONLY_FIELDS = {"v2", "ok", "chapter_completed", "committed"}
+
+
+def _is_semantically_empty(value: Any) -> bool:
+    """Decide whether a field value counts as 'empty placeholder'.
+
+    Rules:
+    - None / "" / [] / {} → empty
+    - numeric 0 / 0.0 → empty (word_count=0 / overall_score=0 are forgery signals)
+    - bool False / True → NON-empty (style_applied=False is a real signal)
+    - any other value → non-empty
+
+    bool must be checked with `type(v) is bool` because `isinstance(True, int)` is True.
+    """
+    if value is None or value == "":
+        return True
+    if isinstance(value, (list, dict, tuple, set)) and len(value) == 0:
+        return True
+    if type(value) is bool:
+        return False  # bool values always carry signal
+    if isinstance(value, (int, float)) and value == 0:
+        return True
+    return False
+
+
+def _validate_artifact_has_semantic_field(
+    command: str, step_id: str, artifacts: Dict[str, Any]
+) -> Optional[str]:
+    """Return an error message if the artifact lacks any semantic field for this step, else None.
+
+    Rules:
+    - If the command/step has no required-field entry, any non-empty dict is accepted (backwards compat).
+    - Otherwise, at least one key from REQUIRED_ARTIFACT_FIELDS[command][step_id] must be present
+      AND its value must be semantically non-empty (see _is_semantically_empty).
+    - Placeholder-only artifacts (e.g. {"v2": true}, {"ok": true}, {"committed": true}) are rejected.
+    - Numeric zeros (word_count=0, overall_score=0) are treated as empty to catch forgeries.
+    """
+    if not isinstance(artifacts, dict):
+        return f"artifact 必须是 JSON object，得到 {type(artifacts).__name__}"
+    if not artifacts:
+        return "artifact 为空对象；请至少填写一个语义字段"
+
+    required_map = REQUIRED_ARTIFACT_FIELDS.get(command, {})
+    required_fields = required_map.get(step_id, [])
+    if not required_fields:
+        return None  # no rule declared for this step, accept anything non-empty
+
+    present_keys = {k for k, v in artifacts.items() if not _is_semantically_empty(v)}
+    if not present_keys:
+        return "artifact 所有字段都为空占位（含数字 0）；至少填一个语义字段"
+
+    if present_keys.issubset(PLACEHOLDER_ONLY_FIELDS):
+        return (
+            f"artifact 只含占位字段 {sorted(present_keys)}；"
+            f"{step_id} 必须至少包含一个语义字段：{required_fields}"
+        )
+
+    has_semantic = any(f in present_keys for f in required_fields)
+    if not has_semantic:
+        return (
+            f"artifact 缺少 {step_id} 的语义字段；"
+            f"必须至少填写一个：{required_fields}（当前: {sorted(present_keys)}）"
+        )
+    return None
+
 
 def _active_parallel_group(command: str, step_id: str) -> Optional[set]:
     """Return the parallel group containing step_id, or None."""
@@ -481,16 +566,49 @@ def complete_step(step_id, artifacts_json=None):
         print(f"⚠️ {step_id} 已完成，忽略重复调用")
         return
 
-    target_step["status"] = STEP_STATUS_COMPLETED
-    target_step["completed_at"] = now_iso()
-
+    # Artifact semantic validation — close the "fake workflow" loophole.
+    # Applied BEFORE state mutation so rejection leaves workflow_state.json intact.
+    command = str(task.get("command") or "")
     if artifacts_json:
         try:
             artifacts = json.loads(artifacts_json)
-            target_step["artifacts"] = artifacts
-            task["artifacts"].update(artifacts)
         except json.JSONDecodeError as exc:
-            print(f"⚠️ Artifacts JSON 解析失败: {exc}")
+            print(f"❌ Artifacts JSON 解析失败: {exc}")
+            safe_append_call_trace(
+                "step_complete_rejected",
+                {
+                    "requested_step_id": step_id,
+                    "command": command,
+                    "reason": "artifact_json_decode_error",
+                    "error": str(exc),
+                },
+            )
+            return
+    else:
+        artifacts = {}
+
+    err = _validate_artifact_has_semantic_field(command, step_id, artifacts)
+    if err is not None:
+        print(f"❌ {step_id} complete-step 被拒：{err}")
+        print(f"   参考 SKILL.md Step 0.5 的 artifact 语义字段白名单或 REQUIRED_ARTIFACT_FIELDS")
+        safe_append_call_trace(
+            "step_complete_rejected",
+            {
+                "requested_step_id": step_id,
+                "command": command,
+                "reason": "artifact_missing_semantic_field",
+                "error": err,
+                "artifacts_received": artifacts,
+            },
+        )
+        return
+
+    target_step["status"] = STEP_STATUS_COMPLETED
+    target_step["completed_at"] = now_iso()
+
+    if artifacts:
+        target_step["artifacts"] = artifacts
+        task["artifacts"].update(artifacts)
 
     task["completed_steps"].append(target_step)
     if is_current:
