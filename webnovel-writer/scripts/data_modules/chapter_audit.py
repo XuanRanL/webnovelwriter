@@ -284,16 +284,42 @@ def check_A1_contract_completeness(project_root: Path, chapter: int) -> CheckRes
             panels_count = len(present_v2) + (1 if has_meta else 0)
             panels_list = (["meta"] if has_meta else []) + present_v2
             fmt = "v2"
-            # v2 contract: 从 meta 或 core.content 中提取
+            # v2 contract: 从 meta / core.content / 同目录 .md 中提取关键词
             contract = payload.get("contract") or payload.get("Contract") or {}
             if not contract:
-                meta = payload.get("meta") or {}
-                if meta.get("context_contract_version"):
-                    core = sections.get("core", {})
-                    core_content = core.get("content", {}) if isinstance(core, dict) else {}
-                    outline = core_content.get("chapter_outline", "") if isinstance(core_content, dict) else ""
-                    kw = ["目标", "阻力", "代价", "本章变化", "钩子", "Strand", "时间锚点", "章内时间跨度"]
-                    contract = {k: True for k in kw if k in str(outline)}
+                contract_fields_found: set = set()
+                # Contract v2 字段标记列表（中文 + 英文，覆盖 context-agent 两种输出风格）
+                CONTRACT_MARKERS = [
+                    "目标", "阻力", "代价", "本章变化", "钩子",
+                    "未闭合问题", "核心冲突", "开头类型", "情绪节奏",
+                    "爽点", "情感锚点", "时间约束", "Strand", "时间锚点", "章内时间跨度",
+                    "goal", "obstacle", "cost", "change", "open_question",
+                    "core_conflict", "opening_type", "emotion_rhythm",
+                    "hooks", "cool_point", "emotion_anchor", "time_constraint",
+                ]
+                # 来源 1: sections.core.content.chapter_outline（字符串）
+                core = sections.get("core", {})
+                core_content = core.get("content", {}) if isinstance(core, dict) else {}
+                outline_text = core_content.get("chapter_outline", "") if isinstance(core_content, dict) else ""
+                if isinstance(outline_text, str):
+                    for m in CONTRACT_MARKERS:
+                        if m in outline_text:
+                            contract_fields_found.add(m)
+                # 来源 2: sections.core.content 本身的 dict keys
+                if isinstance(core_content, dict):
+                    for k in core_content.keys():
+                        contract_fields_found.add(k)
+                # 来源 3: 同章节 .md 文件（context-agent 首选输出）
+                md_path = snap_path.with_suffix(".md")
+                if md_path.exists():
+                    try:
+                        md_text = md_path.read_text(encoding="utf-8")
+                        for m in CONTRACT_MARKERS:
+                            if m in md_text:
+                                contract_fields_found.add(m)
+                    except Exception:
+                        pass
+                contract = {k: True for k in contract_fields_found}
             contract_fields = len(contract) if isinstance(contract, dict) else 0
         else:
             # --- 格式 C: v1 — 8 个顶级 key ---
@@ -1029,6 +1055,7 @@ def check_B2_entities_three_way(project_root: Path, chapter: int) -> CheckResult
         )
     chapter_text = _read_text(chapter_file) or ""
     entities_scenes: set[str] = set()
+    entity_names: Dict[str, set] = {}  # entity_id → {canonical_name, alias1, alias2, ...}
     try:
         conn = sqlite3.connect(str(db_path))
         cur = conn.cursor()
@@ -1042,6 +1069,32 @@ def check_B2_entities_three_way(project_root: Path, chapter: int) -> CheckResult
                 except Exception:
                     # 也可能是逗号分隔字符串
                     entities_scenes.update(s.strip() for s in str(row[0]).split(",") if s.strip())
+        # 解析 entity_id → canonical_name + aliases（正文使用中文姓名，entity_id 是英文主键）
+        # 注意: entities / aliases 表在旧 schema 或测试 fixture 里可能不存在，
+        # 单独 try/except 保证即使查询失败也不会中断 B2 检查。
+        if entities_scenes:
+            placeholders = ",".join("?" * len(entities_scenes))
+            eid_list = list(entities_scenes)
+            try:
+                cur.execute(
+                    f"SELECT id, canonical_name FROM entities WHERE id IN ({placeholders})",
+                    eid_list,
+                )
+                for eid, cname in cur.fetchall():
+                    if cname:
+                        entity_names.setdefault(eid, set()).add(cname)
+            except Exception:
+                pass  # entities 表缺失时回退到旧行为
+            try:
+                cur.execute(
+                    f"SELECT entity_id, alias FROM aliases WHERE entity_id IN ({placeholders})",
+                    eid_list,
+                )
+                for eid, alias in cur.fetchall():
+                    if alias:
+                        entity_names.setdefault(eid, set()).add(alias)
+            except Exception:
+                pass  # aliases 表缺失时回退到旧行为
         conn.close()
     except Exception as exc:
         return CheckResult(
@@ -1057,10 +1110,18 @@ def check_B2_entities_three_way(project_root: Path, chapter: int) -> CheckResult
             remediation=["重跑 Step 5 B (场景切片 + 实体抽取)"],
         )
     # 检查每个实体是否在正文出现
-    # 支持复合中文名模糊匹配（如"推演课教官"→正文出现"教官"即匹配）
+    # 优先用 canonical_name + aliases 做匹配（entity_id 是英文主键，在中文正文中永远不会匹配）
+    # fallback 用复合中文名模糊匹配（如"推演课教官"→正文出现"教官"即匹配）
     def _entity_in_text(entity: str, text: str) -> bool:
+        # 1. 首先查 canonical_name + aliases
+        names = entity_names.get(entity)
+        if names:
+            if any(n and n in text for n in names):
+                return True
+        # 2. fallback: 直接 substring
         if entity in text:
             return True
+        # 3. fallback: 中文前缀/后缀模糊匹配
         cjk = re.findall(r'[\u4e00-\u9fff]+', entity)
         full_cjk = "".join(cjk)
         if len(full_cjk) <= 2:

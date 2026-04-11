@@ -1498,14 +1498,72 @@ def main():
                 }
             )
 
-        for s in scenes:
-            scene_index = s.get("index", 0)
+        # ----- 场景 chunk（鲁棒 schema 支持）-----
+        # 历史 bug：旧版只读 s.get("index", 0) + s.get("content", "")，任何使用
+        # {scene_index, start_line, end_line} 或 {id, start_line, end_line, summary}
+        # 这种 index.db 原生 schema 的调用都会静默回退到 scene_index=0 + content=""，
+        # 导致所有场景 chunk 碰撞成 1 条。修复：支持多种字段别名 + 从正文文件按行号
+        # 切片自动补齐 content。
+        chapter_file_cache: Optional[List[str]] = None
+
+        def _load_chapter_lines() -> List[str]:
+            nonlocal chapter_file_cache
+            if chapter_file_cache is not None:
+                return chapter_file_cache
+            chapter_file_cache = []
+            if config is None:
+                return chapter_file_cache
+            正文_dir = config.project_root / "正文"
+            padded = f"{args.chapter:04d}"
+            candidates = sorted(正文_dir.glob(f"第{padded}章-*.md")) + sorted(正文_dir.glob(f"第{padded}章.md"))
+            if candidates:
+                try:
+                    chapter_file_cache = candidates[0].read_text(encoding="utf-8").splitlines()
+                except Exception:
+                    pass
+            return chapter_file_cache
+
+        seen_scene_indices: set[int] = set()
+        duplicate_drift = 0
+
+        for pos, s in enumerate(scenes):
+            if not isinstance(s, dict):
+                continue
+            # 字段别名：index | scene_index | id
+            scene_index = s.get("index")
+            if scene_index is None:
+                scene_index = s.get("scene_index")
+            if scene_index is None:
+                scene_index = s.get("id")
+            try:
+                scene_index = int(scene_index) if scene_index is not None else pos
+            except (TypeError, ValueError):
+                scene_index = pos
+
+            # 内容来源：content > text > body > (正文文件按 start_line/end_line 切片) > summary
+            content = s.get("content") or s.get("text") or s.get("body")
+            if not content:
+                start_line = s.get("start_line")
+                end_line = s.get("end_line")
+                if isinstance(start_line, int) and isinstance(end_line, int) and start_line >= 1:
+                    lines = _load_chapter_lines()
+                    if lines:
+                        content = "\n".join(lines[max(0, start_line - 1): end_line])
+            if not content:
+                content = s.get("summary", "") or ""
+
+            # 去重检测
+            if scene_index in seen_scene_indices:
+                duplicate_drift += 1
+                continue
+            seen_scene_indices.add(scene_index)
+
             chunk_id = f"ch{args.chapter:04d}_s{int(scene_index)}"
             chunks.append(
                 {
                     "chapter": args.chapter,
                     "scene_index": scene_index,
-                    "content": s.get("content", ""),
+                    "content": content,
                     "chunk_type": "scene",
                     "parent_chunk_id": parent_chunk_id,
                     "chunk_id": chunk_id,
@@ -1515,8 +1573,13 @@ def main():
 
         stored = asyncio.run(adapter.store_chunks(chunks))
         skipped = len(chunks) - stored
-        result = {"stored": stored, "skipped": skipped, "total": len(chunks)}
-        if skipped > 0:
+        result = {
+            "stored": stored,
+            "skipped": skipped,
+            "total": len(chunks),
+            "duplicate_scene_index_dropped": duplicate_drift,
+        }
+        if duplicate_drift > 0 or skipped > 0:
             emit_success(result, message="indexed_with_warnings", chapter=args.chapter)
         else:
             emit_success(result, message="indexed", chapter=args.chapter)

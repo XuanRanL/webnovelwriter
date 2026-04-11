@@ -23,7 +23,7 @@ from pathlib import Path
 from runtime_compat import enable_windows_utf8_stdio
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 import filelock
 
 from .config import get_config
@@ -1007,6 +1007,133 @@ class StateManager:
 
         return warnings
 
+    def _count_chapter_chars(self, chapter: int) -> int:
+        """从实际章节文件统计汉字数（权威字数数据源）。失败返回 0。"""
+        try:
+            import re as _re
+            from pathlib import Path as _Path
+            padded = f"{int(chapter):04d}"
+            正文_dir = _Path(self.config.project_root) / "正文"
+            candidates = list(正文_dir.glob(f"第{padded}章-*.md")) + list(正文_dir.glob(f"第{padded}章.md"))
+            if not candidates:
+                return 0
+            text = candidates[0].read_text(encoding="utf-8")
+            return len(_re.findall(r"[\u4e00-\u9fff]", text))
+        except Exception:
+            return 0
+
+    def _count_chapter_scenes(self, chapter: int) -> int:
+        """查询 index.db 中该章节 scenes 数。失败返回 0。"""
+        try:
+            import sqlite3 as _sqlite3
+            from pathlib import Path as _Path
+            db = _Path(self.config.project_root) / ".webnovel" / "index.db"
+            if not db.exists():
+                return 0
+            conn = _sqlite3.connect(str(db))
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM scenes WHERE chapter = ?", (int(chapter),)
+                ).fetchone()
+                return int(row[0]) if row else 0
+            finally:
+                conn.close()
+        except Exception:
+            return 0
+
+    def _query_checker_scores(self, chapter: int) -> Optional[Dict[str, Any]]:
+        """查询 index.db review_metrics 表该章节最新评分。失败返回 None。"""
+        try:
+            import sqlite3 as _sqlite3
+            from pathlib import Path as _Path
+            db = _Path(self.config.project_root) / ".webnovel" / "index.db"
+            if not db.exists():
+                return None
+            conn = _sqlite3.connect(str(db))
+            try:
+                row = conn.execute(
+                    "SELECT overall_score, dimension_scores FROM review_metrics "
+                    "WHERE start_chapter <= ? AND end_chapter >= ? "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (int(chapter), int(chapter)),
+                ).fetchone()
+                if not row:
+                    return None
+                overall, dims_json = row
+                result: Dict[str, Any] = {"overall": overall}
+                if dims_json:
+                    try:
+                        dims = json.loads(dims_json)
+                        if isinstance(dims, dict):
+                            result.update(dims)
+                    except Exception:
+                        pass
+                return result
+            finally:
+                conn.close()
+        except Exception:
+            return None
+
+    def _backfill_chapter_meta(self, chapter: int, chapter_meta: Dict[str, Any]) -> None:
+        """集中修复 Data Agent 产生的 chapter_meta 字段漂移。
+
+        根本原因：data-agent.md 使用嵌套结构（hook.strength / hook.type），
+        但 audit CLI 的 B9 检查要求扁平字段。word_count 和 strand_dominant
+        无权威源约束。本方法是唯一的补全入口。
+        """
+        # --- 1. word_count：始终以实际文件汉字数为权威源 ---
+        # 正文文件是 source of truth。允许 <1% 微小偏差，超出则强制使用文件计数。
+        real_wc = self._count_chapter_chars(chapter)
+        if real_wc > 0:
+            existing_wc = chapter_meta.get("word_count")
+            if not isinstance(existing_wc, int) or existing_wc <= 0:
+                chapter_meta["word_count"] = real_wc
+            elif abs(real_wc - existing_wc) / max(real_wc, 1) > 0.01:
+                chapter_meta["word_count"] = real_wc
+
+        # --- 2. strand_dominant：从 strand_tracker 权威读取 ---
+        tracker = self._state.get("strand_tracker", {}) or {}
+        history = tracker.get("history", []) or []
+        matched_strand = None
+        for entry in reversed(history):
+            if isinstance(entry, dict) and int(entry.get("chapter", -1)) == int(chapter):
+                matched_strand = entry.get("strand")
+                break
+        if matched_strand:
+            chapter_meta["strand_dominant"] = matched_strand
+        elif not chapter_meta.get("strand_dominant"):
+            chapter_meta["strand_dominant"] = tracker.get("current_dominant", "quest")
+
+        # --- 3. 扁平字段从嵌套补齐（hook_strength/hook_type/hook_content）---
+        hook = chapter_meta.get("hook")
+        if isinstance(hook, dict):
+            if "hook_strength" not in chapter_meta and hook.get("strength"):
+                chapter_meta["hook_strength"] = hook["strength"]
+            if "hook_type" not in chapter_meta and hook.get("type"):
+                chapter_meta["hook_type"] = hook["type"]
+            if "hook_content" not in chapter_meta and hook.get("content"):
+                chapter_meta["hook_content"] = hook["content"]
+
+        # --- 4. scene_count：从 index.db 反查 ---
+        if "scene_count" not in chapter_meta or not chapter_meta.get("scene_count"):
+            sc = self._count_chapter_scenes(chapter)
+            if sc > 0:
+                chapter_meta["scene_count"] = sc
+
+        # --- 5. 时间戳：创建/更新时间 ---
+        now_iso = datetime.now(timezone.utc).isoformat()
+        meta_key = f"{int(chapter):04d}"
+        existing = (self._state.get("chapter_meta") or {}).get(meta_key) or {}
+        if "created_at" not in chapter_meta:
+            chapter_meta["created_at"] = existing.get("created_at") or now_iso
+        chapter_meta["updated_at"] = now_iso
+
+        # --- 6. checker_scores：从 review_metrics 反查 ---
+        if "checker_scores" not in chapter_meta or not chapter_meta.get("checker_scores"):
+            scores = self._query_checker_scores(chapter)
+            if scores:
+                chapter_meta["checker_scores"] = scores
+
     def process_chapter_result(self, chapter: int, result: Dict) -> List[str]:
         """
         处理 Data Agent 的章节处理结果（v5.1 引入，v5.4 沿用）
@@ -1083,6 +1210,11 @@ class StateManager:
         chapter_meta = result.get("chapter_meta")
         if isinstance(chapter_meta, dict):
             meta_key = f"{int(chapter):04d}"
+            # Data Agent 自由填充的 chapter_meta 常出现 3 类漂移，此处集中兜底：
+            # 1. word_count 缺失或为 0 → 从实际正文重新统计（权威数据源）
+            # 2. strand_dominant 缺失或硬编码为默认 "quest" → 从 strand_tracker 取
+            # 3. audit B9 要求的扁平字段（hook_strength/scene_count/...）→ 从嵌套字段补齐
+            self._backfill_chapter_meta(chapter, chapter_meta)
             self._state.setdefault("chapter_meta", {})
             self._state["chapter_meta"][meta_key] = chapter_meta
             self._pending_chapter_meta[meta_key] = chapter_meta

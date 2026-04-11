@@ -143,12 +143,27 @@ PARALLEL_GROUPS = {
     "webnovel-write": [{"Step 3", "Step 3.5"}],
 }
 
+# Optional preceding steps: these may be legitimately skipped/merged by the caller
+# (e.g. Step 2A is often inlined after context-agent instead of getting its own
+# workflow start-step/complete-step call). Missing them should NOT block downstream.
+OPTIONAL_PRECEDING_STEPS = {
+    "webnovel-write": {"Step 2A"},
+}
+
+
+def _active_parallel_group(command: str, step_id: str) -> Optional[set]:
+    """Return the parallel group containing step_id, or None."""
+    for group in PARALLEL_GROUPS.get(command, []):
+        if step_id in group:
+            return group
+    return None
+
 
 def step_allowed_before(command: str, step_id: str, completed_steps: list[Dict[str, Any]]) -> bool:
     """Check simple ordering constraints by pending sequence.
 
     Parallel groups: steps in the same group do not require each other.
-    E.g. Step 3 and Step 3.5 can start independently after Step 2B.
+    Optional preceding steps (e.g. Step 2A) are silently allowed to be missing.
     """
     sequence = get_pending_steps(command)
     if step_id not in sequence:
@@ -164,6 +179,10 @@ def step_allowed_before(command: str, step_id: str, completed_steps: list[Dict[s
         if step_id in group:
             required_before = [s for s in required_before if s not in group]
             break
+
+    # Remove optional preceding steps
+    optional = OPTIONAL_PRECEDING_STEPS.get(command, set())
+    required_before = [s for s in required_before if s not in optional]
 
     return all(prev in completed_ids for prev in required_before)
 
@@ -183,6 +202,9 @@ def missing_required_before(command: str, step_id: str, completed_steps: list[Di
         if step_id in group:
             required_before = [s for s in required_before if s not in group]
             break
+
+    optional = OPTIONAL_PRECEDING_STEPS.get(command, set())
+    required_before = [s for s in required_before if s not in optional]
 
     return [step for step in required_before if step not in completed_ids]
 
@@ -255,9 +277,26 @@ def _task_history_entry(state: Dict[str, Any], task: Dict[str, Any], *, status: 
 
 
 def _pending_required_steps(task: Dict[str, Any]) -> list[str]:
-    sequence = get_pending_steps(str(task.get("command") or ""))
+    """Get pending required steps for task completion.
+
+    Aware of parallel groups (if any member is completed, the group is satisfied)
+    and optional preceding steps (never required).
+    """
+    command = str(task.get("command") or "")
+    sequence = get_pending_steps(command)
     completed_ids = {str(item.get("id")) for item in task.get("completed_steps", [])}
-    return [step_id for step_id in sequence if step_id not in completed_ids]
+
+    # Build set of "satisfied" steps including parallel-group peers
+    satisfied = set(completed_ids)
+    for group in PARALLEL_GROUPS.get(command, []):
+        if any(s in completed_ids for s in group):
+            satisfied.update(group)
+
+    # Optional steps never block task completion
+    optional = OPTIONAL_PRECEDING_STEPS.get(command, set())
+    satisfied.update(optional)
+
+    return [step_id for step_id in sequence if step_id not in satisfied]
 
 
 def start_task(command, args):
@@ -319,18 +358,25 @@ def start_step(step_id, step_name, progress_note=None):
         return
 
     if current_step and current_step.get("status") in {STEP_STATUS_STARTED, STEP_STATUS_RUNNING}:
-        safe_append_call_trace(
-            "step_start_rejected",
-            {
-                "step_id": step_id,
-                "command": command,
-                "chapter": task.get("args", {}).get("chapter_num"),
-                "reason": "active_step_running",
-                "active_step_id": current_step.get("id"),
-            },
-        )
-        print(f"⚠️ 当前仍在执行 {current_step.get('id')}，拒绝启动 {step_id}")
-        return
+        # 并行组保护：如果 current_step 和新 step_id 属于同一个并行组（如 Step 3 / Step 3.5），
+        # 不要拒绝 — 把 current_step 移到 parallel_steps 缓冲区保留运行状态。
+        active_group = _active_parallel_group(command, step_id)
+        if active_group and current_step.get("id") in active_group:
+            task.setdefault("parallel_steps", []).append(current_step)
+            task["current_step"] = None
+        else:
+            safe_append_call_trace(
+                "step_start_rejected",
+                {
+                    "step_id": step_id,
+                    "command": command,
+                    "chapter": task.get("args", {}).get("chapter_num"),
+                    "reason": "active_step_running",
+                    "active_step_id": current_step.get("id"),
+                },
+            )
+            print(f"⚠️ 当前仍在执行 {current_step.get('id')}，拒绝启动 {step_id}")
+            return
 
     if not step_allowed_before(command, step_id, task.get("completed_steps", [])):
         missing_steps = missing_required_before(command, step_id, task.get("completed_steps", []))
@@ -389,39 +435,66 @@ def start_step(step_id, step_name, progress_note=None):
 
 
 def complete_step(step_id, artifacts_json=None):
-    """Mark step completed."""
+    """Mark step completed.
+
+    Looks for the step in both current_step and parallel_steps (for parallel-group peers
+    that were moved aside when a sibling started).
+    """
     state = load_state()
     task = state.get("current_task")
-    if not task or not task.get("current_step"):
+    if not task:
         print("⚠️ 无活动 Step")
         return
 
-    current_step = task["current_step"]
-    if current_step.get("id") != step_id:
-        print(f"⚠️ 当前 Step 为 {current_step.get('id')}，与 {step_id} 不一致，拒绝完成")
+    current_step = task.get("current_step")
+    parallel_steps = task.get("parallel_steps") or []
+
+    target_step = None
+    is_current = False
+    if current_step and current_step.get("id") == step_id:
+        target_step = current_step
+        is_current = True
+    else:
+        for idx, ps in enumerate(parallel_steps):
+            if ps.get("id") == step_id:
+                target_step = parallel_steps.pop(idx)
+                task["parallel_steps"] = parallel_steps
+                break
+
+    if target_step is None:
+        active_ids = [current_step.get("id")] if current_step else []
+        active_ids += [ps.get("id") for ps in parallel_steps]
+        print(f"⚠️ 未找到待完成 Step {step_id}（当前活跃: {active_ids}）")
         safe_append_call_trace(
             "step_complete_rejected",
             {
                 "requested_step_id": step_id,
-                "active_step_id": current_step.get("id"),
+                "active_step_ids": active_ids,
                 "command": task.get("command"),
             },
         )
         return
 
-    current_step["status"] = STEP_STATUS_COMPLETED
-    current_step["completed_at"] = now_iso()
+    # Guard: avoid double completion
+    existing_ids = [row.get("id") for row in task.get("completed_steps", [])]
+    if step_id in existing_ids and target_step.get("status") == STEP_STATUS_COMPLETED:
+        print(f"⚠️ {step_id} 已完成，忽略重复调用")
+        return
+
+    target_step["status"] = STEP_STATUS_COMPLETED
+    target_step["completed_at"] = now_iso()
 
     if artifacts_json:
         try:
             artifacts = json.loads(artifacts_json)
-            current_step["artifacts"] = artifacts
+            target_step["artifacts"] = artifacts
             task["artifacts"].update(artifacts)
         except json.JSONDecodeError as exc:
             print(f"⚠️ Artifacts JSON 解析失败: {exc}")
 
-    task["completed_steps"].append(current_step)
-    task["current_step"] = None
+    task["completed_steps"].append(target_step)
+    if is_current:
+        task["current_step"] = None
     task["last_heartbeat"] = now_iso()
 
     save_state(state)

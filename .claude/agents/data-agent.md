@@ -70,7 +70,7 @@ model: inherit
 - `${SCRIPTS_DIR}/webnovel.py`
 
 ```bash
-export SCRIPTS_DIR="I:/AI-extention/webnovel-writer/webnovel-writer/scripts"
+export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts"
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" preflight
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" where
 ```
@@ -91,6 +91,74 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" wher
 ### Step B: AI 实体提取
 
 **Data Agent 直接执行** (无需调用外部 LLM)。
+
+### Step B.5: 典故使用抽取（条件执行）
+
+> **目的**：记录本章实际使用的典故/诗词/民俗/原创口诀，用于增量更新引用库、跨章密度追踪、以及为 Step 6 audit-agent 的 E11 审计项提供数据源。
+
+**触发条件**：`设定集/典故引用库.md` 或 `设定集/原创诗词口诀.md` 至少一个存在。两文件都不存在时，跳过此步并输出 `allusions_used: []`。
+
+**执行策略**：
+
+1. **加载引用库索引**：
+   ```bash
+   test -f "{project_root}/设定集/典故引用库.md" && cat "{project_root}/设定集/典故引用库.md"
+   test -f "{project_root}/设定集/原创诗词口诀.md" && cat "{project_root}/设定集/原创诗词口诀.md"
+   ```
+2. **从引用库提取关键词字典**：每条引用的 `snippet`（原文）、`id`（编号如 S01/O01）、`source`（出处）
+3. **扫描本章正文**：
+   - 精确匹配原文字段（2 字以上）
+   - 出处名匹配（如"诗经·蓼莪"）
+   - 近似匹配（按书名号/引号/"正如...所言"等引导语）
+4. **对每条命中记录**：
+   - `id`：引用库编号；无法匹配时填 `unknown`
+   - `snippet`：正文中实际出现的片段（10-30字）
+   - `type`：诗词/民俗/经典/歌谣/史料/原创/梗
+   - `source`：出处（如"诗经·蓼莪"或"老陈遗诗"）
+   - `carrier`：载体（心里一闪/环境音/墙上字画/对话/标志台词 等）
+   - `function`：功能（剧情推进/角色塑造/氛围/伏笔 任一）
+   - `is_original`：是否为原创资产（对应 `原创诗词口诀.md` 里的条目）
+5. **计算本章典故密度**：
+   - `total_count`：本章引用总数
+   - `per_category`：按类型分组计数
+6. **若检测到 `unknown` 条目**：记录 warning，提示"本章出现未登记的引用，请人工补入引用库"
+
+**输出写入 `chapter_meta.allusions_used`**（见下方接口规范第 22 个字段）。
+
+**回写引用库的 "第 N 卷引用规划总表"**（best-effort，失败不阻断）：
+- 若引用库的表格有"实际使用"列，将本章章号写入该列对应的行
+- CLI 命令（若未来实现）：
+  ```bash
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
+    allusions update-usage --chapter {N} --data '{...}'
+  ```
+- 当前无 CLI 时，只写入 chapter_meta，引用库表格由人工定期同步
+
+**降级规则**：
+- 两个引用库文件都不存在 → 直接输出 `allusions_used: []`，不报错
+- 引用库存在但本章无引用 → 输出 `allusions_used: []`，正常
+- Data Agent 自身不具备精细 NLP → 只做字符串匹配，不做语义推断
+
+**🔍 unknown 条目的 search 补全（主 agent 调用）**：
+
+Data Agent 自身无 search 能力（只有 Read/Write/Bash），但若扫描发现未登记的诗词样片段：
+1. 先记录为 `id: unknown` + 原文 snippet，不阻断主流程
+2. 在 Data Agent 的输出报告中增加 `unknown_allusions_pending_search: [...]` 字段
+3. **主 agent 在 Data Agent 返回后**，必须遍历 `unknown_allusions_pending_search`，对每条调用 Tavily Search：
+   ```
+   Tavily query: "{snippet} 出处 诗词"  # 中文查询
+   max_results: 3
+   ```
+4. 搜索结果处理：
+   - 高置信度（多个来源一致且 score > 0.8）→ 自动补全 source/type 字段，标记 `auto_registered: true`
+   - 中置信度 → 记录 `suggested_source` 字段，标记 `needs_manual_review: true`，提交给作者审核
+   - 低置信度/搜索失败 → 保留 `id: unknown`，只记录 snippet
+5. 自动补全的条目由主 agent 追加到 `设定集/典故引用库.md` 的对应分类下（带 `verified_at` 时间戳）
+
+**避免重复搜索**：
+- 同一 snippet 在同一项目内只搜索一次
+- 搜索结果缓存到 `.webnovel/tmp/allusions_search_cache.json`
+- 缓存过期时间 30 天
 
 ### Step C: 实体消歧处理
 
@@ -125,10 +193,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" wher
 
 **strand_tracker 更新**（`state process-chapter` 不自动更新 strand_tracker，需额外调用）：
 ```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state update --strand-dominant '{"chapter":{chapter},"dominant":"<quest|fire|constellation>"}'
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state update --strand-dominant '{"chapter":{chapter},"dominant":"<quest|relationship|worldbuilding|action|mystery>"}'
 ```
-合法值（必须小写）：`quest`（主线任务）/ `fire`（感情线）/ `constellation`（世界观/关系网）。
-**此值必须与 chapter_meta.strand_dominant 一致**——从大纲的 Strand 字段读取并统一转为小写。每章必须调用一次。
+根据本章主线判断 dominant strand 类型，每章必须调用一次。
 
 ### Step E: 生成章节摘要文件（新增）
 
@@ -296,7 +363,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 - `step_k_status.proposed_additions`：识别到但尚未追加的条目（信息不足/模糊），Step 6 可用于 editor_notes 下章提醒
 - `step_k_status.skipped_reasons`：Step K 逐项跳过原因（如"实体信息不足"、"已存在"）
 
-### Step K: 设定集同步检查（每章执行，must-attempt）
+### Step K: 设定集同步检查（每章执行，best-effort）
 
 扫描本章正文与摘要，检查设定集文件是否需要更新：
 
@@ -306,9 +373,8 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
    - 道具/技术 → `设定集/道具与技术.md`
    - 机制/规则 → `设定集/力量体系.md` 或 `设定集/世界观.md`
 
-2. **已有条目状态更新**（必须逐项检查，不得跳过）：
-   - 道具状态变化 → 在 `道具与技术.md` 对应条目下追加 `[Ch{N} 状态] 描述`
-   - **特别注意**：玉佩/手杖等跨章道具即使状态未变化（如持续"凉的"），也必须追加本章状态行以维持连贯性链条
+2. **已有条目状态更新**：
+   - 道具状态变化 → 在 `道具与技术.md` 对应条目下追加 `[Ch{N} 动作] 描述`，更新"当前状态"行
    - 主角能力/关系变化 → 在 `主角卡.md` 的"当前能力"和"关键关系"段追加 `[Ch{N}]` 行
    - 主角性格/心态变化 → 在 `主角卡.md` 的"当前成长进度"段更新性格变化轨迹和下一个成长节点
 
@@ -324,24 +390,17 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
    ```
    - 若 CLI 不可用或失败，仅写 Markdown 文件（best-effort，不阻断）
 
-4. **典故引用标注**（必须执行，不得跳过）：
-   - 扫描本章正文中实际使用的典故（对照 context_snapshot 中的 `allusions` 列表）
-   - 在 `设定集/典故引用库.md` 主表的"适用场景"列标注 `Ch{N} **已用**（载体）`
-   - 在引用规划总表对应行末尾追加 `**Ch{N}已完成**`
-   - 若典故承载伏笔，同步在伏笔追踪中标注"典故落地"
-
-5. **资产变动**：
+4. **资产变动**：
    - 扫描正文中的信用点交易
    - 追加到 `设定集/资产变动表.md`
    - 更新 `state.json` 的 `progress.total_words`（累加本章字数）
 
-6. **调研笔记归档**：
+5. **调研笔记归档**：
    - 如果本章写作过程中使用了 Tavily 搜索获取专业信息
-   - 将有价值的搜索结果追加到 `调研笔记/` 对应主题文件
+   - 将有价值的搜索结果追加到 `调研笔记/` 对应主题文件（机甲技术/军事战术/星际物理/题材参考）
    - 标注 `[Ch{N}]` 和搜索关键词，方便后续定位
 
-所有追加必须带 `[Ch{N}]` 章节标注。Step K 中第 1-4 项为 must-attempt（必须尝试，仅当目标文件不存在时允许跳过），第 5-6 项为 best-effort。
-**Step K 输出必须在 `step_k_status` 中逐项列出每个子项的 outcome，禁止统一报告"全部完成"而不列明细。**
+所有追加必须带 `[Ch{N}]` 章节标注。Step K 失败不阻断流程。
 
 ## 审查报告持久化（扩展）
 
@@ -408,13 +467,13 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 **重要**：Data Agent 输出的 `chapter_meta` 必须是**扁平对象**（不含章节号外层键），因为 `state_manager.py` 会自动以 `"{NNNN}"` 为键写入 `state.json["chapter_meta"]`。若 Agent 输出中已包含章节号键，会导致双层嵌套。
 
-**chapter_meta 必须包含以下 21 个字段**（audit B9 检查项，缺失 > 30% 判 fail）：
+**chapter_meta 必须包含以下 22 个字段**（audit B9 检查项，缺失 > 30% 判 fail）：
 
 | 字段 | 类型 | 来源说明 |
 |------|------|---------|
 | `chapter` | int | 章号（整数，如 2） |
 | `title` | str | 章节标题（如"担保"） |
-| `word_count` | int | 正文中文汉字数（必须用 `len(re.findall(r'[\u4e00-\u9fff]', text))` 计算，禁止AI估算） |
+| `word_count` | int | 正文字数 |
 | `summary` | str | 一句话剧情摘要 |
 | `hook_strength` | str | 钩子强度（weak/medium/strong） |
 | `scene_count` | int | 场景数量 |
@@ -433,7 +492,8 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `foreshadowing_paid` | list[str] | 本章兑现的伏笔 |
 | `strand_dominant` | str | 主导情节线（quest/fire/constellation） |
 | `review_score` | float | 审查综合分 |
-| `checker_scores` | dict | 各 checker 分数（**必须从 `.webnovel/tmp/review_metrics.json` 的 `dimension_scores` 字段读取**，禁止留空） |
+| `checker_scores` | dict | 各 checker 分数 |
+| `allusions_used` | list[dict] | **本章引用的典故列表（Step B.5 产出），每条含 id/snippet/type/source/carrier/function/is_original 字段；无引用库或无引用时为空数组** |
 
 Agent 输出格式（正确）：
 ```json
@@ -460,7 +520,27 @@ Agent 输出格式（正确）：
     "foreshadowing_paid": ["玉佩灼痕延续"],
     "strand_dominant": "quest",
     "review_score": 93.0,
-    "checker_scores": {"设定一致性": 100, "连贯性": 97}
+    "checker_scores": {"设定一致性": 100, "连贯性": 97},
+    "allusions_used": [
+      {
+        "id": "S01",
+        "snippet": "蓼蓼者莪",
+        "type": "诗词",
+        "source": "诗经·蓼莪",
+        "carrier": "主角心里一闪",
+        "function": "伏笔",
+        "is_original": false
+      },
+      {
+        "id": "O01",
+        "snippet": "三十八任归，白布各覆眉",
+        "type": "原创",
+        "source": "老陈遗诗",
+        "carrier": "账册扉页题词",
+        "function": "伏笔",
+        "is_original": true
+      }
+    ]
   }
 }
 ```
