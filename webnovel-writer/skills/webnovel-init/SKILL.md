@@ -8,105 +8,50 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
 
 ## 目标
 
-- 通过结构化交互收集足够信息，避免“先生成再返工”。
+- 通过结构化交互收集足够信息，避免"先生成再返工"。
 - 产出可落地项目骨架：`.webnovel/state.json`、`设定集/*`、`大纲/总纲.md`、`.webnovel/idea_bank.json`。
 - 保证后续 `/webnovel-plan` 与 `/webnovel-write` 可直接运行。
 
 ## 执行原则
 
 1. 先收集，再生成；未过充分性闸门，不执行 `init_project.py`。
-2. 分波次提问，每轮只问“当前缺失且会阻塞下一步”的信息。
+2. 分波次提问，每轮只问"当前缺失且会阻塞下一步"的信息。
 3. 允许调用 `Read/Grep/Bash/Task/AskUserQuestion/WebSearch/WebFetch` 辅助收集。
 4. 用户已明确的信息不重复问；冲突信息优先让用户裁决。
 5. Deep 模式优先完整性，允许慢一点，但禁止漏关键字段。
 
-## 引用加载等级（strict, lazy）
+## 引用加载策略
 
-采用分级加载，避免一次性灌入全部资料：
+路径说明：`references/` 指 skill 私有 `skills/webnovel-init/references/`；`../../references/` 指共享 references。
 
-- L0：未确认任务前，不预加载参考。
-- L1：每个阶段仅加载该阶段“必读”文件。
-- L2：仅在题材、金手指、创意约束触发条件满足时加载扩展参考。
-- L3：市场趋势类、时效类资料仅在用户明确要求时加载。
+### md 必读
 
-路径约定：
-- `references/...` 相对当前 skill 目录（`${CLAUDE_PLUGIN_ROOT}/skills/webnovel-init/references/...`）。
-- `templates/...` 相对插件根目录（`${CLAUDE_PLUGIN_ROOT}/templates/...`）。
+| Step | Trigger | Reference | 实际路径 |
+|------|---------|-----------|---------|
+| Step 1 | always | 数据流规范 | `${SKILL_ROOT}/references/system-data-flow.md` |
+| Step 1 | always | 题材套路库 | `${SKILL_ROOT}/references/genre-tropes.md` |
+| 卖点/题材采集 | always | 题材配置 | `${SKILL_ROOT}/../../references/genre-profiles.md` |
 
-默认加载清单：
-- L1（启动前）：`references/genre-tropes.md`
-- L2（按需）：
-  - 题材模板：`templates/genres/{genre}.md`
-  - 金手指：`../../templates/golden-finger-templates.md`
-  - 世界观：`references/worldbuilding/faction-systems.md`
-  - 创意约束：按下方“逐文件引用清单”触发加载
-- L3（显式请求）：
-  - `references/creativity/market-trends-2026.md`
+### md 按需
 
-## References（逐文件引用清单）
+| Step | Trigger | Reference | 实际路径 |
+|------|---------|-----------|---------|
+| Step 2 | 用户人物扁平 | 角色设计 | `${SKILL_ROOT}/references/worldbuilding/character-design.md` |
+| Step 4 | always | 势力格局 | `${SKILL_ROOT}/references/worldbuilding/faction-systems.md` |
+| Step 4 | 涉及修仙/玄幻/高武/异能 | 力量体系 | `${SKILL_ROOT}/references/worldbuilding/power-systems.md` |
+| Step 4 | always | 世界规则 | `${SKILL_ROOT}/references/worldbuilding/world-rules.md` |
+| Step 5 | always | 创意约束 | `${SKILL_ROOT}/references/creativity/creativity-constraints.md` |
+| Step 5 | always | 卖点生成 | `${SKILL_ROOT}/references/creativity/selling-points.md` |
+| Step 5 | 复合题材 | 题材融合 | `${SKILL_ROOT}/references/creativity/creative-combination.md` |
+| Step 5 | 卡顿 | 灵感候选 | `${SKILL_ROOT}/references/creativity/inspiration-collection.md` |
+| Step 5 | 题材映射命中 | 反套路库 | `${SKILL_ROOT}/references/creativity/anti-trope-*.md` |
+| Step 6 | always | 设定一致性 | `${SKILL_ROOT}/references/worldbuilding/setting-consistency.md` |
 
-### 根目录
+### CSV 检索
 
-- `references/genre-tropes.md`
-  - 用途：Step 1 题材归一化、题材特征提示。
-  - 触发：所有项目必读。
-- `references/system-data-flow.md`
-  - 用途：初始化产物与后续 `/plan`、`/write` 的数据流一致性检查。
-  - 触发：Step 1 预检必读。
-
-### worldbuilding
-
-- `references/worldbuilding/character-design.md`
-  - 用途：Step 2 角色维度补问（目标、缺陷、动机、反差）。
-  - 触发：用户人物信息抽象或扁平时加载。
-- `references/worldbuilding/faction-systems.md`
-  - 用途：Step 4 势力格局与组织层级设计。
-  - 触发：Step 4 默认加载。
-- `references/worldbuilding/power-systems.md`
-  - 用途：Step 4 力量体系类型与边界定义。
-  - 触发：涉及修仙/玄幻/高武/异能时加载。
-- `references/worldbuilding/setting-consistency.md`
-  - 用途：Step 6 一致性复述前做设定冲突检查。
-  - 触发：Step 6 默认加载。
-- `references/worldbuilding/world-rules.md`
-  - 用途：Step 4 世界规则与禁忌项收束。
-  - 触发：Step 4 默认加载。
-
-### creativity
-
-- `references/creativity/creativity-constraints.md`
-  - 用途：Step 5 创意约束包主 schema。
-  - 触发：Step 5 必读。
-- `references/creativity/category-constraint-packs.md`
-  - 用途：Step 5 按平台/题材选择约束包模板。
-  - 触发：Step 5 必读。
-- `references/creativity/creative-combination.md`
-  - 用途：复合题材（A+B）融合规则。
-  - 触发：用户选择复合题材时加载。
-- `references/creativity/inspiration-collection.md`
-  - 用途：用户卡住时提供卖点/钩子候选。
-  - 触发：Step 1 或 Step 5 卡顿时加载。
-- `references/creativity/selling-points.md`
-  - 用途：Step 5 卖点生成与筛选。
-  - 触发：Step 5 必读。
-- `references/creativity/market-positioning.md`
-  - 用途：目标读者/平台定位与商业化语义统一。
-  - 触发：Step 1 用户提及平台或商业目标时加载。
-- `references/creativity/market-trends-2026.md`
-  - 用途：时间敏感市场趋势参考。
-  - 触发：仅用户明确要求“参考当下趋势”时加载。
-- `references/creativity/anti-trope-xianxia.md`
-  - 用途：反套路库（修仙/玄幻/高武/西幻）。
-  - 触发：题材命中对应映射时加载。
-- `references/creativity/anti-trope-urban.md`
-  - 用途：反套路库（都市/历史）。
-  - 触发：题材命中对应映射时加载。
-- `references/creativity/anti-trope-game.md`
-  - 用途：反套路库（游戏/科幻/末世）。
-  - 触发：题材命中对应映射时加载。
-- `references/creativity/anti-trope-rules-mystery.md`
-  - 用途：反套路库（规则/悬疑/灵异/克苏鲁）。
-  - 触发：题材命中对应映射时加载。
+| Step | Trigger | 检索命令 |
+|------|---------|---------|
+| 角色/书名/势力设定 | 用户开始设定命名 | `python -X utf8 "${SCRIPTS_DIR}/reference_search.py" --skill init --table 命名规则 --query "{命名对象} {题材}" --genre {题材}` |
 
 ## 工具策略（按需）
 
@@ -118,7 +63,7 @@ allowed-tools: Read Write Edit Grep Bash Task AskUserQuestion WebSearch WebFetch
 - `WebFetch`：用于抓取已确定来源页面内容并做事实核验。
 - 外部检索触发条件：
   - 用户明确要求参考市场趋势或平台风向；
-  - 创意约束需要“时间敏感依据”；
+  - 创意约束需要"时间敏感依据"；
   - 对题材信息存在明显不确定。
 
 ## 交互流程（Deep）
@@ -149,7 +94,7 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
   - `templates/genres/`（仅在用户选定题材后按需读取）
 
 输出：
-- 进入 Deep 采集前的“已知信息清单”和“待收集清单”。
+- 进入 Deep 采集前的"已知信息清单"和"待收集清单"。
 
 ### Step 2：故事核与商业定位
 
@@ -188,11 +133,11 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 ### Step 4：金手指与兑现机制
 
 收集项（必收）：
-- 金手指类型（可为“无金手指”）
+- 金手指类型（可为"无金手指"）
 - 名称/系统名（无则留空）
 - 风格（硬核/诙谐/黑暗/克制等）
 - 可见度（谁知道）
-- 不可逆代价（必须有代价或明确“无+理由”）
+- 不可逆代价（必须有代价或明确"无+理由"）
 - 成长节奏（慢热/中速/快节奏）
 
 收集项（条件必收）：
@@ -232,11 +177,11 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 5. 用户选择最终方案，或拒绝并给出原因。
 
 备注：
-- 若用户要求“贴近当下市场”，可触发外部检索并标注时间戳。
+- 若用户要求"贴近当下市场"，可触发外部检索并标注时间戳。
 
 ### Step 7：一致性复述与最终确认
 
-必须输出“初始化摘要草案”并让用户确认：
+必须输出"初始化摘要草案"并让用户确认：
 - 故事核（题材/一句话故事/核心冲突）
 - 主角核（欲望/缺陷）
 - 金手指核（能力与代价）
@@ -315,7 +260,7 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 2. 目标规模可计算（字数或章数至少一个）。
 3. 主角姓名 + 欲望 + 缺陷完整。
 4. 世界规模 + 力量体系类型完整。
-5. 金手指类型已确定（允许“无金手指”）。
+5. 金手指类型已确定（允许"无金手指"）。
 6. 创意约束已确定：
    - 反套路规则 1 条
    - 硬约束至少 2 条

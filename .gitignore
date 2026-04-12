@@ -45,3 +45,7 @@ _v52_*.json
 _v52_*.txt
 claude_inventory.csv
 *_utf8_sample.txt
+
+# Test / diagnostic files
+test_gemini.env
+test_gemini_diag.py

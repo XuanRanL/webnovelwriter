@@ -72,3 +72,25 @@ python -m dashboard.server --project-root "${PROJECT_ROOT}" --no-browser
 - Dashboard 为纯只读面板，不提供修改接口。
 - 文件读取必须限制在 `PROJECT_ROOT` 范围内。
 - 如需自定义端口，使用 `--port 9000`。
+
+## 成功标准
+
+- Dashboard 进程已启动且输出了可访问的 URL
+- 浏览器可正常打开页面（或 `--no-browser` 模式下 URL 可手动访问）
+- 页面显示项目数据（章节列表、实体图谱等）
+
+## 失败恢复
+
+| 故障 | 恢复方式 |
+|------|---------|
+| 依赖安装失败 | 检查 Python 版本和网络，手动 `pip install -r requirements.txt` |
+| 前端 `dist/` 缺失 | 确认插件完整安装，dist 应随插件打包 |
+| 项目根解析失败 | 检查 `.webnovel/state.json` 是否存在，确认 `WORKSPACE_ROOT` 正确 |
+| 端口占用 | 使用 `--port <其他端口>` 或关闭占用进程 |
+| 页面空白/数据缺失 | 确认 `.webnovel/` 下有 state.json、index.db 等数据文件 |
+
+## 安全边界
+
+- 只读操作，不修改任何项目文件
+- 文件访问限制在 `PROJECT_ROOT` 范围内
+- 不暴露外部网络（默认 localhost）

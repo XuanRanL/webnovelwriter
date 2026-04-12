@@ -3,6 +3,10 @@ name: core-constraints
 purpose: 每次章节写作前加载，确保三大定律执行
 ---
 
+> **主服务 skill**: `webnovel-write` Step 2
+> **次服务 skill**: `webnovel-review` Step 2
+> **内容层级**: 缺陷补偿层（网文特定防幻觉协议）
+
 <context>
 此文件用于章节创作时的核心约束检查。Claude 已知一般写作规范，这里只补充网文特定的防幻觉协议。
 注意：此文件为 shared 单一事实源；禁止在各 Skill 的 references 下复制修改。若需更新，请修改本文件。
