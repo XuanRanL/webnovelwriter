@@ -16,6 +16,7 @@ import argparse
 import csv
 import json
 import math
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -56,10 +57,19 @@ def load_tables(csv_dir: Path, table: Optional[str] = None) -> Dict[str, List[Di
 # Filtering
 # ---------------------------------------------------------------------------
 
+_MULTI_VALUE_SPLIT_RE = re.compile(r"[|,，]+")
+
+
+def _split_multi_value(cell: str) -> List[str]:
+    """Split list-like cells while remaining compatible with legacy comma data."""
+    if not cell:
+        return []
+    return [part.strip() for part in _MULTI_VALUE_SPLIT_RE.split(cell) if part.strip()]
+
+
 def _skill_matches(row: Dict[str, str], skill: str) -> bool:
     """Return True if *skill* appears in the pipe-separated ``适用技能`` column."""
-    cell = row.get("适用技能", "")
-    return skill in cell.split("|")
+    return skill in _split_multi_value(row.get("适用技能", ""))
 
 
 def _genre_matches(row: Dict[str, str], genre: Optional[str]) -> bool:
@@ -69,21 +79,47 @@ def _genre_matches(row: Dict[str, str], genre: Optional[str]) -> bool:
     cell = row.get("适用题材", "")
     if cell.strip() == "全部":
         return True
-    return genre in [g.strip() for g in cell.split(",")]
+    return genre in _split_multi_value(cell)
 
 
 # ---------------------------------------------------------------------------
 # BM25-lite scoring
 # ---------------------------------------------------------------------------
 
+_TOKEN_SPLIT_RE = re.compile(r"[\s|,，、/；;：:（）()【】\[\]<>《》“”\"'‘’!?！？。…]+")
+_SEARCH_FIELD_WEIGHTS = {
+    "意图与同义词": 4,
+    "关键词": 3,
+    "核心摘要": 2,
+    "详细展开": 1,
+}
+
+
 def _tokenize(text: str) -> List[str]:
-    """Split Chinese text into individual characters and comma-separated terms."""
-    # For the 关键词 field: terms are comma-separated
-    # For the query: we just split on common separators
+    """Split text into reusable search terms without requiring a segmenter."""
+    if not text:
+        return []
     tokens: List[str] = []
-    for part in text.replace(",", " ").replace("，", " ").replace("|", " ").split():
-        tokens.append(part)
+    for part in _TOKEN_SPLIT_RE.split(text):
+        token = part.strip()
+        if not token:
+            continue
+        # 过滤 don't -> t 这类单字符英文噪声，避免触发子串兜底误召回。
+        if len(token) == 1 and token.isascii():
+            continue
+        tokens.append(token)
     return tokens
+
+
+def _build_doc_terms(row: Dict[str, str]) -> List[str]:
+    """Build weighted BM25 terms from the configured search fields."""
+    terms: List[str] = []
+    for field, weight in _SEARCH_FIELD_WEIGHTS.items():
+        field_terms = _tokenize(row.get(field, ""))
+        if not field_terms:
+            continue
+        terms.extend(field_terms * weight)
+    return terms
 
 
 def _bm25_score(query_terms: List[str], doc_terms: List[str],
@@ -142,21 +178,32 @@ def _compute_idf(query_terms: List[str], all_docs: List[List[str]]) -> Dict[str,
 
 # Columns used for building 内容摘要, in priority order.
 _CONTENT_COLUMNS = [
+    "技法名称", "桥段名称", "人设类型", "节奏类型", "设定类型",
     "规则", "说明", "模式名称",
+    "常见误区", "前置铺垫", "核心爽点", "转折设计",
+    "核心动机", "行为逻辑", "互动模式", "忌讳写法",
+    "情绪调动手法", "常见崩盘误区",
+    "数值控制边界", "与剧情交互方式",
     "正例", "示例片段",
     "反例", "反面写法",
-    "命名对象", "场景类型",
+    "命名对象", "场景类型", "技法类型", "适用场景",
 ]
 
 
 def _build_summary(row: Dict[str, str]) -> str:
     """Merge key content columns into a single summary string."""
+    core_summary = row.get("核心摘要", "").strip()
+    if core_summary:
+        return core_summary
+
     parts: List[str] = []
     for col in _CONTENT_COLUMNS:
         val = row.get(col, "").strip()
         if val:
             parts.append(val)
-    return "；".join(parts) if parts else ""
+    if parts:
+        return "；".join(parts)
+    return row.get("详细展开", "").strip()
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +268,7 @@ def search(
 
     # 2) Tokenize
     query_terms = _tokenize(query)
-    doc_terms_list = [_tokenize(row.get("关键词", "")) for _, row in candidates]
+    doc_terms_list = [_build_doc_terms(row) for _, row in candidates]
     avg_dl = sum(len(d) for d in doc_terms_list) / len(doc_terms_list) if doc_terms_list else 1.0
     idf_map = _compute_idf(query_terms, doc_terms_list)
 
@@ -245,6 +292,7 @@ def search(
             "层级": row.get("层级", ""),
             "适用题材": row.get("适用题材", ""),
             "内容摘要": _build_summary(row),
+            "大模型指令": row.get("大模型指令", "").strip(),
         })
 
     return {

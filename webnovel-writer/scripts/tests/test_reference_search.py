@@ -5,6 +5,7 @@ Tests for reference_search.py — BM25 keyword search over CSV reference files.
 """
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -66,6 +67,108 @@ class TestSkillAndGenreFiltering:
         assert out["data"]["total"] == 0
         assert out["data"]["results"] == []
 
+    def test_synonym_query_hits_manual_trigger_terms(self):
+        """意图与同义词 应能触发命名规则召回。"""
+        out = run_search(
+            "--skill", "write",
+            "--table", "命名规则",
+            "--query", "名字怎么取",
+            "--genre", "玄幻",
+        )
+        assert out["status"] == "success"
+        ids = [r["编号"] for r in out["data"]["results"]]
+        assert "NR-001" in ids
+
+    def test_emotion_query_hits_writing_techniques_table(self):
+        """情感与心理查询应命中 写作技法.csv。"""
+        out = run_search(
+            "--skill", "write",
+            "--table", "写作技法",
+            "--query", "情感描写 心理",
+        )
+        assert out["status"] == "success"
+        ids = [r["编号"] for r in out["data"]["results"]]
+        assert "WT-002" in ids
+
+    def test_prompt_derived_dialogue_query_hits_new_writing_technique(self):
+        """基于 prompt 补充的对话技法应可被检索。"""
+        out = run_search(
+            "--skill", "write",
+            "--table", "写作技法",
+            "--query", "去水词对话",
+        )
+        assert out["status"] == "success"
+        ids = [r["编号"] for r in out["data"]["results"]]
+        assert "WT-005" in ids
+
+    def test_prompt_derived_trope_query_hits_bridge_table(self):
+        """桥段套路表应能命中退婚流反击条目。"""
+        out = run_search(
+            "--skill", "write",
+            "--table", "桥段套路",
+            "--query", "退婚流 三年之约",
+        )
+        assert out["status"] == "success"
+        ids = [r["编号"] for r in out["data"]["results"]]
+        assert "TR-001" in ids
+
+    def test_prompt_derived_pacing_query_hits_new_pacing_table(self):
+        """爽点与节奏表应能命中微反转补刀。"""
+        out = run_search(
+            "--skill", "plan",
+            "--table", "爽点与节奏",
+            "--query", "微反转补刀",
+        )
+        assert out["status"] == "success"
+        ids = [r["编号"] for r in out["data"]["results"]]
+        assert "PA-002" in ids
+
+    def test_prompt_derived_setting_query_hits_new_system_table(self):
+        """金手指与设定表应能命中异能副作用边界。"""
+        out = run_search(
+            "--skill", "init",
+            "--table", "金手指与设定",
+            "--query", "异能副作用 代价",
+        )
+        assert out["status"] == "success"
+        ids = [r["编号"] for r in out["data"]["results"]]
+        assert "SY-002" in ids
+
+    def test_prompt_derived_character_query_hits_new_character_table(self):
+        """人设与关系表应能命中镜像反派条目。"""
+        out = run_search(
+            "--skill", "init",
+            "--table", "人设与关系",
+            "--query", "镜像反派",
+        )
+        assert out["status"] == "success"
+        ids = [r["编号"] for r in out["data"]["results"]]
+        assert "CH-001" in ids
+
+    def test_legacy_comma_delimiters_remain_compatible(self):
+        """迁移过渡期仍兼容旧的逗号分隔技能与题材字段。"""
+        temp_dir = Path.home() / ".codex" / "memories" / "reference_search_compat"
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = temp_dir / "兼容测试.csv"
+        csv_path.write_text(
+            "\n".join([
+                "编号,适用技能,分类,层级,关键词,意图与同义词,适用题材,大模型指令,核心摘要,详细展开",
+                "TS-001,\"write,plan\",测试,提醒,\"旧格式关键词\",\"旧格式查询\",\"玄幻,仙侠\",检查兼容层,兼容摘要,兼容详细展开",
+            ]),
+            encoding="utf-8",
+        )
+        out = run_search(
+            "--csv-dir", str(temp_dir),
+            "--skill", "write",
+            "--table", "兼容测试",
+            "--query", "旧格式查询",
+            "--genre", "玄幻",
+        )
+        ids = [r["编号"] for r in out["data"]["results"]]
+        assert "TS-001" in ids
+
 
 class TestErrorHandling:
     """Test error cases."""
@@ -89,7 +192,7 @@ class TestOutputFormat:
     """Test output JSON structure."""
 
     def test_result_has_required_fields(self):
-        """Each result has 编号, 表, 分类, 层级, 适用题材, 内容摘要."""
+        """Each result has 编号, 表, 分类, 层级, 适用题材, 内容摘要, 大模型指令."""
         out = run_search(
             "--skill", "write",
             "--table", "命名规则",
@@ -103,6 +206,18 @@ class TestOutputFormat:
             assert "层级" in r
             assert "适用题材" in r
             assert "内容摘要" in r
+            assert "大模型指令" in r
+
+    def test_content_summary_prefers_core_summary(self):
+        """内容摘要优先返回 核心摘要。"""
+        out = run_search(
+            "--skill", "write",
+            "--table", "命名规则",
+            "--query", "角色命名",
+            "--genre", "玄幻",
+        )
+        row = next(r for r in out["data"]["results"] if r["编号"] == "NR-001")
+        assert row["内容摘要"] == "玄幻角色命名要保留修仙感与古风意象，避免现代日常姓名直接套入。"
 
     def test_data_envelope_fields(self):
         """Data envelope has query, skill, genre, total, results."""

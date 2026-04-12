@@ -66,13 +66,8 @@ export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WOR
 |---------|-----------|
 | 审查涉及爽点或钩子分析 | `references/shared/cool-points-guide.md` |
 | 审查涉及多线交织 | `references/shared/strand-weave-pattern.md` |
+| ai_flavor issue ≥ 3 | `skills/webnovel-write/references/anti-ai-guide.md` |
 | blocking issue 需用户决策 (Step 6) | `references/review/blocking-override-guidelines.md` |
-
-#### CSV 检索
-
-| Trigger | 检索命令 |
-|---------|---------|
-| ai_flavor issue ≥ 3 | `python -X utf8 "${SCRIPTS_DIR}/reference_search.py" --skill review --query "AI味 反例 替换"` |
 
 ### Step 3：加载项目状态与待审正文
 

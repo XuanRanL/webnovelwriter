@@ -102,11 +102,10 @@ allowed-tools: Read Write Edit Grep Bash Task
 | Step | Trigger | 检索命令 |
 |------|---------|---------|
 | Step 2 | 本章有新角色首次出场 | `python -X utf8 "${SCRIPTS_DIR}/reference_search.py" --skill write --table 命名规则 --query "角色命名" --genre {题材}` |
-| Step 2 | 本章有战斗/对峙场景 | `... --skill write --query "战斗描写" --genre {题材}` |
-| Step 2 | 本章有多角色对话 | `... --skill write --query "对话声线 口吻区分"` |
-| Step 2 | 本章有情感/心理描写 | `... --skill write --query "情感描写 心理"` |
+| Step 2 | 本章有战斗/对峙场景 | `... --skill write --table 场景写法 --query "战斗描写" --genre {题材}` |
+| Step 2 | 本章有多角色对话 | `... --skill write --table 写作技法 --query "对话声线 口吻区分"` |
+| Step 2 | 本章有情感/心理描写 | `... --skill write --table 写作技法 --query "情感描写 心理"` |
 | Step 2 | 本章涉及高频桥段 | `... --skill write --table 场景写法 --query "{桥段类型}"` |
-| Step 4 | ai_flavor issue 存在 | `... --skill write --query "AI味 反例 替换"` |
 
 ## 工具策略
 
