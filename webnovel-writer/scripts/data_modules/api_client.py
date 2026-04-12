@@ -120,6 +120,9 @@ class EmbeddingAPIClient:
         if not texts:
             return []
 
+        # 某些 embedding 端点（如 Gemini）拒绝空字符串，用单空格占位保持索引对齐
+        texts = [t if t else " " for t in texts]
+
         timeout = self.config.cold_start_timeout if not self._warmed_up else self.config.normal_timeout
         max_retries = getattr(self.config, 'api_max_retries', 3)
         base_delay = getattr(self.config, 'api_retry_delay', 1.0)
