@@ -47,6 +47,13 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
 ```
 
+若目标章缺少 runtime 合同，先补齐：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
+  story-system "{chapter_goal}" --chapter {chapter_num} --persist --emit-runtime-contracts --format both
+```
+
 要求：
 - `PROJECT_ROOT` 必须包含 `.webnovel/state.json`
 - 任一关键目录不存在时立即阻断
@@ -57,17 +64,17 @@ export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WOR
 
 | Trigger | Reference |
 |---------|-----------|
-| always | `references/shared/core-constraints.md` |
-| always | `references/review-schema.md` |
+| always | `../../references/shared/core-constraints.md` |
+| always | `../../references/review-schema.md` |
 
 #### md 按需
 
 | Trigger | Reference |
 |---------|-----------|
-| 审查涉及爽点或钩子分析 | `references/shared/cool-points-guide.md` |
-| 审查涉及多线交织 | `references/shared/strand-weave-pattern.md` |
-| ai_flavor issue ≥ 3 | `skills/webnovel-write/references/anti-ai-guide.md` |
-| blocking issue 需用户决策 (Step 6) | `references/review/blocking-override-guidelines.md` |
+| 审查涉及爽点或钩子分析 | `../../references/shared/cool-points-guide.md` |
+| 审查涉及多线交织 | `../../references/shared/strand-weave-pattern.md` |
+| ai_flavor issue ≥ 3 | `../../skills/webnovel-write/references/anti-ai-guide.md` |
+| blocking issue 需用户决策 (Step 6) | `../../references/review/blocking-override-guidelines.md` |
 
 ### Step 3：加载项目状态与待审正文
 

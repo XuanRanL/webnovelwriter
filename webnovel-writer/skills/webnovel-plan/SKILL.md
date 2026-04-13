@@ -53,6 +53,13 @@ export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
 export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
 ```
 
+若本次规划会直接落到具体章节，还必须先刷新 Story System runtime 合同：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
+  story-system "{chapter_goal}" --chapter {chapter_num} --persist --emit-runtime-contracts --format both
+```
+
 ## 引用加载策略
 
 ### md 必读
@@ -61,17 +68,17 @@ export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WOR
 |------|---------|-----------|
 | Step 4 | always | `templates/output/大纲-卷节拍表.md` |
 | Step 5 | always | `templates/output/大纲-卷时间线.md` |
-| Step 6 | always | `references/genre-profiles.md` |
-| Step 6 | always | `references/shared/strand-weave-pattern.md` |
-| 章纲拆分 | always | `references/outlining/plot-signal-vs-spoiler.md` |
+| Step 6 | always | `../../references/genre-profiles.md` |
+| Step 6 | always | `../../references/shared/strand-weave-pattern.md` |
+| 章纲拆分 | always | `../../references/outlining/plot-signal-vs-spoiler.md` |
 
 ### md 按需
 
 | Step | Trigger | Reference |
 |------|---------|-----------|
-| Step 6 | 需要爽点设计 | `references/shared/cool-points-guide.md` |
+| Step 6 | 需要爽点设计 | `../../references/shared/cool-points-guide.md` |
 | Step 6/7 | 需要冲突设计 | `references/outlining/conflict-design.md` |
-| Step 7 | 需要追读力分析 | `references/reading-power-taxonomy.md` |
+| Step 7 | 需要追读力分析 | `../../references/reading-power-taxonomy.md` |
 | Step 7 | 需要章纲细化 | `references/outlining/chapter-planning.md` |
 | Step 6/7 | 特定题材节奏 | `references/outlining/genre-volume-pacing.md` |
 

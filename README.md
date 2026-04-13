@@ -81,6 +81,23 @@ RERANK_API_KEY=your_rerank_api_key
 python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<WORKSPACE_ROOT>" preflight
 ```
 
+### Story System Phase 1-4
+
+当前已经补齐合同种子、合同优先运行时、章节提交主链、统一事件主链四段：
+
+- `.story-system/MASTER_SETTING.json` / `chapters/` / `volumes/` / `reviews/`
+- `.story-system/commits/chapter_XXX.commit.json`
+- `.story-system/events/chapter_XXX.events.json`
+
+常用统一 CLI：
+
+```bash
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" story-system "玄幻退婚流" --persist
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" story-system "玄幻退婚流" --emit-runtime-contracts --chapter 12
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" chapter-commit --chapter 12 --review-result .webnovel/tmp/review.json --fulfillment-result .webnovel/tmp/fulfillment.json --disambiguation-result .webnovel/tmp/disambiguation.json --extraction-result .webnovel/tmp/extraction.json
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" story-events --health
+```
+
 ### 6) 启动可视化面板（可选）
 
 ```bash

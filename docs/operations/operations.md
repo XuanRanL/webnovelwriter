@@ -97,3 +97,45 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" rag stats
 pwsh "${CLAUDE_PLUGIN_ROOT}/scripts/run_tests.ps1" -Mode smoke
 pwsh "${CLAUDE_PLUGIN_ROOT}/scripts/run_tests.ps1" -Mode full
 ```
+
+## Story System 运维
+
+### preflight
+
+检查统一入口与事件链目录是否可用：
+
+```bash
+python -X utf8 "${CLAUDE_PLUGIN_ROOT}/scripts/webnovel.py" --project-root "${PROJECT_ROOT}" preflight
+python -X utf8 "${CLAUDE_PLUGIN_ROOT}/scripts/webnovel.py" --project-root "${PROJECT_ROOT}" story-events --health
+```
+
+重点看三项：
+
+- `.story-system/events/` 是否可读
+- `.webnovel/index.db` 中 `story_events` 是否可查
+- `override_contracts` 是否能统计 `amend_proposal`
+
+### health
+
+最小健康检查命令：
+
+```bash
+python -X utf8 "${CLAUDE_PLUGIN_ROOT}/scripts/webnovel.py" --project-root "${PROJECT_ROOT}" story-events --health
+```
+
+返回字段：
+
+- `sqlite_rows`
+- `event_files`
+- `ok`
+
+### backup
+
+做 Story System 相关备份时，至少同时备这两块：
+
+```bash
+.story-system/
+.webnovel/index.db
+```
+
+如果要做章节级回溯，建议连同 `.webnovel/summaries/` 一起备份。

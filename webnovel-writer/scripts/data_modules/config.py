@@ -124,6 +124,22 @@ class DataModulesConfig:
     def outline_dir(self) -> Path:
         return self.project_root / "大纲"
 
+    @property
+    def story_system_dir(self) -> Path:
+        return self.project_root / ".story-system"
+
+    @property
+    def story_system_chapters_dir(self) -> Path:
+        return self.story_system_dir / "chapters"
+
+    @property
+    def story_system_master_json(self) -> Path:
+        return self.story_system_dir / "MASTER_SETTING.json"
+
+    @property
+    def story_system_anti_patterns_json(self) -> Path:
+        return self.story_system_dir / "anti_patterns.json"
+
 
     # ================= Embedding API 配置 =================
     embed_api_type: str = "openai"

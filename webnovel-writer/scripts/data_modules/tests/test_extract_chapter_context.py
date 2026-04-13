@@ -349,3 +349,40 @@ def test_render_text_contains_plot_structure_section(tmp_path):
     assert "- CPN1: 发现石碑异常" in text
     assert "- CEN: 决定深入遗迹核心" in text
     assert "- 本章禁区: 不能提前拿到终极传承" in text
+
+
+def test_render_text_contains_contract_first_runtime_section(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[2]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from extract_chapter_context import _render_text
+
+    payload = {
+        "chapter": 12,
+        "outline": "测试大纲",
+        "previous_summaries": [],
+        "state_summary": "状态",
+        "context_contract_version": "v2",
+        "context_weight_stage": "mid",
+        "story_contract": {
+            "review_contract": {
+                "blocking_rules": ["不可提前摊牌", "不能让配角代替主角兑现"],
+            }
+        },
+        "prewrite_validation": {
+            "blocking": False,
+            "forbidden_zones": ["不可提前摊牌"],
+            "fulfillment_seed": {"planned_nodes": ["发现陷阱", "决定隐忍"]},
+        },
+        "plot_structure": {},
+        "reader_signal": {},
+        "genre_profile": {},
+        "writing_guidance": {},
+        "rag_assist": {"invoked": False, "hits": []},
+    }
+
+    text = _render_text(payload)
+    assert "## Contract-First Runtime" in text
+    assert "- Review blocking rules: 2" in text
+    assert "- Prewrite blocking: False" in text

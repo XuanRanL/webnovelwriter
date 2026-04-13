@@ -249,6 +249,21 @@ def main() -> None:
     p_extract_context.add_argument("--chapter", type=int, required=True, help="目标章节号")
     p_extract_context.add_argument("--format", choices=["text", "json"], default="text", help="输出格式")
 
+    p_story_system = sub.add_parser("story-system", help="转发到 story_system.py")
+    p_story_system.add_argument("args", nargs=argparse.REMAINDER)
+
+    p_story_events = sub.add_parser("story-events", help="转发到 story_events.py")
+    p_story_events.add_argument("--chapter", type=int, default=0, help="目标章节号")
+    p_story_events.add_argument("--limit", type=int, default=200, help="查询条数")
+    p_story_events.add_argument("--health", action="store_true", help="输出事件链健康信息")
+
+    p_commit = sub.add_parser("chapter-commit", help="转发到 chapter_commit.py")
+    p_commit.add_argument("--chapter", type=int, required=True, help="目标章节号")
+    p_commit.add_argument("--review-result", default="", help="review_result JSON 文件")
+    p_commit.add_argument("--fulfillment-result", default="", help="fulfillment_result JSON 文件")
+    p_commit.add_argument("--disambiguation-result", default="", help="disambiguation_result JSON 文件")
+    p_commit.add_argument("--extraction-result", default="", help="extraction_result JSON 文件")
+
     p_memory_contract = sub.add_parser("memory-contract", help="转发到 memory_cli.py")
     p_memory_contract.add_argument("args", nargs=argparse.REMAINDER)
 
@@ -312,6 +327,26 @@ def main() -> None:
     if tool == "extract-context":
         return_args = [*forward_args, "--chapter", str(args.chapter), "--format", str(args.format)]
         raise SystemExit(_run_script("extract_chapter_context.py", return_args))
+    if tool == "story-system":
+        raise SystemExit(_run_script("story_system.py", [*forward_args, *rest]))
+    if tool == "story-events":
+        return_args = [*forward_args, "--limit", str(args.limit)]
+        if args.chapter:
+            return_args.extend(["--chapter", str(args.chapter)])
+        if args.health:
+            return_args.append("--health")
+        raise SystemExit(_run_script("story_events.py", return_args))
+    if tool == "chapter-commit":
+        return_args = [*forward_args, "--chapter", str(args.chapter)]
+        if args.review_result:
+            return_args.extend(["--review-result", str(args.review_result)])
+        if args.fulfillment_result:
+            return_args.extend(["--fulfillment-result", str(args.fulfillment_result)])
+        if args.disambiguation_result:
+            return_args.extend(["--disambiguation-result", str(args.disambiguation_result)])
+        if args.extraction_result:
+            return_args.extend(["--extraction-result", str(args.extraction_result)])
+        raise SystemExit(_run_script("chapter_commit.py", return_args))
     if tool == "memory-contract":
         raise SystemExit(_run_script("memory_cli.py", [*forward_args, *rest]))
     if tool == "review-pipeline":

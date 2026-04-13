@@ -135,6 +135,22 @@ export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-roo
 - `preflight` 必须成功。
 - 任一核心输入缺失立即阻断。
 
+### 准备阶段：生成 Story System runtime 合同
+
+在进入 Step 0.5 之前，必须先生成并刷新本章的合同树：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
+  story-system "{chapter_goal}" --chapter {chapter_num} --persist --emit-runtime-contracts --format both
+```
+
+至少确认以下文件已存在：
+- `.story-system/MASTER_SETTING.json`
+- `.story-system/volumes/volume_{volume_num}.json`
+- `.story-system/reviews/chapter_{chapter_num}.review.json`（`REVIEW_CONTRACT`）
+
+若合同缺失或生成失败，直接阻断，不进入正文起草。
+
 ### Step 0.5：轻量节点预检
 
 目的：在不阻断流程的前提下，对章纲中的结构化节点做轻量一致性提醒。

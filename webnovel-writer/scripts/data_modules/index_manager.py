@@ -50,6 +50,7 @@ from .index_debt_mixin import IndexDebtMixin
 from .index_reading_mixin import IndexReadingMixin
 from .index_observability_mixin import IndexObservabilityMixin
 from .observability import safe_append_perf_timing, safe_log_tool_call
+from .override_ledger_service import ensure_override_ledger_columns
 
 
 @dataclass
@@ -494,6 +495,7 @@ class IndexManager(IndexChapterMixin, IndexEntityMixin, IndexDebtMixin, IndexRea
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_override_contracts_due ON override_contracts(due_chapter)"
             )
+            ensure_override_ledger_columns(conn)
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_chase_debt_status ON chase_debt(status)"
             )
@@ -630,6 +632,52 @@ class IndexManager(IndexChapterMixin, IndexEntityMixin, IndexDebtMixin, IndexRea
             yield conn
         finally:
             conn.close()
+
+    def apply_entity_delta(self, delta: Dict[str, Any]) -> bool:
+        """将 commit/entity 提取产物映射为实体或关系索引更新。"""
+        if not isinstance(delta, dict):
+            return False
+
+        from_entity = str(delta.get("from_entity") or delta.get("from") or "").strip()
+        to_entity = str(delta.get("to_entity") or delta.get("to") or "").strip()
+        rel_type = str(delta.get("relation_type") or delta.get("relationship_type") or delta.get("type") or "").strip()
+        chapter = int(delta.get("chapter") or 0)
+        if from_entity and to_entity and rel_type:
+            self.upsert_relationship(
+                RelationshipMeta(
+                    from_entity=from_entity,
+                    to_entity=to_entity,
+                    type=rel_type,
+                    description=str(delta.get("description") or "").strip(),
+                    chapter=chapter,
+                )
+            )
+            return True
+
+        entity_id = str(delta.get("entity_id") or delta.get("id") or "").strip()
+        if not entity_id:
+            return False
+
+        current = dict(delta.get("current") or {})
+        field = str(delta.get("field") or "").strip()
+        if field and "new" in delta and field not in current:
+            current[field] = delta.get("new")
+
+        canonical_name = str(delta.get("canonical_name") or delta.get("name") or entity_id).strip()
+        entity = EntityMeta(
+            id=entity_id,
+            type=str(delta.get("type") or "角色").strip() or "角色",
+            canonical_name=canonical_name,
+            tier=str(delta.get("tier") or "装饰").strip() or "装饰",
+            desc=str(delta.get("desc") or "").strip(),
+            current=current,
+            first_appearance=chapter,
+            last_appearance=chapter,
+            is_protagonist=bool(delta.get("is_protagonist")),
+            is_archived=bool(delta.get("is_archived")),
+        )
+        self.upsert_entity(entity, update_metadata=True)
+        return True
 
     # ==================== 章节操作 ====================
 

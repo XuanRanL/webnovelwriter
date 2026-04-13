@@ -38,6 +38,10 @@ def _webnovel_dir() -> Path:
     return _get_project_root() / ".webnovel"
 
 
+def _story_system_dir() -> Path:
+    return _get_project_root() / ".story-system"
+
+
 # ---------------------------------------------------------------------------
 # 应用工厂
 # ---------------------------------------------------------------------------
@@ -97,7 +101,7 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
             rows = conn.execute(query, params).fetchall()
             return [dict(r) for r in rows]
         except sqlite3.OperationalError as exc:
-            if "no such table" in str(exc).lower():
+            if "no such table" in str(exc).lower() or "no such column" in str(exc).lower():
                 return []
             raise HTTPException(status_code=500, detail=f"数据库查询失败: {exc}") from exc
 
@@ -334,6 +338,64 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
                 "SELECT * FROM writing_checklist_scores ORDER BY chapter DESC LIMIT ?",
                 (limit,),
             )
+
+    @app.get("/api/story-events")
+    def list_story_events(chapter: Optional[int] = None, limit: int = 200):
+        with closing(_get_db()) as conn:
+            if chapter is not None:
+                rows = _fetchall_safe(
+                    conn,
+                    """
+                    SELECT event_id, chapter, event_type, subject, payload_json, created_at
+                    FROM story_events
+                    WHERE chapter = ?
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (chapter, limit),
+                )
+            else:
+                rows = _fetchall_safe(
+                    conn,
+                    """
+                    SELECT event_id, chapter, event_type, subject, payload_json, created_at
+                    FROM story_events
+                    ORDER BY chapter DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+
+        normalized = []
+        for row in rows:
+            payload = {}
+            try:
+                payload = json.loads(row.get("payload_json") or "{}")
+            except json.JSONDecodeError:
+                payload = {}
+            normalized.append({**row, "payload": payload})
+        return normalized
+
+    @app.get("/api/story-events/health")
+    def story_event_health():
+        with closing(_get_db()) as conn:
+            event_rows = _fetchall_safe(conn, "SELECT COUNT(*) AS count FROM story_events")
+            proposal_rows = _fetchall_safe(
+                conn,
+                """
+                SELECT COUNT(*) AS count
+                FROM override_contracts
+                WHERE record_type = 'amend_proposal' AND status = 'pending'
+                """,
+            )
+
+        events_dir = _story_system_dir() / "events"
+        file_count = len(list(events_dir.glob("chapter_*.events.json"))) if events_dir.is_dir() else 0
+        return {
+            "story_events": event_rows[0]["count"] if event_rows else 0,
+            "pending_amend_proposals": proposal_rows[0]["count"] if proposal_rows else 0,
+            "event_files": file_count,
+        }
 
     # ===========================================================
     # API：文档浏览（正文/大纲/设定集 —— 只读）

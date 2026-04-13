@@ -58,3 +58,28 @@
 | OOC Checker | 人物行为是否偏离人设 |
 | Continuity Checker | 场景与叙事连贯性 |
 | Reader-pull Checker | 钩子强度、期待管理、追读力 |
+
+## Story System Phase 1-4
+
+Story System 现在以 `.story-system/` 为独立运行面，分四段递进：
+
+1. Phase 1：`MASTER_SETTING / chapter brief / anti_patterns`
+2. Phase 2：`VOLUME_BRIEF / REVIEW_CONTRACT / prewrite validation`
+3. Phase 3：`CHAPTER_COMMIT + state/index/summary/memory` 投影
+4. Phase 4：`story_events + amend proposal + override ledger`
+
+核心链路：
+
+```text
+story-system --persist
+    -> 合同种子
+story-system --emit-runtime-contracts --chapter N
+    -> runtime contracts + prewrite validation
+chapter-commit --chapter N
+    -> commit + projections
+story-events --chapter N / --health
+    -> event 审计与健康检查
+```
+
+其中 Phase 4 不再起第二套投影循环，事件路由仅负责声明式激活 writer，
+实际执行入口仍是 `ChapterCommitService.apply_projections()`。

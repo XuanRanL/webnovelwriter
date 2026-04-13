@@ -161,7 +161,11 @@ class MemoryWriter:
             rule = str(row.get("rule", "") or "").strip()
             if not rule:
                 continue
-            subject = str(row.get("domain", "") or "").strip() or str(row.get("scope", "") or "").strip() or "global"
+            subject = (
+                str(row.get("domain", "") or "").strip()
+                or str(row.get("scope", "") or "").strip()
+                or "global"
+            )
             field = str(row.get("field", "") or "").strip() or rule[:32]
             item = MemoryItem(
                 id=self._item_id("world_rule", subject, field, chapter),
@@ -220,4 +224,82 @@ class MemoryWriter:
                 evidence=[f"memory_facts:reader_promise:{chapter}"],
             )
             self._upsert(item, stats)
+
+    def apply_commit_projection(self, commit_payload: Dict[str, Any]) -> Dict[str, Any]:
+        chapter = int((commit_payload.get("meta") or {}).get("chapter") or 0)
+        entity_deltas = list(commit_payload.get("entity_deltas") or [])
+        accepted_events = list(commit_payload.get("accepted_events") or [])
+
+        memory_facts: Dict[str, Any] = {
+            "timeline_events": [],
+            "world_rules": [],
+            "open_loops": [],
+            "reader_promises": [],
+        }
+        for event in accepted_events:
+            if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("event_type") or "").strip()
+            payload = event.get("payload") or {}
+            if event_type in {"world_rule_revealed", "world_rule_broken"}:
+                rule_text = str(payload.get("proposed_value") or payload.get("rule") or payload.get("base_value") or "").strip()
+                if rule_text:
+                    memory_facts["world_rules"].append(
+                        {
+                            "rule": rule_text,
+                            "scope": payload.get("scope") or "global",
+                            "domain": payload.get("domain") or event.get("subject") or "global",
+                            "field": payload.get("field") or event_type,
+                        }
+                    )
+            elif event_type == "open_loop_created":
+                content = str(payload.get("content") or event.get("subject") or "").strip()
+                if content:
+                    memory_facts["open_loops"].append(
+                        {
+                            "content": content,
+                            "status": payload.get("status") or "active",
+                            "urgency": payload.get("urgency") or 0,
+                        }
+                    )
+            elif event_type in {"promise_created", "promise_paid_off"}:
+                content = str(payload.get("content") or event.get("subject") or "").strip()
+                if content:
+                    memory_facts["reader_promises"].append(
+                        {
+                            "content": content,
+                            "type": payload.get("type") or event_type,
+                            "target": payload.get("target") or event.get("subject") or "",
+                        }
+                    )
+
+        result = {
+            "entities_new": [
+                {
+                    "suggested_id": row.get("entity_id") or row.get("id"),
+                    "name": row.get("canonical_name") or row.get("name") or row.get("entity_id") or row.get("id"),
+                    "type": row.get("type") or "角色",
+                    "tier": row.get("tier") or "装饰",
+                }
+                for row in entity_deltas
+                if isinstance(row, dict)
+                and str(row.get("entity_id") or row.get("id") or "").strip()
+                and not (row.get("from_entity") or row.get("from"))
+            ],
+            "state_changes": list(commit_payload.get("state_deltas") or []),
+            "relationships_new": [
+                {
+                    "from": row.get("from_entity") or row.get("from"),
+                    "to": row.get("to_entity") or row.get("to"),
+                    "type": row.get("relation_type") or row.get("relationship_type") or row.get("type"),
+                    "description": row.get("description") or "",
+                }
+                for row in entity_deltas
+                if isinstance(row, dict)
+                and str(row.get("from_entity") or row.get("from") or "").strip()
+                and str(row.get("to_entity") or row.get("to") or "").strip()
+            ],
+            "memory_facts": memory_facts,
+        }
+        return self.update_from_chapter_result(chapter, result)
 

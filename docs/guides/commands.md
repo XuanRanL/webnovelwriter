@@ -123,3 +123,24 @@ python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJE
 - `memory conflicts`：查看同主键 active 冲突项
 - `memory bootstrap`：从 `index.db` 与 `summaries` 回填初始长期记忆
 - `memory update`：对指定章节结果执行一次手动映射写入
+
+## Story System 统一 CLI
+
+用途：管理合同、提交链与事件审计。
+
+示例：
+
+```bash
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" story-system "玄幻退婚流" --persist
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" story-system "玄幻退婚流" --emit-runtime-contracts --chapter 12
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" chapter-commit --chapter 12 --review-result .webnovel/tmp/review.json --fulfillment-result .webnovel/tmp/fulfillment.json --disambiguation-result .webnovel/tmp/disambiguation.json --extraction-result .webnovel/tmp/extraction.json
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" story-events --chapter 12
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" story-events --health
+```
+
+产物：
+
+- `story-system --persist`：写入 `.story-system/MASTER_SETTING.json`
+- `--emit-runtime-contracts`：写入 `volumes/*.json` 与 `reviews/*.review.json`
+- `chapter-commit`：写入 `commits/*.commit.json`
+- `story-events`：读取 `events/*.events.json` 或 `index.db.story_events`

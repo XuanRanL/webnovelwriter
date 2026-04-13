@@ -15,14 +15,24 @@ from runtime_compat import enable_windows_utf8_stdio
 from typing import Any, Dict, List, Optional
 
 try:
-    from chapter_outline_loader import load_chapter_outline, load_chapter_plot_structure
+    from chapter_outline_loader import (
+        load_chapter_outline,
+        load_chapter_plot_structure,
+        volume_num_for_chapter_from_state,
+    )
 except ImportError:  # pragma: no cover
-    from scripts.chapter_outline_loader import load_chapter_outline, load_chapter_plot_structure
+    from scripts.chapter_outline_loader import (
+        load_chapter_outline,
+        load_chapter_plot_structure,
+        volume_num_for_chapter_from_state,
+    )
 
 from .config import get_config
 from .index_manager import IndexManager, WritingChecklistScoreMeta
 from .context_ranker import ContextRanker
+from .prewrite_validator import PrewriteValidator
 from .snapshot_manager import SnapshotManager, SnapshotVersionMismatch
+from .story_contracts import read_json_if_exists
 from .context_weights import (
     DEFAULT_TEMPLATE as CONTEXT_DEFAULT_TEMPLATE,
     TEMPLATE_WEIGHTS as CONTEXT_TEMPLATE_WEIGHTS,
@@ -61,9 +71,13 @@ class ContextManager:
         "genre_profile",
         "writing_guidance",
         "plot_structure",
+        "story_contract",
+        "prewrite_validation",
     }
     SECTION_ORDER = [
         "core",
+        "story_contract",
+        "prewrite_validation",
         "scene",
         "global",
         "reader_signal",
@@ -108,7 +122,7 @@ class ContextManager:
         if not isinstance(sections, dict):
             return False
 
-        required_sections = {"plot_structure", "long_term_memory"}
+        required_sections = {"plot_structure", "long_term_memory", "story_contract", "prewrite_validation"}
         return required_sections.issubset(set(sections.keys()))
 
     def build_context(
@@ -253,6 +267,7 @@ class ContextManager:
         scene["appearing_characters"] = self.filter_invalid_items(
             scene["appearing_characters"], source_type="entity", id_key="entity_id"
         )
+        story_contract = self._load_story_contract(chapter)
 
         global_ctx = {
             "worldview_skeleton": self._load_setting("世界观"),
@@ -269,10 +284,17 @@ class ContextManager:
         genre_profile = self._load_genre_profile(state)
         writing_guidance = self._build_writing_guidance(chapter, reader_signal, genre_profile)
         plot_structure = self._load_plot_structure(chapter)
+        prewrite_validation = PrewriteValidator(self.config.project_root).build(
+            chapter=chapter,
+            review_contract=story_contract.get("review_contract") or {},
+            plot_structure=plot_structure,
+        )
 
         return {
             "meta": {"chapter": chapter},
             "core": core,
+            "story_contract": story_contract,
+            "prewrite_validation": prewrite_validation,
             "scene": scene,
             "global": global_ctx,
             "reader_signal": reader_signal,
@@ -692,6 +714,23 @@ class ContextManager:
 
     def _load_plot_structure(self, chapter: int) -> Dict[str, Any]:
         return load_chapter_plot_structure(self.config.project_root, chapter)
+
+    def _load_story_contract(self, chapter: int) -> Dict[str, Any]:
+        story_root = self.config.story_system_dir
+        volume = volume_num_for_chapter_from_state(self.config.project_root, chapter) or 1
+        return {
+            "master_setting": read_json_if_exists(story_root / "MASTER_SETTING.json") or {},
+            "chapter_brief": read_json_if_exists(
+                story_root / "chapters" / f"chapter_{chapter:03d}.json"
+            ) or {},
+            "volume_brief": read_json_if_exists(
+                story_root / "volumes" / f"volume_{volume:03d}.json"
+            ) or {},
+            "review_contract": read_json_if_exists(
+                story_root / "reviews" / f"chapter_{chapter:03d}.review.json"
+            ) or {},
+            "anti_patterns": read_json_if_exists(story_root / "anti_patterns.json") or [],
+        }
 
     def _load_recent_summaries(self, chapter: int, window: int = 3) -> List[Dict[str, Any]]:
         summaries = []

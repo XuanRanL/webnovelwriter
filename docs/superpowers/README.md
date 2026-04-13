@@ -17,6 +17,7 @@
 - [`plans/2026-04-12-story-system-phase2-contract-first-runtime.md`](./plans/2026-04-12-story-system-phase2-contract-first-runtime.md)：Story System Phase 2 合同优先运行时实施计划
 - [`plans/2026-04-12-story-system-phase3-chapter-commit-chain.md`](./plans/2026-04-12-story-system-phase3-chapter-commit-chain.md)：Story System Phase 3 章节提交主链实施计划
 - [`plans/2026-04-12-story-system-phase4-event-log-and-override-ledger.md`](./plans/2026-04-12-story-system-phase4-event-log-and-override-ledger.md)：Story System Phase 4 统一事件主链与 Override Ledger 实施计划
+- [`../architecture/story-system-phase4.md`](../architecture/story-system-phase4.md)：Phase 4 落地后的事件主链与 override ledger 运行说明
 
 ## 使用约定
 

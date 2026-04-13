@@ -311,6 +311,8 @@ def _load_contract_context(project_root: Path, chapter_num: int) -> Dict[str, An
     return {
         "context_contract_version": (payload.get("meta") or {}).get("context_contract_version"),
         "context_weight_stage": (payload.get("meta") or {}).get("context_weight_stage"),
+        "story_contract": (sections.get("story_contract") or {}).get("content", {}),
+        "prewrite_validation": (sections.get("prewrite_validation") or {}).get("content", {}),
         "reader_signal": (sections.get("reader_signal") or {}).get("content", {}),
         "genre_profile": (sections.get("genre_profile") or {}).get("content", {}),
         "writing_guidance": (sections.get("writing_guidance") or {}).get("content", {}),
@@ -340,6 +342,8 @@ def build_chapter_context_payload(project_root: Path, chapter_num: int) -> Dict[
         "state_summary": state_summary,
         "context_contract_version": contract_context.get("context_contract_version"),
         "context_weight_stage": contract_context.get("context_weight_stage"),
+        "story_contract": contract_context.get("story_contract", {}),
+        "prewrite_validation": contract_context.get("prewrite_validation", {}),
         "reader_signal": contract_context.get("reader_signal", {}),
         "genre_profile": contract_context.get("genre_profile", {}),
         "writing_guidance": contract_context.get("writing_guidance", {}),
@@ -384,6 +388,26 @@ def _render_text(payload: Dict[str, Any]) -> str:
         if stage:
             lines.append(f"- 上下文阶段权重: {stage}")
             lines.append("")
+
+    story_contract = payload.get("story_contract") or {}
+    review_contract = story_contract.get("review_contract") or {}
+    prewrite_validation = payload.get("prewrite_validation") or {}
+    if review_contract or prewrite_validation:
+        lines.append("## Contract-First Runtime")
+        lines.append("")
+        lines.append(
+            f"- Review blocking rules: {len(review_contract.get('blocking_rules') or [])}"
+        )
+        lines.append(f"- Prewrite blocking: {prewrite_validation.get('blocking')}")
+        forbidden_zones = prewrite_validation.get("forbidden_zones") or []
+        if forbidden_zones:
+            lines.append(f"- Forbidden zones: {len(forbidden_zones)}")
+        planned_nodes = (
+            (prewrite_validation.get("fulfillment_seed") or {}).get("planned_nodes") or []
+        )
+        if planned_nodes:
+            lines.append(f"- Planned nodes: {len(planned_nodes)}")
+        lines.append("")
 
     plot_structure = payload.get("plot_structure") or {}
     if plot_structure:

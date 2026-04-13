@@ -34,6 +34,7 @@ REGISTERED_CLI_SUBCOMMANDS = {
     "index", "state", "rag", "style", "entity", "context", "memory",
     "migrate", "status", "update-state", "backup", "archive",
     "init", "extract-context", "memory-contract", "review-pipeline",
+    "story-system", "chapter-commit", "story-events",
 }
 
 
@@ -254,3 +255,9 @@ def test_webnovel_review_skill_uses_unified_reviewer_pipeline():
         assert legacy_agent not in skill_text
 
     assert " workflow " not in skill_text
+
+
+def test_story_system_runtime_contract_commands_exist():
+    text = (SKILLS_DIR / "webnovel-write" / "SKILL.md").read_text(encoding="utf-8")
+    block = re.search(r"story-system[\s\S]+--emit-runtime-contracts[\s\S]+REVIEW_CONTRACT", text)
+    assert block, "webnovel-write skill 必须包含生成 runtime contracts 的完整步骤块"

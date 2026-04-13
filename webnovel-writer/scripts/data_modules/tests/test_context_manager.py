@@ -188,6 +188,96 @@ def test_context_manager_loads_volume_outline_file(temp_project):
     assert "测试大纲" in outline
 
 
+def test_context_manager_includes_story_contract_and_prewrite_validation(temp_project):
+    state = {
+        "progress": {"volumes_planned": [{"volume": 1, "chapters_range": "1-10"}]},
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [{"mention": "宗主"}],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    story_root = temp_project.story_system_dir
+    story_root.mkdir(parents=True, exist_ok=True)
+    (story_root / "MASTER_SETTING.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "MASTER_SETTING"},
+                "route": {"primary_genre": "玄幻退婚流"},
+                "master_constraints": {"core_tone": "先压后爆"},
+                "base_context": [],
+                "source_trace": [],
+                "override_policy": {},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "chapters").mkdir(parents=True, exist_ok=True)
+    (story_root / "chapters" / "chapter_003.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "CHAPTER_BRIEF", "chapter": 3},
+                "override_allowed": {"chapter_focus": "发现陷阱"},
+                "dynamic_context": [],
+                "source_trace": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "volumes").mkdir(parents=True, exist_ok=True)
+    (story_root / "volumes" / "volume_001.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "VOLUME_BRIEF"},
+                "volume_goal": {"summary": "卷一试压"},
+                "selected_tropes": ["退婚反击"],
+                "selected_pacing": {"wave": "先压后爆"},
+                "selected_scenes": [],
+                "anti_patterns": [],
+                "system_constraints": [],
+                "overrides": {"locked": {}, "append_only": {}, "override_allowed": {}},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "reviews").mkdir(parents=True, exist_ok=True)
+    (story_root / "reviews" / "chapter_003.review.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "REVIEW_CONTRACT"},
+                "must_check": ["发现陷阱"],
+                "blocking_rules": ["不可提前摊牌"],
+                "genre_specific_risks": [],
+                "anti_patterns": [],
+                "system_constraints": [],
+                "review_thresholds": {},
+                "overrides": {"locked": {}, "append_only": {}, "override_allowed": {}},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    temp_project.outline_dir.mkdir(parents=True, exist_ok=True)
+    (temp_project.outline_dir / "第1卷-详细大纲.md").write_text(
+        "### 第3章：试炼\n必须覆盖节点：发现陷阱\n本章禁区：不可提前摊牌",
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(3, use_snapshot=False, save_snapshot=False)
+
+    sections = payload["sections"]
+    assert "story_contract" in sections
+    assert "prewrite_validation" in sections
+    assert sections["story_contract"]["content"]["review_contract"]["meta"]["contract_type"] == "REVIEW_CONTRACT"
+    assert sections["prewrite_validation"]["content"]["fulfillment_seed"]["planned_nodes"] == ["发现陷阱"]
+    assert list(sections.keys()).index("story_contract") < list(sections.keys()).index("scene")
+
+
 def test_query_router():
     router = QueryRouter()
     assert router.route("角色是谁") == "entity"
