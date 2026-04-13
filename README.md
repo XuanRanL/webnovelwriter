@@ -11,11 +11,11 @@
 
 详细文档已拆分到 `docs/`：
 
-- 架构与模块：`docs/architecture.md`
-- 命令详解：`docs/commands.md`
-- RAG 与配置：`docs/rag-and-config.md`
-- 题材模板：`docs/genres.md`
-- 运维与恢复：`docs/operations.md`
+- 架构与模块：`docs/architecture/overview.md`
+- 命令详解：`docs/guides/commands.md`
+- RAG 与配置：`docs/guides/rag-and-config.md`
+- 题材模板：`docs/guides/genres.md`
+- 运维与恢复：`docs/operations/operations.md`
 - 文档导航：`docs/README.md`
 
 ## 快速开始
@@ -135,7 +135,8 @@ model: sonnet
 
 | 版本 | 说明 |
 |------|------|
-| **v5.5.5 (当前)** | 新增长期记忆闭环：写前注入 `long_term_memory`，写后沉淀 `memory_facts` 到 `memory_scratchpad.json`；补齐 `memory` 运维子命令。 |
+| **v6.0.0 (当前)** | 正式切换到 Story System 主链（Phase 1-4）：合同种子 + 合同优先运行时 + 章节提交链 + 事件审计链；补齐 `chapter-commit` 与 `story-events` 统一 CLI，并加入基于 skills 实际调用流程的集成测试（含向量调用桩）。 |
+| **v5.5.5** | 新增长期记忆闭环：写前注入 `long_term_memory`，写后沉淀 `memory_facts` 到 `memory_scratchpad.json`；补齐 `memory` 运维子命令。 |
 | **v5.5.4** | 补齐写作链提示词强约束（流程硬约束、中文思维写作约束、Step 职责边界）；统一中文化审查/润色/Agent 报告文案；清理文档内部版本号与版本历史，降低与插件发版版本混淆。 |
 | **v5.5.3** | 新增统一 `preflight` 预检命令；写作链 CLI 示例统一为 UTF-8 运行方式，收口文档中的长 shell 预检片段并降低 Windows 终端乱码风险。 |
 | **v5.5.2** | 支持将详细大纲中的章节名同步到正文文件名；修复 workflow_manager 在无参 find_project_root monkeypatch 下的兼容性问题。 |
@@ -151,11 +152,11 @@ model: sonnet
 
 1. 先在本地同步版本信息：
    ```bash
-   python -X utf8 webnovel-writer/scripts/sync_plugin_version.py --version 5.5.5 --release-notes "本次版本说明"
+   python -X utf8 webnovel-writer/scripts/sync_plugin_version.py --version 6.0.0 --release-notes "本次版本说明"
    ```
 2. 提交并推送版本变更（`README.md`、`plugin.json`、`marketplace.json`）。
 3. 打开仓库的 Actions 页面，选择 `Plugin Release`。
-4. 输入与当前仓库元数据一致的 `version`（例如 `5.5.5`）和用于 GitHub Release 的 `release_notes`。
+4. 输入与当前仓库元数据一致的 `version`（例如 `6.0.0`）和用于 GitHub Release 的 `release_notes`。
 5. 工作流会执行以下动作：
    - 校验 `plugin.json`、`marketplace.json` 与 README 当前版本已经一致
    - 校验当前版本与输入的 `version` 一致
