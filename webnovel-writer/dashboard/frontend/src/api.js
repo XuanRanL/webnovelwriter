@@ -14,6 +14,10 @@ export async function fetchJSON(path, params = {}) {
     return res.json();
 }
 
+export function fetchStoryRuntimeHealth() {
+    return fetchJSON('/api/story-runtime/health');
+}
+
 /**
  * 订阅 SSE 实时事件流
  * @param {function} onMessage  收到 data 时回调

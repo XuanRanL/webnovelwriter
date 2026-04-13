@@ -32,8 +32,24 @@ def test_commit_service_accepts_when_all_checks_pass(tmp_path):
     )
     assert payload["meta"]["status"] == "accepted"
     assert payload["contract_refs"]["master"] == "MASTER_SETTING.json"
+    assert payload["contract_refs"]["volume"] == "volume_001.json"
     assert payload["contract_refs"]["chapter"] == "chapter_003.json"
     assert payload["outline_snapshot"]["covered_nodes"] == ["发现陷阱"]
+
+
+def test_commit_service_includes_volume_ref_and_write_fact_provenance(tmp_path):
+    service = ChapterCommitService(tmp_path)
+    payload = service.build_commit(
+        chapter=3,
+        review_result={"blocking_count": 0},
+        fulfillment_result={"planned_nodes": ["发现陷阱"], "covered_nodes": ["发现陷阱"], "missed_nodes": [], "extra_nodes": []},
+        disambiguation_result={"pending": []},
+        extraction_result={"state_deltas": [], "entity_deltas": [], "accepted_events": []},
+    )
+
+    assert payload["contract_refs"]["volume"] == "volume_001.json"
+    assert payload["provenance"]["write_fact_role"] == "chapter_commit"
+    assert payload["provenance"]["projection_role"] == "derived_read_models"
 
 
 def test_chapter_commit_cli_builds_and_persists_commit(tmp_path, monkeypatch):

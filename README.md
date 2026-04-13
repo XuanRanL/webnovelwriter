@@ -88,6 +88,21 @@ RERANK_API_KEY=your_rerank_api_key
 
 只读面板，可以浏览项目状态、实体图谱、章节内容和追读力数据。前端已随插件预构建，不需要本地 `npm build`。
 
+## Story System 主链（Phase 5）
+
+当前默认链路已经切到：
+
+1. 写前读取 `.story-system/MASTER_SETTING.json`、`volumes/`、`chapters/`、`reviews/`
+2. 写后提交 accepted `CHAPTER_COMMIT`
+3. 由 commit projection writers 更新 `.webnovel/state.json`、`index.db`、`summaries/`、`memory_scratchpad.json`
+
+这意味着：
+
+- `.story-system/` 是主链真源
+- `.webnovel/*` 是投影 / read-model
+- `references/genre-profiles.md` 只在合同缺失时作为 fallback
+- `preflight --format json` 和 dashboard 会直接暴露 `story_runtime` 健康状态
+
 ### 7) Agent 模型设置（可选）
 
 所有内置 Agent 默认继承当前会话模型：

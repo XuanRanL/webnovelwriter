@@ -261,3 +261,38 @@ def test_story_system_runtime_contract_commands_exist():
     text = (SKILLS_DIR / "webnovel-write" / "SKILL.md").read_text(encoding="utf-8")
     block = re.search(r"story-system[\s\S]+--emit-runtime-contracts[\s\S]+REVIEW_CONTRACT", text)
     assert block, "webnovel-write skill 必须包含生成 runtime contracts 的完整步骤块"
+
+
+def test_webnovel_write_skill_uses_chapter_commit_as_step5_mainline():
+    text = (SKILLS_DIR / "webnovel-write" / "SKILL.md").read_text(encoding="utf-8")
+    assert "chapter-commit" in text
+    assert "accepted `CHAPTER_COMMIT`" in text
+    assert "state process-chapter" not in text
+
+
+def test_webnovel_query_skill_prefers_story_system_and_memory_contract():
+    text = (SKILLS_DIR / "webnovel-query" / "SKILL.md").read_text(encoding="utf-8")
+    assert "memory-contract load-context" in text
+    assert ".story-system/" in text
+    assert 'cat "$PROJECT_ROOT/.webnovel/state.json"' not in text
+
+
+def test_context_agent_prefers_contract_and_latest_commit_mainline():
+    text = (AGENTS_DIR / "context-agent.md").read_text(encoding="utf-8")
+    assert ".story-system/" in text
+    assert "accepted `CHAPTER_COMMIT`" in text
+    assert "memory-contract load-context" in text
+
+
+def test_data_agent_is_described_as_extraction_only_not_direct_write_mainline():
+    text = (AGENTS_DIR / "data-agent.md").read_text(encoding="utf-8")
+    assert "chapter-commit" in text
+    assert "extraction_result.json" in text
+    assert "直接写入 index.db 和 state.json" not in text
+
+
+def test_dashboard_and_plan_skills_surface_story_runtime_mainline():
+    dashboard_text = (SKILLS_DIR / "webnovel-dashboard" / "SKILL.md").read_text(encoding="utf-8")
+    plan_text = (SKILLS_DIR / "webnovel-plan" / "SKILL.md").read_text(encoding="utf-8")
+    assert "story-runtime/health" in dashboard_text
+    assert ".story-system/" in plan_text

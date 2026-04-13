@@ -2,6 +2,14 @@
 
 ## 目录层级
 
+## Phase 5 运维口径
+
+- `.story-system/`：主链真源
+- accepted `CHAPTER_COMMIT`：唯一写后事实入口
+- `.webnovel/state.json`、`index.db`、`summaries/`、`memory_scratchpad.json`：投影/read-model
+- `references/genre-profiles.md`：fallback-only
+- `preflight` 与 dashboard 的 `story_runtime` / `story-runtime/health` 是第一观察点
+
 系统涉及 4 层目录，使用前需要了解它们的区别：
 
 | 层级 | 说明 | 示例 |
@@ -82,6 +90,8 @@ python -X utf8 "${CLAUDE_PLUGIN_ROOT}/scripts/webnovel.py" --project-root "${WOR
 
 检查项：插件脚本路径 / 项目根是否可解析 / Skill 目录是否存在。
 
+若 `story_runtime.mainline_ready=false`，说明当前项目仍在 legacy fallback 或 commit 主链不完整。
+
 ### 索引重建
 
 ```bash
@@ -122,6 +132,8 @@ python -X utf8 "${CLAUDE_PLUGIN_ROOT}/scripts/webnovel.py" --project-root "${PRO
 
 重点关注：
 
+- `.story-system/commits/chapter_XXX.commit.json` 是否存在且为 accepted
+- `projection_status` 是否全部为 `done` / `skipped`
 - `.story-system/events/` 是否可读
 - `index.db` 中 `story_events` 表是否可查
 - `override_contracts` 是否能统计 `amend_proposal`

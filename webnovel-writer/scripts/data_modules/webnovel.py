@@ -33,6 +33,8 @@ from typing import Optional
 from runtime_compat import normalize_windows_path
 from project_locator import resolve_project_root, write_current_project_pointer, update_global_registry_current_project
 
+from .story_runtime_health import build_story_runtime_health
+
 
 def _scripts_dir() -> Path:
     # data_modules/webnovel.py -> data_modules -> scripts
@@ -122,10 +124,12 @@ def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
 
     project_root = ""
     project_root_error = ""
+    story_runtime: dict = {}
     try:
         resolved_root = _resolve_root(explicit_project_root)
         project_root = str(resolved_root)
         checks.append({"name": "project_root", "ok": True, "path": project_root})
+        story_runtime = build_story_runtime_health(resolved_root)
     except Exception as exc:
         project_root_error = str(exc)
         checks.append({"name": "project_root", "ok": False, "path": explicit_project_root or "", "error": project_root_error})
@@ -137,6 +141,7 @@ def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
         "skill_root": str(skill_root),
         "checks": checks,
         "project_root_error": project_root_error,
+        "story_runtime": story_runtime,
     }
 
 
@@ -151,6 +156,14 @@ def cmd_preflight(args: argparse.Namespace) -> int:
             print(f"{status} {item['name']}: {path}")
             if item.get("error"):
                 print(f"  detail: {item['error']}")
+        story_runtime = report.get("story_runtime") or {}
+        if story_runtime:
+            print(
+                "INFO story_runtime: "
+                f"chapter={story_runtime.get('chapter')} "
+                f"mainline_ready={story_runtime.get('mainline_ready')} "
+                f"latest_commit_status={story_runtime.get('latest_commit_status')}"
+            )
     return 0 if report["ok"] else 1
 
 

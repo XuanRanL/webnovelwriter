@@ -2,6 +2,13 @@
 
 ## 核心理念
 
+### Phase 5 真源划分
+
+- 写前真源：`.story-system/MASTER_SETTING.json`、`volumes/`、`chapters/`、`reviews/`
+- 写后真源：accepted `CHAPTER_COMMIT`
+- `.webnovel/state.json`、`index.db`、`summaries/`、`memory_scratchpad.json`：只作为投影 / read-model
+- `references/genre-profiles.md`：fallback-only
+
 ### 防幻觉三定律
 
 | 定律 | 说明 | 执行方式 |
@@ -54,7 +61,7 @@
 ### Data Agent（写）
 
 - 文件：`agents/data-agent.md`
-- 职责：从正文提取实体与状态变化，更新 `state.json`、`index.db`、`vectors.db`，保证数据链闭环。
+- 职责：从正文提取 `accepted_events / state_deltas / entity_deltas / summary_text` 等 commit artifacts，交给 `chapter-commit` 驱动 projection writers 更新 `state.json`、`index.db`、摘要与长期记忆。
 
 ### Reviewer（审）
 
@@ -72,12 +79,13 @@
 
 ## Story System（合同驱动体系）
 
-Story System 以 `.story-system/` 为独立运行面，分四段递进：
+Story System 以 `.story-system/` 为独立运行面，分五段递进：
 
 1. **Phase 1**：合同种子 — `MASTER_SETTING.json` + 章节合同 + 反模式配置
 2. **Phase 2**：合同优先运行时 — 卷合同 (`volumes/`) + 审查合同 (`reviews/`) + 写前校验
 3. **Phase 3**：章节提交链 — `commits/chapter_XXX.commit.json` + state/index/summary/memory 投影
 4. **Phase 4**：事件审计链 — `events/chapter_XXX.events.json` + 修订提案 + 覆写账本
+5. **Phase 5**：旧链路降级 — contract-first + commit-first 默认化，`preflight` / dashboard 暴露 runtime health，legacy data 降级为 fallback/read-model
 
 核心链路：
 
@@ -87,10 +95,14 @@ story-system --persist
 story-system --emit-runtime-contracts --chapter N
     -> 生成运行时合同 + 写前校验
 chapter-commit --chapter N
-    -> 提交 commit + 执行各投影写入
+    -> 提交 accepted commit + 执行各投影写入
 story-events --chapter N / --health
     -> 事件审计与健康检查
+preflight / dashboard
+    -> story runtime health / fallback 状态 / latest commit 状态
 ```
 
 其中 Phase 4 不起第二套投影循环，事件路由仅负责声明式激活 writer，
 实际执行入口仍是 `ChapterCommitService.apply_projections()`。
+
+Phase 5 文档见：`docs/architecture/story-system-phase5.md`

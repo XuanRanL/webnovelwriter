@@ -11,6 +11,7 @@ allowed-tools: Read Grep Write Edit Bash Task AskUserQuestion
 - 解析真实书项目根目录，按统一流程完成章节审查。
 - 调用统一 `reviewer` 生成结构化问题列表与审查报告。
 - 把审查指标写入 `index.db`，并把审查记录写回 `state.json`。
+- 审查时优先依据 `.story-system/reviews/chapter_{NNN}.review.json` 与 latest accepted `CHAPTER_COMMIT` 判断主链事实。
 - 若存在关键问题，明确交给用户决定是否立即返工。
 
 ## 常见误区

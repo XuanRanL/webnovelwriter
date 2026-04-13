@@ -1,5 +1,10 @@
 # 题材配置档案 (Genre Profiles)
 
+> **状态：Fallback Only**
+>
+> 高频题材的主判定、主调性、主禁忌已迁移到 Story Contracts / CSV route seed。
+> 本文件只在合同缺失、项目未升级或显式 fallback 时提供补充提示。
+>
 > **定位**：本文档定义各题材的追读力配置参数，供 Step 1.5 / Context Agent / Checkers 读取。
 >
 > **原则**：配置用于"调整权重和建议"，不做硬性裁决。

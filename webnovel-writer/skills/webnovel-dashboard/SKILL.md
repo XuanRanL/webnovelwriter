@@ -10,6 +10,7 @@ allowed-tools: Bash Read
 
 - 在本地启动只读 Web 面板。
 - 实时查看创作进度、设定词典、关系图谱、章节内容与追读力数据。
+- 显式查看 Story Runtime 主链状态，包括 `story-runtime/health`、latest commit 与 fallback 情况。
 - 允许监听 `.webnovel/` 变化，但不得修改项目内容。
 
 ## 执行流程
@@ -66,6 +67,10 @@ python -m dashboard.server --project-root "${PROJECT_ROOT}"
 ```bash
 python -m dashboard.server --project-root "${PROJECT_ROOT}" --no-browser
 ```
+
+启动后优先确认以下接口可用：
+- `/api/story-runtime/health`
+- `/api/preflight`
 
 ## 注意事项
 

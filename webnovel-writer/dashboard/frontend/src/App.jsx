@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchJSON, subscribeSSE } from './api.js'
+import { fetchJSON, fetchStoryRuntimeHealth, subscribeSSE } from './api.js'
 import ForceGraph3D from 'react-force-graph-3d'
 
 // ====================================================================
@@ -115,6 +115,14 @@ const FULL_DATA_DOMAINS = [
 // ====================================================================
 
 function DashboardPage({ data }) {
+    const [runtimeHealth, setRuntimeHealth] = useState(null)
+
+    useEffect(() => {
+        fetchStoryRuntimeHealth()
+            .then(setRuntimeHealth)
+            .catch(() => setRuntimeHealth(null))
+    }, [])
+
     if (!data) return <div className="loading">加载中…</div>
 
     const info = data.project_info || {}
@@ -160,6 +168,18 @@ function DashboardPage({ data }) {
                     <span className="stat-value">第 {progress.current_chapter || 0} 章</span>
                     <span className="stat-sub">目标 {info.target_chapters || '?'} 章 · 卷 {progress.current_volume || 1}</span>
                 </div>
+
+                {runtimeHealth ? (
+                    <div className="card stat-card">
+                        <span className="stat-label">Story Runtime</span>
+                        <span className="stat-value plain">
+                            {runtimeHealth.mainline_ready ? 'Mainline' : 'Fallback'}
+                        </span>
+                        <span className="stat-sub">
+                            {runtimeHealth.latest_commit_status || 'missing'} · {renderFallbackSources(runtimeHealth.fallback_sources)}
+                        </span>
+                    </div>
+                ) : null}
 
                 <div className="card stat-card">
                     <span className="stat-label">主角状态</span>
@@ -886,4 +906,9 @@ function formatCell(v) {
     }
     const s = String(v)
     return s.length > 180 ? `${s.slice(0, 180)}...` : s
+}
+
+function renderFallbackSources(items) {
+    if (!Array.isArray(items) || items.length === 0) return 'no fallback'
+    return items.join(', ')
 }

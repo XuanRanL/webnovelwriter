@@ -80,6 +80,35 @@
 python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" <子命令> [参数]
 ```
 
+## Story System 主链
+
+推荐按以下顺序执行：
+
+1. 生成合同
+
+```bash
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" story-system "玄幻退婚流" --chapter 12 --persist --emit-runtime-contracts --format both
+```
+
+2. 提交章节
+
+```bash
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" chapter-commit \
+  --chapter 12 \
+  --review-result ".webnovel/tmp/review_results.json" \
+  --fulfillment-result ".webnovel/tmp/fulfillment_result.json" \
+  --disambiguation-result ".webnovel/tmp/disambiguation_result.json" \
+  --extraction-result ".webnovel/tmp/extraction_result.json"
+```
+
+3. 检查主链健康
+
+```bash
+python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<PROJECT_ROOT>" preflight --format json
+```
+
+其中 `.story-system/` 是主链真源，`.webnovel/*` 是投影/read-model。
+
 ### 常用工具子命令
 
 | 子命令 | 说明 |

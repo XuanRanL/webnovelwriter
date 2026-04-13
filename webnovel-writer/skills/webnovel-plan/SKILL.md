@@ -60,6 +60,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
   story-system "{chapter_goal}" --chapter {chapter_num} --persist --emit-runtime-contracts --format both
 ```
 
+生成后必须把 `.story-system/MASTER_SETTING.json`、`.story-system/volumes/`、
+`.story-system/chapters/`、`.story-system/reviews/` 视为后续写作主链输入。
+
 ## 引用加载策略
 
 ### md 必读

@@ -256,6 +256,27 @@ def test_preflight_fails_when_required_scripts_are_missing(monkeypatch, tmp_path
     assert '"name": "entry_script"' in captured.out
 
 
+def test_preflight_includes_story_runtime_health(monkeypatch, tmp_path, capsys):
+    module = _load_webnovel_module()
+
+    project_root = tmp_path / "book"
+    (project_root / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (project_root / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["webnovel", "--project-root", str(project_root), "preflight", "--format", "json"],
+    )
+
+    with pytest.raises(SystemExit):
+        module.main()
+
+    captured = capsys.readouterr()
+    assert '"story_runtime"' in captured.out
+    assert '"mainline_ready"' in captured.out
+
+
 def test_quality_trend_report_writes_to_book_root_when_input_is_workspace_root(tmp_path, monkeypatch):
     _ensure_scripts_on_path()
     import quality_trend_report as quality_trend_report_module

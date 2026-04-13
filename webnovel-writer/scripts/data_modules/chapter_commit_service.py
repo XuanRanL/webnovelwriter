@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
+from chapter_outline_loader import volume_num_for_chapter_from_state
+
 from .config import DataModulesConfig
 from .event_log_store import EventLogStore
 from .event_projection_router import EventProjectionRouter
@@ -33,6 +35,7 @@ class ChapterCommitService:
             fulfillment_result.get("missed_nodes")
         ) or bool(disambiguation_result.get("pending"))
         status = "rejected" if rejected else "accepted"
+        volume = volume_num_for_chapter_from_state(self.project_root, chapter) or 1
         return {
             "meta": {
                 "schema_version": "story-system/v1",
@@ -41,8 +44,14 @@ class ChapterCommitService:
             },
             "contract_refs": {
                 "master": "MASTER_SETTING.json",
+                "volume": f"volume_{volume:03d}.json",
                 "chapter": f"chapter_{chapter:03d}.json",
                 "review": f"chapter_{chapter:03d}.review.json",
+            },
+            "provenance": {
+                "write_fact_role": "chapter_commit",
+                "projection_role": "derived_read_models",
+                "legacy_state_role": "projection_only",
             },
             "outline_snapshot": {
                 "planned_nodes": fulfillment_result.get("planned_nodes", []),

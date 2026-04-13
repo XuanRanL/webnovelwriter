@@ -145,9 +145,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
 ```
 
 **合同树必备文件**（写前真源，缺一不可）：
-- `.story-system/MASTER_SETTING.json` - 全书主设定合同（题材、调性、核心禁忌）
-- `.story-system/volumes/volume_{volume_num}.json` - 本卷节奏合同（卷级目标、爽点密度）
-- `.story-system/reviews/chapter_{chapter_num}.review.json` - 本章审查合同（必须覆盖节点、本章禁区）
+- `.story-system/MASTER_SETTING.json` - `MASTER_SETTING`，全书主设定合同（题材、调性、核心禁忌）
+- `.story-system/volumes/volume_{volume_num}.json` - `VOLUME_BRIEF`，本卷节奏合同（卷级目标、爽点密度）
+- `.story-system/reviews/chapter_{chapter_num}.review.json` - `REVIEW_CONTRACT`，本章审查合同（必须覆盖节点、本章禁区）
 
 **阻断规则**：
 - 合同缺失或生成失败 → 直接阻断，不进入正文起草

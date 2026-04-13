@@ -312,6 +312,8 @@ def _load_contract_context(project_root: Path, chapter_num: int) -> Dict[str, An
         "context_contract_version": (payload.get("meta") or {}).get("context_contract_version"),
         "context_weight_stage": (payload.get("meta") or {}).get("context_weight_stage"),
         "story_contract": (sections.get("story_contract") or {}).get("content", {}),
+        "runtime_status": (sections.get("runtime_status") or {}).get("content", {}),
+        "latest_commit": (sections.get("latest_commit") or {}).get("content", {}),
         "prewrite_validation": (sections.get("prewrite_validation") or {}).get("content", {}),
         "reader_signal": (sections.get("reader_signal") or {}).get("content", {}),
         "genre_profile": (sections.get("genre_profile") or {}).get("content", {}),
@@ -343,6 +345,8 @@ def build_chapter_context_payload(project_root: Path, chapter_num: int) -> Dict[
         "context_contract_version": contract_context.get("context_contract_version"),
         "context_weight_stage": contract_context.get("context_weight_stage"),
         "story_contract": contract_context.get("story_contract", {}),
+        "runtime_status": contract_context.get("runtime_status", {}),
+        "latest_commit": contract_context.get("latest_commit", {}),
         "prewrite_validation": contract_context.get("prewrite_validation", {}),
         "reader_signal": contract_context.get("reader_signal", {}),
         "genre_profile": contract_context.get("genre_profile", {}),
@@ -388,6 +392,17 @@ def _render_text(payload: Dict[str, Any]) -> str:
         if stage:
             lines.append(f"- 上下文阶段权重: {stage}")
             lines.append("")
+
+    runtime_status = payload.get("runtime_status") or {}
+    latest_commit = payload.get("latest_commit") or {}
+    if runtime_status or latest_commit:
+        fallback_sources = runtime_status.get("fallback_sources") or ["none"]
+        lines.append("## Runtime Status")
+        lines.append("")
+        lines.append(f"- 写后事实入口: {runtime_status.get('primary_write_source', 'unknown')}")
+        lines.append(f"- Legacy Fallback: {', '.join(str(item) for item in fallback_sources)}")
+        lines.append(f"- Latest Commit: {(latest_commit.get('meta') or {}).get('status', 'missing')}")
+        lines.append("")
 
     story_contract = payload.get("story_contract") or {}
     review_contract = story_contract.get("review_contract") or {}
