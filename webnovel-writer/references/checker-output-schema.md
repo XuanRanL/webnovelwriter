@@ -100,6 +100,7 @@ overall_score = max(0, 100 - sum(deductions))
 | `REPETITION` | density | 同一信息已通过其他方式传达后再次重复描述 |
 | `PROSE_FLAT` | prose-quality | 文笔平淡/表现力不足（句式单调、比喻陈腐、感官贫乏、动词无力、画面感缺失、具象化不足） |
 | `EMOTION_SHALLOW` | emotion | 情感表达生硬/未落地（直述替代展示、情感梯度断裂、缺乏锚点、强行煽情、情感惯性断裂） |
+| `READER_FLOW` | flow-checker | 读者视角卡点（跳跃推理/动机悬空/术语无锚/突兀转场/指代模糊/节奏抖动/叙事出戏）；description 必须以 `[category:XXX]` 开头 |
 
 **旧类型映射规则**（兼容迁移）:
 

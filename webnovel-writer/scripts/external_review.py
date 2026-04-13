@@ -2,9 +2,11 @@
 Step 3.5 External Model Review Script
 Supports two modes:
   - legacy: single prompt, 4-dimension combined review (backward compatible)
-  - dimensions: 10 separate dimension prompts, concurrent API calls
+  - dimensions: 11 separate dimension prompts (incl. reader_flow), concurrent API calls
 Four-tier fallback: nextapi (primary) → healwrap (secondary) → codexcc (backup) → siliconflow (fallback)
 Nine-model architecture: 3 core (kimi/glm/qwen-plus) + 6 supplemental (qwen/deepseek/minimax/doubao/glm4/minimax-m2.7)
+11 dimensions: consistency/continuity/ooc/reader_pull/high_point/pacing/dialogue_quality/
+information_density/prose_quality/emotion_expression/reader_flow (2026-04-13 added)
 """
 import json
 import time
@@ -135,7 +137,7 @@ MODELS = {
     # putting 5+ models on healwrap primary causes semaphore exhaustion
     # (5×3 concurrent = 15 slots needed, only 8 available → cascading timeouts).
     # Distribution: nextapi handles kimi/glm/minimax/minimax-m2.7 (RPM=999),
-    # healwrap handles qwen-plus core only (RPM=8, 10 dims fits fine),
+    # healwrap handles qwen-plus core only (RPM=8, 11 dims fits fine),
     # siliconflow handles qwen/deepseek/glm4/doubao supplemental (RPM=30).
     "qwen": {
         "tier": "supplemental",
@@ -395,6 +397,51 @@ DIMENSIONS = {
 {{"dimension":"emotion_expression","score":0-100,"issues":[{{"id":"EE_001","type":"EMOTION_SHALLOW","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
 
 评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
+
+## 本章正文
+{chapter_text}"""
+    },
+    "reader_flow": {
+        "name": "读者视角流畅度",
+        "system": "你是严苛公正的网文读者视角审查专家。一人分饰两角，严格分阶段执行。quote 必须原文逐字。",
+        "prompt": """**核心任务**：模拟读者失忆裸读，评估本章"读者能否读懂、行文是否丝滑、是否不突兀"。独立于情感/钩子/文笔等工艺维度——聚焦**读者解码成本**。
+
+## 协议：一人分饰两角
+
+### 阶段 1：失忆读者（裸读）
+你是追更到上一章的读者。你**只有**：本章正文 + 上章末段（在 context_block 内）。你**完全忘掉**设定集/大纲/前章——你作为 AI 可能推断出的项目背景**必须压制不用**。
+
+逐段扫描，标记让你产生下列感受的位置（**至少 5 个**）：
+- 停顿（想"等等，刚才发生了什么？"）
+- 回读（要重读才能理解）
+- 皱眉（读完觉得"怪"/"不通"）
+- 困惑（主角为什么这么做？怎么就懂了？这个词啥意思？这人是谁？）
+- 出戏（意识到"这是小说"）
+
+### 阶段 2：审查员（判断性质）
+每个卡点判断：
+- **悬念（SUSPENSE）**：作者故意留白。不扣分。
+- **真卡点（SMOOTHNESS_BUG）**：作者没意识到的读者盲区。扣分。按 7 类分：
+  - JUMP_LOGIC（跳跃推理：主角突然懂/推断无铺垫）
+  - MISSING_MOTIVE（动机悬空：行为无前置条件）
+  - UNGROUNDED_TERM（术语无锚：首次名词无 inline 解释）
+  - ABRUPT_TRANSITION（突兀转场：场景/时空切换无过渡）
+  - VAGUE_REFERENCE（指代模糊：代词/那东西要回读）
+  - RHYTHM_JOLT（节奏抖动：段长/POV/语气突变）
+  - META_BREAK（叙事出戏：文青/AI 腔）
+
+### 阶段 3：Severity 严格标尺
+- **high**：读者回读 ≥ 2 次或弃读
+- **medium**：停顿 2-5 秒，能继续
+- **low**：皱一下眉继续
+
+{context_block}
+
+严格按JSON输出（quote 必须原文逐字出现，否则丢弃整份）：
+{{"dimension":"reader_flow","score":0-100,"issues":[{{"id":"RF_001","type":"READER_FLOW","severity":"critical/high/medium/low","location":"原文前 8 字","description":"[category:JUMP_LOGIC|MISSING_MOTIVE|UNGROUNDED_TERM|ABRUPT_TRANSITION|VAGUE_REFERENCE|RHYTHM_JOLT|META_BREAK] 读者卡在这里的原因","suggestion":"修复方向","quote":"原文一句 ≤ 40 字"}}],"summary":"一句话总评本章流畅度"}}
+
+**评分**：`score = max(0, 100 - (high×15 + medium×8 + low×3))`，悬念不扣分。
+95-100 丝滑出版级｜90-94 微瑕不影响｜85-89 少量卡点｜80-84 多处需修｜75-79 明显断裂｜<75 严重问题
 
 ## 本章正文
 {chapter_text}"""
@@ -1083,7 +1130,7 @@ def run_dimensions_mode(args, api_keys):
 
 
 def _run_single_model(args, api_keys):
-    """执行单个模型的10维度审查。"""
+    """执行单个模型的 11 维度审查（含 reader_flow）。"""
     project_root = Path(args.project_root)
     chapter_num = args.chapter
     model_key = args.model_key

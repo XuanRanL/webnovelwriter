@@ -587,6 +587,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `new_entities` | list | 本章新登场实体 |
 | `unresolved_questions` | list | 章末未闭合问题 |
 | `_hygiene_applied` | str | hygiene_check 应用标记（格式：`<timestamp>: <fix>`） |
+| `flow_score_median` | int/float | **A+C 层读者流畅度分数的中位数**（A 层 flow-checker subagent 输出 + C 层 reader_flow 维度所有模型分数的 median）；供 Step 6 Layer C 扩展 C15 滑动窗口趋势检测使用 |
+| `flow_consensus_issues` | list[dict] | A+C 跨层共识（≥ 2 来源）的 reader_flow issue 列表；每条含 `category/severity/quote/sources[]` 字段；供下章 editor_notes 参考 |
+| `flow_solo_high_demoted` | list[dict] | 单模型孤报 high 已降级 medium 的 issue 列表；仅记录，不扣分 |
 
 **数据写入规则**：
 - Core 22 字段：**必须全部写入**（缺失由 data-agent 用默认值占位，但不能为 None/空字符串）

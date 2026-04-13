@@ -18,7 +18,7 @@ Ch1 事故全在这一层。目的：验证 Step 1-5 的子代理真的跑了而
 | ID | 检查项 | 方法 | 通过标准 | 严重 | 修复 |
 |---|---|---|---|---|---|
 | A1 | Context Contract 完整性 | 读 `context_snapshots/ch{NNNN}.json`，验证 8 板块全在、Contract 12 字段全填 | 字段覆盖 ≥ 18/20 | critical | 重跑 Step 1 context-agent |
-| A2 | 10 checker 独立性 | 读 `审查报告/第{NNNN}章审查报告.md`，提取 10 个 checker 段落，计算两两文本相似度（词袋 Jaccard） | 最高相似度 < 0.6；分数方差 ≥ 3 | critical | 重跑 Step 3（显式 Task 调用每个 checker） |
+| A2 | 11 checker 独立性 | 读 `审查报告/第{NNNN}章审查报告.md`，提取 11 个 checker 段落（含 flow-checker），计算两两文本相似度（词袋 Jaccard） | 最高相似度 < 0.6；分数方差 ≥ 3 | critical | 重跑 Step 3（显式 Task 调用每个 checker） |
 | A3 | 9 外部模型多样性 | 读 `.webnovel/tmp/external_review_*_ch{NNNN}.json`，验证 `model_actual` 9 种不同值、`routing_verified=true`、无 0 分维度 | 9 模型，无幽灵 | critical | 重跑 Step 3.5（`--model-key all`） |
 | A4 | Data Agent A-K 子步真实执行 | 读 `.webnovel/observability/data_agent_timing.jsonl` 最后一条，每子步 elapsed_ms > 0；B 步 > 3000ms；K 步有 applied_additions | A-F 均 > 100ms | critical | 重跑 Step 5 |
 | A5 | 无 fallback subagent | 读 `.webnovel/observability/call_trace.jsonl` 本章区间，grep `"subagent_type": "general-purpose"` | 命中数 = 0 | critical | 确认插件 enable + 重跑对应 Step |
@@ -60,6 +60,9 @@ Ch1 事故全在这一层。目的：验证 Step 1-5 的子代理真的跑了而
 | C10 | 段落长度分布 | 最长段字数 / > 200 字段数 | 最长 ≤ 250；> 200 段数 ≤ 2 | high | Step 4 拆段 |
 | C11 | 对话密度 | 连续无对话段数 / 对话占比 | 连续 ≤ 5 段；对话占比 20-60% | medium | Step 4 补对话/叙述 |
 | C12 | 指代清晰度 | 同一人物称呼切换次数 / 代词距先行词 | 切换 ≤ 3 次 | medium | Step 4 统一称呼 |
+| C13 | 跨层共识聚合 | 读 flow-checker（A 内部）+ reader_flow（C 外部）两层 issue，按 quote 归一化聚合；≥ 2 模型命中 = 共识 high/medium；单模型孤报 high 降级 medium | 共识 high = 0；共识 medium ≤ 2 | critical | Step 4 修共识 high；共识 medium 列优先 |
+| C14 | 反应可追溯性 | 识别主角 3-5 类关键反应（主动动作/规则推断/情绪爆发/技能使用/内心顿悟），逆向 grep 前置线索（**双通道**：同章距离 ≤ 30 段 OR 跨章线索 + 本章呼应锚点） | 每个关键反应至少 1 条前置线索 | high | Step 4 补动机/线索/锚点 |
+| C15 | Flow 趋势滑动窗口 | 本章 flow_score_median vs 近 5 章 flow_score_median 的 Δ（历史不足 3 章时 warn-only；≥ 3 章启用 block 规则） | Δ ≤ 10 不 block；Δ ≤ 5 不 warn | critical（Δ > 10）/ high（Δ > 5） | Step 4 重写突降段落 |
 
 ## Layer D — 作品连续性（防风格/人设/数值崩坏）
 

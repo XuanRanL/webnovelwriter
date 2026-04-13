@@ -860,6 +860,18 @@ chmod +x "{project_root}/.webnovel/hygiene_check.py" 2>/dev/null || true
 - `总纲.md` 已填核心主线、约束字段与主题内核。
 - `idea_bank.json` 已写入且包含 opening_strategy 且与最终选定方案一致。
 
+## ABC 审查能力默认启用（2026-04-13 新增）
+
+新项目自动享用以下插件级能力，无需项目侧配置：
+
+- **Step 3 第 11 个 checker**：`flow-checker` 读者视角流畅度（一人分饰两角失忆裸读协议）
+- **Step 3.5 第 11 维度**：`reader_flow` 外部 9 模型交叉打分
+- **Step 6 Layer C 扩展**：C13 跨层共识聚合 / C14 反应可追溯性（双通道）/ C15 Flow 趋势滑动窗口
+
+init 完成后的 `/webnovel-write` 会自动触发全部 ABC 流程。首章/规则揭示章/反派首露章等关键章节可手动用 `flow_union_runner.py --runs 3` 做 N=3 重跑 issue union 聚合。
+
+详细集成设计见 `归途-殡仪馆规则/.webnovel/tmp/flow_test/ABC_FULL_DEPLOYMENT_REPORT.md`（示例项目）或 `agents/flow-checker.md` + `skills/webnovel-write/references/step-6-audit-matrix.md` (C13/C14/C15)。
+
 ## 失败处理（最小回滚）
 
 触发条件：

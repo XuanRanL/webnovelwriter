@@ -7,6 +7,69 @@
 
 ---
 
+## [2026-04-13 · ABC] 读者视角流畅度三层审查系统
+
+**动机**：Ch1 写完后用户反馈"难懂，写得不清楚，很奇怪而且无法理解"。诊断发现现有 10 checker + 10 外部维度全是"作者工艺视角"，没有任何一个 checker 从"读者能否读懂、卡不卡顿"的角度审查。Ch1 打了 92 分但真实读者读不下去。
+
+**ABC 三方案同时实施**（分工不重复，每章都跑）：
+
+### 方案 A：Step 3 本地 flow-checker（第 11 个 checker）
+- 新建 `agents/flow-checker.md`：一人分饰两角失忆裸读协议（Claude subagent）
+- 7 类读者卡点分类：`JUMP_LOGIC` 跳跃推理 / `MISSING_MOTIVE` 动机悬空 / `UNGROUNDED_TERM` 术语无锚 / `ABRUPT_TRANSITION` 突兀转场 / `VAGUE_REFERENCE` 指代模糊 / `RHYTHM_JOLT` 节奏抖动 / `META_BREAK` 叙事出戏
+- 强制"只读本章 + 上章末段"，禁读设定集/大纲
+- 产物落 `.webnovel/tmp/flow_check_ch{NNNN}.json`
+- SKILL.md Step 3 Batch 2 从 5 个 checker 改为 6 个（加入 flow-checker）
+
+### 方案 B：Step 6 audit-agent Layer C 扩展（C13/C14/C15）
+- `skills/webnovel-write/references/step-6-audit-matrix.md` 加三项：
+  - C13 跨层共识聚合（A 层 + C 层 ≥ 2 来源命中 = 共识 high/medium；单模型孤报 high 降级 medium）
+  - C14 反应可追溯性（**双通道**：同章 ≤30 段 OR 跨章线索 + 本章呼应锚点）
+  - C15 Flow 趋势滑动窗口（本章 vs 近 5 章 median，Δ>10 block / Δ>5 warn）
+- Layer C 时间预算 80s → 150s，总预算 300s → 370s
+- `agents/audit-agent.md` 加"Layer C 扩展执行要点"段 + A/C 层产物缺失降级规则
+
+### 方案 C：Step 3.5 外部第 11 维度 reader_flow
+- `scripts/external_review.py` DIMENSIONS 加 `reader_flow` 维度（与 A 同一 prompt 协议）
+- 9 模型各跑 11 维度（Ch5 实测 9/9 成功）
+- `agents/external-review-agent.md` 10→11 维度 + 互补性说明
+
+### 配套（Phase IV）
+- 新建 `scripts/flow_union_runner.py`：N=3 重跑 + issue union 聚合（首章/规则揭示章/反派首露章可选）
+- quote compact grep 验证（去所有空白后匹配，对冲 LLM 引用跨段自动去换行的误判）
+
+### 全流程文档同步（本次修复）
+- `skills/webnovel-write/SKILL.md`：10→11 / 5+5→5+6（9 处）
+- `skills/webnovel-write/references/step-3-review-gate.md`：dimension_scores 键名加"读者流畅度"、Batch 2 改 6
+- `skills/webnovel-write/references/step-6-audit-gate.md`：A2 10→11
+- `skills/webnovel-write/references/step-3.5-external-review.md`：prompt 模板 10→11
+- `skills/webnovel-write/references/polish-guide.md`：加 READER_FLOW 修复优先级（7 分类修复法）+ reader_flow vs reader_pull 去重规则
+- `skills/webnovel-init/SKILL.md`：ABC 能力默认启用说明
+- `skills/webnovel-resume/references/workflow-resume.md`：10→11
+- `skills/webnovel-query/references/system-data-flow.md`：10→11
+- `references/checker-output-schema.md`：issue type 增加 `READER_FLOW`
+- `agents/data-agent.md`：chapter_meta 扩展字段加 `flow_score_median` / `flow_consensus_issues` / `flow_solo_high_demoted`
+
+### 实测验证（Ch5 集成测试）
+- A 层 overall_score=78, 6 真卡点，12/12 引用 compact grep 通过
+- C 层 9 模型 reader_flow median=85（7/9 比 reader_pull 严，证明视角互补非冗余）
+- B 层 C13 PASS（共识 medium=1）/ C14 PASS（5/5 反应可追溯）/ C15 PASS（Δ=1）
+- overall_decision=approve
+- **跨层互补证据**：Qwen 独家发现"不要回来"vs"勿回"用词不一致（A 层漏），A 独家发现烧签→笑容节奏抖动
+
+### 原型期已修 bug（6 个）
+| Bug | RCA | Fix |
+|---|---|---|
+| try_provider_chain 返回 tuple 误作 dict | 未读被依赖函数 signature | 正确解包 7-tuple |
+| tail -c 字节截断破 UTF-8 | 禁用字节级文件操作 | 改用 Python read_text()[-N:] |
+| qwen-plus @ healwrap Content-Type mojibake | 服务端 header 错 | post-hoc fix_mojibake_recursive() Latin-1→UTF-8 roundtrip |
+| 幻觉检测器误判跨段引用 | raw in text 匹配对跨段失败 | compact 匹配（去所有空白） |
+| LLM 输出污染 system prompt | 模型 echo prompt | 容忍（不影响核心数据）|
+| severity 偏低 | temperature 过高 | prompt 加自我校验 rationale 字段 |
+
+**详细报告**：`归途-殡仪馆规则/.webnovel/tmp/flow_test/ABC_FULL_DEPLOYMENT_REPORT.md`（~400 行完整分析）
+
+---
+
 ## [2026-04-11 · v2] 递归审查：修复我第一次修复里的 6 个 bug
 
 第一次修复完成后做递归审查，发现我自己加的代码里藏了 6 个 bug。全部修复如下：
