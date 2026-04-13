@@ -16,7 +16,7 @@ purpose: 任务恢复时加载，指导中断恢复流程
 | Step 1 | Context Agent（内置 Contract） | 无副作用（仅读取） | ⭐ | 直接重新执行 |
 | Step 2A | 生成粗稿 | 半成品章节文件 | ⭐⭐ | **删除半成品**，从 Step 1 重新开始 |
 | Step 2B | 风格适配 | 部分改写内容 | ⭐⭐ | 继续适配或回到 2A |
-| Step 3 | 内部审查（10 个 checker） | 审查未完成 | ⭐⭐⭐ | 用户决定：重审或跳过 |
+| Step 3 | 内部审查（11 个 checker，含 flow-checker） | 审查未完成 | ⭐⭐⭐ | 用户决定：重审或跳过 |
 | Step 3.5 | 外部审查（9 个模型） | 外部审查未完成 | ⭐⭐⭐ | 按 fallback 链重试或跳过 |
 | Step 4 | 网文化润色 | 部分润色的文件 | ⭐⭐ | 继续润色或删除重写 |
 | Step 5 | Data Agent | state/index/summaries 部分写入 | ⭐⭐ | 重新运行（幂等） |
