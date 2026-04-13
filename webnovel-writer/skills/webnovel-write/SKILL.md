@@ -135,21 +135,23 @@ export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-roo
 - `preflight` 必须成功。
 - 任一核心输入缺失立即阻断。
 
-### 准备阶段：生成 Story System runtime 合同
+### 准备阶段：刷新写前合同树
 
-在进入 Step 0.5 之前，必须先生成并刷新本章的合同树：
+在进入 Step 0.5 之前，必须先生成并刷新本章的写前合同（类比网文作者开写前先过一遍大纲、设定、禁区）：
 
 ```bash
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
   story-system "{chapter_goal}" --chapter {chapter_num} --persist --emit-runtime-contracts --format both
 ```
 
-至少确认以下文件已存在：
-- `.story-system/MASTER_SETTING.json`
-- `.story-system/volumes/volume_{volume_num}.json`
-- `.story-system/reviews/chapter_{chapter_num}.review.json`（`REVIEW_CONTRACT`）
+**合同树必备文件**（写前真源，缺一不可）：
+- `.story-system/MASTER_SETTING.json` - 全书主设定合同（题材、调性、核心禁忌）
+- `.story-system/volumes/volume_{volume_num}.json` - 本卷节奏合同（卷级目标、爽点密度）
+- `.story-system/reviews/chapter_{chapter_num}.review.json` - 本章审查合同（必须覆盖节点、本章禁区）
 
-若合同缺失或生成失败，直接阻断，不进入正文起草。
+**阻断规则**：
+- 合同缺失或生成失败 → 直接阻断，不进入正文起草
+- 类比：作者没过完大纲就开写，容易写崩
 
 ### Step 0.5：轻量节点预检
 
@@ -274,40 +276,68 @@ Anti-AI 硬要求：
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" state set-chapter-status --chapter {chapter_num} --status chapter_reviewed
 ```
 
-### Step 5：调用 Data Agent 回写结构化数据
+### Step 5：章节提交主链（写后事实入口）
 
-使用 Task 调用 `data-agent`，参数：
-- `chapter`
-- `chapter_file`
-- `project_root`
-- `storage_path=.webnovel/`
-- `state_file=.webnovel/state.json`
+> **核心原则**：Data Agent 不是写后真理源，它只负责提取事实并生成 commit artifacts。
+> 真正的写后事实入口是 accepted `CHAPTER_COMMIT`，类比网文作者写完一章后的"定稿提交"。
 
-Data Agent 默认子步骤全部执行：
-- 加载上下文
-- 实体提取与消歧
-- 写入 state/index
-- 写入章节摘要
-- 提取长期记忆 `memory_facts`
-- 场景切片
-- RAG 向量索引
-- 债务利息（默认关闭，仅用户明确要求或项目显式启用时开启）
+#### Step 5.1：调用 Data Agent 提取章节事实
 
-失败隔离规则：
-- state/index/summary/memory 写入失败：只重跑 Step 5
-- `--scenes` 缺失导致的向量或风格样本失败：只补跑对应子步骤
-- 禁止因 Step 5 子步骤失败而回滚 Step 1-4
+使用 Task 调用 `data-agent`，产出四份中间文件（commit 前置材料）：
 
-执行后最小检查白名单：
-- `.webnovel/state.json`
-- `.webnovel/index.db`
-- `.webnovel/summaries/ch{chapter_padded}.md`
-- `.webnovel/memory_scratchpad.json`
-- `.webnovel/observability/data_agent_timing.jsonl`
+| 文件 | 职责 | 来源 |
+|------|------|------|
+| `review_results.json` | 审查问题清单 | Step 3 reviewer + review-pipeline |
+| `fulfillment_result.json` | 大纲履约情况（覆盖了哪些节点、漏了哪些） | plot_structure 对比 |
+| `disambiguation_result.json` | 实体消歧状态（pending / warnings） | 角色/势力/地点消歧 |
+| `extraction_result.json` | 章节事实提取（事件、状态变化、实体变化、摘要） | 正文语义提取 |
 
-性能要求：
-- 读取最新 timing 记录
-- `TOTAL > 30000ms` 时，输出最慢 2-3 个环节与原因说明
+**Data Agent 新角色定位**（Phase 5 降级后）：
+- ✅ 提取章节事实（角色境界突破、势力关系变化、伏笔埋设）
+- ✅ 生成 commit 所需 artifacts
+- ❌ 不直接写入 `state.json` / `index.db` / `summaries` / `memory_scratchpad`（这些是投影层，由 commit 驱动）
+
+#### Step 5.2：提交 CHAPTER_COMMIT（写后唯一真源）
+
+主命令（类比作者点击"发布章节"按钮）：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" chapter-commit \
+  --chapter {chapter_num} \
+  --review-result "${PROJECT_ROOT}/.webnovel/tmp/review_results.json" \
+  --fulfillment-result "${PROJECT_ROOT}/.webnovel/tmp/fulfillment_result.json" \
+  --disambiguation-result "${PROJECT_ROOT}/.webnovel/tmp/disambiguation_result.json" \
+  --extraction-result "${PROJECT_ROOT}/.webnovel/tmp/extraction_result.json"
+```
+
+**提交判定规则**（自动判断 accepted / rejected）：
+- `review_results.blocking_count > 0` → rejected（有阻断问题，不能发布）
+- `fulfillment_result.missed_nodes` 非空 → rejected（大纲节点没写完）
+- `disambiguation_result.pending` 非空 → rejected（角色消歧未完成）
+- 全部通过 → accepted（章节定稿，触发投影链）
+
+#### Step 5.3：验证投影状态（写后数据落库）
+
+**成功标准**（accepted commit 才会触发投影）：
+- `.story-system/commits/chapter_{chapter_num}.commit.json` 已生成（写后真源）
+- `projection_status` 四项全部为 `done` 或 `skipped`：
+  - `state` → `.webnovel/state.json` 投影完成（主角境界、当前位置等）
+  - `index` → `index.db` 投影完成（角色出场、势力关系等）
+  - `summary` → `summaries/ch{chapter_padded}.md` 投影完成（章节摘要）
+  - `memory` → `memory_scratchpad.json` 投影完成（长期记忆事实）
+
+**投影层定位**（Phase 5 明确）：
+- `.webnovel/state.json` / `index.db` / `summaries` / `memory_scratchpad` 只是 commit 的"查询视图"
+- 类比：网文后台的"章节列表"、"角色卡"都是从"已发布章节"自动生成的，不是作者手工维护的
+
+#### Step 5.4：失败隔离与补跑策略
+
+| 失败场景 | 补跑策略 | 禁止操作 |
+|---------|---------|---------|
+| commit 文件未生成 | 只重跑 Step 5.2 | ❌ 不回退 Step 1-4 |
+| `projection_status.state=failed` | 只修复 state projection 后补提 commit | ❌ 不重新提取事实 |
+| 向量索引失败 | 只补跑 extraction 子步骤 | ❌ 不重新审查 |
+| `TOTAL > 30000ms` | 输出最慢 2-3 个环节与原因 | ❌ 不静默跳过性能问题 |
 
 状态推进：
 
@@ -335,7 +365,7 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 3. Step 3 已产出审查结果并落库（`--minimal` 除外）。
 4. 若存在 `blocking=true` 的 issue，流程必须停在 Step 3。
 5. Step 4 的 `anti_ai_force_check=pass`（`--minimal` 除外），`chapter_status` 已推进到 `chapter_reviewed`。
-6. Step 5 已更新 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`、`memory_scratchpad.json`，`chapter_status` 已推进到 `chapter_committed`。
+6. Step 5 已生成 accepted `CHAPTER_COMMIT`，并确认 `state/index/summary/memory` projection 已完成或显式跳过，`chapter_status` 已推进到 `chapter_committed`。
 7. 若启用观测，已读取最新 timing 记录并给出结论。
 
 ## 验证与交付
@@ -343,6 +373,7 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 ```bash
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" state get-chapter-status --chapter {chapter_num}
 test -f "${PROJECT_ROOT}/正文/第${chapter_padded}章.md"
+test -f "${PROJECT_ROOT}/.story-system/commits/chapter_${chapter_num}.commit.json"
 test -f "${PROJECT_ROOT}/.webnovel/summaries/ch${chapter_padded}.md"
 test -f "${PROJECT_ROOT}/.webnovel/memory_scratchpad.json"
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 1
@@ -351,6 +382,7 @@ tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || t
 
 成功标准：
 - `chapter_status` 为 `chapter_committed`（`--minimal` 模式下至少为 `chapter_drafted`）。
+- accepted `CHAPTER_COMMIT` 已写入 `.story-system/commits/`，且投影链路完成。
 - 章节文件、摘要文件、状态文件、长期记忆暂存文件齐全且内容可读。
 - 审查结果可追溯。
 - 润色后未破坏大纲、设定与长期记忆约束。

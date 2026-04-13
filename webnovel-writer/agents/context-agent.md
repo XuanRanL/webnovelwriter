@@ -17,7 +17,7 @@ model: inherit
 - 按需召回、推断补全——只查询本章真正需要的信息
 - 先接住上章、再锁定本章任务与章末钩子
 - 若章纲提供结构化节点，将其转化为本章写作节拍
-- 信息冲突时优先级为 `设定 > 大纲 > 长期记忆 > 风格偏好`
+- 信息冲突时优先级为：Story Contracts > accepted `CHAPTER_COMMIT` > 长期记忆 > 风格偏好
 
 ## 2. 可用工具与脚本
 
@@ -41,6 +41,17 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" memo
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" memory-contract get-open-loops
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" memory-contract get-timeline --from {N} --to {M}
 ```
+
+**Story System 主链**（写前真源 + 写后真源，按需直接读取）：
+
+写前真源（开写前必须遵守的"大纲、设定、禁区"）：
+- `.story-system/MASTER_SETTING.json` - 全书主设定合同（题材、调性、核心禁忌）
+- `.story-system/volumes/volume_{NNN}.json` - 卷级合同（本卷目标、爽点密度、节奏策略）
+- `.story-system/chapters/chapter_{NNN}.json` - 章级合同（本章焦点、动态上下文）
+- `.story-system/reviews/chapter_{NNN}.review.json` - 审查合同（必须覆盖节点、本章禁区）
+
+写后真源（已发布章节的"定稿状态"）：
+- latest accepted `.story-system/commits/chapter_{NNN}.commit.json` - 章节提交记录（accepted 才是有效定稿）
 
 ### 补充命令（按需调用）
 
@@ -108,9 +119,10 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" extr
 
 1. 校验 `CLAUDE_PLUGIN_ROOT` 和项目根目录
 2. 调用 `memory-contract load-context --chapter {NNNN}`
-   - 返回 JSON 包含：`outline`（章纲）、`protagonist`（主角状态）、`progress`（进度）、`recent_summaries`（最近摘要）、`active_rules`（活跃约束）、`urgent_loops`（紧急伏笔）、`memory_pack`（记忆编排结果）
+   - 返回 JSON 包含：`story_contracts`、`runtime_status`、`latest_commit`、`outline`（章纲）、`protagonist`（主角状态）、`progress`（进度）、`recent_summaries`（最近摘要）、`active_rules`（活跃约束）、`urgent_loops`（紧急伏笔）、`memory_pack`（记忆编排结果）
 3. 使用 `Read` 读取章纲原文：`大纲/第{卷}卷-详细大纲.md`（load-context 的 outline 字段可能被截断，需要完整章纲）
 4. 确定 `{volume_id}`（优先 `state.json`，缺失时从总纲反推）
+5. 若存在 accepted `CHAPTER_COMMIT`，优先把它视为写后事实入口；`.webnovel/state.json` / `index.db` 仅作为 fallback/read-model
 
 ### 阶段 B：按需深查（ReAct 循环）
 
@@ -274,6 +286,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" inde
 ### 缺失处理
 
 - `load-context` 返回空 sections → 降级为 `extract-context --format json` 全量加载
+- `runtime_status.fallback_sources` 非空 → 必须在输出中显式标明已进入 legacy fallback
 - `chapter_meta` 不存在 → 跳过"接住上章"
 - 最近 3 章数据不完整 → 只用现有数据做差异化检查
 - `plot_threads.foreshadowing` 缺失或非列表 → 伏笔板块仍必须输出，显式标注"结构化伏笔数据缺失，需人工补录"，禁止静默跳过
