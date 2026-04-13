@@ -134,6 +134,37 @@ def test_index_projection_writer_derives_relationship_from_event(tmp_path):
     assert rels[0]["type"] == "师徒"
 
 
+def test_index_projection_writer_derives_artifact_entity_from_event(tmp_path):
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    cfg.ensure_dirs()
+    writer = IndexProjectionWriter(tmp_path)
+
+    result = writer.apply(
+        {
+            "meta": {"status": "accepted", "chapter": 3},
+            "entity_deltas": [],
+            "accepted_events": [
+                {
+                    "event_id": "evt-002",
+                    "chapter": 3,
+                    "event_type": "artifact_obtained",
+                    "subject": "黑戒",
+                    "payload": {
+                        "artifact_id": "black_ring",
+                        "name": "黑戒",
+                        "owner": "xiaoyan",
+                    },
+                }
+            ],
+        }
+    )
+
+    entity = IndexManager(cfg).get_entity("black_ring")
+    assert result["applied"] is True
+    assert entity["canonical_name"] == "黑戒"
+    assert entity["current_json"]["holder"] == "xiaoyan"
+
+
 def test_summary_projection_writer_writes_summary_markdown(tmp_path):
     cfg = DataModulesConfig.from_project_root(tmp_path)
     cfg.ensure_dirs()

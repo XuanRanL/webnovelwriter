@@ -101,3 +101,29 @@ def test_markdown_writer_preserves_manual_notes_outside_markers(tmp_path):
     assert "手工备注" in text
     assert "## Auto" in text
     assert "旧内容" not in text
+
+
+def test_story_system_default_csv_dir_routes_real_genre_seed(tmp_path, monkeypatch, capsys):
+    project_root = tmp_path / "book"
+    (project_root / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (project_root / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
+
+    from story_system import main
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "story_system",
+            "玄幻退婚流",
+            "--project-root",
+            str(project_root),
+            "--format",
+            "json",
+        ],
+    )
+    main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["master_setting"]["route"]["primary_genre"] == "玄幻退婚流"
+    assert payload["master_setting"]["route"]["route_source"] != "empty_csv_fallback"

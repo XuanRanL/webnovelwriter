@@ -10,13 +10,13 @@ class EventProjectionRouter:
         "character_state_changed": ["state", "memory"],
         "power_breakthrough": ["state", "memory"],
         "relationship_changed": ["index"],
-        "world_rule_revealed": ["index", "memory"],
-        "world_rule_broken": ["index", "memory"],
+        "world_rule_revealed": ["memory"],
+        "world_rule_broken": ["memory"],
         "open_loop_created": ["memory"],
         "open_loop_closed": ["memory"],
         "promise_created": ["memory"],
         "promise_paid_off": ["memory"],
-        "artifact_obtained": ["index", "memory"],
+        "artifact_obtained": ["index"],
     }
 
     def route(self, event: Dict) -> List[str]:

@@ -24,6 +24,18 @@ def test_router_maps_relationship_changed_to_index():
     assert "index" in targets
 
 
+def test_router_maps_world_rule_broken_to_memory_only():
+    router = EventProjectionRouter()
+    targets = router.route(
+        {
+            "event_type": "world_rule_broken",
+            "subject": "金手指",
+            "payload": {"field": "world_rule"},
+        }
+    )
+    assert targets == ["memory"]
+
+
 def test_router_collects_required_writers_from_commit_payload():
     router = EventProjectionRouter()
     targets = router.required_writers(

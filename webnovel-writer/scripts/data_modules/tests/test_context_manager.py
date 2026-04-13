@@ -278,6 +278,128 @@ def test_context_manager_includes_story_contract_and_prewrite_validation(temp_pr
     assert list(sections.keys()).index("story_contract") < list(sections.keys()).index("scene")
 
 
+def test_context_manager_invalidates_snapshot_when_story_contract_changes(temp_project):
+    state = {
+        "progress": {"volumes_planned": [{"volume": 1, "chapters_range": "1-10"}]},
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    story_root = temp_project.story_system_dir
+    (story_root / "chapters").mkdir(parents=True, exist_ok=True)
+    (story_root / "volumes").mkdir(parents=True, exist_ok=True)
+    (story_root / "reviews").mkdir(parents=True, exist_ok=True)
+    (story_root / "MASTER_SETTING.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "MASTER_SETTING"},
+                "route": {"primary_genre": "玄幻退婚流"},
+                "master_constraints": {"core_tone": "先压后爆"},
+                "base_context": [],
+                "source_trace": [],
+                "override_policy": {},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "chapters" / "chapter_003.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "CHAPTER_BRIEF", "chapter": 3},
+                "override_allowed": {"chapter_focus": "旧焦点"},
+                "dynamic_context": [],
+                "source_trace": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "volumes" / "volume_001.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "VOLUME_BRIEF"},
+                "volume_goal": {"summary": "旧卷目标"},
+                "selected_tropes": [],
+                "selected_pacing": {},
+                "selected_scenes": [],
+                "anti_patterns": [],
+                "system_constraints": [],
+                "overrides": {"locked": {}, "append_only": {}, "override_allowed": {}},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    review_path = story_root / "reviews" / "chapter_003.review.json"
+    review_path.write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "REVIEW_CONTRACT"},
+                "must_check": ["旧节点"],
+                "blocking_rules": ["旧禁区"],
+                "genre_specific_risks": [],
+                "anti_patterns": [],
+                "system_constraints": [],
+                "review_thresholds": {},
+                "overrides": {"locked": {}, "append_only": {}, "override_allowed": {}},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    temp_project.outline_dir.mkdir(parents=True, exist_ok=True)
+    (temp_project.outline_dir / "第1卷-详细大纲.md").write_text(
+        "### 第3章：试炼\n必须覆盖节点：旧节点\n本章禁区：旧禁区",
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+    first = manager.build_context(3, template="plot", use_snapshot=True, save_snapshot=True)
+    assert first["sections"]["prewrite_validation"]["content"]["forbidden_zones"] == ["旧禁区"]
+
+    review_path.write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "REVIEW_CONTRACT"},
+                "must_check": ["新节点"],
+                "blocking_rules": ["新禁区"],
+                "genre_specific_risks": [],
+                "anti_patterns": [],
+                "system_constraints": [],
+                "review_thresholds": {},
+                "overrides": {"locked": {}, "append_only": {}, "override_allowed": {}},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    second = manager.build_context(3, template="plot", use_snapshot=True, save_snapshot=False)
+    assert second["sections"]["story_contract"]["content"]["review_contract"]["blocking_rules"] == ["新禁区"]
+    assert second["sections"]["prewrite_validation"]["content"]["forbidden_zones"] == ["新禁区"]
+
+
+def test_context_manager_blocks_when_story_contract_missing(temp_project):
+    state = {
+        "protagonist_state": {"name": "萧炎"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(3, use_snapshot=False, save_snapshot=False)
+
+    prewrite = payload["sections"]["prewrite_validation"]["content"]
+    assert prewrite["blocking"] is True
+    assert any("合同" in reason for reason in prewrite["blocking_reasons"])
+
+
 def test_query_router():
     router = QueryRouter()
     assert router.route("角色是谁") == "entity"

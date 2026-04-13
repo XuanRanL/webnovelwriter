@@ -9,6 +9,7 @@ import json
 import re
 import sys
 import logging
+import hashlib
 from pathlib import Path
 
 from runtime_compat import enable_windows_utf8_stdio
@@ -123,7 +124,16 @@ class ContextManager:
             return False
 
         required_sections = {"plot_structure", "long_term_memory", "story_contract", "prewrite_validation"}
-        return required_sections.issubset(set(sections.keys()))
+        if not required_sections.issubset(set(sections.keys())):
+            return False
+
+        chapter = int(cached.get("chapter") or (payload.get("meta") or {}).get("chapter") or 0)
+        if chapter <= 0:
+            return False
+
+        snapshot_signature = meta.get("story_contract_signature")
+        current_signature = self._story_contract_signature(chapter)
+        return snapshot_signature == current_signature
 
     def build_context(
         self,
@@ -154,7 +164,10 @@ class ContextManager:
         assembled = self.assemble_context(pack, template=template, max_chars=max_chars)
 
         if save_snapshot:
-            meta = {"template": template}
+            meta = {
+                "template": template,
+                "story_contract_signature": self._story_contract_signature(chapter),
+            }
             self.snapshot_manager.save_snapshot(chapter, assembled, meta=meta)
 
         return assembled
@@ -288,6 +301,7 @@ class ContextManager:
             chapter=chapter,
             review_contract=story_contract.get("review_contract") or {},
             plot_structure=plot_structure,
+            story_contract=story_contract,
         )
 
         return {
@@ -731,6 +745,25 @@ class ContextManager:
             ) or {},
             "anti_patterns": read_json_if_exists(story_root / "anti_patterns.json") or [],
         }
+
+    def _story_contract_signature(self, chapter: int) -> Dict[str, str]:
+        story_root = self.config.story_system_dir
+        volume = volume_num_for_chapter_from_state(self.config.project_root, chapter) or 1
+        paths = {
+            "master_setting": story_root / "MASTER_SETTING.json",
+            "chapter_brief": story_root / "chapters" / f"chapter_{chapter:03d}.json",
+            "volume_brief": story_root / "volumes" / f"volume_{volume:03d}.json",
+            "review_contract": story_root / "reviews" / f"chapter_{chapter:03d}.review.json",
+            "anti_patterns": story_root / "anti_patterns.json",
+        }
+        signature: Dict[str, str] = {}
+        for name, path in paths.items():
+            if not path.is_file():
+                signature[name] = "missing"
+                continue
+            digest = hashlib.sha1(path.read_bytes()).hexdigest()
+            signature[name] = digest
+        return signature
 
     def _load_recent_summaries(self, chapter: int, window: int = 3) -> List[Dict[str, Any]]:
         summaries = []

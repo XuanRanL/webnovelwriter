@@ -16,16 +16,34 @@ class PrewriteValidator:
         chapter: int,
         review_contract: Dict[str, Any],
         plot_structure: Dict[str, Any],
+        story_contract: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         state = json.loads(
             (self.project_root / ".webnovel" / "state.json").read_text(encoding="utf-8")
         )
         pending = state.get("disambiguation_pending") or []
         warnings = state.get("disambiguation_warnings") or []
+        contract_provided = story_contract is not None
+        story_contract = story_contract or {}
+        missing_contracts = []
+        if contract_provided:
+            missing_contracts = [
+                name
+                for name in ("master_setting", "chapter_brief", "volume_brief", "review_contract")
+                if not story_contract.get(name)
+            ]
+        blocking_reasons = []
+        if pending:
+            blocking_reasons.append("存在高优先级 disambiguation_pending")
+        if missing_contracts:
+            blocking_reasons.append(
+                "缺少 Story System 合同: " + ", ".join(missing_contracts)
+            )
         return {
             "chapter": chapter,
-            "blocking": bool(pending),
-            "blocking_reasons": ["存在高优先级 disambiguation_pending"] if pending else [],
+            "blocking": bool(pending) or bool(missing_contracts),
+            "blocking_reasons": blocking_reasons,
+            "missing_contracts": missing_contracts,
             "forbidden_zones": list(review_contract.get("blocking_rules") or []),
             "disambiguation_domain": {
                 "pending_count": len(pending),

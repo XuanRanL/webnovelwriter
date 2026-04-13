@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import asyncio
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -454,3 +456,221 @@ def test_review_pipeline_main_creates_output_directories(tmp_path):
         sys.argv = old_argv
 
     assert metrics_out.is_file()
+
+
+def test_webnovel_skill_flow_runs_story_contract_context_and_review_pipeline_with_stubbed_vector_model(
+    monkeypatch, tmp_path, capsys
+):
+    _ensure_scripts_on_path()
+    module = _load_webnovel_module()
+    import data_modules.rag_adapter as rag_module
+    from data_modules.config import DataModulesConfig
+
+    project_root = (tmp_path / "book").resolve()
+    cfg = DataModulesConfig.from_project_root(project_root)
+    cfg.ensure_dirs()
+
+    cfg.state_file.write_text(
+        json.dumps(
+            {
+                "project": {"genre": "xuanhuan"},
+                "progress": {
+                    "current_chapter": 3,
+                    "total_words": 9000,
+                    "volumes_planned": [{"volume": 1, "chapters_range": "1-20"}],
+                },
+                "protagonist_state": {
+                    "name": "萧炎",
+                    "location": {"current": "天云宗外院"},
+                    "power": {"realm": "斗者", "layer": 9},
+                },
+                "chapter_meta": {},
+                "disambiguation_warnings": [],
+                "disambiguation_pending": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    outline_dir = project_root / "大纲"
+    outline_dir.mkdir(parents=True, exist_ok=True)
+    (outline_dir / "第1卷-详细大纲.md").write_text(
+        "\n".join(
+            [
+                "### 第3章：试炼冲突",
+                "本章将聚焦萧炎与药老关系冲突，并回收旧线索真相。",
+                "CBN：萧炎进入试炼场",
+                "CPNs：",
+                "- 药老提醒规则异常",
+                "- 萧炎发现师徒分歧",
+                "CEN：萧炎决定暂缓冲突",
+                "必须覆盖节点：发现规则异常",
+                "本章禁区：不可提前摊牌",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    refs_dir = project_root / ".claude" / "references"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+    (refs_dir / "genre-profiles.md").write_text("## xuanhuan\n- 升级线清晰", encoding="utf-8")
+    (refs_dir / "reading-power-taxonomy.md").write_text("## xuanhuan\n- 冲突钩优先", encoding="utf-8")
+
+    calls = {"embed": 0, "embed_batch": 0, "rerank": 0}
+
+    class _StubVectorClient:
+        async def embed(self, texts):
+            calls["embed"] += 1
+            return [[1.0, 0.0] for _ in texts]
+
+        async def embed_batch(self, texts, skip_failures=True):
+            calls["embed_batch"] += 1
+            return [[1.0, 0.0] for _ in texts]
+
+        async def rerank(self, query, documents, top_n=None):
+            calls["rerank"] += 1
+            limit = top_n or len(documents)
+            return [
+                {"index": i, "relevance_score": 1.0 / (i + 1)}
+                for i in range(min(limit, len(documents)))
+            ]
+
+    monkeypatch.setenv("EMBED_API_KEY", "fake-embed-key")
+    monkeypatch.setattr(rag_module, "get_client", lambda config: _StubVectorClient())
+
+    adapter = rag_module.RAGAdapter(cfg)
+    asyncio.run(
+        adapter.store_chunks(
+            [
+                {
+                    "chapter": 2,
+                    "scene_index": 1,
+                    "content": "萧炎与药老关系紧张，线索逐步浮现，冲突升级。",
+                }
+            ]
+        )
+    )
+
+    script_to_module = {
+        "story_system.py": "story_system",
+        "extract_chapter_context.py": "extract_chapter_context",
+        "review_pipeline.py": "review_pipeline",
+    }
+
+    def _run_script_inproc(script_name, argv):
+        module_name = script_to_module.get(script_name)
+        if not module_name:
+            raise AssertionError(f"unexpected script call: {script_name}")
+        script_module = importlib.import_module(module_name)
+        old_argv = sys.argv
+        try:
+            sys.argv = [module_name, *argv]
+            script_module.main()
+            return 0
+        except SystemExit as exc:
+            return int(exc.code or 0)
+        finally:
+            sys.argv = old_argv
+
+    monkeypatch.setattr(module, "_run_script", _run_script_inproc)
+
+    def _run_webnovel(argv):
+        monkeypatch.setattr(sys, "argv", ["webnovel", *argv])
+        with pytest.raises(SystemExit) as exc:
+            module.main()
+        return int(exc.value.code or 0)
+
+    assert (
+        _run_webnovel(
+            [
+                "--project-root",
+                str(project_root),
+                "story-system",
+                "玄幻退婚流",
+                "--chapter",
+                "3",
+                "--persist",
+                "--emit-runtime-contracts",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    story_root = project_root / ".story-system"
+    assert (story_root / "MASTER_SETTING.json").is_file()
+    assert (story_root / "volumes" / "volume_001.json").is_file()
+    assert (story_root / "reviews" / "chapter_003.review.json").is_file()
+
+    assert (
+        _run_webnovel(
+            [
+                "--project-root",
+                str(project_root),
+                "extract-context",
+                "--chapter",
+                "3",
+                "--format",
+                "json",
+            ]
+        )
+        == 0
+    )
+    context_payload = json.loads(capsys.readouterr().out)
+    assert (
+        context_payload["story_contract"]["review_contract"]["meta"]["contract_type"]
+        == "REVIEW_CONTRACT"
+    )
+    assert context_payload["prewrite_validation"]["blocking"] is False
+    assert context_payload["rag_assist"]["invoked"] is True
+    assert context_payload["rag_assist"]["hits"]
+    assert calls["embed_batch"] >= 1
+    assert calls["embed"] >= 1
+    assert calls["rerank"] >= 1
+
+    review_results_path = project_root / ".webnovel" / "tmp" / "review_results.json"
+    review_results_path.parent.mkdir(parents=True, exist_ok=True)
+    review_results_path.write_text(
+        json.dumps(
+            {
+                "issues": [
+                    {
+                        "severity": "medium",
+                        "category": "continuity",
+                        "location": "第3段",
+                        "description": "衔接略弱",
+                        "evidence": "上章钩子未明确承接",
+                        "fix_hint": "补衔接句",
+                    }
+                ],
+                "summary": "1个中优问题",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    metrics_out = project_root / ".webnovel" / "tmp" / "review_metrics.json"
+    assert (
+        _run_webnovel(
+            [
+                "--project-root",
+                str(project_root),
+                "review-pipeline",
+                "--chapter",
+                "3",
+                "--review-results",
+                str(review_results_path),
+                "--metrics-out",
+                str(metrics_out),
+                "--report-file",
+                "审查报告/第3章.md",
+            ]
+        )
+        == 0
+    )
+    assert metrics_out.is_file()
+    metrics_payload = json.loads(metrics_out.read_text(encoding="utf-8"))
+    assert metrics_payload["issues_count"] == 1

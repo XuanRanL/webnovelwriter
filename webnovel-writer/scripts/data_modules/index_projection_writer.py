@@ -55,4 +55,31 @@ class IndexProjectionWriter:
                             "chapter": chapter,
                         }
                     )
+            elif event_type == "artifact_obtained":
+                entity_id = str(
+                    payload.get("artifact_id")
+                    or payload.get("entity_id")
+                    or payload.get("id")
+                    or event.get("subject")
+                    or ""
+                ).strip()
+                if not entity_id:
+                    continue
+                current = {}
+                owner = str(payload.get("owner") or payload.get("holder") or "").strip()
+                location = str(payload.get("location") or "").strip()
+                if owner:
+                    current["holder"] = owner
+                if location:
+                    current["location"] = location
+                deltas.append(
+                    {
+                        "entity_id": entity_id,
+                        "canonical_name": str(payload.get("name") or event.get("subject") or entity_id).strip(),
+                        "type": str(payload.get("type") or "物品").strip() or "物品",
+                        "current": current,
+                        "desc": str(payload.get("description") or "").strip(),
+                        "chapter": chapter,
+                    }
+                )
         return deltas
