@@ -19,13 +19,11 @@ try:
     from chapter_outline_loader import (
         load_chapter_outline,
         load_chapter_plot_structure,
-        volume_num_for_chapter_from_state,
     )
 except ImportError:  # pragma: no cover
     from scripts.chapter_outline_loader import (
         load_chapter_outline,
         load_chapter_plot_structure,
-        volume_num_for_chapter_from_state,
     )
 
 from .config import get_config
@@ -34,6 +32,7 @@ from .context_ranker import ContextRanker
 from .prewrite_validator import PrewriteValidator
 from .snapshot_manager import SnapshotManager, SnapshotVersionMismatch
 from .story_contracts import read_json_if_exists
+from .story_runtime_sources import RuntimeSourceSnapshot, load_runtime_sources
 from .context_weights import (
     DEFAULT_TEMPLATE as CONTEXT_DEFAULT_TEMPLATE,
     TEMPLATE_WEIGHTS as CONTEXT_TEMPLATE_WEIGHTS,
@@ -73,11 +72,15 @@ class ContextManager:
         "writing_guidance",
         "plot_structure",
         "story_contract",
+        "runtime_status",
+        "latest_commit",
         "prewrite_validation",
     }
     SECTION_ORDER = [
         "core",
         "story_contract",
+        "runtime_status",
+        "latest_commit",
         "prewrite_validation",
         "scene",
         "global",
@@ -123,7 +126,14 @@ class ContextManager:
         if not isinstance(sections, dict):
             return False
 
-        required_sections = {"plot_structure", "long_term_memory", "story_contract", "prewrite_validation"}
+        required_sections = {
+            "plot_structure",
+            "long_term_memory",
+            "story_contract",
+            "runtime_status",
+            "latest_commit",
+            "prewrite_validation",
+        }
         if not required_sections.issubset(set(sections.keys())):
             return False
 
@@ -230,6 +240,7 @@ class ContextManager:
 
     def _build_pack(self, chapter: int) -> Dict[str, Any]:
         state = self._load_state()
+        runtime_sources = load_runtime_sources(self.config.project_root, chapter)
         use_orchestrator = bool(getattr(self.config, "context_use_memory_orchestrator", False))
 
         orchestrator_pack: Dict[str, Any] = {}
@@ -280,7 +291,9 @@ class ContextManager:
         scene["appearing_characters"] = self.filter_invalid_items(
             scene["appearing_characters"], source_type="entity", id_key="entity_id"
         )
-        story_contract = self._load_story_contract(chapter)
+        story_contract = self._build_story_contract_from_runtime(runtime_sources)
+        runtime_status = runtime_sources.to_dict()
+        latest_commit = runtime_sources.latest_commit or {}
 
         global_ctx = {
             "worldview_skeleton": self._load_setting("世界观"),
@@ -294,7 +307,7 @@ class ContextManager:
         story_skeleton = self._load_story_skeleton(chapter)
         alert_slice = max(0, int(self.config.context_alerts_slice))
         reader_signal = self._load_reader_signal(chapter)
-        genre_profile = self._load_genre_profile(state)
+        genre_profile = self._build_runtime_genre_profile(state, story_contract)
         writing_guidance = self._build_writing_guidance(chapter, reader_signal, genre_profile)
         plot_structure = self._load_plot_structure(chapter)
         prewrite_validation = PrewriteValidator(self.config.project_root).build(
@@ -308,6 +321,8 @@ class ContextManager:
             "meta": {"chapter": chapter},
             "core": core,
             "story_contract": story_contract,
+            "runtime_status": runtime_status,
+            "latest_commit": latest_commit,
             "prewrite_validation": prewrite_validation,
             "scene": scene,
             "global": global_ctx,
@@ -425,6 +440,43 @@ class ContextManager:
             "reference_hints": refs,
             "composite_hints": composite_hints,
         }
+
+    def _build_runtime_genre_profile(
+        self,
+        state: Dict[str, Any],
+        story_contract: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        legacy_profile = self._load_genre_profile(state)
+        if legacy_profile:
+            legacy_profile = dict(legacy_profile)
+            legacy_profile["mode"] = "fallback_only"
+
+        primary_genre = str(
+            (
+                ((story_contract.get("master_setting") or {}).get("route") or {}).get("primary_genre")
+                or ""
+            )
+        ).strip()
+        if not primary_genre:
+            return legacy_profile or {}
+
+        runtime_profile = self._load_genre_profile({"project": {"genre": primary_genre}})
+        runtime_profile = dict(runtime_profile or {})
+        runtime_profile.setdefault("genre", primary_genre)
+        runtime_profile.setdefault("genre_raw", primary_genre)
+        runtime_profile.setdefault("genres", [primary_genre])
+        runtime_profile.setdefault("secondary_genres", [])
+        runtime_profile.setdefault("composite", len(runtime_profile.get("genres") or []) > 1)
+        runtime_profile.setdefault("reference_hints", [])
+        runtime_profile.setdefault("composite_hints", [])
+        runtime_profile["mode"] = "contract_first"
+
+        if legacy_profile:
+            runtime_profile["legacy_genre"] = legacy_profile.get("genre")
+            runtime_profile["legacy_genre_raw"] = legacy_profile.get("genre_raw")
+            runtime_profile["legacy_genres"] = list(legacy_profile.get("genres") or [])
+
+        return runtime_profile
 
     def _build_writing_guidance(
         self,
@@ -729,30 +781,27 @@ class ContextManager:
     def _load_plot_structure(self, chapter: int) -> Dict[str, Any]:
         return load_chapter_plot_structure(self.config.project_root, chapter)
 
-    def _load_story_contract(self, chapter: int) -> Dict[str, Any]:
+    def _build_story_contract_from_runtime(self, runtime_sources: RuntimeSourceSnapshot) -> Dict[str, Any]:
         story_root = self.config.story_system_dir
-        volume = volume_num_for_chapter_from_state(self.config.project_root, chapter) or 1
         return {
-            "master_setting": read_json_if_exists(story_root / "MASTER_SETTING.json") or {},
-            "chapter_brief": read_json_if_exists(
-                story_root / "chapters" / f"chapter_{chapter:03d}.json"
-            ) or {},
-            "volume_brief": read_json_if_exists(
-                story_root / "volumes" / f"volume_{volume:03d}.json"
-            ) or {},
-            "review_contract": read_json_if_exists(
-                story_root / "reviews" / f"chapter_{chapter:03d}.review.json"
-            ) or {},
+            "master_setting": runtime_sources.contracts.get("master") or {},
+            "chapter_brief": runtime_sources.contracts.get("chapter") or {},
+            "volume_brief": runtime_sources.contracts.get("volume") or {},
+            "review_contract": runtime_sources.contracts.get("review") or {},
             "anti_patterns": read_json_if_exists(story_root / "anti_patterns.json") or [],
         }
 
     def _story_contract_signature(self, chapter: int) -> Dict[str, str]:
         story_root = self.config.story_system_dir
-        volume = volume_num_for_chapter_from_state(self.config.project_root, chapter) or 1
+        runtime_sources = load_runtime_sources(self.config.project_root, chapter)
+        volume_path = story_root / "volumes"
+        volume_ref = runtime_sources.contracts.get("volume") or {}
+        volume_num = int((volume_ref.get("meta") or {}).get("volume") or 0)
+        volume_path = volume_path / f"volume_{max(volume_num, 1):03d}.json"
         paths = {
             "master_setting": story_root / "MASTER_SETTING.json",
             "chapter_brief": story_root / "chapters" / f"chapter_{chapter:03d}.json",
-            "volume_brief": story_root / "volumes" / f"volume_{volume:03d}.json",
+            "volume_brief": volume_path,
             "review_contract": story_root / "reviews" / f"chapter_{chapter:03d}.review.json",
             "anti_patterns": story_root / "anti_patterns.json",
         }
@@ -763,7 +812,15 @@ class ContextManager:
                 continue
             digest = hashlib.sha1(path.read_bytes()).hexdigest()
             signature[name] = digest
+        signature["latest_commit"] = self._payload_signature(runtime_sources.latest_commit)
+        signature["latest_accepted_commit"] = self._payload_signature(runtime_sources.latest_accepted_commit)
         return signature
+
+    def _payload_signature(self, payload: Any) -> str:
+        if not payload:
+            return "missing"
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        return hashlib.sha1(encoded).hexdigest()
 
     def _load_recent_summaries(self, chapter: int, window: int = 3) -> List[Dict[str, Any]]:
         summaries = []

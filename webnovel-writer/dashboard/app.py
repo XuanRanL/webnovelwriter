@@ -7,6 +7,7 @@ Webnovel Dashboard - FastAPI 主应用
 import asyncio
 import json
 import sqlite3
+import sys
 from contextlib import asynccontextmanager, closing
 from pathlib import Path
 from typing import Optional
@@ -42,6 +43,17 @@ def _story_system_dir() -> Path:
     return _get_project_root() / ".story-system"
 
 
+def _build_story_runtime_health_report(project_root: Path) -> dict:
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    scripts_entry = str(scripts_dir)
+    if scripts_entry not in sys.path:
+        sys.path.insert(0, scripts_entry)
+
+    from data_modules.story_runtime_health import build_story_runtime_health
+
+    return build_story_runtime_health(project_root)
+
+
 # ---------------------------------------------------------------------------
 # 应用工厂
 # ---------------------------------------------------------------------------
@@ -55,8 +67,13 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def _lifespan(_: FastAPI):
         webnovel = _webnovel_dir()
-        if webnovel.is_dir():
-            _watcher.start(webnovel, asyncio.get_running_loop())
+        story_system = _story_system_dir()
+        if webnovel.is_dir() or story_system.is_dir():
+            _watcher.start(
+                watch_webnovel_dir=webnovel if webnovel.is_dir() else None,
+                watch_story_system_dir=story_system if story_system.is_dir() else None,
+                loop=asyncio.get_running_loop(),
+            )
         try:
             yield
         finally:
@@ -82,6 +99,10 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
         if not state_path.is_file():
             raise HTTPException(404, "state.json 不存在")
         return json.loads(state_path.read_text(encoding="utf-8"))
+
+    @app.get("/api/story-runtime/health")
+    def story_runtime_health():
+        return _build_story_runtime_health_report(_get_project_root())
 
     # ===========================================================
     # API：实体数据库（index.db 只读查询）
@@ -442,7 +463,7 @@ def create_app(project_root: str | Path | None = None) -> FastAPI:
 
     @app.get("/api/events")
     async def sse():
-        """Server-Sent Events 端点，推送 .webnovel/ 下的文件变更。"""
+        """Server-Sent Events 端点，推送 .webnovel/.story-system 的文件变更。"""
         q = _watcher.subscribe()
 
         async def _gen():

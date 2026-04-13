@@ -278,6 +278,114 @@ def test_context_manager_includes_story_contract_and_prewrite_validation(temp_pr
     assert list(sections.keys()).index("story_contract") < list(sections.keys()).index("scene")
 
 
+def test_context_manager_prefers_contract_route_over_legacy_genre_profile(temp_project):
+    refs_dir = temp_project.project_root / ".claude" / "references"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+    (refs_dir / "genre-profiles.md").write_text("## 都市\n- 旧画像提示", encoding="utf-8")
+    (refs_dir / "reading-power-taxonomy.md").write_text("## 都市\n- 旧分类", encoding="utf-8")
+
+    state = {
+        "project": {"genre": "都市"},
+        "protagonist_state": {"name": "林默"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    story_root = temp_project.story_system_dir
+    story_root.mkdir(parents=True, exist_ok=True)
+    (story_root / "MASTER_SETTING.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "MASTER_SETTING"},
+                "route": {"primary_genre": "都市异能"},
+                "master_constraints": {"core_tone": "先压后爆"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(3, use_snapshot=False, save_snapshot=False)
+
+    assert payload["sections"]["story_contract"]["content"]["master_setting"]["route"]["primary_genre"] == "都市异能"
+    assert payload["sections"]["genre_profile"]["content"]["genre"] == "都市异能"
+    assert payload["sections"]["writing_guidance"]["content"]["signals_used"]["genre"] == "都市异能"
+    assert payload["sections"]["runtime_status"]["content"]["fallback_sources"] == [
+        "missing_volume_contract",
+        "missing_chapter_contract",
+        "missing_review_contract",
+        "missing_accepted_commit",
+    ]
+
+
+def test_context_manager_exposes_latest_rejected_commit_not_last_accepted(temp_project):
+    state = {
+        "project": {"genre": "修仙"},
+        "progress": {"current_chapter": 2},
+        "protagonist_state": {"name": "韩立"},
+        "chapter_meta": {},
+        "disambiguation_warnings": [],
+        "disambiguation_pending": [],
+    }
+    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    story_root = temp_project.story_system_dir
+    (story_root / "chapters").mkdir(parents=True, exist_ok=True)
+    (story_root / "reviews").mkdir(parents=True, exist_ok=True)
+    (story_root / "commits").mkdir(parents=True, exist_ok=True)
+    (story_root / "MASTER_SETTING.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "MASTER_SETTING"},
+                "route": {"primary_genre": "修仙"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "chapters" / "chapter_003.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "CHAPTER_BRIEF", "chapter": 3},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "reviews" / "chapter_003.review.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "REVIEW_CONTRACT", "chapter": 3},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "commits" / "chapter_002.commit.json").write_text(
+        json.dumps(
+            {"meta": {"schema_version": "story-system/v1", "chapter": 2, "status": "accepted"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "commits" / "chapter_003.commit.json").write_text(
+        json.dumps(
+            {"meta": {"schema_version": "story-system/v1", "chapter": 3, "status": "rejected"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    manager = ContextManager(temp_project)
+    payload = manager.build_context(3, use_snapshot=False, save_snapshot=False)
+
+    assert payload["sections"]["latest_commit"]["content"]["meta"]["status"] == "rejected"
+    assert payload["sections"]["runtime_status"]["content"]["latest_accepted_commit"]["meta"]["status"] == "accepted"
+
+
 def test_context_manager_invalidates_snapshot_when_story_contract_changes(temp_project):
     state = {
         "progress": {"volumes_planned": [{"volume": 1, "chapters_range": "1-10"}]},

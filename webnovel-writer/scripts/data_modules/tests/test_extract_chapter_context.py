@@ -150,6 +150,62 @@ def test_build_chapter_context_payload_includes_contract_sections(tmp_path):
         ReviewMetrics(start_chapter=1, end_chapter=2, overall_score=71, dimension_scores={"plot": 71})
     )
 
+    story_root = tmp_path / ".story-system"
+    (story_root / "chapters").mkdir(parents=True, exist_ok=True)
+    (story_root / "volumes").mkdir(parents=True, exist_ok=True)
+    (story_root / "reviews").mkdir(parents=True, exist_ok=True)
+    (story_root / "commits").mkdir(parents=True, exist_ok=True)
+    (story_root / "MASTER_SETTING.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "MASTER_SETTING"},
+                "route": {"primary_genre": "xuanhuan"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "volumes" / "volume_001.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "VOLUME_BRIEF"},
+                "volume_goal": {"summary": "卷一目标"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "chapters" / "chapter_003.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "CHAPTER_BRIEF", "chapter": 3},
+                "override_allowed": {"chapter_focus": "测试标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "reviews" / "chapter_003.review.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "REVIEW_CONTRACT", "chapter": 3},
+                "blocking_rules": ["不可提前摊牌"],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "commits" / "chapter_003.commit.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "chapter": 3, "status": "accepted"},
+                "provenance": {"write_fact_role": "chapter_commit"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
     payload = build_chapter_context_payload(tmp_path, 3)
     assert payload["context_contract_version"] == "v2"
     assert payload.get("context_weight_stage") in {"early", "mid", "late"}
@@ -162,6 +218,89 @@ def test_build_chapter_context_payload_includes_contract_sections(tmp_path):
     assert isinstance(payload["rag_assist"], dict)
     assert payload["rag_assist"].get("invoked") is False
     assert "long_term_memory" in payload
+    assert payload["runtime_status"]["primary_write_source"] == "chapter_commit"
+    assert payload["latest_commit"]["meta"]["status"] == "accepted"
+
+
+def test_build_chapter_context_payload_exposes_latest_rejected_commit(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[2]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from extract_chapter_context import build_chapter_context_payload
+    from data_modules.config import DataModulesConfig
+
+    cfg = DataModulesConfig.from_project_root(tmp_path)
+    cfg.ensure_dirs()
+    cfg.state_file.write_text(
+        json.dumps(
+            {
+                "project": {"genre": "修仙"},
+                "progress": {"current_chapter": 2},
+                "protagonist_state": {"name": "韩立"},
+                "chapter_meta": {},
+                "disambiguation_warnings": [],
+                "disambiguation_pending": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    outline_dir = tmp_path / "大纲"
+    outline_dir.mkdir(parents=True, exist_ok=True)
+    (outline_dir / "第1卷-详细大纲.md").write_text("### 第3章：测试标题\n测试大纲", encoding="utf-8")
+
+    story_root = tmp_path / ".story-system"
+    (story_root / "chapters").mkdir(parents=True, exist_ok=True)
+    (story_root / "reviews").mkdir(parents=True, exist_ok=True)
+    (story_root / "commits").mkdir(parents=True, exist_ok=True)
+    (story_root / "MASTER_SETTING.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "MASTER_SETTING"},
+                "route": {"primary_genre": "修仙"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "chapters" / "chapter_003.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "CHAPTER_BRIEF", "chapter": 3},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "reviews" / "chapter_003.review.json").write_text(
+        json.dumps(
+            {
+                "meta": {"schema_version": "story-system/v1", "contract_type": "REVIEW_CONTRACT", "chapter": 3},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "commits" / "chapter_002.commit.json").write_text(
+        json.dumps(
+            {"meta": {"schema_version": "story-system/v1", "chapter": 2, "status": "accepted"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (story_root / "commits" / "chapter_003.commit.json").write_text(
+        json.dumps(
+            {"meta": {"schema_version": "story-system/v1", "chapter": 3, "status": "rejected"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    payload = build_chapter_context_payload(tmp_path, 3)
+
+    assert payload["latest_commit"]["meta"]["status"] == "rejected"
 
 
 def test_render_text_contains_writing_guidance_section(tmp_path):
@@ -386,3 +525,33 @@ def test_render_text_contains_contract_first_runtime_section(tmp_path):
     assert "## Contract-First Runtime" in text
     assert "- Review blocking rules: 2" in text
     assert "- Prewrite blocking: False" in text
+
+
+def test_render_text_contains_runtime_status_section(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[2]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from extract_chapter_context import _render_text
+
+    text = _render_text(
+        {
+            "chapter": 3,
+            "outline": "测试大纲",
+            "previous_summaries": [],
+            "state_summary": "旧状态摘要",
+            "context_contract_version": "v2",
+            "reader_signal": {},
+            "genre_profile": {},
+            "writing_guidance": {},
+            "runtime_status": {
+                "primary_write_source": "chapter_commit",
+                "fallback_sources": ["missing_accepted_commit"],
+            },
+            "latest_commit": {"meta": {"chapter": 3, "status": "rejected"}},
+        }
+    )
+
+    assert "## Runtime Status" in text
+    assert "- 写后事实入口: chapter_commit" in text
+    assert "- Legacy Fallback: missing_accepted_commit" in text

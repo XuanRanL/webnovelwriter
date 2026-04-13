@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .chapter_commit_service import ChapterCommitService
 from .config import DataModulesConfig, get_config
 from .memory_contract import (
     CommitResult,
@@ -20,6 +21,7 @@ from .memory_contract import (
     Rule,
     TimelineEvent,
 )
+from .story_runtime_sources import load_runtime_sources
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,12 @@ class MemoryContractAdapter:
     # ------------------------------------------------------------------
 
     def commit_chapter(self, chapter: int, result: dict) -> CommitResult:
+        if self._should_use_commit_mainline(result):
+            return self._commit_chapter_mainline(chapter, result)
+
+        return self._commit_chapter_legacy(chapter, result)
+
+    def _commit_chapter_legacy(self, chapter: int, result: dict) -> CommitResult:
         warnings: List[str] = []
         entities_added = 0
         entities_updated = 0
@@ -109,8 +117,49 @@ class MemoryContractAdapter:
             warnings=warnings,
         )
 
+    def _commit_chapter_mainline(self, chapter: int, result: dict) -> CommitResult:
+        service = ChapterCommitService(self.config.project_root)
+        payload = service.build_commit(
+            chapter=chapter,
+            review_result=result.get("review_result", {}) or {},
+            fulfillment_result=result.get("fulfillment_result", {}) or {},
+            disambiguation_result=result.get("disambiguation_result", {}) or {},
+            extraction_result=result.get("extraction_result", {}) or {},
+        )
+        service.persist_commit(payload)
+        if payload["meta"]["status"] == "accepted":
+            payload = service.apply_projections(payload)
+
+        summary_file = self.config.webnovel_dir / "summaries" / f"ch{chapter:04d}.md"
+        return CommitResult(
+            chapter=chapter,
+            entities_added=len(payload.get("entity_deltas") or []),
+            entities_updated=0,
+            state_changes_recorded=len(payload.get("state_deltas") or []),
+            relationships_added=0,
+            memory_items_added=0,
+            summary_path=str(summary_file) if summary_file.exists() else "",
+            warnings=[f"commit_status={payload['meta']['status']}"],
+        )
+
+    def _should_use_commit_mainline(self, result: dict) -> bool:
+        if not isinstance(result, dict):
+            return False
+        mainline_keys = {
+            "review_result",
+            "fulfillment_result",
+            "disambiguation_result",
+            "extraction_result",
+        }
+        return any(key in result for key in mainline_keys)
+
     def load_context(self, chapter: int, budget_tokens: int = 4000) -> ContextPack:
         sections: Dict[str, Any] = {}
+        runtime_sources = load_runtime_sources(self.config.project_root, chapter)
+
+        sections["story_contracts"] = dict(runtime_sources.contracts)
+        sections["runtime_status"] = runtime_sources.to_dict()
+        sections["latest_commit"] = runtime_sources.latest_commit or {}
 
         # 1. MemoryOrchestrator 基础包
         try:

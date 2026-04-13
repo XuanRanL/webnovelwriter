@@ -257,6 +257,87 @@ class TestLoadContext:
         assert "urgent_loops" in pack.sections
         assert len(pack.sections["urgent_loops"]) == 1
 
+    def test_load_context_includes_story_runtime_sections(self, tmp_path):
+        cfg = _make_project(tmp_path)
+        story_root = tmp_path / ".story-system"
+        (story_root / "chapters").mkdir(parents=True, exist_ok=True)
+        (story_root / "volumes").mkdir(parents=True, exist_ok=True)
+        (story_root / "reviews").mkdir(parents=True, exist_ok=True)
+        (story_root / "commits").mkdir(parents=True, exist_ok=True)
+
+        (story_root / "MASTER_SETTING.json").write_text(
+            json.dumps(
+                {
+                    "meta": {"contract_type": "MASTER_SETTING"},
+                    "route": {"primary_genre": "玄幻"},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        (story_root / "volumes" / "volume_001.json").write_text(
+            json.dumps({"meta": {"contract_type": "VOLUME_BRIEF"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (story_root / "chapters" / "chapter_003.json").write_text(
+            json.dumps({"meta": {"contract_type": "CHAPTER_BRIEF", "chapter": 3}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (story_root / "reviews" / "chapter_003.review.json").write_text(
+            json.dumps({"meta": {"contract_type": "REVIEW_CONTRACT", "chapter": 3}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (story_root / "commits" / "chapter_003.commit.json").write_text(
+            json.dumps(
+                {
+                    "meta": {"chapter": 3, "status": "accepted"},
+                    "provenance": {"write_fact_role": "chapter_commit"},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        adapter = MemoryContractAdapter(cfg)
+        pack = adapter.load_context(3)
+
+        assert pack.sections["story_contracts"]["master"]["route"]["primary_genre"] == "玄幻"
+        assert pack.sections["runtime_status"]["primary_write_source"] == "chapter_commit"
+        assert pack.sections["latest_commit"]["meta"]["status"] == "accepted"
+
+    def test_load_context_prefers_actual_latest_commit_status(self, tmp_path):
+        cfg = _make_project(tmp_path)
+        story_root = tmp_path / ".story-system"
+        (story_root / "chapters").mkdir(parents=True, exist_ok=True)
+        (story_root / "reviews").mkdir(parents=True, exist_ok=True)
+        (story_root / "commits").mkdir(parents=True, exist_ok=True)
+        (story_root / "MASTER_SETTING.json").write_text(
+            json.dumps({"meta": {"contract_type": "MASTER_SETTING"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (story_root / "chapters" / "chapter_003.json").write_text(
+            json.dumps({"meta": {"contract_type": "CHAPTER_BRIEF", "chapter": 3}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (story_root / "reviews" / "chapter_003.review.json").write_text(
+            json.dumps({"meta": {"contract_type": "REVIEW_CONTRACT", "chapter": 3}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (story_root / "commits" / "chapter_002.commit.json").write_text(
+            json.dumps({"meta": {"chapter": 2, "status": "accepted"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (story_root / "commits" / "chapter_003.commit.json").write_text(
+            json.dumps({"meta": {"chapter": 3, "status": "rejected"}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        adapter = MemoryContractAdapter(cfg)
+        pack = adapter.load_context(3)
+
+        assert pack.sections["latest_commit"]["meta"]["status"] == "rejected"
+        assert pack.sections["runtime_status"]["latest_accepted_commit"]["meta"]["status"] == "accepted"
+
 
 class TestCommitChapter:
     def test_commit_chapter_basic(self, tmp_path):
@@ -271,3 +352,31 @@ class TestCommitChapter:
         assert isinstance(result, CommitResult)
         assert result.chapter == 1
         assert result.entities_updated == 1
+
+    def test_commit_chapter_delegates_to_chapter_commit_mainline(self, tmp_path):
+        cfg = _make_project(tmp_path)
+        adapter = MemoryContractAdapter(cfg)
+
+        result = adapter.commit_chapter(
+            3,
+            {
+                "review_result": {"blocking_count": 0},
+                "fulfillment_result": {
+                    "planned_nodes": ["发现陷阱"],
+                    "covered_nodes": ["发现陷阱"],
+                    "missed_nodes": [],
+                    "extra_nodes": [],
+                },
+                "disambiguation_result": {"pending": []},
+                "extraction_result": {
+                    "state_deltas": [],
+                    "entity_deltas": [],
+                    "accepted_events": [],
+                    "summary_text": "本章摘要",
+                },
+            },
+        )
+
+        assert (tmp_path / ".story-system" / "commits" / "chapter_003.commit.json").is_file()
+        assert result.chapter == 3
+        assert "commit_status=accepted" in result.warnings
