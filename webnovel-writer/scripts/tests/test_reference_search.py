@@ -241,3 +241,13 @@ class TestOutputFormat:
             "--max-results", "1",
         )
         assert out["data"]["total"] <= 1
+
+
+class TestPerTableSearchCols:
+    def test_different_tables_use_different_search_weights(self):
+        out1 = run_search("--skill", "write", "--table", "命名规则", "--query", "角色命名")
+        out2 = run_search("--skill", "write", "--table", "场景写法", "--query", "战斗描写")
+        assert out1["status"] == "success"
+        assert out2["status"] == "success"
+        assert out1["data"]["total"] >= 1
+        assert out2["data"]["total"] >= 1

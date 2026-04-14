@@ -83,11 +83,82 @@ def _genre_matches(row: Dict[str, str], genre: Optional[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# CSV_CONFIG – per-table metadata registry
+# ---------------------------------------------------------------------------
+
+CSV_CONFIG: Dict[str, Dict[str, Any]] = {
+    "命名规则": {
+        "file": "命名规则.csv",
+        "search_cols": {"关键词": 3, "意图与同义词": 4, "核心摘要": 2},
+        "output_cols": ["编号", "命名对象", "核心摘要", "大模型指令", "详细展开"],
+        "poison_col": "毒点",
+        "role": "base",
+    },
+    "场景写法": {
+        "file": "场景写法.csv",
+        "search_cols": {"关键词": 3, "意图与同义词": 4, "核心摘要": 2},
+        "output_cols": ["编号", "模式名称", "核心摘要", "大模型指令", "详细展开"],
+        "poison_col": "毒点",
+        "role": "base",
+    },
+    "写作技法": {
+        "file": "写作技法.csv",
+        "search_cols": {"关键词": 3, "意图与同义词": 4, "核心摘要": 2},
+        "output_cols": ["编号", "技法名称", "核心摘要", "大模型指令", "详细展开"],
+        "poison_col": "毒点",
+        "role": "base",
+    },
+    "桥段套路": {
+        "file": "桥段套路.csv",
+        "search_cols": {"关键词": 3, "意图与同义词": 4, "核心摘要": 2},
+        "output_cols": ["编号", "桥段名称", "核心摘要", "大模型指令", "详细展开"],
+        "poison_col": "毒点",
+        "role": "dynamic",
+    },
+    "爽点与节奏": {
+        "file": "爽点与节奏.csv",
+        "search_cols": {"关键词": 3, "意图与同义词": 4, "核心摘要": 2},
+        "output_cols": ["编号", "节奏类型", "核心摘要", "大模型指令", "详细展开"],
+        "poison_col": "毒点",
+        "role": "dynamic",
+    },
+    "人设与关系": {
+        "file": "人设与关系.csv",
+        "search_cols": {"关键词": 3, "意图与同义词": 4, "核心摘要": 2},
+        "output_cols": ["编号", "人设类型", "核心摘要", "大模型指令", "详细展开"],
+        "poison_col": "毒点",
+        "role": "base",
+    },
+    "金手指与设定": {
+        "file": "金手指与设定.csv",
+        "search_cols": {"关键词": 3, "意图与同义词": 4, "核心摘要": 2},
+        "output_cols": ["编号", "设定类型", "核心摘要", "大模型指令", "详细展开"],
+        "poison_col": "毒点",
+        "role": "base",
+    },
+    "题材与调性推理": {
+        "file": "题材与调性推理.csv",
+        "search_cols": {"关键词": 3, "意图与同义词": 4, "题材别名": 3},
+        "output_cols": ["编号", "题材/流派", "核心调性", "推荐基础检索表", "推荐动态检索表"],
+        "poison_col": "毒点",
+        "role": "route",
+    },
+    "裁决规则": {
+        "file": "裁决规则.csv",
+        "search_cols": {"题材": 4},
+        "output_cols": ["题材", "风格优先级", "爽点优先级", "节奏默认策略",
+                        "毒点权重", "冲突裁决", "contract注入层", "反模式"],
+        "poison_col": "",
+        "role": "reasoning",
+    },
+}
+
+# ---------------------------------------------------------------------------
 # BM25-lite scoring
 # ---------------------------------------------------------------------------
 
-_TOKEN_SPLIT_RE = re.compile(r"[\s|,，、/；;：:（）()【】\[\]<>《》“”\"'‘’!?！？。…]+")
-_SEARCH_FIELD_WEIGHTS = {
+_TOKEN_SPLIT_RE = re.compile(r"[\s|,，、/；;：:（）()【】\[\]<>《》""\"'''!?！？。…]+")
+_DEFAULT_SEARCH_WEIGHTS = {
     "意图与同义词": 4,
     "关键词": 3,
     "核心摘要": 2,
@@ -111,10 +182,11 @@ def _tokenize(text: str) -> List[str]:
     return tokens
 
 
-def _build_doc_terms(row: Dict[str, str]) -> List[str]:
+def _build_doc_terms(row: Dict[str, str], search_weights: Optional[Dict[str, int]] = None) -> List[str]:
     """Build weighted BM25 terms from the configured search fields."""
+    weights = search_weights or _DEFAULT_SEARCH_WEIGHTS
     terms: List[str] = []
-    for field, weight in _SEARCH_FIELD_WEIGHTS.items():
+    for field, weight in weights.items():
         field_terms = _tokenize(row.get(field, ""))
         if not field_terms:
             continue
@@ -176,8 +248,8 @@ def _compute_idf(query_terms: List[str], all_docs: List[List[str]]) -> Dict[str,
 # Content summary builder
 # ---------------------------------------------------------------------------
 
-# Columns used for building 内容摘要, in priority order.
-_CONTENT_COLUMNS = [
+# Hardcoded fallback columns when no CSV_CONFIG entry exists.
+_FALLBACK_CONTENT_COLUMNS = [
     "技法名称", "桥段名称", "人设类型", "节奏类型", "设定类型",
     "规则", "说明", "模式名称",
     "常见误区", "前置铺垫", "核心爽点", "转折设计",
@@ -189,15 +261,24 @@ _CONTENT_COLUMNS = [
     "命名对象", "场景类型", "技法类型", "适用场景",
 ]
 
+_SUMMARY_SKIP_COLS = {"编号", "大模型指令", "详细展开", "核心摘要"}
 
-def _build_summary(row: Dict[str, str]) -> str:
+
+def _build_summary(row: Dict[str, str], table_name: Optional[str] = None) -> str:
     """Merge key content columns into a single summary string."""
     core_summary = row.get("核心摘要", "").strip()
     if core_summary:
         return core_summary
 
+    # Derive fallback columns from CSV_CONFIG if available
+    tbl_cfg = CSV_CONFIG.get(table_name) if table_name else None
+    if tbl_cfg:
+        cols = [c for c in tbl_cfg["output_cols"] if c not in _SUMMARY_SKIP_COLS]
+    else:
+        cols = _FALLBACK_CONTENT_COLUMNS
+
     parts: List[str] = []
-    for col in _CONTENT_COLUMNS:
+    for col in cols:
         val = row.get(col, "").strip()
         if val:
             parts.append(val)
@@ -268,7 +349,11 @@ def search(
 
     # 2) Tokenize
     query_terms = _tokenize(query)
-    doc_terms_list = [_build_doc_terms(row) for _, row in candidates]
+    doc_terms_list = []
+    for tbl_name, row in candidates:
+        tbl_cfg = CSV_CONFIG.get(tbl_name)
+        weights = dict(tbl_cfg["search_cols"]) if tbl_cfg else None
+        doc_terms_list.append(_build_doc_terms(row, weights))
     avg_dl = sum(len(d) for d in doc_terms_list) / len(doc_terms_list) if doc_terms_list else 1.0
     idf_map = _compute_idf(query_terms, doc_terms_list)
 
@@ -291,7 +376,7 @@ def search(
             "分类": row.get("分类", ""),
             "层级": row.get("层级", ""),
             "适用题材": row.get("适用题材", ""),
-            "内容摘要": _build_summary(row),
+            "内容摘要": _build_summary(row, table_name=tbl_name),
             "大模型指令": row.get("大模型指令", "").strip(),
         })
 
