@@ -13,12 +13,14 @@ from .story_contracts import merge_anti_patterns
 
 
 ANTI_PATTERN_SOURCE_FIELDS = {
-    "场景写法": ["反面写法"],
-    "写作技法": ["常见误区"],
-    "爽点与节奏": ["常见崩盘误区"],
-    "人设与关系": ["忌讳写法"],
-    "桥段套路": ["忌讳写法"],
-    "题材与调性推理": ["强制禁忌/毒点"],
+    "场景写法": ["毒点"],
+    "写作技法": ["毒点"],
+    "爽点与节奏": ["毒点"],
+    "人设与关系": ["毒点"],
+    "桥段套路": ["毒点"],
+    "题材与调性推理": ["毒点"],
+    "命名规则": ["毒点"],
+    "金手指与设定": ["毒点"],
 }
 
 
@@ -228,7 +230,7 @@ class StorySystemEngine:
     def _extract_route_anti_patterns(self, row: Dict[str, Any]) -> List[Dict[str, Any]]:
         return [
             {"text": text, "source_table": "题材与调性推理", "source_id": row.get("编号", "")}
-            for text in self._split_multi_value(row.get("强制禁忌/毒点"))
+            for text in self._split_multi_value(row.get("毒点"))
         ]
 
     def _empty_route(self, query: str, genre: Optional[str]) -> Dict[str, Any]:
