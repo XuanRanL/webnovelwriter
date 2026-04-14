@@ -7,6 +7,58 @@
 
 ---
 
+## [2026-04-13 · Ch6 Bug 根治] 彻底修复 Ch6 首写暴露的 7 类系统 bug
+
+**动机**：Ch6 走完整流程后发现 12+ 个 bug/警告，用户要求根治。逐项 RCA 后定位 6 个 plugin 层 bug + 6 个 project 层遗留。
+
+### Plugin 层根治（本 commit）
+
+1. **state update CLI silent-fail**（`scripts/data_modules/state_manager.py`）
+   - bug: `state update --strand-dominant` / `--add-foreshadowing` 直接改 `manager._state` 但不设置 pending 标志，导致 `save_state()` 的 pending 检查失败后静默 return，改动从未落盘
+   - fix: 新增 `_pending_raw_state_mutations: set[str]` 字段，三个分支在改完 `_state` 后 `add("strand_tracker" / "plot_threads")`；save_state 锁内检查到此集合时，把 `_state[k]` 合并到 disk_state
+   - 验证：Ch6 strand ch6 + 3 个 foreshadowing 成功追加
+
+2. **context-agent bash heredoc 改 Write 工具**（`agents/context-agent.md`）
+   - bug: agent 定义强制用 `<<'EXECJSON' ... EXECJSON` heredoc 传长中文 JSON，某些 shell 环境下被截断导致 agent 中断（Ch6 首次复现）
+   - fix: 改为"Write 工具先把 JSON 写到 `.webnovel/tmp/execpkg_ch{NNNN}_stdin.json`，再用 `--input <path>` 读取"；保留禁止写 `.webnovel/context/` 的硬约束
+   - 副作用：默认 word_count_target 从 `2400-3200` 改为 `2200-3500`（对齐 SKILL.md 的官方标准）
+
+3. **时间算术校验器**（`scripts/countdown_validator.py` 新增）
+   - bug: 手写 context JSON 时目测时间差，Ch6 把 14h24m 写成"12 小时"
+   - fix: 新脚本按 prev_end/current_start/claim_minutes 三字段校验，支持中文星期（周四等）strip；context-agent.md 新增硬调用
+
+4. **段内独立引号配对脚本**（`scripts/quote_pair_fix.py` 新增）
+   - bug: flip-pair 跨段翻转在嵌套引号段造成 7 处错乱（Ch6 血教训）
+   - fix: 按 `\n{2,}` 分段独立配对 + 状态机检测顺序错乱
+
+5. **audit scanner pattern 扩展**（`scripts/data_modules/chapter_audit.py`）
+   - A8 anti_ai_force_check：新增对 `.md` polish_report 的 frontmatter 解析 `r"(?im)anti_ai_force_check\s*[:=]\s*([*_~`]*)\s*(pass|fail|skip|stub)"`
+   - B4 review_metrics：P1/P2 加"合并分"别名；P3 加 Markdown 加粗 `**91**` 识别
+   - A4 data-agent legacy marker：当 summary+chapter_meta 齐全时降级 warn→skipped（新 agent 不写 timing 但已完成工作）
+
+6. **SKILL.md Step 2A 硬约束**（`skills/webnovel-write/SKILL.md`）
+   - 新增"引号与格式清洁"段：禁 ASCII 半角、禁 Markdown、禁 CRLF、禁全角数字作时间锚
+   - 新增起草后 ASCII 引号自动扫描 Python 小脚本
+
+7. **data-agent.md checker_scores.overall 约束**（`agents/data-agent.md`）
+   - 要求 `checker_scores` dict 必须同时写 `"overall"` key（= review_score）以满足 hygiene H9
+
+### Root Cause 家族图谱
+
+- **family 1 "silent persistence"**：state update CLI silent fail / data-agent timing 缺 / plot_threads 未同步
+- **family 2 "bash/heredoc ↔ 中文"**：context-agent 中断 / ASCII 引号批量替换 flip-pair 跨段
+- **family 3 "手写元数据漂移"**：word_count_target 擅自收紧 / countdown_checkpoint 目测时间 / checker_scores 缺 overall
+- **family 4 "scanner pattern 僵化"**：A8/B4/A4 三个 pattern 未兼容新产物格式
+
+### 防御机制（未来章节不会再犯）
+
+- CLI 层：raw mutation 统一走 `_pending_raw_state_mutations`
+- Agent 层：context-agent Write + --input 标准路径 + 时间校验硬调用 + 字数默认 2200-3500
+- Scanner 层：audit A4/A8/B4 tolerance 扩展 + .md 兼容
+- Pre-commit 层：SKILL.md Step 2A ASCII 扫描硬闸
+
+---
+
 ## [2026-04-13 · ABC] 读者视角流畅度三层审查系统
 
 **动机**：Ch1 写完后用户反馈"难懂，写得不清楚，很奇怪而且无法理解"。诊断发现现有 10 checker + 10 外部维度全是"作者工艺视角"，没有任何一个 checker 从"读者能否读懂、卡不卡顿"的角度审查。Ch1 打了 92 分但真实读者读不下去。

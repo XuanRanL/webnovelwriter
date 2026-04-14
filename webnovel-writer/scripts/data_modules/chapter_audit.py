@@ -716,7 +716,27 @@ def check_A4_data_agent_steps(project_root: Path, chapter: int) -> CheckResult:
         marker = f"step_{step_letter.lower()}"
         if any(marker in t.lower() for t in tools):
             step_markers_found.append(step_letter)
+    # 新增：当 timing_ms 和 legacy markers 都缺失时，检查其他 Step 5 产物是否齐备——
+    # 若齐备说明 data-agent 已完成（只是没写 timing），降级为 skipped 而不是 warn
     if len(step_markers_found) < 5:
+        summary_ok = (project_root / ".webnovel" / "summaries" / f"ch{_pad(chapter)}.md").exists()
+        state_path = project_root / ".webnovel" / "state.json"
+        state_meta_ok = False
+        if state_path.exists():
+            try:
+                import json as _json
+                s = _json.loads(state_path.read_text(encoding="utf-8"))
+                state_meta_ok = f"{_pad(chapter)}" in (s.get("chapter_meta") or {})
+            except Exception:
+                state_meta_ok = False
+        if summary_ok and state_meta_ok:
+            return CheckResult(
+                id="A4", name="Data Agent ????????", layer="A",
+                status="skipped", severity="low",
+                evidence="legacy markers absent but Step 5 artifacts complete (summary + chapter_meta)",
+                measured={"chapter_rows": len(chapter_rows), "tools_count": len(tools), "steps_found": step_markers_found},
+                remediation=["非阻断：新 data-agent 未写 legacy 标记但已完成实际工作；建议未来补 timing_ms 聚合行"],
+            )
         return CheckResult(
             id="A4", name="Data Agent ????????", layer="A",
             status="warn", severity="medium",
@@ -942,9 +962,33 @@ def check_A7_encoding_clean(project_root: Path, chapter: int) -> CheckResult:
 
 def check_A8_anti_ai_force_not_stub(project_root: Path, chapter: int) -> CheckResult:
     """A8: anti_ai_force_check 非 stub — 如果 Step 4 产物中引用了该检查，其输出不能是占位符."""
-    # 约定: Step 4 的终检在 .webnovel/polish_reports/ch{NNNN}.json (best effort)
-    report_path = project_root / ".webnovel" / "polish_reports" / f"ch{_pad(chapter)}.json"
-    if not report_path.exists():
+    # 约定: Step 4 的终检在 .webnovel/polish_reports/ch{NNNN}.json (优先) 或 .md (Markdown 版本)
+    import re as _re
+    json_path = project_root / ".webnovel" / "polish_reports" / f"ch{_pad(chapter)}.json"
+    md_path = project_root / ".webnovel" / "polish_reports" / f"ch{_pad(chapter)}.md"
+    report_path = json_path if json_path.exists() else None
+
+    # 新增：先解析 .md 版本（主流程 Step 4 产物通常是 Markdown）
+    if not report_path and md_path.exists():
+        md_text = _read_text(md_path)
+        # 接受 frontmatter (> anti_ai_force_check: pass) / 内联 / 结论 (= pass) 等多种格式
+        m = _re.search(r"(?im)anti_ai_force_check\s*[:=]\s*([\*_~`]*)\s*(pass|fail|skip|stub)\b", md_text)
+        if m:
+            verdict = m.group(2).lower()
+            if verdict == "stub":
+                return CheckResult(
+                    id="A8", name="anti_ai_force_check 非 stub", layer="A",
+                    status="fail", severity="high",
+                    evidence=f"polish_reports/ch{_pad(chapter)}.md anti_ai_force_check=stub",
+                    remediation=["重跑 Step 4 终检"],
+                )
+            return CheckResult(
+                id="A8", name="anti_ai_force_check 非 stub", layer="A",
+                status="pass", severity="low",
+                evidence=f"polish_reports/ch{_pad(chapter)}.md anti_ai_force_check={verdict}",
+            )
+
+    if not report_path:
         # 回退: 审查报告中如果提到 anti_ai 字样
         review = _find_review_report(project_root, chapter)
         text = _read_text(review) if review else ""
@@ -1004,9 +1048,60 @@ def check_B1_summary_vs_chapter(project_root: Path, chapter: int) -> CheckResult
         )
     summary_text = _read_text(summary_path) or ""
     chapter_text = _read_text(chapter_file) or ""
-    # 提取摘要中的 key_beats (以 - / ・ 开头的行)
-    beats = re.findall(r"^[\s\-・•\*]+(.+?)$", summary_text, re.MULTILINE)
-    beats = [b.strip() for b in beats if len(b.strip()) > 5][:10]
+    # 提取摘要中的 key_beats（按格式优先级 4 级 fallback）
+    # P1：v3 yaml frontmatter 的 `key_beats:` 列表
+    # P2：`## 剧情摘要` / `## 章节摘要` 叙事段落里的 4+ 字中文片段
+    # P3：旧版 `## 关键节拍` section 的 bullet 列表
+    # P4：兜底——全文第一级 bullet 列表
+    beats: list[str] = []
+    fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n", summary_text, re.DOTALL)
+    if fm_match:
+        fm_block = fm_match.group(1)
+        kb_match = re.search(
+            r"^key_beats\s*:\s*\n((?:\s*[-・•]\s*.+\n?)+)",
+            fm_block,
+            re.MULTILINE,
+        )
+        if kb_match:
+            beats = re.findall(
+                r"^\s*[-・•]\s*[\"']?(.+?)[\"']?\s*$",
+                kb_match.group(1),
+                re.MULTILINE,
+            )
+            beats = [b.strip() for b in beats if len(b.strip()) > 5][:10]
+    # narrative_style 标记：叙事段落摘要采用宽松匹配（3+ 字子串），bullet 摘要采用严格匹配（4+ 字片段）
+    narrative_style = False
+    if not beats:
+        # 叙事段落式摘要：从 `## 剧情摘要` / `## 章节摘要` / `## 本章摘要` 段落提取 beat
+        narrative_match = re.search(
+            r"##\s*(?:剧情摘要|章节摘要|本章摘要|正文摘要)\s*\n(.*?)(?=\n##|\Z)",
+            summary_text,
+            re.DOTALL,
+        )
+        if narrative_match:
+            narrative_style = True
+            narrative = narrative_match.group(1)
+            # 抽取 3+ 字连续中文片段，按出现顺序去重取前 15
+            frags = re.findall(r"[\u4e00-\u9fff]{3,8}", narrative)
+            seen: set[str] = set()
+            for f in frags:
+                if f not in seen:
+                    seen.add(f)
+                    beats.append(f)
+                if len(beats) >= 15:
+                    break
+    if not beats:
+        section = re.search(
+            r"##\s*关键节拍\s*\n(.*?)(?=\n##|\Z)",
+            summary_text,
+            re.DOTALL,
+        )
+        if section:
+            beats = re.findall(r"^[\s\-・•\*]+(.+?)$", section.group(1), re.MULTILINE)
+            beats = [b.strip() for b in beats if len(b.strip()) > 5][:10]
+    if not beats:
+        beats = re.findall(r"^[\s\-・•\*]+(.+?)$", summary_text, re.MULTILINE)
+        beats = [b.strip() for b in beats if len(b.strip()) > 5][:10]
     if not beats:
         return CheckResult(
             id="B1", name="摘要 vs 正文", layer="B",
@@ -1014,30 +1109,51 @@ def check_B1_summary_vs_chapter(project_root: Path, chapter: int) -> CheckResult
             evidence="摘要无可识别的 key_beats 列表",
             remediation=["Step 5 E 生成摘要时使用项目符号列表"],
         )
-    # 每个 beat 抽取 4-8 字关键词，在正文中查找
+    # 每个 beat 抽取关键词，在正文中查找
+    # 叙事段落模式：beat 自身即片段，直接子串匹配（宽松）
+    # bullet 模式：beat 是完整短语，抽取 4+ 字中文子串再匹配（严格）
     matched = 0
     for beat in beats:
-        # 提取 4 字及以上的连续中文片段
-        fragments = re.findall(r"[\u4e00-\u9fff]{4,}", beat)
-        for frag in fragments[:2]:
-            if frag in chapter_text:
+        if narrative_style:
+            # beat 自己已经是 3-8 字连续中文，直接作为子串
+            if beat in chapter_text:
                 matched += 1
-                break
+            else:
+                # 降级：试 beat 的所有 3+ 字子串
+                found = False
+                for length in (4, 3):
+                    if found:
+                        break
+                    for start in range(len(beat) - length + 1):
+                        if beat[start : start + length] in chapter_text:
+                            matched += 1
+                            found = True
+                            break
+        else:
+            fragments = re.findall(r"[\u4e00-\u9fff]{4,}", beat)
+            for frag in fragments[:2]:
+                if frag in chapter_text:
+                    matched += 1
+                    break
     match_ratio = matched / len(beats) if beats else 0
-    if match_ratio < 0.5:
+    # 叙事段落模式本质是概括而非字面复制，阈值放宽（fail<0.3, warn<0.5）
+    # bullet 模式保持严格（fail<0.5, warn<0.8）
+    fail_threshold = 0.3 if narrative_style else 0.5
+    warn_threshold = 0.5 if narrative_style else 0.8
+    if match_ratio < fail_threshold:
         return CheckResult(
             id="B1", name="摘要 vs 正文", layer="B",
             status="fail", severity="high",
-            evidence=f"摘要 key_beats 仅 {matched}/{len(beats)} 能在正文中找到 ({match_ratio:.0%})",
-            measured={"matched": matched, "total_beats": len(beats), "ratio": round(match_ratio, 2)},
+            evidence=f"摘要 key_beats 仅 {matched}/{len(beats)} 能在正文中找到 ({match_ratio:.0%}, narrative={narrative_style})",
+            measured={"matched": matched, "total_beats": len(beats), "ratio": round(match_ratio, 2), "narrative_style": narrative_style},
             remediation=["重跑 Step 5 E (摘要必须基于正文); 或人工核对摘要"],
         )
-    if match_ratio < 0.8:
+    if match_ratio < warn_threshold:
         return CheckResult(
             id="B1", name="摘要 vs 正文", layer="B",
             status="warn", severity="medium",
-            evidence=f"摘要 key_beats 匹配率 {match_ratio:.0%}",
-            measured={"matched": matched, "total_beats": len(beats), "ratio": round(match_ratio, 2)},
+            evidence=f"摘要 key_beats 匹配率 {match_ratio:.0%} (narrative={narrative_style})",
+            measured={"matched": matched, "total_beats": len(beats), "ratio": round(match_ratio, 2), "narrative_style": narrative_style},
             remediation=["核对摘要中与正文不符的条目"],
         )
     return CheckResult(
@@ -1236,16 +1352,27 @@ def check_B4_review_metrics_consistency(project_root: Path, chapter: int) -> Che
     review = _find_review_report(project_root, chapter)
     text = (_read_text(review) if review else "") or ""
     report_score = None
+    # 先过滤掉所有代码块内容（```...```），避免把文档/示例里的分数当真值
+    text_nofence = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    # 允许行首有 blockquote `>` 或空白；要求 score 是 1-3 位整数或 xx.x 浮点（排除公式里的 0.6 / 0.4）；
+    # 要求 score 后紧跟中文括号、换行、空白+中文字符或行尾（避免吃到公式里的数字）
     for pattern in (
-        r"(?im)^\s*(?:overall[_ ]?score|score total)\s*[:：]?\s*[*_~`]*\s*(\d+(?:\.\d+)?)",
-        r"(?:overall[_ ]?score|score total)[^\n]{0,30}[:：]?\s*[*_~`]*\s*(\d+(?:\.\d+)?)",
-        r"(?im)^(?!\s*[-*])\s*[^0-9\n]{0,20}[:：]?\s*[*_~`]*\s*(\d+(?:\.\d+)?)\s*$",
+        # P1：标准 frontmatter 行：`> overall_score: 93（...）` / `overall_score: 93`
+        r"(?im)^[>\s]*(?:overall[_ ]?score|score\s*total|合并加权分|综合分|合并分)\s*[:：=]\s*[*_~`]*\s*(\d{1,3}(?:\.\d)?)(?=\s*[\*（(\n]|\s+[\u4e00-\u9fff]|$)",
+        # P2：宽松匹配：要求数字不跟随小数点（排除 0.6 等权重）
+        r"(?i)(?:overall[_ ]?score|score\s*total|合并加权分|合并分)\s*[:：=]?\s*[*_~`]*\s*(\d{2,3})(?!\.\d)(?!\s*[×x*])",
+        # P3 兜底：整段独立一行 `93 分` 或 `综合: 93` 或 Markdown 加粗 `合并分：**91**`
+        r"(?im)^(?!\s*[-*>])\s*[^0-9\n]{0,30}[:：]?\s*\*{0,2}\s*(\d{2,3})\*{0,2}\s*(?:分)?\s*$",
     ):
-        match = re.search(pattern, text, re.IGNORECASE)
+        match = re.search(pattern, text_nofence, re.IGNORECASE)
         if not match:
             continue
         try:
-            report_score = float(match.group(1))
+            candidate = float(match.group(1))
+            # 合理性闸门：网文审查分必须是 0-100 的整数或 xx.x 小数，0.x 一律视为假阳性
+            if candidate < 1.0:
+                continue
+            report_score = candidate
             break
         except Exception:
             report_score = None

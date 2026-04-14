@@ -49,10 +49,10 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
 
-1. Step 3 的内部 checker 全部返回并汇总出 overall_score（标准/`--fast` 为 11 个，`--minimal` 为 3 个核心 checker）
+1. Step 3 的内部 checker 全部返回并汇总出 overall_score（标准/`--fast` 为 10 个，`--minimal` 为 3 个核心 checker）
 2. Step 3.5 的 9 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充6模型失败不阻塞），每模型审查 10 个维度（`--minimal` 模式跳过此条件）
 3. 所有 critical 问题已修复，high 问题已修复或有 deviation 记录
-4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 11 维度分数+外部9模型×11维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
+4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部10维度分数+外部9模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
 5. Step 4 的 `anti_ai_force_check=pass`
 6. Step 5 Data Agent 已完成
 7. Step 6 Audit Gate 决议 ∈ {approve, approve_with_warnings}（block 禁止进入 Step 7）
@@ -213,7 +213,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 | Step 1 | `file` / `snapshot` / `context_file` | 执行包 JSON 路径、context_snapshot 路径 |
 | Step 2A | `word_count` | 正文字数（整数，>0） |
 | Step 2B | `style_applied` / `deviation_notes` | 正常执行填 `style_applied: true`；跳过则填 `deviation_notes: "..."` |
-| Step 3 | `overall_score` / `checker_count` / `internal_avg` / `review_score` | 内部 11 维度审查（含 reader_flow） |
+| Step 3 | `overall_score` / `checker_count` / `internal_avg` / `review_score` | 内部 10 维度审查 |
 | Step 3.5 | `external_avg` / `models_ok` / `external_models_ok` | 外部 9 模型均分 + 成功模型列表 |
 | Step 4 | `anti_ai_force_check` / `polish_report` / `fixes` | `pass`/`fail`, 润色报告路径, 修复项列表 |
 | Step 5 | `state_modified` / `entities` / `foreshadowing` / `scene_count` / `chapter_meta_fields` | data-agent 写库确认 + 实体/伏笔/场景计数 |
@@ -327,40 +327,31 @@ cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 - 爽点密度约束：每 800 字至少安排 1 个微爽点（信息揭示/小胜/认可/逆转/兑现）；纯铺垫章允许降至每 1200 字 1 个，但全章不得为零。
 - 典故引用融入：若 Context Agent 在执行包中推荐了引用（0-2 条），按推荐的载体和融入方式写入正文。化用 > 引用，角色内化 > 旁白注释。判断不适合时可跳过——**允许不用**。无推荐时不主动引用。（详见 `references/writing/classical-references.md`）
 
-### 读者视角爆款门槛（6 RC 硬约束 · 2026-04-13 新增）
-
-> 基于 Ch1-5 审计发现的跨章共性问题。所有 Step 2A 起草必须同时满足以下 6 条，**任一违反 Step 3 flow-checker 会抓出**。详见 `references/polish-guide.md` § 3.1。
-
-- **RC1 金手指 vs 推理 scope 分离**：
-  - 允许"看字即懂字义"（金手指本身，超自然设定）
-  - **禁止**"看证据即懂整条推理链"——凡跨段推理必有**外部锚点**（翻手记/查资料/对照前案/试错 至少 1 项）
-  - 升级顿悟句前必须有 2-3 段具体事件铺垫
-- **RC2 章末收束范式（禁文青/AI 腔）**：
-  - **禁用**作者总结句："从今晚开始 / 从此 / 再也不是 / 原来.{0,8}不是"
-  - **禁用**主题金句独立成段作章末
-  - 必用**三件套**：具体动作（未完）+ 具体画面（感官锚）+ 悬念锚点（具体人/物/事/线索）
-- **RC3 新术语首次 inline 解释**：
-  - 非常识术语（如"阳眼/第三十八任/未闭之言"）首次出现后 **3 段内** 必须有 inline 解释
-  - 形式任选：手记直引 / 角色台词 / 主角内心联想 / 具象化对照
-  - 古诗/文言引入必须标明吟者、出处或情境，禁裸引
-- **RC4 关键反应必有外部触发**：
-  - 角色态度突变前必须有**可见外部刺激**（眼神/动作/物件触动/一句话）
-  - 主角主动动作前必须有：触发刺激 OR 已建立的规则
-  - 读者能在本章或前章 grep 到"凭什么这么反应"的具体线索
-- **RC5 跨章时间戳严格算术**：
-  - Contract 必填：`prev_chapter_end_timestamp` + `current_chapter_start_timestamp` + `time_gap_strategy`
-  - 起点 ≥ 上章末点（违反 = CRITICAL）
-  - 章首第一段必须含具体时间 + 地点锚（不是抽象"雨停了三小时"）
-- **RC6 指代明确化**：
-  - 代词距先行词 ≤ 3 段
-  - 独立成段的抽象词（"过了。""糊了。"）前一段必须有明确所指
-  - 同一人物称呼切换 ≤ 3 次
-
 中文思维写作约束（硬规则）：
 - **禁止"先英后中"**：不得先用英文工程化骨架（如 ABCDE 分段、Summary/Conclusion 框架）组织内容，再翻译成中文。
 - **中文叙事单元优先**：以"动作、反应、代价、情绪、场景、关系位移"为基本叙事单元，不使用英文结构标签驱动正文生成。
 - **禁止英文结论话术**：正文、审查说明、润色说明、变更摘要、最终报告中不得出现 Overall / PASS / FAIL / Summary / Conclusion 等英文结论标题。
 - **英文仅限机器标识**：CLI flag（`--fast`）、checker id（`consistency-checker`）、DB 字段名（`anti_ai_force_check`）、JSON 键名等不可改的接口名保持英文，其余一律使用简体中文。
+
+引号与格式清洁硬约束（起草时必须严格遵守）：
+- **禁止 ASCII 半角引号 `"`**：从第一笔起就必须用 U+201C（“）/U+201D（”）中文弯引号对。不得"先用 ASCII 写完再批量替换"——批量 flip-pair 脚本在段内多重嵌套引号时会跨段翻转配对，导致 7 处+错乱（Ch6 首稿血教训）。
+- **禁止 Markdown 标题/分隔线**：正文不得含 `#` / `##` / `---` / 粗体 `**...**`。章节文件直接以第一段叙事开头。
+- **禁止 CRLF**：所有写入必须 LF 行尾。Windows 下注意 Write 工具的默认行尾。
+- **禁止全角数字** 用于时间锚（"13:40" 保持半角，"一小时五十八分钟" 允许中文数字作叙述）。
+
+ASCII 引号自动扫描（起草后立即执行，**任何 >0 必须停下来修**）：
+```bash
+python -c "
+import pathlib, glob
+files = glob.glob('${PROJECT_ROOT}/正文/第${chapter_padded}章*.md')
+if not files: raise SystemExit('no chapter file')
+t = pathlib.Path(files[0]).read_text(encoding='utf-8')
+ascii_q = t.count(chr(34))
+if ascii_q:
+    raise SystemExit(f'FAIL: {ascii_q} ASCII 双引号（必须用 U+201C/U+201D）')
+print('quote check: 0 ASCII, OK')
+"
+```
 
 U+FFFD 编码验证（写入后立即执行）：
 ```bash
@@ -404,33 +395,27 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 
 调用约束：
 - 必须用 `Task` 调用审查 subagent，禁止主流程伪造审查结论。
-- **标准/--fast 模式必须 5+6 分批启动**（详见 `step-3-review-gate.md`），禁止 11 个 checker 同时并发。
+- **标准/--fast 模式必须 5+5 分批启动**（详见 `step-3-review-gate.md`），禁止 10 个 checker 同时并发。
 - 必须等待全部 checker 返回后才能统一聚合 `issues/severity/overall_score`。
 - **禁止在任何 checker 仍在运行时进入 Step 4**。即使外部审查已完成，内部 checker 未全部返回也不得开始润色。
 
-审查器（标准模式全部执行，5+6 分批）：
+审查器（标准模式全部执行，5+5 分批）：
 - Batch 1（核心优先，5个并发）：
   - `consistency-checker`（设定一致性）
   - `continuity-checker`（连贯性）
   - `ooc-checker`（人物OOC）
   - `reader-pull-checker`（追读力）
   - `high-point-checker`（爽点密度）
-- Batch 2（Batch 1 全部返回后启动，6个并发）：
+- Batch 2（Batch 1 全部返回后启动，5个并发）：
   - `pacing-checker`（节奏平衡）
   - `dialogue-checker`（对话质量）
   - `density-checker`（信息密度）
   - `prose-quality-checker`（文笔质感）
   - `emotion-checker`（情感表现）
-  - `flow-checker`（**读者视角流畅度**——一人分饰两角失忆阅读协议）
 
 模式说明：
-- 标准/`--fast`：全量 11 个审查器，5+6 分批执行。
+- 标准/`--fast`：全量 10 个审查器，5+5 分批执行。
 - `--minimal`：固定核心 3 个（consistency/continuity/ooc），单批并发。
-
-**flow-checker 特别约束**：
-- 必须做"失忆阅读"——只读本章 + 上一章末段，禁读设定集/大纲
-- 输出 issue type 必须为 `READER_FLOW`，description 以 `[category:XXX]` 开头
-- 主流程收到输出后做 compact quote grep 验证，失败重跑
 
 审查指标落库（必做）：
 ```bash
@@ -443,7 +428,7 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
   "start_chapter": 100,
   "end_chapter": 100,
   "overall_score": 85.0,
-  "dimension_scores": {"爽点密度": 85, "设定一致性": 80, "节奏控制": 78, "人物塑造": 82, "连贯性": 90, "追读力": 87, "对话质量": 83, "信息密度": 88, "文笔质感": 82, "情感表现": 80, "读者流畅度": 82},
+  "dimension_scores": {"爽点密度": 85, "设定一致性": 80, "节奏控制": 78, "人物塑造": 82, "连贯性": 90, "追读力": 87, "对话质量": 83, "信息密度": 88, "文笔质感": 82, "情感表现": 80},
   "severity_counts": {"critical": 0, "high": 1, "medium": 2, "low": 0},
   "critical_issues": ["问题描述"],
   "report_file": "审查报告/第0100章审查报告.md",
@@ -472,7 +457,7 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 - 每次 API 调用后验证路由（检查 response.model 字段）。
 - 核心模型四级 fallback 链：nextapi(2次) → healwrap(2次) → codexcc(1次) → 硅基流动(兜底)。
 - 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
-- 生成审查报告必须包含 9 模型 × 11 维度评分矩阵 + 共识问题 + Step 4 修复清单。
+- 生成审查报告必须包含 9 模型 × 10 维度评分矩阵 + 共识问题 + Step 4 修复清单。
 
 **上下文文件准备（调用脚本前必须完成）**：
 
@@ -506,7 +491,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 
 输出：
 - 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共9个文件）
-- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 9 模型 × 11 维度矩阵）
+- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 9 模型 × 10 维度矩阵）
 
 ### Step 3+3.5 完成闸门（进入 Step 4 前必须通过）
 
@@ -516,15 +501,15 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 1. 逐一检查所有 Step 3 内部 checker 的 Task 状态（`TaskOutput` 或等价轮询），确认每个 checker 都已返回结果（非空输出）。
 2. 确认 Step 3.5 外部审查脚本已退出且 9 个 `external_review_{model_key}_ch{NNNN}.json` 文件已生成。
 3. 按 `step-3-review-gate.md` 的"内外部分数合并规则"计算 `overall_score`（需要内部 + 外部都有分数）。
-4. 生成审查报告（含内部 11 维度 + 外部 9 模型 × 11 维度矩阵）。
+4. 生成审查报告（含内部10维度 + 外部9模型×10维度矩阵）。
 5. 落库 `review_metrics`。
 
 **以上 5 步全部完成后，方可进入 Step 4。等待是流程的一部分。**
 
 **Step 3→4 闸门强制验证**（在标记 Step 3 完成前必须执行）：
-1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，每批最多等待10分钟，总超时20分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。注意：5+6 分批模式下，Batch 1 全部返回后再启动 Batch 2，每批独立计时。
+1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，每批最多等待10分钟，总超时20分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。注意：5+5 分批模式下，Batch 1 全部返回后再启动 Batch 2，每批独立计时。
 2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：核心3模型文件必须存在且非空，补充模型缺失可接受。
-3. 聚合分数：内部 11 个 checker 取平均；外部已成功模型取平均；合并 `round(internal * 0.6 + external * 0.4)`。
+3. 聚合分数：内部10个 checker 取平均；外部已成功模型取平均；合并 `round(internal * 0.6 + external * 0.4)`。
 4. 写审查报告 + 落库 review_metrics。
 **违规后果**：跳过此验证直接进入 Step 4，Step 6 审计 A2 检查项将检测到 checker 坍缩并可能 block 提交。
 
@@ -755,8 +740,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 2. **Step 1 执行包已落盘**：`.webnovel/context/ch{chapter_padded}_context.json` 与 `.webnovel/context/ch{chapter_padded}_context.md` 同时存在且非空
 3. Step 3 已产出 `overall_score` 且 `review_metrics` 成功落库
 4. Step 3.5 外部审查已完成（核心3模型必须成功）（`--minimal` 模式跳过此条件）
-5. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部 11 维度分数+外部 9 模型 × 11 维度评分矩阵；`--minimal` 模式仅含内部 3 维度分数）
-5a. **flow-checker 产物已落盘**：`.webnovel/tmp/flow_check_ch{chapter_padded}.json` 存在且非空（标准/`--fast` 模式强制，`--minimal` 模式不检查）；供 Step 6 audit-agent Layer C 扩展 C13/C15 消费
+5. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部10维度分数+外部9模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
 6. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
 7. **Step 4 润色报告已落盘**：`.webnovel/polish_reports/ch{chapter_padded}.md` 存在且非空，含 `anti_ai_force_check` 字段
 8. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）

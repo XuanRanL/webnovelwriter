@@ -218,6 +218,115 @@ cat "{project_root}/设定集/开篇策略.md"
 - 影响任务书板块 8 的爽点密度建议
 - 缺失降级：使用 genre-profiles 默认值
 
+**跨章句式去重**（2026-04-11 新增硬规则，防止模板化句式重复）：
+
+context-agent 在生成执行包前，必须扫描**最近 3 章正文**的"关键节拍段落"，识别已被使用过的"触发句式模板"，并在本章执行包的 `forbidden_items` 中列出禁止复用的句式。
+
+**算法**：
+
+1. 读取 `ch{N-1} / ch{N-2} / ch{N-3}` 三章正文（文件可能在 `正文/第NNNN章-*.md`）
+2. 对每一章，定位"金手指触发"或"情感爆点"段落（从摘要 / 场景切片反推）
+3. 提取这些段落的句式特征：
+   - 感官入口（触觉/视觉/嗅觉/听觉/温觉）
+   - 时间节奏（逐笔慢镜头 / 一次性 / 重复节拍 / 突然定格）
+   - 动作序列（如 "毛巾顺着 → 看见 → 一笔一笔浮出来"）
+4. 若前 3 章中有 2 次或以上使用同一"感官入口 + 时间节奏"组合，本章必须禁用该组合
+5. 在 `step_2a_write_prompt.forbidden_items` 中追加一条：
+   ```json
+   {
+     "type": "syntax_pattern_reuse",
+     "forbidden_combo": "触觉入口 + 逐笔慢镜头",
+     "used_in_chapters": [1, 3],
+     "alternative_suggestions": ["听觉入口", "嗅觉入口", "一次性全景式浮现"]
+   }
+   ```
+
+**适用范围**：
+- 金手指触发场景
+- 失忆/代价兑现场景
+- 章末钩子收束
+- 情感爆点呈现方式
+
+**不适用**（允许的跨章重复）：
+- 叙事母题（温度/光/雨）— 这是风格而非句式
+- 人物语音规则 — 角色辨识度需要
+- 固定仪式动作（入殓/净身流程）— 这是题材真实感的一部分
+
+**Ch1-3 历史教训**：
+- Ch1 与 Ch3 都用"触觉入口 + 毛巾顺着手臂下滑 + 逐笔浮现"句式
+- Ch3 在文本里甚至自引 Ch1（"像外婆那只手心里的那道一样"），作者意识到同质化但处理成了"模式确认"
+- Ch5 第二次失忆（大纲规划）若继续复用此句式，将成为三连重复，严重影响读者体验
+- 根治：从 Ch5 起强制 context-agent 扫描前 3 章并禁止复用
+
+**章型豁免判断**（必做，2026-04-11 新增硬规则）：
+
+context-agent 在生成 context_contract 时必须判断本章是否属于**结构性豁免章型**，并在 `structural_exemptions` 字段中明确声明豁免范围。
+
+**需要豁免的章型**：
+
+| 章型 | 识别条件 | 豁免维度 | 推荐豁免值 | 理由 |
+|---|---|---|---|---|
+| 情感爆点章 | 大纲/情感蓝图标注的"情感锚点"章 + 节拍设计以沉默/独坐/回忆为主 | `dialogue_ratio` | min=0.05, max=0.20 | 情感爆点章依赖沉默与动作承担，强制 0.30+ 会破坏情感张力 |
+| 失语枷锁章 | 主角受语言约束（失语/被禁言/独处无对象） | `dialogue_ratio` | min=0.05, max=0.15 | 主角物理无法对话 |
+| 独白/内心戏章 | 章纲标注"内心戏章" / 主角独自行动 | `dialogue_ratio` | min=0.05, max=0.20 | 无对话对象 |
+| 战斗闭环章 | 高强度武打/追逐，纯行动 | `dialogue_ratio` | min=0.10, max=0.25 | 行动比对话更重要 |
+| 纯过渡章 | `is_transition_chapter=true` | `micro_payoff_count` | min=0, max=1 | 过渡章可以零爽点 |
+
+**判断算法**（context-agent Step 3.5 执行）：
+
+1. 读取本章大纲节拍表，统计"无对话"beat 的数量
+2. 若无对话 beat ≥ 总 beat 数的 50% → 判定 `chapter_type="emotional_peak"` 或 `"internal_monologue"`
+3. 读取 `情感蓝图.md`，若本章在情感锚点列表里 → 判定 `chapter_type="emotional_peak"`
+4. 读取主角卡，若本章主角状态是"失语/独处" → 叠加 `silence_constraint=true`
+5. 根据判定结果填充 `context_contract.chapter_type` 和 `structural_exemptions`
+
+**禁止**：
+
+- 禁止在没有章型理由的情况下声明豁免（例如普通推进章声明 0.05-0.20 属于违规）
+- 禁止把豁免用作降低质量门槛的借口——豁免只影响**节奏/密度的数值阈值**，不影响**对话质量**本身（辨识度/潜台词/意图层次等仍适用全量检查）
+
+**下游 checker 的处理**：
+
+- pacing-checker / dialogue-checker 读取 `context_contract.structural_exemptions.dialogue_ratio_override` 时，若非 null 则使用该范围作为本章 pass 阈值，写入 issue metrics 的 `exemption_applied=true`
+- 若豁免后仍不达标（例如豁免 0.05-0.20，实际 0.03）仍判 fail
+- 若本章声明豁免但无合理 `chapter_type`，consistency-checker 判 `EXEMPTION_MISUSE` medium
+
+**Ch3 历史教训**：Ch3 是情感爆点章 + 失语枷锁章双重属性，immutable_facts #10 写死 0.30-0.50，但 6/9 beat 被设计为无对话，实际 0.09。这是 context-agent 未做章型豁免导致的"硬约束自相矛盾"。根治后 Ch3 这类章节 context-agent 会自动在 structural_exemptions 中声明 dialogue_ratio_override，避免反复 deviation。
+
+**读取力量体系与金手指机制**（必做，2026-04-11 新增硬规则）：
+```bash
+test -f "{project_root}/设定集/力量体系.md" && cat "{project_root}/设定集/力量体系.md"
+test -f "{project_root}/设定集/金手指设计.md" && cat "{project_root}/设定集/金手指设计.md"
+```
+
+**目的**：防止 drafting agent 写出"能力使用步骤违反设定"的机制冲突（如 2026-04-11 Ch3 金手指制签事故——正文跳过账册直接在黄纸上写字，与设定"字必须先入账册才能转化为签"冲突，被外部模型 qwen-plus 抓到 HIGH 违规，但内部 consistency-checker 全部漏检）。
+
+**提取规则**：
+1. 读取力量体系文件，找到"操作链条" / "使用步骤" / "阶段能力" / "动作序列" 这类描述性段落
+2. 对本章涉及的每一种能力使用，提取其**完整操作步骤**（顺序 + 必经环节 + 失败条件）
+3. 读取金手指设计文件，对"金手指使用动作"提取同样的步骤
+4. 在执行包的 `step_2a_write_prompt.immutable_facts` 中**必须**为每个本章使用的能力注入一条 mechanism fact，格式：
+
+```json
+{
+  "type": "mechanism_step",
+  "power_name": "制签",
+  "required_sequence": ["看见字", "誊录到账册页面", "账册吸收字→页面变空", "账册夹层黄纸显出墨痕", "取签贴身"],
+  "source": "设定集/金手指设计.md L13 / 力量体系.md L25",
+  "forbidden_shortcut": "不得跳过账册直接在黄纸上写",
+  "failure_mode": "错一字签失效且代价仍付"
+}
+```
+
+5. `context_contract.core_conflict_one_line` 附近新增字段 `mechanism_facts_count`，记录本章注入了多少条 mechanism_step facts。0 条且本章涉及能力使用 = warn（可能漏提取）。
+
+**缺失降级**：若 `力量体系.md` 或 `金手指设计.md` 不存在，在执行包顶层标注 `power_system_missing=true` 并输出 warn。不得降级为无约束。
+
+**为什么必做**：
+- 单纯依赖 consistency-checker 事后审查是不够的——checker 只能检查"能力权限"（有没有资格用），不能检查"操作步骤"（用得对不对）
+- 源头约束（immutable_facts）对 drafting agent 是强约束；drafting agent 如果违反会触发 Step 6 A1 审计 fail
+- 比事后发现-重写代价低 10 倍
+
 **读取典故引用库**（条件，若文件存在）：
 ```bash
 test -f "{project_root}/设定集/典故引用库.md" && cat "{project_root}/设定集/典故引用库.md"
@@ -329,13 +438,6 @@ Context Contract 必须字段（不可缺）：
 - `爽点规划`（类型/铺垫来源/兑现方式；纯铺垫章至少 1 个微兑现）
 - `情感锚点规划`（情感场景识别/锚点分配/梯度路径/跨章惯性/Show:Tell目标；纯过渡章可简化为惯性衔接）
 - `时间约束`（上章时间锚点/本章时间锚点/允许推进跨度/时间过渡要求/倒计时状态）
-  - **时间戳算术硬约束（2026-04-13 强化）**：
-    - `prev_chapter_end_timestamp`：上章结尾发生时间（精确到日+小时，如 `2026-04-17 23:30`）
-    - `current_chapter_start_timestamp`：本章起始时间（精确到日+小时）
-    - `time_gap_minutes`：`current - prev` 分钟数；必须 ≥ 0
-    - `time_gap_strategy`：若 > 30 分钟：填充策略（省略/过渡段/回忆锚/场景切换）；若 < 0：**CRITICAL fail，章纲需重做**
-    - `countdown_checkpoint`：本章"离外婆头七/其他倒计时"的具体剩余天数，必须基于时间戳算术推出（不得与上章矛盾）
-  - **章首锚定要求**：本章第一段必须含"具体时间 + 具体地点"（不是"雨停了三小时"这种抽象时间）；Step 2A 必须遵守。
 
 ### Step 6: 逻辑红线校验（输出前强制）
 对执行包做一致性自检，任一 fail 则回到 Step 5 重组：
@@ -346,10 +448,6 @@ Context Contract 必须字段（不可缺）：
 - 红线4：角色动机断裂（行为与近期目标明显冲突且无触发）
 - 红线5：合同与任务书冲突（例如“过渡章=true”却要求高强度高潮兑现）
 - **红线6：时间逻辑错误**（时间回跳、倒计时跳跃、大跨度无过渡）
-  - 具体算术校验（2026-04-13 强化）：
-    - `time_gap_minutes >= 0`（否则时间回跳 CRITICAL fail）
-    - `countdown_checkpoint` 与上章 `countdown_checkpoint - (time_gap_days)` 算术吻合
-    - 若本章跨多天，`time_span_hours` 字段必须覆盖所有跳跃
 
 通过标准：
 - 红线 fail 数 = 0
@@ -364,7 +462,11 @@ Context Contract 必须字段（不可缺）：
 - `.webnovel/context/ch{NNNN}_context.json` — 结构化执行包（供 Step 6 审计、Step 5 data-agent 交叉验证、断点恢复）
 - `.webnovel/context/ch{NNNN}_context.md` — 人可读版本（供作者检查与跨章比对）
 
-**落盘方式**（将三段 JSON 通过 stdin 传给助手脚本）：
+**落盘方式**（**推荐：Write 工具先落临时文件，再用 `--input` 读取**；bash heredoc 方式已废弃，因长中文 JSON 在 bash heredoc 中易被截断或编码破坏）：
+
+**步骤 1**：用 Claude Code `Write` 工具把完整 JSON 写到 `.webnovel/tmp/execpkg_ch{NNNN}_stdin.json`（**注意：这是允许的、也是推荐的路径**，只有写入 `.webnovel/context/` 才是禁止的）
+
+**步骤 2**：调用 build_execution_package.py 通过 `--input` 读取：
 
 ```bash
 python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
@@ -372,9 +474,14 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter-title "本章标题" \
   --narrative-version "v3" \
-  --word-count-target "2400-3200" \
+  --word-count-target "2200-3500" \
   --is-transition-chapter false \
-  <<'EXECJSON'
+  --input ".webnovel/tmp/execpkg_ch${chapter_padded}_stdin.json"
+```
+
+**stdin JSON 的 schema（写入 Write 工具的 file_path 参数应包含以下 JSON 内容）**：
+
+```json
 {
   "task_brief": {
     "core_task": {
@@ -405,6 +512,11 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
     "emotion_rhythm": "...",
     "information_density": "...",
     "is_transition_chapter": false,
+    "chapter_type": "...",
+    "structural_exemptions": {
+      "dialogue_ratio_override": null,
+      "_comment": "若本章是情感爆点章/失语章/独白章等与叙事声音默认 dialogue_ratio 冲突的章型，在此声明豁免：{'min': 0.05, 'max': 0.20, 'reason': '主角全章失语+苏棠只说一句'}。默认 null 表示采用叙事声音基准。"
+    },
     "reader_pull_design": {},
     "cool_points_plan": [],
     "emotional_anchors_plan": {},
@@ -423,8 +535,9 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
     "style_anchor": ""
   }
 }
-EXECJSON
 ```
+
+**为什么不再用 bash heredoc `<<'EXECJSON'` 形式**：历史案例（Ch6 写作时）中，含大量中文字符的长 JSON 通过 heredoc 传入 bash 时，可能被某些 shell 或 agent 环境的行缓冲/编码层截断，导致 agent 中途停止。用 Write 工具写临时文件再 `--input` 读取，走的是 UTF-8 显式编码的文件路径，完全绕开 bash 行处理。
 
 **上述命令执行后**：助手脚本会自动完成
 1. 读取 stdin JSON
@@ -437,8 +550,23 @@ EXECJSON
 
 **硬要求**：
 - 助手脚本必须返回 exit=0，否则 context-agent 必须返回 `ok: false` 给主 agent，并阻断 Step 2A 启动
+- **时间算术校验（必做）**：执行包落盘后，必须运行 `countdown_validator.py` 校验 `timestamp_arithmetic` 块（或 `context_contract.time_constraints`）。校验项包括：prev_chapter_end ≤ current_chapter_start / time_gap_minutes 与实际差值一致（±1min 容差）/ countdown_checkpoint 中的"X小时/X分钟"与实际 gap 一致。校验失败必须修复后重跑 build_execution_package.py。
+  ```bash
+  python -X utf8 "${SCRIPTS_DIR}/countdown_validator.py" --input ".webnovel/context/ch${chapter_padded}_context.json"
+  # exit=0 才允许继续；exit=1 表示算术错误必须修 stdin JSON
+  ```
+- **字数目标（word_count_target）硬约束**：默认 `2200-3500`。除非用户或大纲明确指定（战斗/高潮/卷末章等），**禁止擅自收紧**（如写成 `2700-3200` / `2400-3200`）。擅自收紧会导致下游 Step 2A 基于错误基线 over-draft 或被误判"字数不达标"。
 - 主 agent 在 Step 1 complete-step 的 artifact 中必须包含 `{"ok": true, "file": ".webnovel/context/ch{NNNN}_context.json", "snapshot": ".webnovel/context_snapshots/ch{NNNN}.json"}`，不可只写 `{"v2": true}` 或 `{"ok": true}`
-- 禁止绕过助手脚本用 `cat > file <<'EOF'` 手写 JSON——手写极易漏 section 或类型错误，schema 校验会 fail
+- **禁止绕过助手脚本**：不得用 `cat > file <<'EOF'`、`python -c "json.dump(...)"` 等任何方式手写 JSON 到 `.webnovel/context/`。**Write 工具写到 `.webnovel/tmp/execpkg_ch{NNNN}_stdin.json` 是允许的并推荐的**，但最终落盘 `.webnovel/context/ch{NNNN}_context.{json,md}` 必须由 `build_execution_package.py` 完成。
+  - 手写会：(a) 字段名漂移（如 `step_2a_write_prompt` 误写为 `step2a_direct_prompt`）(b) 漏 schema section (c) 顶层 metadata 不规范（如多出 `meta` 嵌套层）
+  - 这些都会被 hygiene_check H14 捕获为 P0 fail，导致 Step 7 commit 阻断
+  - **识别已绕过的信号**：如果生成的 JSON 顶层有 `meta` / `generator` / `generated_at` 字段（而不是扁平的 `chapter` / `chapter_title` / `version`），说明是手写的不是脚本生成的。一旦发现必须删文件重跑脚本
+
+- **绕过后的恢复协议**：若助手脚本首次调用失败，不得降级为手写。必须：
+  1. 将 stdin JSON 单独写到 `.webnovel/tmp/execpkg_ch{NNNN}_stdin.json` 作为调试证据
+  2. 读取脚本 stderr 全文，定位 schema 错误
+  3. 修复 stdin JSON 后重新通过 `--input .webnovel/tmp/execpkg_ch{NNNN}_stdin.json` 参数再跑
+  4. 仍失败则返回 `ok: false` 由主 agent 阻断流程；禁止"改为自己直写文件"的降级
 
 **为什么必须落盘**：
 1. **跨章可追溯**：Ch3 审查时可以回看 Ch1 的执行包，验证伏笔预约是否按计划落实

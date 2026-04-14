@@ -126,6 +126,10 @@ class StateManager:
         self._pending_progress_chapter: Optional[int] = None
         self._pending_progress_words_delta: int = 0
         self._pending_chapter_meta: Dict[str, Any] = {}
+        # Bug fix 2026-04-13: state update 子命令直接改 _state 但未走 pending 机制，
+        # 导致 save_state 因 has_pending=False 提前 return。这里登记 top-level 字段名
+        # （如 "strand_tracker" / "plot_threads"），save_state 锁内会把 _state[k] 合并到 disk_state。
+        self._pending_raw_state_mutations: set[str] = set()
 
         # v5.1 引入: 缓存待同步到 SQLite 的数据
         self._pending_sqlite_data: Dict[str, Any] = {
@@ -227,6 +231,7 @@ class StateManager:
                 self._pending_chapter_meta,
                 self._pending_progress_chapter is not None,
                 self._pending_progress_words_delta != 0,
+                bool(self._pending_raw_state_mutations),
             ]
         )
         if not has_pending:
@@ -338,6 +343,13 @@ class StateManager:
                         disk_state["chapter_meta"] = chapter_meta
                     chapter_meta.update(self._pending_chapter_meta)
 
+                # raw state mutations（Bug fix 2026-04-13: state update --strand-dominant /
+                # --add-foreshadowing 等直接改 _state 的子命令，由调用方登记 top-level key）
+                if self._pending_raw_state_mutations:
+                    for k in self._pending_raw_state_mutations:
+                        if k in self._state:
+                            disk_state[k] = self._state[k]
+
                 # 原子写入（锁已持有，不再二次加锁）
                 atomic_write_json(self.config.state_file, disk_state, use_lock=False, backup=True)
 
@@ -354,6 +366,7 @@ class StateManager:
                 self._pending_chapter_meta.clear()
                 self._pending_progress_chapter = None
                 self._pending_progress_words_delta = 0
+                self._pending_raw_state_mutations.clear()
 
                 # SQLite 侧 pending：成功后清空，失败则恢复快照（避免静默丢数据）
                 if sqlite_sync_ok:
@@ -1381,6 +1394,13 @@ def main():
     process_parser.add_argument("--chapter", type=int, required=True, help="章节号")
     process_parser.add_argument("--data", required=True, help="JSON 格式的处理结果")
 
+    # update subcommand: let data-agent cleanly mutate strand_tracker / plot_threads
+    # instead of manually atomic-writing state.json (which bypasses locks)
+    update_parser = subparsers.add_parser("update", help="细粒度更新 state.json（strand_tracker/伏笔）")
+    update_parser.add_argument("--strand-dominant", help='JSON: {"chapter":N,"dominant":"quest","sub":"fire"}')
+    update_parser.add_argument("--add-foreshadowing", help='JSON: {"id":"F01","description":"...","planted_chapter":N,"urgency":30,"level":"主线"}')
+    update_parser.add_argument("--resolve-foreshadowing", help='JSON: {"id":"F01","resolution":"...","resolved_chapter":N}')
+
     argv = normalize_global_project_root(sys.argv[1:])
     args = parser.parse_args(argv)
     command_started_at = time.perf_counter()
@@ -1472,6 +1492,86 @@ def main():
         warnings = manager.process_chapter_result(args.chapter, validated.model_dump(by_alias=True))
         manager.save_state()
         emit_success({"chapter": args.chapter, "warnings": warnings}, message="chapter_processed", chapter=args.chapter)
+
+    elif args.command == "update":
+        # At least one of the three mutation flags must be provided
+        if not (args.strand_dominant or args.add_foreshadowing or args.resolve_foreshadowing):
+            emit_error(
+                "MISSING_ARG",
+                "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing）",
+            )
+            return
+        changes: list[str] = []
+        applied_chapter: int | None = None
+        if args.strand_dominant:
+            payload = load_json_arg(args.strand_dominant)
+            ch = int(payload.get("chapter", 0))
+            dominant = str(payload.get("dominant", "")).lower().strip()
+            if not ch or not dominant:
+                emit_error("INVALID_ARG", "--strand-dominant 需要 {chapter,dominant[,sub]}")
+                return
+            sub = str(payload.get("sub", "")).lower().strip()
+            tracker = manager._state.setdefault("strand_tracker", {})
+            history = tracker.setdefault("history", [])
+            # Replace any existing entry for this chapter
+            history = [h for h in history if int(h.get("chapter", 0)) != ch]
+            entry = {"chapter": ch, "dominant": dominant}
+            if sub:
+                entry["sub"] = sub
+            history.append(entry)
+            history.sort(key=lambda h: int(h.get("chapter", 0)))
+            tracker["history"] = history
+            tracker["last_dominant"] = dominant
+            if sub:
+                tracker["last_sub"] = sub
+            manager._pending_raw_state_mutations.add("strand_tracker")
+            changes.append(f"strand_tracker.ch{ch}={dominant}/{sub or '-'}")
+            applied_chapter = ch
+        if args.add_foreshadowing:
+            payload = load_json_arg(args.add_foreshadowing)
+            fid = payload.get("id")
+            if not fid:
+                emit_error("INVALID_ARG", "--add-foreshadowing 需要 id 字段")
+                return
+            plot_threads = manager._state.setdefault("plot_threads", {})
+            fs_list = plot_threads.setdefault("foreshadowing", [])
+            # Replace if exists
+            fs_list = [f for f in fs_list if f.get("id") != fid]
+            fs_list.append(payload)
+            plot_threads["foreshadowing"] = fs_list
+            manager._pending_raw_state_mutations.add("plot_threads")
+            changes.append(f"add_foreshadowing:{fid}")
+            if applied_chapter is None and payload.get("planted_chapter"):
+                applied_chapter = int(payload["planted_chapter"])
+        if args.resolve_foreshadowing:
+            payload = load_json_arg(args.resolve_foreshadowing)
+            fid = payload.get("id")
+            if not fid:
+                emit_error("INVALID_ARG", "--resolve-foreshadowing 需要 id 字段")
+                return
+            plot_threads = manager._state.setdefault("plot_threads", {})
+            fs_list = plot_threads.get("foreshadowing", [])
+            updated = False
+            for f in fs_list:
+                if f.get("id") == fid:
+                    f["status"] = "resolved"
+                    f["resolution"] = payload.get("resolution", "")
+                    f["resolved_chapter"] = int(payload.get("resolved_chapter", 0))
+                    updated = True
+                    break
+            if not updated:
+                emit_error("NOT_FOUND", f"foreshadowing {fid} 不存在")
+                return
+            manager._pending_raw_state_mutations.add("plot_threads")
+            changes.append(f"resolve_foreshadowing:{fid}")
+            if applied_chapter is None and payload.get("resolved_chapter"):
+                applied_chapter = int(payload["resolved_chapter"])
+        manager.save_state()
+        emit_success(
+            {"changes": changes, "chapter": applied_chapter},
+            message="state_updated",
+            chapter=applied_chapter,
+        )
 
     else:
         emit_error("UNKNOWN_COMMAND", "未指定有效命令", suggestion="请查看 --help")
