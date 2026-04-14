@@ -43,12 +43,21 @@ class StorySystemEngine:
             genre=route["genre_filter"],
             top_k=2,
         )
-        source_trace = route["source_trace"] + self._build_source_trace(base_context, dynamic_context)
-        anti_patterns = merge_anti_patterns(
+
+        # Reasoning layer
+        primary_genre = str(route.get("meta", {}).get("primary_genre", "") or genre or "").strip()
+        reasoning = self._load_reasoning(primary_genre)
+        ranked = self._apply_reasoning(reasoning, base_context, dynamic_context)
+
+        source_trace = route["source_trace"] + self._build_source_trace_with_reasoning(ranked, reasoning)
+
+        raw_anti = merge_anti_patterns(
             route["route_anti_patterns"],
             self._extract_anti_patterns(base_context),
             self._extract_anti_patterns(dynamic_context),
         )
+        anti_patterns = self._rank_anti_patterns(reasoning, raw_anti)
+
         return {
             "meta": {"query": query, "chapter": chapter, "explicit_genre": genre or ""},
             "master_setting": {
@@ -63,7 +72,7 @@ class StorySystemEngine:
                     "core_tone": route["core_tone"],
                     "pacing_strategy": route["pacing_strategy"],
                 },
-                "base_context": base_context,
+                "base_context": [r for r in ranked if r.get("_priority_rank", 999) < 999],
                 "source_trace": source_trace,
                 "override_policy": {
                     "locked": ["route.primary_genre", "master_constraints.core_tone"],
@@ -82,8 +91,18 @@ class StorySystemEngine:
                     "override_allowed": {
                         "chapter_focus": self._suggest_chapter_focus(query, dynamic_context),
                     },
-                    "dynamic_context": dynamic_context,
+                    "dynamic_context": ranked,
                     "source_trace": source_trace,
+                    "reasoning": (
+                        {
+                            "genre": reasoning.get("题材", ""),
+                            "inject_target": reasoning.get("contract注入层", ""),
+                            "style_priority": reasoning.get("风格优先级", ""),
+                            "pacing_strategy": reasoning.get("节奏默认策略", ""),
+                        }
+                        if reasoning
+                        else {}
+                    ),
                 }
                 if chapter is not None
                 else None
@@ -232,6 +251,110 @@ class StorySystemEngine:
             {"text": text, "source_table": "题材与调性推理", "source_id": row.get("编号", "")}
             for text in self._split_multi_value(row.get("毒点"))
         ]
+
+    # ------------------------------------------------------------------
+    # Reasoning / 裁决 layer
+    # ------------------------------------------------------------------
+
+    def _load_reasoning(self, genre: str) -> Dict[str, Any]:
+        """Load matching row from 裁决规则.csv for *genre*."""
+        rows = self._load_csv_rows("裁决规则")
+        genre_norm = self._normalize_text(genre)
+        if not genre_norm:
+            return {}
+        for row in rows:
+            if self._normalize_text(row.get("题材")) == genre_norm:
+                return row
+            aliases = (
+                self._split_multi_value(row.get("关键词"))
+                + self._split_multi_value(row.get("意图与同义词"))
+            )
+            if any(genre_norm == self._normalize_text(a) for a in aliases):
+                return row
+        return {}
+
+    def _apply_reasoning(
+        self,
+        reasoning: Dict[str, Any],
+        base_context: List[Dict[str, Any]],
+        dynamic_context: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Rank *base_context* + *dynamic_context* rows using 冲突裁决 priority."""
+        combined = [dict(r) for r in base_context] + [dict(r) for r in dynamic_context]
+        if not reasoning:
+            return combined
+
+        priority_order = [
+            s.strip()
+            for s in str(reasoning.get("冲突裁决") or "").split(">")
+            if s.strip()
+        ]
+        priority_map = {name: idx for idx, name in enumerate(priority_order)}
+
+        genre_label = reasoning.get("题材", "")
+        for row in combined:
+            table = str(row.get("_table") or "")
+            row["_priority_rank"] = priority_map.get(table, 999)
+            row["_reasoning_rule"] = genre_label
+
+        combined.sort(key=lambda r: r["_priority_rank"])
+        return combined
+
+    def _rank_anti_patterns(
+        self,
+        reasoning: Dict[str, Any],
+        anti_patterns: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Sort *anti_patterns* by 毒点权重 and append reasoning 反模式."""
+        if not reasoning:
+            return anti_patterns
+
+        weight_order = [
+            s.strip()
+            for s in str(reasoning.get("毒点权重") or "").split(">")
+            if s.strip()
+        ]
+
+        def _sort_key(item: Dict[str, Any]) -> int:
+            text = str(item.get("text") or "")
+            for idx, keyword in enumerate(weight_order):
+                if keyword in text:
+                    return idx
+            return len(weight_order)
+
+        sorted_anti = sorted(anti_patterns, key=_sort_key)
+
+        # Append 反模式 entries from reasoning row
+        existing_texts = {str(a.get("text") or "") for a in sorted_anti}
+        for text in self._split_multi_value(reasoning.get("反模式")):
+            if text and text not in existing_texts:
+                sorted_anti.append(
+                    {"text": text, "source_table": "裁决规则", "source_id": reasoning.get("编号", "")}
+                )
+                existing_texts.add(text)
+
+        return sorted_anti
+
+    def _build_source_trace_with_reasoning(
+        self,
+        ranked: List[Dict[str, Any]],
+        reasoning: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Build source trace entries enriched with reasoning metadata."""
+        inject_target = reasoning.get("contract注入层", "") if reasoning else ""
+        trace: List[Dict[str, Any]] = []
+        for row in ranked:
+            trace.append(
+                {
+                    "table": row.get("_table", ""),
+                    "id": row.get("编号", ""),
+                    "summary": row.get("核心摘要", ""),
+                    "reasoning_rule": row.get("_reasoning_rule", ""),
+                    "priority_rank": row.get("_priority_rank", 999),
+                    "inject_target": inject_target,
+                }
+            )
+        return trace
 
     def _empty_route(self, query: str, genre: Optional[str]) -> Dict[str, Any]:
         fallback_genre = str(genre or "未命中题材").strip()
