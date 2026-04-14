@@ -207,7 +207,7 @@ def test_build_chapter_context_payload_includes_contract_sections(tmp_path):
     )
 
     payload = build_chapter_context_payload(tmp_path, 3)
-    assert payload["context_contract_version"] == "v2"
+    assert payload["context_contract_version"] == "v3"
     assert payload.get("context_weight_stage") in {"early", "mid", "late"}
     assert "writing_guidance" in payload
     assert isinstance(payload["writing_guidance"].get("guidance_items"), list)
@@ -358,19 +358,16 @@ def test_render_text_contains_writing_guidance_section(tmp_path):
     }
 
     text = _render_text(payload)
-    assert "## 写作执行建议" in text
-    assert "先修低分" in text
-    assert "## Contract (v2)" in text
-    assert "- 上下文阶段权重: early" in text
-    assert "### 执行检查清单（可评分）" in text
-    assert "- 总权重: 1.40" in text
-    assert "[必做][w=1.4] 修复低分区间问题" in text
-    assert "### 执行评分" in text
-    assert "- 评分: 81.5" in text
-    assert "- 复合题材: xuanhuan + realistic" in text
-    assert "## 长篇方法论策略" in text
-    assert "- 适用题材: xianxia" in text
-    assert "next_reason=78.0" in text
+    parsed = json.loads(text)
+    assert "writing_guidance" in parsed
+    assert parsed["writing_guidance"]["guidance_items"][0] == "先修低分"
+    assert parsed["context_contract_version"] == "v2"
+    assert parsed["context_weight_stage"] == "early"
+    assert parsed["writing_guidance"]["checklist"][0]["label"] == "修复低分区间问题"
+    assert parsed["writing_guidance"]["checklist_score"]["score"] == 81.5
+    assert parsed["genre_profile"]["genres"] == ["xuanhuan", "realistic"]
+    assert parsed["writing_guidance"]["methodology"]["enabled"] is True
+    assert parsed["writing_guidance"]["methodology"]["genre_profile_key"] == "xianxia"
 
 
 def test_render_text_contains_rag_assist_section_when_hits_exist(tmp_path):
@@ -407,10 +404,11 @@ def test_render_text_contains_rag_assist_section_when_hits_exist(tmp_path):
     }
 
     text = _render_text(payload)
-    assert "## RAG 检索线索" in text
-    assert "- 模式: auto" in text
-    assert "[graph_hybrid]" in text
-    assert "萧炎与药老" in text
+    parsed = json.loads(text)
+    assert parsed["rag_assist"]["invoked"] is True
+    assert parsed["rag_assist"]["mode"] == "auto"
+    assert parsed["rag_assist"]["hits"][0]["source"] == "graph_hybrid"
+    assert "萧炎与药老" in parsed["rag_assist"]["hits"][0]["content"]
 
 
 def test_build_chapter_context_payload_includes_plot_structure(tmp_path):
@@ -483,11 +481,11 @@ def test_render_text_contains_plot_structure_section(tmp_path):
     }
 
     text = _render_text(payload)
-    assert "## 情节结构" in text
-    assert "- CBN: 主角进入遗迹" in text
-    assert "- CPN1: 发现石碑异常" in text
-    assert "- CEN: 决定深入遗迹核心" in text
-    assert "- 本章禁区: 不能提前拿到终极传承" in text
+    parsed = json.loads(text)
+    assert parsed["plot_structure"]["cbn"] == "主角进入遗迹"
+    assert parsed["plot_structure"]["cpns"] == ["发现石碑异常", "与守卫短暂交锋"]
+    assert parsed["plot_structure"]["cen"] == "决定深入遗迹核心"
+    assert "不能提前拿到终极传承" in parsed["plot_structure"]["prohibitions"]
 
 
 def test_render_text_contains_contract_first_runtime_section(tmp_path):
@@ -522,9 +520,9 @@ def test_render_text_contains_contract_first_runtime_section(tmp_path):
     }
 
     text = _render_text(payload)
-    assert "## Contract-First Runtime" in text
-    assert "- Review blocking rules: 2" in text
-    assert "- Prewrite blocking: False" in text
+    parsed = json.loads(text)
+    assert len(parsed["story_contract"]["review_contract"]["blocking_rules"]) == 2
+    assert parsed["prewrite_validation"]["blocking"] is False
 
 
 def test_render_text_contains_runtime_status_section(tmp_path):
@@ -552,6 +550,6 @@ def test_render_text_contains_runtime_status_section(tmp_path):
         }
     )
 
-    assert "## Runtime Status" in text
-    assert "- 写后事实入口: chapter_commit" in text
-    assert "- Legacy Fallback: missing_accepted_commit" in text
+    parsed = json.loads(text)
+    assert parsed["runtime_status"]["primary_write_source"] == "chapter_commit"
+    assert parsed["runtime_status"]["fallback_sources"] == ["missing_accepted_commit"]

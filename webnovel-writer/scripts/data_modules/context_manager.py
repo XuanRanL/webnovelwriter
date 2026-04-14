@@ -9,7 +9,6 @@ import json
 import re
 import sys
 import logging
-import hashlib
 from pathlib import Path
 
 from runtime_compat import enable_windows_utf8_stdio
@@ -30,7 +29,6 @@ from .config import get_config
 from .index_manager import IndexManager, WritingChecklistScoreMeta
 from .context_ranker import ContextRanker
 from .prewrite_validator import PrewriteValidator
-from .snapshot_manager import SnapshotManager, SnapshotVersionMismatch
 from .story_contracts import read_json_if_exists
 from .story_runtime_sources import RuntimeSourceSnapshot, load_runtime_sources
 from .context_weights import (
@@ -96,61 +94,15 @@ class ContextManager:
     ]
     SUMMARY_SECTION_RE = re.compile(r"##\s*剧情摘要\s*\r?\n(.*?)(?=\r?\n##|\Z)", re.DOTALL)
 
-    def __init__(self, config=None, snapshot_manager: Optional[SnapshotManager] = None):
+    def __init__(self, config=None):
         self.config = config or get_config()
-        self.snapshot_manager = snapshot_manager or SnapshotManager(self.config)
         self.index_manager = IndexManager(self.config)
         self.context_ranker = ContextRanker(self.config)
-
-    def _is_snapshot_compatible(self, cached: Dict[str, Any], template: str) -> bool:
-        """判断快照是否可用于当前模板。"""
-        if not isinstance(cached, dict):
-            return False
-
-        meta = cached.get("meta")
-        if not isinstance(meta, dict):
-            # 兼容旧快照：未记录 template 时仅允许默认模板复用
-            return template == self.DEFAULT_TEMPLATE
-
-        cached_template = meta.get("template")
-        if not isinstance(cached_template, str):
-            return template == self.DEFAULT_TEMPLATE
-
-        if cached_template != template:
-            return False
-
-        payload = cached.get("payload", cached)
-        if not isinstance(payload, dict):
-            return False
-        sections = payload.get("sections")
-        if not isinstance(sections, dict):
-            return False
-
-        required_sections = {
-            "plot_structure",
-            "long_term_memory",
-            "story_contract",
-            "runtime_status",
-            "latest_commit",
-            "prewrite_validation",
-        }
-        if not required_sections.issubset(set(sections.keys())):
-            return False
-
-        chapter = int(cached.get("chapter") or (payload.get("meta") or {}).get("chapter") or 0)
-        if chapter <= 0:
-            return False
-
-        snapshot_signature = meta.get("story_contract_signature")
-        current_signature = self._story_contract_signature(chapter)
-        return snapshot_signature == current_signature
 
     def build_context(
         self,
         chapter: int,
         template: str | None = None,
-        use_snapshot: bool = True,
-        save_snapshot: bool = True,
         max_chars: Optional[int] = None,
     ) -> Dict[str, Any]:
         template = template or self.DEFAULT_TEMPLATE
@@ -159,62 +111,34 @@ class ContextManager:
             template = self.DEFAULT_TEMPLATE
             self._active_template = template
 
-        if use_snapshot:
-            try:
-                cached = self.snapshot_manager.load_snapshot(chapter)
-                if cached and self._is_snapshot_compatible(cached, template):
-                    return cached.get("payload", cached)
-            except SnapshotVersionMismatch:
-                # Snapshot incompatible; rebuild below.
-                pass
-
         pack = self._build_pack(chapter)
         if getattr(self.config, "context_ranker_enabled", True):
             pack = self.context_ranker.rank_pack(pack, chapter)
-        assembled = self.assemble_context(pack, template=template, max_chars=max_chars)
 
-        if save_snapshot:
-            meta = {
-                "template": template,
-                "story_contract_signature": self._story_contract_signature(chapter),
-            }
-            self.snapshot_manager.save_snapshot(chapter, assembled, meta=meta)
+        return self._assemble_json_payload(pack, template=template)
 
-        return assembled
-
-    def assemble_context(
-        self,
-        pack: Dict[str, Any],
-        template: str = DEFAULT_TEMPLATE,
-        max_chars: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    def _assemble_json_payload(self, pack: Dict[str, Any], template: str = DEFAULT_TEMPLATE) -> Dict[str, Any]:
         chapter = int((pack.get("meta") or {}).get("chapter") or 0)
         weights = self._resolve_template_weights(template=template, chapter=chapter)
-        max_chars = max_chars or 8000
-        extra_budget = int(self.config.context_extra_section_budget or 0)
 
-        sections = {}
+        payload: Dict[str, Any] = {
+            "meta": {
+                **(pack.get("meta") or {}),
+                "context_contract_version": "v3",
+            },
+        }
+
         for section_name in self.SECTION_ORDER:
-            if section_name in pack:
-                sections[section_name] = pack[section_name]
+            if section_name in pack and section_name != "global":
+                content = pack[section_name]
+                weight = weights.get(section_name, 0.0)
+                if weight > 0 or section_name in self.EXTRA_SECTIONS:
+                    payload[section_name] = content
 
-        assembled: Dict[str, Any] = {"meta": pack.get("meta", {}), "sections": {}}
-        for name, content in sections.items():
-            weight = weights.get(name, 0.0)
-            if weight > 0:
-                budget = int(max_chars * weight)
-            elif name in self.EXTRA_SECTIONS and extra_budget > 0:
-                budget = extra_budget
-            else:
-                budget = None
-            text = self._compact_json_text(content, budget)
-            assembled["sections"][name] = {"content": content, "text": text, "budget": budget}
-
-        assembled["template"] = template
-        assembled["weights"] = weights
         if chapter > 0:
-            assembled.setdefault("meta", {})["context_weight_stage"] = self._resolve_context_stage(chapter)
-        return assembled
+            payload["meta"]["context_weight_stage"] = self._resolve_context_stage(chapter)
+
+        return payload
 
     def filter_invalid_items(self, items: List[Dict[str, Any]], source_type: str, id_key: str) -> List[Dict[str, Any]]:
         confirmed = self.index_manager.get_invalid_ids(source_type, status="confirmed")
@@ -746,23 +670,6 @@ class ContextManager:
         profile_key = to_profile_key(genre)
         return profile_key in whitelist
 
-    def _compact_json_text(self, content: Any, budget: Optional[int]) -> str:
-        raw = json.dumps(content, ensure_ascii=False)
-        if budget is None or len(raw) <= budget:
-            return raw
-        if not getattr(self.config, "context_compact_text_enabled", True):
-            return raw[:budget]
-
-        min_budget = max(1, int(getattr(self.config, "context_compact_min_budget", 120)))
-        if budget <= min_budget:
-            return raw[:budget]
-
-        head_ratio = float(getattr(self.config, "context_compact_head_ratio", 0.65))
-        head_budget = int(budget * max(0.2, min(0.9, head_ratio)))
-        tail_budget = max(0, budget - head_budget - 10)
-        compact = f"{raw[:head_budget]}…[TRUNCATED]{raw[-tail_budget:] if tail_budget else ''}"
-        return compact[:budget]
-
     def _extract_genre_section(self, text: str, genre: str) -> str:
         return extract_genre_section(text, genre)
 
@@ -790,37 +697,6 @@ class ContextManager:
             "review_contract": runtime_sources.contracts.get("review") or {},
             "anti_patterns": read_json_if_exists(story_root / "anti_patterns.json") or [],
         }
-
-    def _story_contract_signature(self, chapter: int) -> Dict[str, str]:
-        story_root = self.config.story_system_dir
-        runtime_sources = load_runtime_sources(self.config.project_root, chapter)
-        volume_path = story_root / "volumes"
-        volume_ref = runtime_sources.contracts.get("volume") or {}
-        volume_num = int((volume_ref.get("meta") or {}).get("volume") or 0)
-        volume_path = volume_path / f"volume_{max(volume_num, 1):03d}.json"
-        paths = {
-            "master_setting": story_root / "MASTER_SETTING.json",
-            "chapter_brief": story_root / "chapters" / f"chapter_{chapter:03d}.json",
-            "volume_brief": volume_path,
-            "review_contract": story_root / "reviews" / f"chapter_{chapter:03d}.review.json",
-            "anti_patterns": story_root / "anti_patterns.json",
-        }
-        signature: Dict[str, str] = {}
-        for name, path in paths.items():
-            if not path.is_file():
-                signature[name] = "missing"
-                continue
-            digest = hashlib.sha1(path.read_bytes()).hexdigest()
-            signature[name] = digest
-        signature["latest_commit"] = self._payload_signature(runtime_sources.latest_commit)
-        signature["latest_accepted_commit"] = self._payload_signature(runtime_sources.latest_accepted_commit)
-        return signature
-
-    def _payload_signature(self, payload: Any) -> str:
-        if not payload:
-            return "missing"
-        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        return hashlib.sha1(encoded).hexdigest()
 
     def _load_recent_summaries(self, chapter: int, window: int = 3) -> List[Dict[str, Any]]:
         summaries = []
@@ -914,14 +790,12 @@ def main():
     parser.add_argument("--project-root", type=str, help="项目根目录")
     parser.add_argument("--chapter", type=int, required=True)
     parser.add_argument("--template", type=str, default=ContextManager.DEFAULT_TEMPLATE)
-    parser.add_argument("--no-snapshot", action="store_true")
-    parser.add_argument("--max-chars", type=int, default=8000)
 
     args = parser.parse_args()
 
     config = None
     if args.project_root:
-        # 允许传入“工作区根目录”，统一解析到真正的 book project_root（必须包含 .webnovel/state.json）
+        # 允许传入"工作区根目录"，统一解析到真正的 book project_root（必须包含 .webnovel/state.json）
         from project_locator import resolve_project_root
         from .config import DataModulesConfig
 
@@ -933,9 +807,6 @@ def main():
         payload = manager.build_context(
             chapter=args.chapter,
             template=args.template,
-            use_snapshot=not args.no_snapshot,
-            save_snapshot=True,
-            max_chars=args.max_chars,
         )
         print_success(payload, message="context_built")
         try:

@@ -45,7 +45,6 @@ __all__ = [
     "SearchResult",
     "ContextManager",
     "ContextRanker",
-    "SnapshotManager",
     "QueryRouter",
     # Style Sampler
     "StyleSampler",
@@ -88,7 +87,6 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "SearchResult": (".rag_adapter", "SearchResult"),
     "ContextManager": (".context_manager", "ContextManager"),
     "ContextRanker": (".context_ranker", "ContextRanker"),
-    "SnapshotManager": (".snapshot_manager", "SnapshotManager"),
     "QueryRouter": (".query_router", "QueryRouter"),
     # Style Sampler
     "StyleSampler": (".style_sampler", "StyleSampler"),

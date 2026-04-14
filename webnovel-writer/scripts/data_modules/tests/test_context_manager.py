@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-ContextManager and SnapshotManager tests
+ContextManager tests
 """
 
 import json
@@ -17,7 +17,6 @@ from data_modules.index_manager import (
     ReviewMetrics,
 )
 from data_modules.context_manager import ContextManager
-from data_modules.snapshot_manager import SnapshotManager, SnapshotVersionMismatch
 from data_modules.query_router import QueryRouter
 
 
@@ -26,30 +25,6 @@ def temp_project(tmp_path):
     cfg = DataModulesConfig.from_project_root(tmp_path)
     cfg.ensure_dirs()
     return cfg
-
-
-def test_snapshot_manager_roundtrip(temp_project):
-    manager = SnapshotManager(temp_project)
-    payload = {"hello": "world"}
-    manager.save_snapshot(1, payload)
-    loaded = manager.load_snapshot(1)
-    assert loaded["payload"] == payload
-
-
-def test_snapshot_version_mismatch(temp_project):
-    manager = SnapshotManager(temp_project, version="1.0")
-    manager.save_snapshot(1, {"a": 1})
-    other = SnapshotManager(temp_project, version="2.0")
-    with pytest.raises(SnapshotVersionMismatch):
-        other.load_snapshot(1)
-
-
-def test_snapshot_delete_roundtrip(temp_project):
-    manager = SnapshotManager(temp_project)
-    manager.save_snapshot(2, {"x": 1})
-
-    assert manager.delete_snapshot(2) is True
-    assert manager.load_snapshot(2) is None
 
 
 def test_context_manager_build_and_filter(temp_project):
@@ -90,12 +65,12 @@ def test_context_manager_build_and_filter(temp_project):
     idx.resolve_invalid_fact(invalid_id, "confirm")
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(1, use_snapshot=False, save_snapshot=False)
-    characters = payload["sections"]["scene"]["content"]["appearing_characters"]
+    payload = manager.build_context(1)
+    characters = payload["scene"]["appearing_characters"]
     assert any(c.get("entity_id") == "xiaoyan" for c in characters)
     assert not any(c.get("entity_id") == "bad" for c in characters)
-    assert payload["sections"]["preferences"]["content"].get("tone") == "热血"
-    assert "long_term_memory" in payload["sections"]
+    assert payload["preferences"].get("tone") == "热血"
+    assert "long_term_memory" in payload
 
 
 def test_context_manager_uses_memory_orchestrator_for_working_when_enabled(temp_project, monkeypatch):
@@ -131,9 +106,9 @@ def test_context_manager_uses_memory_orchestrator_for_working_when_enabled(temp_
 
     monkeypatch.setattr("data_modules.memory.orchestrator.MemoryOrchestrator.build_memory_pack", _fake_pack)
     manager = ContextManager(temp_project)
-    payload = manager.build_context(1, use_snapshot=False, save_snapshot=False)
-    core = payload["sections"]["core"]["content"]
-    long_term_memory = payload["sections"]["long_term_memory"]["content"]
+    payload = manager.build_context(1)
+    core = payload["core"]
+    long_term_memory = payload["long_term_memory"]
 
     assert "working_memory" in long_term_memory
     assert core["chapter_outline"] == "FAKE_OUTLINE"
@@ -156,9 +131,9 @@ def test_context_manager_skips_memory_orchestrator_when_disabled(temp_project, m
 
     monkeypatch.setattr("data_modules.memory.orchestrator.MemoryOrchestrator.build_memory_pack", _boom)
     manager = ContextManager(temp_project)
-    payload = manager.build_context(1, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(1)
 
-    assert payload["sections"]["long_term_memory"]["content"] == {}
+    assert payload["long_term_memory"] == {}
 
 
 def test_context_manager_loads_volume_outline_file(temp_project):
@@ -181,9 +156,9 @@ def test_context_manager_loads_volume_outline_file(temp_project):
     )
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(2, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(2)
 
-    outline = payload["sections"]["core"]["content"]["chapter_outline"]
+    outline = payload["core"]["chapter_outline"]
     assert "### 第2章：测试标题" in outline
     assert "测试大纲" in outline
 
@@ -268,14 +243,14 @@ def test_context_manager_includes_story_contract_and_prewrite_validation(temp_pr
     )
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(3, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(3)
 
-    sections = payload["sections"]
-    assert "story_contract" in sections
-    assert "prewrite_validation" in sections
-    assert sections["story_contract"]["content"]["review_contract"]["meta"]["contract_type"] == "REVIEW_CONTRACT"
-    assert sections["prewrite_validation"]["content"]["fulfillment_seed"]["planned_nodes"] == ["发现陷阱"]
-    assert list(sections.keys()).index("story_contract") < list(sections.keys()).index("scene")
+    assert "story_contract" in payload
+    assert "prewrite_validation" in payload
+    assert payload["story_contract"]["review_contract"]["meta"]["contract_type"] == "REVIEW_CONTRACT"
+    assert payload["prewrite_validation"]["fulfillment_seed"]["planned_nodes"] == ["发现陷阱"]
+    payload_keys = list(payload.keys())
+    assert payload_keys.index("story_contract") < payload_keys.index("scene")
 
 
 def test_context_manager_prefers_contract_route_over_legacy_genre_profile(temp_project):
@@ -308,12 +283,12 @@ def test_context_manager_prefers_contract_route_over_legacy_genre_profile(temp_p
     )
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(3, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(3)
 
-    assert payload["sections"]["story_contract"]["content"]["master_setting"]["route"]["primary_genre"] == "都市异能"
-    assert payload["sections"]["genre_profile"]["content"]["genre"] == "都市异能"
-    assert payload["sections"]["writing_guidance"]["content"]["signals_used"]["genre"] == "都市异能"
-    assert payload["sections"]["runtime_status"]["content"]["fallback_sources"] == [
+    assert payload["story_contract"]["master_setting"]["route"]["primary_genre"] == "都市异能"
+    assert payload["genre_profile"]["genre"] == "都市异能"
+    assert payload["writing_guidance"]["signals_used"]["genre"] == "都市异能"
+    assert payload["runtime_status"]["fallback_sources"] == [
         "missing_volume_contract",
         "missing_chapter_contract",
         "missing_review_contract",
@@ -380,115 +355,10 @@ def test_context_manager_exposes_latest_rejected_commit_not_last_accepted(temp_p
     )
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(3, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(3)
 
-    assert payload["sections"]["latest_commit"]["content"]["meta"]["status"] == "rejected"
-    assert payload["sections"]["runtime_status"]["content"]["latest_accepted_commit"]["meta"]["status"] == "accepted"
-
-
-def test_context_manager_invalidates_snapshot_when_story_contract_changes(temp_project):
-    state = {
-        "progress": {"volumes_planned": [{"volume": 1, "chapters_range": "1-10"}]},
-        "protagonist_state": {"name": "萧炎"},
-        "chapter_meta": {},
-        "disambiguation_warnings": [],
-        "disambiguation_pending": [],
-    }
-    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-
-    story_root = temp_project.story_system_dir
-    (story_root / "chapters").mkdir(parents=True, exist_ok=True)
-    (story_root / "volumes").mkdir(parents=True, exist_ok=True)
-    (story_root / "reviews").mkdir(parents=True, exist_ok=True)
-    (story_root / "MASTER_SETTING.json").write_text(
-        json.dumps(
-            {
-                "meta": {"schema_version": "story-system/v1", "contract_type": "MASTER_SETTING"},
-                "route": {"primary_genre": "玄幻退婚流"},
-                "master_constraints": {"core_tone": "先压后爆"},
-                "base_context": [],
-                "source_trace": [],
-                "override_policy": {},
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    (story_root / "chapters" / "chapter_003.json").write_text(
-        json.dumps(
-            {
-                "meta": {"schema_version": "story-system/v1", "contract_type": "CHAPTER_BRIEF", "chapter": 3},
-                "override_allowed": {"chapter_focus": "旧焦点"},
-                "dynamic_context": [],
-                "source_trace": [],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    (story_root / "volumes" / "volume_001.json").write_text(
-        json.dumps(
-            {
-                "meta": {"schema_version": "story-system/v1", "contract_type": "VOLUME_BRIEF"},
-                "volume_goal": {"summary": "旧卷目标"},
-                "selected_tropes": [],
-                "selected_pacing": {},
-                "selected_scenes": [],
-                "anti_patterns": [],
-                "system_constraints": [],
-                "overrides": {"locked": {}, "append_only": {}, "override_allowed": {}},
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    review_path = story_root / "reviews" / "chapter_003.review.json"
-    review_path.write_text(
-        json.dumps(
-            {
-                "meta": {"schema_version": "story-system/v1", "contract_type": "REVIEW_CONTRACT"},
-                "must_check": ["旧节点"],
-                "blocking_rules": ["旧禁区"],
-                "genre_specific_risks": [],
-                "anti_patterns": [],
-                "system_constraints": [],
-                "review_thresholds": {},
-                "overrides": {"locked": {}, "append_only": {}, "override_allowed": {}},
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    temp_project.outline_dir.mkdir(parents=True, exist_ok=True)
-    (temp_project.outline_dir / "第1卷-详细大纲.md").write_text(
-        "### 第3章：试炼\n必须覆盖节点：旧节点\n本章禁区：旧禁区",
-        encoding="utf-8",
-    )
-
-    manager = ContextManager(temp_project)
-    first = manager.build_context(3, template="plot", use_snapshot=True, save_snapshot=True)
-    assert first["sections"]["prewrite_validation"]["content"]["forbidden_zones"] == ["旧禁区"]
-
-    review_path.write_text(
-        json.dumps(
-            {
-                "meta": {"schema_version": "story-system/v1", "contract_type": "REVIEW_CONTRACT"},
-                "must_check": ["新节点"],
-                "blocking_rules": ["新禁区"],
-                "genre_specific_risks": [],
-                "anti_patterns": [],
-                "system_constraints": [],
-                "review_thresholds": {},
-                "overrides": {"locked": {}, "append_only": {}, "override_allowed": {}},
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    second = manager.build_context(3, template="plot", use_snapshot=True, save_snapshot=False)
-    assert second["sections"]["story_contract"]["content"]["review_contract"]["blocking_rules"] == ["新禁区"]
-    assert second["sections"]["prewrite_validation"]["content"]["forbidden_zones"] == ["新禁区"]
+    assert payload["latest_commit"]["meta"]["status"] == "rejected"
+    assert payload["runtime_status"]["latest_accepted_commit"]["meta"]["status"] == "accepted"
 
 
 def test_context_manager_blocks_when_story_contract_missing(temp_project):
@@ -501,9 +371,9 @@ def test_context_manager_blocks_when_story_contract_missing(temp_project):
     temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(3, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(3)
 
-    prewrite = payload["sections"]["prewrite_validation"]["content"]
+    prewrite = payload["prewrite_validation"]
     assert prewrite["blocking"] is True
     assert any("合同" in reason for reason in prewrite["blocking_reasons"])
 
@@ -523,78 +393,6 @@ def test_query_router():
     assert "A" in router.split("A, B；C")
 
 
-def test_context_snapshot_respects_template(temp_project):
-    state = {
-        "protagonist_state": {"name": "萧炎"},
-        "chapter_meta": {},
-        "disambiguation_warnings": [],
-        "disambiguation_pending": [],
-    }
-    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-
-    manager = ContextManager(temp_project)
-
-    plot_payload = manager.build_context(1, template="plot", use_snapshot=True, save_snapshot=True)
-    battle_payload = manager.build_context(1, template="battle", use_snapshot=True, save_snapshot=True)
-
-    assert plot_payload.get("template") == "plot"
-    assert battle_payload.get("template") == "battle"
-
-
-def test_context_snapshot_invalidates_legacy_version(temp_project):
-    state = {
-        "project": {"genre": "xuanhuan"},
-        "protagonist_state": {"name": "萧炎"},
-        "chapter_meta": {},
-        "disambiguation_warnings": [],
-        "disambiguation_pending": [],
-    }
-    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-    temp_project.outline_dir.mkdir(parents=True, exist_ok=True)
-    (temp_project.outline_dir / "第1卷-详细大纲.md").write_text(
-        """### 第4章：试炼
-CBN：进入试炼场
-CPNs：
-- 观察规则
-CEN：决定将计就计
-""",
-        encoding="utf-8",
-    )
-
-    snapshot_path = temp_project.webnovel_dir / "context_snapshots" / "ch0004.json"
-    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
-    snapshot_path.write_text(
-        json.dumps(
-            {
-                "version": "1.2",
-                "chapter": 4,
-                "saved_at": "2026-03-01T00:00:00+00:00",
-                "meta": {"template": "plot"},
-                "payload": {
-                    "meta": {"chapter": 4},
-                    "sections": {
-                        "core": {
-                            "content": {"chapter_outline": "旧快照"},
-                            "text": "{}",
-                            "budget": 1000,
-                        }
-                    },
-                    "template": "plot",
-                    "weights": {},
-                },
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    manager = ContextManager(temp_project)
-    payload = manager.build_context(4, template="plot", use_snapshot=True, save_snapshot=False)
-
-    assert payload["sections"]["core"]["content"]["chapter_outline"] != "旧快照"
-    assert payload["sections"]["plot_structure"]["content"]["cbn"] == "进入试炼场"
-
-
 def test_context_manager_applies_ranker_and_contract_meta(temp_project):
     state = {
         "protagonist_state": {"name": "萧炎"},
@@ -611,14 +409,14 @@ def test_context_manager_applies_ranker_and_contract_meta(temp_project):
     temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(4, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(4)
 
-    assert payload["meta"].get("context_contract_version") == "v2"
-    recent_meta = payload["sections"]["core"]["content"]["recent_meta"]
+    assert payload["meta"].get("context_contract_version") == "v3"
+    recent_meta = payload["core"]["recent_meta"]
     if recent_meta:
         assert recent_meta[0]["chapter"] == 3
 
-    warnings = payload["sections"]["alerts"]["content"]["disambiguation_warnings"]
+    warnings = payload["alerts"]["disambiguation_warnings"]
     if warnings and isinstance(warnings[0], dict):
         assert "critical" in str(warnings[0].get("message", "")) or warnings[0].get("severity") == "high"
 
@@ -654,16 +452,16 @@ def test_context_manager_includes_reader_signal_and_genre_profile(temp_project):
     )
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(4, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(4)
 
-    reader_signal = payload["sections"]["reader_signal"]["content"]
+    reader_signal = payload["reader_signal"]
     assert "recent_reading_power" in reader_signal
     assert "pattern_usage" in reader_signal
     assert "hook_type_usage" in reader_signal
     assert "review_trend" in reader_signal
     assert isinstance(reader_signal.get("low_score_ranges"), list)
 
-    genre_profile = payload["sections"]["genre_profile"]["content"]
+    genre_profile = payload["genre_profile"]
     assert genre_profile.get("genre") == "xuanhuan"
     assert "profile_excerpt" in genre_profile
     assert "taxonomy_excerpt" in genre_profile
@@ -752,9 +550,9 @@ def test_context_manager_includes_writing_guidance(temp_project):
     )
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(4, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(4)
 
-    guidance = payload["sections"]["writing_guidance"]["content"]
+    guidance = payload["writing_guidance"]
     assert guidance.get("chapter") == 4
     items = guidance.get("guidance_items") or []
     assert isinstance(items, list)
@@ -811,15 +609,13 @@ def test_context_manager_dynamic_weights_and_composite_genre(temp_project):
     temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
     manager = ContextManager(temp_project)
-    payload_early = manager.build_context(10, template="plot", use_snapshot=False, save_snapshot=False)
-    payload_late = manager.build_context(150, template="plot", use_snapshot=False, save_snapshot=False)
+    payload_early = manager.build_context(10, template="plot")
+    payload_late = manager.build_context(150, template="plot")
 
-    assert payload_early.get("weights", {}).get("core") >= payload_late.get("weights", {}).get("core")
-    assert payload_late.get("weights", {}).get("global") >= payload_early.get("weights", {}).get("global")
     assert payload_early.get("meta", {}).get("context_weight_stage") == "early"
     assert payload_late.get("meta", {}).get("context_weight_stage") == "late"
 
-    profile = payload_early["sections"]["genre_profile"]["content"]
+    profile = payload_early["genre_profile"]
     assert profile.get("composite") is True
     assert profile.get("genre") == "xuanhuan"
     assert isinstance(profile.get("genres"), list)
@@ -862,8 +658,8 @@ def test_context_manager_genre_alias_guidance_and_heading_extraction(temp_projec
     temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(12, template="plot", use_snapshot=False, save_snapshot=False)
-    guidance = payload["sections"]["writing_guidance"]["content"]
+    payload = manager.build_context(12, template="plot")
+    guidance = payload["writing_guidance"]
     items = guidance.get("guidance_items") or []
 
     assert any("战术决策点" in str(text) for text in items)
@@ -919,8 +715,8 @@ def test_context_manager_genre_aliases_normalized_for_profile_lookup(temp_projec
     }
     temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
-    payload = manager.build_context(20, template="plot", use_snapshot=False, save_snapshot=False)
-    profile = payload["sections"]["genre_profile"]["content"]
+    payload = manager.build_context(20, template="plot")
+    profile = payload["genre_profile"]
 
     assert profile.get("genre") == "电竞"
     assert "直播文" in (profile.get("genres") or [])
@@ -938,9 +734,9 @@ def test_context_manager_enables_methodology_for_xianxia(temp_project):
 
     manager = ContextManager(temp_project)
     manager.config.context_writing_checklist_max_items = 8
-    payload = manager.build_context(21, template="plot", use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(21, template="plot")
 
-    guidance = payload["sections"]["writing_guidance"]["content"]
+    guidance = payload["writing_guidance"]
     strategy = guidance.get("methodology") or {}
     assert strategy.get("enabled") is True
     assert strategy.get("pilot") == "xianxia"
@@ -960,9 +756,9 @@ def test_context_manager_enables_methodology_for_non_xianxia_by_default(temp_pro
     temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(21, template="plot", use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(21, template="plot")
 
-    guidance = payload["sections"]["writing_guidance"]["content"]
+    guidance = payload["writing_guidance"]
     strategy = guidance.get("methodology") or {}
     assert strategy.get("enabled") is True
     assert strategy.get("genre_profile_key") == "xuanhuan"
@@ -981,28 +777,12 @@ def test_context_manager_allows_methodology_whitelist_restriction(temp_project):
 
     manager = ContextManager(temp_project)
     manager.config.context_methodology_genre_whitelist = ("xianxia",)
-    payload = manager.build_context(21, template="plot", use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(21, template="plot")
 
-    guidance = payload["sections"]["writing_guidance"]["content"]
+    guidance = payload["writing_guidance"]
     strategy = guidance.get("methodology") or {}
     assert strategy == {}
     assert guidance.get("signals_used", {}).get("methodology_enabled") is False
-
-
-def test_context_manager_compact_text_truncation(temp_project):
-    manager = ContextManager(temp_project)
-    manager.config.context_compact_text_enabled = True
-    manager.config.context_compact_min_budget = 80
-    manager.config.context_compact_head_ratio = 0.6
-
-    content = {"a": "x" * 200, "b": "y" * 200}
-    compact = manager._compact_json_text(content, budget=120)
-    assert len(compact) <= 120
-    assert "[TRUNCATED]" in compact
-
-    manager.config.context_compact_text_enabled = False
-    raw_cut = manager._compact_json_text(content, budget=100)
-    assert len(raw_cut) <= 100
 
 
 def test_context_manager_persist_writing_checklist_score_logs_failure(temp_project, monkeypatch, caplog):
@@ -1119,9 +899,9 @@ CEN：决定将计就计
     )
 
     manager = ContextManager(temp_project)
-    payload = manager.build_context(4, use_snapshot=False, save_snapshot=False)
+    payload = manager.build_context(4)
 
-    plot_structure = payload["sections"]["plot_structure"]["content"]
+    plot_structure = payload["plot_structure"]
     assert plot_structure.get("cbn") == "进入试炼场"
     assert plot_structure.get("cpns") == ["观察规则", "发现陷阱"]
     assert plot_structure.get("cen") == "决定将计就计"
