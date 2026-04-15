@@ -178,12 +178,6 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
 - 中文思维写作，不使用英文框架骨架驱动正文。
 - 若存在结构化节点：正文必须围绕 `CBN -> CPNs -> CEN` 展开，不得跳过必须节点。
 
-状态推进：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" state set-chapter-status --chapter {chapter_num} --status chapter_drafted
-```
-
 ### Step 3：执行审查
 
 使用 Task 调用 `reviewer` agent，输入：
@@ -248,12 +242,6 @@ Anti-AI 硬要求：
 模式规则：
 - `--minimal`：仅排版，跳过问题修复、风格适配和 Anti-AI 终检
 
-状态推进（`--minimal` 除外）：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" state set-chapter-status --chapter {chapter_num} --status chapter_reviewed
-```
-
 ### Step 5：章节提交主链（写后事实入口）
 
 > **核心原则**：Data Agent 不是写后真理源，它只负责提取事实并生成 commit artifacts。
@@ -308,6 +296,11 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" cha
 - `.webnovel/state.json` / `index.db` / `summaries` / `memory_scratchpad` 只是 commit 的"查询视图"
 - 类比：网文后台的"章节列表"、"角色卡"都是从"已发布章节"自动生成的，不是作者手工维护的
 
+**chapter_status 推进**：
+- accepted commit → `state_projection_writer` 自动推进到 `chapter_committed`
+- rejected commit → `state_projection_writer` 自动推进到 `chapter_rejected`
+- 不再由 skill 手动调用 `set-chapter-status`
+
 #### Step 5.4：失败隔离与补跑策略
 
 | 失败场景 | 补跑策略 | 禁止操作 |
@@ -316,12 +309,6 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" cha
 | `projection_status.state=failed` | 只修复 state projection 后补提 commit | ❌ 不重新提取事实 |
 | 向量索引失败 | 只补跑 extraction 子步骤 | ❌ 不重新审查 |
 | `TOTAL > 30000ms` | 输出最慢 2-3 个环节与原因 | ❌ 不静默跳过性能问题 |
-
-状态推进：
-
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" state set-chapter-status --chapter {chapter_num} --status chapter_committed
-```
 
 ### Step 6：Git 备份
 
@@ -339,11 +326,11 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 未满足以下条件前，不得结束流程：
 
 1. 章节正文文件存在且非空。
-2. `chapter_status` 已推进到 `chapter_drafted`（Step 2 完成）。
-3. Step 3 已产出审查结果并落库（`--minimal` 除外）。
-4. 若存在 `blocking=true` 的 issue，流程必须停在 Step 3。
-5. Step 4 的 `anti_ai_force_check=pass`（`--minimal` 除外），`chapter_status` 已推进到 `chapter_reviewed`。
-6. Step 5 已生成 accepted `CHAPTER_COMMIT`，并确认 `state/index/summary/memory` projection 已完成或显式跳过，`chapter_status` 已推进到 `chapter_committed`。
+2. Step 3 已产出审查结果并落库（`--minimal` 除外）。
+3. 若存在 `blocking=true` 的 issue，流程必须停在 Step 3。
+4. Step 4 的 `anti_ai_force_check=pass`（`--minimal` 除外）。
+5. Step 5 已生成 accepted `CHAPTER_COMMIT`，`projection_status` 四项全部为 `done` 或 `skipped`。
+6. `chapter_status` 为 `chapter_committed`（由 projection writer 自动推进，不手动写入）。
 7. 若启用观测，已读取最新 timing 记录并给出结论。
 
 ## 验证与交付

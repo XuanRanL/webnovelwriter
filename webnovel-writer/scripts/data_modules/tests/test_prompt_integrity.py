@@ -325,3 +325,21 @@ def test_context_agent_and_write_skill_form_isolated_write_chain():
     assert "context-agent" in skill_text
     assert "Context Contract" not in context_text
     assert "Step 2 直写提示词" not in context_text
+
+
+def test_no_direct_state_writes_in_write_skill():
+    """webnovel-write SKILL.md 中不应有 set-chapter-status 调用。"""
+    text = (SKILLS_DIR / "webnovel-write" / "SKILL.md").read_text(encoding="utf-8")
+    assert "state set-chapter-status" not in text, (
+        "webnovel-write 中不应直接调用 state set-chapter-status，"
+        "chapter_status 由 state_projection_writer 在 commit 时自动推进"
+    )
+
+
+def test_no_direct_state_writes_in_agents():
+    """agents 目录中不应有直接写 state/index 的指令。"""
+    for agent_file in AGENT_FILES:
+        text = _read_text(agent_file)
+        assert "state set-chapter-status" not in text, (
+            f"{agent_file.name}: 不应直接调用 state set-chapter-status"
+        )
