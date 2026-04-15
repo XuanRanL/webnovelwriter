@@ -13,10 +13,14 @@ from data_modules.state_projection_writer import StateProjectionWriter
 from data_modules.summary_projection_writer import SummaryProjectionWriter
 
 
-def test_state_projection_writer_skips_rejected_commit(tmp_path):
+def test_state_projection_writer_handles_rejected_commit(tmp_path):
+    (tmp_path / ".webnovel").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".webnovel" / "state.json").write_text("{}", encoding="utf-8")
     writer = StateProjectionWriter(tmp_path)
-    result = writer.apply({"meta": {"status": "rejected"}, "state_deltas": []})
-    assert result["applied"] is False
+    result = writer.apply({"meta": {"status": "rejected", "chapter": 3}, "state_deltas": []})
+    assert result["applied"] is True
+    state = json.loads((tmp_path / ".webnovel" / "state.json").read_text(encoding="utf-8"))
+    assert state["progress"]["chapter_status"]["3"] == "chapter_rejected"
 
 
 def test_state_projection_writer_applies_accepted_commit(tmp_path):
