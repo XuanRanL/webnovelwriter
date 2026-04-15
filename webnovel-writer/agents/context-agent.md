@@ -69,6 +69,10 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" inde
 
 # 全量上下文（备选，兼容老项目）
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" extract-context --chapter {NNNN} --format json
+
+# 时序知识查询（查询某实体在指定章节时的状态和关系）
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" knowledge query-entity-state --entity "{entity_id}" --at-chapter {N}
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" knowledge query-relationships --entity "{entity_id}" --at-chapter {N}
 ```
 
 参考资料（按需加载）：

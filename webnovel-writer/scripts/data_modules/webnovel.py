@@ -290,6 +290,17 @@ def main() -> None:
     p_review_pipeline.add_argument("--metrics-out", default="", help="metrics 输出文件")
     p_review_pipeline.add_argument("--report-file", default="", help="审查报告路径")
 
+    knowledge_parser = sub.add_parser("knowledge", help="时序知识查询")
+    knowledge_sub = knowledge_parser.add_subparsers(dest="knowledge_action")
+
+    qs_parser = knowledge_sub.add_parser("query-entity-state", help="查询实体在指定章节的状态")
+    qs_parser.add_argument("--entity", required=True, help="实体 ID")
+    qs_parser.add_argument("--at-chapter", type=int, required=True, help="目标章节号")
+
+    qr_parser = knowledge_sub.add_parser("query-relationships", help="查询实体在指定章节的关系")
+    qr_parser.add_argument("--entity", required=True, help="实体 ID")
+    qr_parser.add_argument("--at-chapter", type=int, required=True, help="目标章节号")
+
     # 兼容：允许 `--project-root` 出现在任意位置（减少 agents/skills 拼命令的出错率）
     from .cli_args import normalize_global_project_root
 
@@ -377,6 +388,19 @@ def main() -> None:
         if args.report_file:
             return_args.extend(["--report-file", str(args.report_file)])
         raise SystemExit(_run_script("review_pipeline.py", return_args))
+
+    if tool == "knowledge":
+        from .knowledge_query import KnowledgeQuery
+        from .cli_output import print_success
+        kq = KnowledgeQuery(project_root)
+        if args.knowledge_action == "query-entity-state":
+            result = kq.entity_state_at_chapter(args.entity, args.at_chapter)
+            print_success(result, message="entity_state_at_chapter")
+            raise SystemExit(0)
+        elif args.knowledge_action == "query-relationships":
+            result = kq.entity_relationships_at_chapter(args.entity, args.at_chapter)
+            print_success(result, message="entity_relationships_at_chapter")
+            raise SystemExit(0)
 
     raise SystemExit(2)
 

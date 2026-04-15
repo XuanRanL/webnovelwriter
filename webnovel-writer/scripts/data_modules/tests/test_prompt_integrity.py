@@ -34,7 +34,7 @@ REGISTERED_CLI_SUBCOMMANDS = {
     "index", "state", "rag", "style", "entity", "context", "memory",
     "migrate", "status", "update-state", "backup", "archive",
     "init", "extract-context", "memory-contract", "review-pipeline",
-    "story-system", "chapter-commit", "story-events",
+    "story-system", "chapter-commit", "story-events", "knowledge",
 }
 
 
