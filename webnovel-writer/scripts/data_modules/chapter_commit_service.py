@@ -71,6 +71,7 @@ class ChapterCommitService:
                 "index": "pending",
                 "summary": "pending",
                 "memory": "pending",
+                "vector": "pending",
             },
         }
 
@@ -100,12 +101,14 @@ class ChapterCommitService:
         from .memory_projection_writer import MemoryProjectionWriter
         from .state_projection_writer import StateProjectionWriter
         from .summary_projection_writer import SummaryProjectionWriter
+        from .vector_projection_writer import VectorProjectionWriter
 
         writers = {
             "state": StateProjectionWriter(self.project_root),
             "index": IndexProjectionWriter(self.project_root),
             "summary": SummaryProjectionWriter(self.project_root),
             "memory": MemoryProjectionWriter(self.project_root),
+            "vector": VectorProjectionWriter(self.project_root),
         }
         required_writers = set(EventProjectionRouter().required_writers(payload))
         for name, writer in writers.items():
