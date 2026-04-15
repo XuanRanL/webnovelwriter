@@ -44,9 +44,11 @@ class StorySystemEngine:
             top_k=2,
         )
 
-        # Reasoning layer
-        primary_genre = str(route.get("meta", {}).get("primary_genre", "") or genre or "").strip()
+        # Reasoning layer — try routed genre first, then original genre
+        primary_genre = str(route.get("meta", {}).get("primary_genre", "") or "").strip()
         reasoning = self._load_reasoning(primary_genre)
+        if not reasoning and genre:
+            reasoning = self._load_reasoning(genre)
         ranked = self._apply_reasoning(reasoning, base_context, dynamic_context)
 
         source_trace = route["source_trace"] + self._build_source_trace_with_reasoning(ranked, reasoning)
