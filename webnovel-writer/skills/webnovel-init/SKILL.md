@@ -346,6 +346,22 @@ python "${SCRIPTS_DIR}/webnovel.py" init \
 - 反派分层
 - 关键爽点里程碑（2-3 条）
 
+### 4) 生成写前合同树（Story System 初始化）
+
+init 完成后，立即生成 MASTER_SETTING，让后续 plan 有调性/禁忌参照：
+
+```bash
+GENRE="$(python -X utf8 -c "import json; s=json.load(open('{project_root}/.webnovel/state.json',encoding='utf-8')); print(s.get('project',{}).get('genre',''))")"
+
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
+  story-system "${GENRE}" --genre "${GENRE}" --persist --format json
+```
+
+说明：
+- 此时不传 `--chapter`，只生成 `MASTER_SETTING.json` 和 `anti_patterns.json`
+- 不传 `--emit-runtime-contracts`（还没有卷/章级数据）
+- plan 阶段拆到具体章节时再生成 volume/chapter/review 合同
+
 ## 验证与交付
 
 执行检查：
@@ -355,6 +371,7 @@ test -f "{project_root}/.webnovel/state.json"
 find "{project_root}/设定集" -maxdepth 1 -type f -name "*.md"
 test -f "{project_root}/大纲/总纲.md"
 test -f "{project_root}/.webnovel/idea_bank.json"
+test -f "{project_root}/.story-system/MASTER_SETTING.json"
 ```
 
 成功标准：
@@ -362,6 +379,7 @@ test -f "{project_root}/.webnovel/idea_bank.json"
 - 设定集核心文件存在：`世界观.md`、`力量体系.md`、`主角卡.md`、`金手指设计.md`。
 - `总纲.md` 已填核心主线与约束字段。
 - `idea_bank.json` 已写入且与最终选定方案一致。
+- `.story-system/MASTER_SETTING.json` 存在且 `route.primary_genre` 非空。
 
 ## 失败处理（最小回滚）
 
