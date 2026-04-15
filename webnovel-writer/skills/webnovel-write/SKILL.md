@@ -137,9 +137,18 @@ export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-roo
 
 在进入 Step 1 之前，必须先生成并刷新本章的写前合同（类比网文作者开写前先过一遍大纲、设定、禁区）：
 
+**genre 参数规范**：
+- `--genre` 必须从 `state.json` 的 `project.genre` 读取（唯一真源），不得手动填写
+- 第一个位置参数（query）填本章章纲的"目标"字段内容，用于 CSV 知识检索
+- 若章纲无明确目标，fallback 到 `"{题材} 第{chapter_num}章"`
+
 ```bash
+# 从 state.json 读取题材（唯一真源）
+GENRE="$(python -X utf8 -c "import json,sys; s=json.load(open('${PROJECT_ROOT}/.webnovel/state.json',encoding='utf-8')); print(s.get('project',{}).get('genre',''))")"
+
+# query 填章纲目标（用于 CSV 检索），genre 固定从 state.json 读取
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
-  story-system "{chapter_goal}" --chapter {chapter_num} --persist --emit-runtime-contracts --format both
+  story-system "{章纲目标，如：韩立进入坊市试探消息}" --genre "${GENRE}" --chapter {chapter_num} --persist --emit-runtime-contracts --format both
 ```
 
 **合同树必备文件**（写前真源，缺一不可）：
