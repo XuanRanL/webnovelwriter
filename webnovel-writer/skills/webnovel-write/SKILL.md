@@ -307,7 +307,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" cha
 |---------|---------|---------|
 | commit 文件未生成 | 只重跑 Step 5.2 | ❌ 不回退 Step 1-4 |
 | `projection_status.state=failed` | 只修复 state projection 后补提 commit | ❌ 不重新提取事实 |
-| 向量索引失败 | 只补跑 extraction 子步骤 | ❌ 不重新审查 |
+| `projection_status.vector=failed` | 只补跑 vector projection | ❌ 不重新提取事实 |
 | `TOTAL > 30000ms` | 输出最慢 2-3 个环节与原因 | ❌ 不静默跳过性能问题 |
 
 ### Step 6：Git 备份

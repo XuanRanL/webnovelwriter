@@ -222,6 +222,7 @@ KNOWN_DELETED_FILES = [
     "workflow_manager.py",
     "webnovel-resume",
     "golden_three_checker.py",
+    "snapshot_manager.py",
 ]
 
 _KNOWN_CLI_EXCEPTIONS = {}
