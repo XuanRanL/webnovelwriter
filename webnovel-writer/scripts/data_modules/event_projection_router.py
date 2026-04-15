@@ -7,16 +7,16 @@ from typing import Dict, List, Set
 
 class EventProjectionRouter:
     TABLE = {
-        "character_state_changed": ["state", "memory"],
-        "power_breakthrough": ["state", "memory"],
-        "relationship_changed": ["index"],
-        "world_rule_revealed": ["memory"],
-        "world_rule_broken": ["memory"],
+        "character_state_changed": ["state", "memory", "vector"],
+        "power_breakthrough": ["state", "memory", "vector"],
+        "relationship_changed": ["index", "vector"],
+        "world_rule_revealed": ["memory", "vector"],
+        "world_rule_broken": ["memory", "vector"],
         "open_loop_created": ["memory"],
         "open_loop_closed": ["memory"],
         "promise_created": ["memory"],
         "promise_paid_off": ["memory"],
-        "artifact_obtained": ["index"],
+        "artifact_obtained": ["index", "vector"],
     }
 
     def route(self, event: Dict) -> List[str]:

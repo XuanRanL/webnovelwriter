@@ -12,10 +12,22 @@ class StateProjectionWriter:
         self.project_root = Path(project_root)
 
     def apply(self, commit_payload: dict) -> dict:
-        if commit_payload["meta"]["status"] != "accepted":
-            return {"applied": False, "writer": "state", "reason": "commit_rejected"}
-
         chapter = int(commit_payload.get("meta", {}).get("chapter") or 0)
+        status = commit_payload["meta"]["status"]
+
+        if status == "rejected":
+            if chapter > 0:
+                state_path = self.project_root / ".webnovel" / "state.json"
+                state = read_json_if_exists(state_path) or {}
+                progress = state.setdefault("progress", {})
+                chapter_status = progress.setdefault("chapter_status", {})
+                chapter_status[str(chapter)] = "chapter_rejected"
+                write_json(state_path, state)
+            return {"applied": True, "writer": "state", "reason": "commit_rejected_status_updated"}
+
+        if status != "accepted":
+            return {"applied": False, "writer": "state", "reason": f"unknown_status:{status}"}
+
         state_path = self.project_root / ".webnovel" / "state.json"
         state = read_json_if_exists(state_path) or {}
         entity_state = state.setdefault("entity_state", {})
