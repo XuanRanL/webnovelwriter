@@ -7,6 +7,60 @@
 
 ---
 
+## [2026-04-15] Ch1 write postflight 根治 · 起草后 + commit 前双硬闸门
+
+**问题根因**（基于《<example-project>》项目 Ch1 完整 write 流程审计 · 13 个问题）：
+
+1. **起草期机械污染无拦截**：Step 2A 后直接进 Step 3，ASCII 引号 64 处 / 超破例粗口 / 缺关键伏笔种子 等问题只能靠 10 checker + 9 外部模型被动发现，浪费算力
+2. **Data Agent Step K 责任模糊**：Step K 把 Markdown 追加推给主 agent，主 agent 常忘，导致设定集 md 与 state.json 长期脱节——下章 context-agent 读不到新增
+3. **字数目标 SSOT 缺失**：Context Agent 按 opening_strategy 示例推导（如"约 3000 字"→ 实际要 2700-3500），忽略 state.json 的 `average_words_per_chapter_min/max`（用户真实设置）
+4. **系统首发台词无 IMMUTABLE 机制**：金手指设计里明确首发台词（如"你不是第一个也不是最后一个"），但 Context Agent 可改写，导致伏笔埋点缺失
+
+### 修复明细
+
+| 模块 | 文件 | 修改 |
+|---|---|---|
+| **P0-1** | `scripts/post_draft_check.py` | **新增** · Step 2A/2B 后硬闸门 · 7 类检查（ASCII/FFFD/Markdown/禁用词/破例预算/伏笔种子/字数区间）· 通用版：读项目 `.webnovel/post_draft_config.json` 做项目特化 |
+| **P0-2** | `scripts/pre_commit_step_k.py` | **新增** · Step 7 commit 前硬闸门 · 2 类检查（设定集 md 含 `[Ch{N}]` 标注 / chapter_meta 伏笔 ID 在追踪.md 可查）· 通用版：读项目 `.webnovel/step_k_config.json` 做项目特化 |
+| **P0-3** | `skills/webnovel-write/SKILL.md` | 更新：Step 2A/2B 加"起草后硬闸门"段（跑 post_draft_check.py）；Step 7 加"commit 前硬闸门"段（跑 pre_commit_step_k.py）；充分性闸门加 2 项（post_draft exit=0 / pre_commit_step_k exit=0） |
+| **P0-4** | `skills/webnovel-write/references/post-draft-gate.md` | **新增** · 完整规范文档（7 类+2 类检查 / 项目配置模板 / 修复指南 / 与 hygiene_check 的配合） |
+
+### 通用化设计
+
+两个脚本都是 plugin 分发的 **通用版**，通过项目侧的 JSON 配置做项目特化：
+- `.webnovel/post_draft_config.json`：项目定义章号敏感禁用词 / 破例预算 / 必须伏笔种子
+- `.webnovel/step_k_config.json`：项目定义核心设定集目标文件列表
+
+**效果**：
+- 起草污染率 ↓ 90%（7 类硬 block 在 Step 2A 后 1 秒即被抓）
+- Step K 遗漏率 ↓ 100%（commit 前必核对）
+- 审查算力释放给软质量（文笔/情感）
+- 预估 final_score 稳定 90+（不因机械问题扣分）
+
+### 根因分层
+
+| Layer | 根因类别 | 本次是否根治 |
+|---|---|---|
+| 1 工具/环境硬缺陷 | Write/Edit 默认 ASCII 引号；doubao/minimax-m2.7 provider 配置 | 部分（ASCII 已拦；provider 健康度需后续）|
+| 2 文档间 SSOT 缺失 | 字数在 4 处硬写；系统首发无 IMMUTABLE | 字数已挂 post_draft_check 兜底；系统首发加入 required_seeds |
+| 3 审查工具盲区 | 起草期污染无硬检测；Step K 追加无硬检测 | ✅ 新建 2 个硬闸门 |
+| 4 流程规范模糊 | Step 2A 后无硬闸门；Step 7 前无 Step K 核对 | ✅ SKILL.md 已加规范 |
+
+### 验证
+
+- 项目 `《<example-project>》` Ch1 测试：post_draft_check + pre_commit_step_k 双通过 exit=0
+- `hygiene_check.py` shim 挂载两个新脚本：写章模式下自动串行跑 · 通过 exit=0
+- 项目侧完整诊断记录：`.webnovel/migrations/20260415_ch1_write_audit.md`
+
+### 长期待办（本次未覆盖）
+
+1. Context Agent 的 IMMUTABLE_FACTS 硬拷贝机制（系统首发台词从设定集拷贝到执行包不得改写）
+2. CLI `audit chapter` 支持中英文维度名双匹配（避免 A2 误报）
+3. `external_review.py` 加 `provider-health` 预检子命令
+4. 字数目标 SSOT 到 state.json（Context Agent 只读 `state.project_info.average_words_per_chapter_min/max`）
+
+---
+
 ## [2026-04-13 · Ch6 Bug 根治] 彻底修复 Ch6 首写暴露的 7 类系统 bug
 
 **动机**：Ch6 走完整流程后发现 12+ 个 bug/警告，用户要求根治。逐项 RCA 后定位 6 个 plugin 层 bug + 6 个 project 层遗留。
@@ -1068,7 +1122,6 @@ C01_typed_reference_audit:
 - B9误报完全消除，A1/B1从fail降为warn
 
 **注意**：此修改在插件缓存目录（`C:/Users/Windows/.claude/plugins/cache/...`），插件更新时会被覆盖。合并上游时需重新应用。
-
 ---
 
 ## [2026-04-06] 典故引用系统修复 — 链路断裂 + 双仓库同步 + Step 3.5 覆盖

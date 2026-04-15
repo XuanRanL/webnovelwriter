@@ -367,6 +367,21 @@ sys.exit(1 if n > 0 else 0)
 ```
 若检测到 U+FFFD（通常因上下文压缩截断中文字符），立即用 Grep 定位损坏位置，用 Edit 修复，修复后重新验证。**禁止带 FFFD 进入下一步。**
 
+**起草后硬闸门**（Step 2A 完成后、Step 2B 开始前必跑 · 2026-04-15 新增）：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/post_draft_check.py" ${chapter_num} --project-root "${PROJECT_ROOT}"
+```
+7 类硬检查（详见 `references/post-draft-gate.md`）：
+1. ASCII 双引号 = 0（必须 U+201C/U+201D）
+2. U+FFFD = 0
+3. Markdown（# 标题 / --- 分隔 / ** 粗体）= 0
+4. 章号敏感禁用词（项目 `.webnovel/post_draft_config.json` 配置，如 Ch1 <power-faction>/<golden-finger-space>/灵泉）
+5. 破例预算（如主角粗口 Ch1 最多 1 次）
+6. 必须伏笔种子（如 Ch1 系统首发必含"你不是第一个"/"#4732"等精确短语）
+7. 字数在 state.json 的 `average_words_per_chapter_min/max` 区间内
+
+exit=0 才能进入 Step 2B。**禁止带任何 hard fail 进入 Step 3**——审查子代理的 10 内部 + 9 外部算力不应被机械问题浪费。
+
 输出：
 - 章节草稿（可进入 Step 2B 或 Step 3）。
 
@@ -385,6 +400,11 @@ cat "${SKILL_ROOT}/references/style-adapter.md"
 - 风格化正文（覆盖原章节文件）。
 
 U+FFFD 编码验证（同 Step 2A，风格转译后再次执行，确保转译未引入损坏）。
+
+**起草后硬闸门再次执行**（Step 2B 后 · 转译可能引入新问题）：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/post_draft_check.py" ${chapter_num} --project-root "${PROJECT_ROOT}"
+```
 
 ### Step 3：审查（全量审查，必须由 Task 子代理执行）
 
@@ -692,6 +712,17 @@ audit-agent 自动读取 Part 1 的 JSON 输出，完成 Layer C / D / E / F 判
 
 **顺序严格固定**（四步缺一不可）：
 
+**commit 前硬闸门**（2026-04-15 新增 · Step K 设定集 Markdown 追加核对）：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/pre_commit_step_k.py" ${chapter_num} --project-root "${PROJECT_ROOT}"
+```
+2 类检查（详见 `references/post-draft-gate.md`）：
+1. 核心设定集文件（`.webnovel/step_k_config.json` 配置，默认 伏笔追踪/资产变动表/主角卡）含 `[Ch{N}]` 标注
+2. `chapter_meta.{NNNN}.foreshadowing_planted` 里新增伏笔 ID 在 `设定集/伏笔追踪.md` 可查
+
+**为什么需要这个闸门**：Data Agent Step K 会把新增实体/状态写入 index.db + state.json，但 Markdown 追加通常被推给主 agent。若主 agent 忘记追加，设定集与 state 长期脱节，下章 context-agent 读不到新增，质量连锁下降。本闸门阻塞 commit 直到追加完成。
+
+exit=0 后才能走 commit：
 ```bash
 # 前置：AI 必须先在 shell 里 export 下列变量（来自 Step 3 / 章节大纲）。
 # 未 export 会让后续命令产出非法 JSON（'"overall_score":' 后面为空）。
@@ -722,7 +753,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 **JSON 转义说明**：bash 的 `"..."` 字符串内需要 `\"` 转义内部双引号。`${var}` 替换仍生效。**避免**用单引号 `'...'` 包 artifact，因为单引号内 `${var}` 不会替换。
 
 规则：
-- 提交时机：Step 6 审计通过且 hygiene_check 通过后最后执行。
+- 提交时机：Step 6 审计通过 + hygiene_check 通过 + pre_commit_step_k 通过后最后执行。
 - 提交信息默认中文，格式：`第{chapter_num}章: {title}`；若 Step 6 决议为 `approve_with_warnings`，追加 `[audit:warn:layerX]` 后缀。
 - 若 commit 失败：先 `workflow fail-step --step-id "Step 7" --reason "git commit failed: ..."`，再报告失败原因与未提交文件范围；**不得调用 complete-task**。
 - `complete-task` 必须在 git commit 成功后才能调用，顺序不可调换。
@@ -738,17 +769,19 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 
 1. 章节正文文件存在且非空：`正文/第{chapter_padded}章-{title_safe}.md` 或 `正文/第{chapter_padded}章.md`
 2. **Step 1 执行包已落盘**：`.webnovel/context/ch{chapter_padded}_context.json` 与 `.webnovel/context/ch{chapter_padded}_context.md` 同时存在且非空
-3. Step 3 已产出 `overall_score` 且 `review_metrics` 成功落库
-4. Step 3.5 外部审查已完成（核心3模型必须成功）（`--minimal` 模式跳过此条件）
-5. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部10维度分数+外部9模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
-6. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
-7. **Step 4 润色报告已落盘**：`.webnovel/polish_reports/ch{chapter_padded}.md` 存在且非空，含 `anti_ai_force_check` 字段
-8. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
-9. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`
-10. Step 6 审计产物齐全：`audit_reports/ch{chapter_padded}.json`、`editor_notes/ch{next_padded}_prep.md`、`observability/chapter_audit.jsonl` 追加一行；audit decision ∈ {approve, approve_with_warnings}
-11. **workflow 四步登记完整**：`workflow_state.json` 的当前 task 已 `complete-task` 且 `completed_steps` 覆盖 Step 1/2A/2B/3/3.5/4/5/6/7 全量（Step 2A 可由 context-agent 内联但必须显式登记）；每个 step 的 artifact 非空且非 `{"v2": true}` 占位
-12. Step 7 Git 已提交
-13. 若开启性能观测，已读取最新 timing 记录并输出结论
+3. **Step 2A/2B 后 `post_draft_check.py` exit=0**（2026-04-15 新增 · 7 类硬检查通过）
+4. Step 3 已产出 `overall_score` 且 `review_metrics` 成功落库
+5. Step 3.5 外部审查已完成（核心3模型必须成功）（`--minimal` 模式跳过此条件）
+6. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部10维度分数+外部9模型×10维度评分矩阵；`--minimal` 模式仅含内部3维度分数）
+7. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
+8. **Step 4 润色报告已落盘**：`.webnovel/polish_reports/ch{chapter_padded}.md` 存在且非空，含 `anti_ai_force_check` 字段
+9. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
+10. Step 5 已回写 `state.json`、`index.db`、`summaries/ch{chapter_padded}.md`
+11. Step 6 审计产物齐全：`audit_reports/ch{chapter_padded}.json`、`editor_notes/ch{next_padded}_prep.md`、`observability/chapter_audit.jsonl` 追加一行；audit decision ∈ {approve, approve_with_warnings}
+12. **workflow 四步登记完整**：`workflow_state.json` 的当前 task 已 `complete-task` 且 `completed_steps` 覆盖 Step 1/2A/2B/3/3.5/4/5/6/7 全量（Step 2A 可由 context-agent 内联但必须显式登记）；每个 step 的 artifact 非空且非 `{"v2": true}` 占位
+13. **Step 7 commit 前 `pre_commit_step_k.py` exit=0**（2026-04-15 新增 · 设定集 Markdown 追加已完成）
+14. Step 7 Git 已提交
+15. 若开启性能观测，已读取最新 timing 记录并输出结论
 
 ## 验证与交付
 
