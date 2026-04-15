@@ -29,7 +29,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 - ❌ 把全部 references 一次性读完再起草
 - ❌ 用文件存在性替代 `chapter_status` 判断
 - ❌ 润色时改动事件顺序、设定结果或节点收束方向
-- ❌ Step 5 失败后直接开始下一章（状态还在 `chapter_reviewed`）
+- ❌ Step 5 失败后直接开始下一章（commit 可能是 `rejected` 或 projection 未完成）
 - ❌ 把全部 reference 一次性读完再开始写
 
 ## 优先级链
@@ -117,7 +117,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 必须完成：
 - 解析真实书项目根，必须包含 `.webnovel/state.json`
-- 校验核心输入：`大纲/总纲.md`、`${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py`
+- 校验核心输入：`大纲/总纲.md`
 - 规范化变量：`WORKSPACE_ROOT`、`PROJECT_ROOT`、`SKILL_ROOT`、`SCRIPTS_DIR`、`chapter_num`、`chapter_padded`
 
 ```bash
@@ -286,11 +286,12 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" cha
 
 **成功标准**（accepted commit 才会触发投影）：
 - `.story-system/commits/chapter_{chapter_num}.commit.json` 已生成（写后真源）
-- `projection_status` 四项全部为 `done` 或 `skipped`：
+- `projection_status` 五项全部为 `done` 或 `skipped`：
   - `state` → `.webnovel/state.json` 投影完成（主角境界、当前位置等）
   - `index` → `index.db` 投影完成（角色出场、势力关系等）
   - `summary` → `summaries/ch{chapter_padded}.md` 投影完成（章节摘要）
   - `memory` → `memory_scratchpad.json` 投影完成（长期记忆事实）
+  - `vector` → 向量索引投影完成（事件/实体语义检索）
 
 **投影层定位**（Phase 5 明确）：
 - `.webnovel/state.json` / `index.db` / `summaries` / `memory_scratchpad` 只是 commit 的"查询视图"
@@ -329,7 +330,7 @@ git -c i18n.commitEncoding=UTF-8 commit -m "第{chapter_num}章: {title}"
 2. Step 3 已产出审查结果并落库（`--minimal` 除外）。
 3. 若存在 `blocking=true` 的 issue，流程必须停在 Step 3。
 4. Step 4 的 `anti_ai_force_check=pass`（`--minimal` 除外）。
-5. Step 5 已生成 accepted `CHAPTER_COMMIT`，`projection_status` 四项全部为 `done` 或 `skipped`。
+5. Step 5 已生成 accepted `CHAPTER_COMMIT`，`projection_status` 五项全部为 `done` 或 `skipped`。
 6. `chapter_status` 为 `chapter_committed`（由 projection writer 自动推进，不手动写入）。
 7. 若启用观测，已读取最新 timing 记录并给出结论。
 
@@ -346,7 +347,7 @@ tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/data_agent_timing.jsonl" || t
 ```
 
 成功标准：
-- `chapter_status` 为 `chapter_committed`（`--minimal` 模式下至少为 `chapter_drafted`）。
+- `chapter_status` 为 `chapter_committed`（由 projection writer 自动推进）。
 - accepted `CHAPTER_COMMIT` 已写入 `.story-system/commits/`，且投影链路完成。
 - 章节文件、摘要文件、状态文件、长期记忆暂存文件齐全且内容可读。
 - 审查结果可追溯。

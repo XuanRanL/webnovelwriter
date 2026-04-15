@@ -48,8 +48,16 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" memo
 写前真源（开写前必须遵守的"大纲、设定、禁区"）：
 - `.story-system/MASTER_SETTING.json` - 全书主设定合同（题材、调性、核心禁忌）
 - `.story-system/volumes/volume_{NNN}.json` - 卷级合同（本卷目标、爽点密度、节奏策略）
-- `.story-system/chapters/chapter_{NNN}.json` - 章级合同（本章焦点、动态上下文）
+- `.story-system/chapters/chapter_{NNN}.json` - 章级合同（本章焦点、动态上下文、**裁决层输出**）
 - `.story-system/reviews/chapter_{NNN}.review.json` - 审查合同（必须覆盖节点、本章禁区）
+
+**裁决层字段**（在 `chapter_{NNN}.json` 的 `reasoning` 对象中）：
+- `genre` - 命中的题材
+- `style_priority` - 风格优先级（如"冷硬算计 > 超然物外 > 热血冲突"）
+- `pacing_strategy` - 节奏默认策略（如"慢蓄快爆 修炼段精简 斗法段拉满"）
+- `inject_target` - 建议注入位置
+
+这些字段由 `story-system` 引擎根据题材自动裁决，必须在阶段 D 织入任务书第 4 段"这章怎么写更顺"。
 
 写后真源（已发布章节的"定稿状态"）：
 - latest accepted `.story-system/commits/chapter_{NNN}.commit.json` - 章节提交记录（accepted 才是有效定稿）
@@ -199,8 +207,12 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" inde
    - 动机 = 角色目标 + 当前处境 + 上章钩子压力
    - 情绪底色 = 上章结束情绪 + 事件走向
    - 可用能力 = 当前境界 + 近期获得 + 设定禁用项
-2. 组装三层执行包（见输出格式）
-3. 执行红线校验（见检查清单）
+2. 读取裁决层输出：
+   - 从 `.story-system/chapters/chapter_{NNN}.json` 的 `reasoning` 字段读取 `style_priority`、`pacing_strategy`
+   - 从 `master_setting` 的 `anti_patterns` 读取题材毒点
+   - 将这些裁决信息翻译为自然语言，织入任务书第 4 段
+3. 组装写作任务书五段（见输出格式）
+4. 执行红线校验（见检查清单）
 
 ## 6. 边界与禁区
 
@@ -262,8 +274,10 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" inde
 ### 4. 这章怎么写更顺
 
 这一段最关键。把以下信息翻译成自然的写作提醒：
+- **裁决层输出**（最重要）：从 `chapter_{NNN}.json` 的 `reasoning` 字段读取风格优先级、节奏策略，翻译成具体的写作指导。例如 `style_priority: "冷硬算计 > 超然物外"` 应翻译为"这章写的时候保持算计感，角色每一步都在盘算，不要写成热血冲突"
 - 题材基调和参考气质（题材锚定）
 - 本章具体写法建议（writing_guidance）
+- `master_setting` 中的 `anti_patterns`——翻译为"别犯这些错"的自然提醒
 - 最近几章的审查得分趋势和低分区间提醒（追读信号）
 - 章节阶段和风险标记（方法论策略）
 - 从 `core-constraints.md` 和 `anti-ai-guide.md` 翻过来的自然提醒
@@ -354,7 +368,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" inde
 
 ### 缺失处理
 
-- `load-context` 返回空 sections → 降级为 `extract-context --format json` 全量加载
+- `load-context` 返回空 sections → 降级为 `extract-context --chapter {NNNN} --format json` 全量加载
 - `runtime_status.fallback_sources` 非空 → 必须在输出中显式标明已进入 legacy fallback
 - `chapter_meta` 不存在 → 跳过"接住上章"
 - 最近 3 章数据不完整 → 只用现有数据做差异化检查

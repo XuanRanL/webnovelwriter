@@ -363,7 +363,8 @@ def main():
     parser = argparse.ArgumentParser(description="提取章节创作所需的精简上下文")
     parser.add_argument("--chapter", type=int, required=True, help="目标章节号")
     parser.add_argument("--project-root", type=str, help="项目根目录")
-    parser.add_argument("--format", choices=["text", "json"], default="text", help="输出格式")
+    parser.add_argument("--format", choices=["json"], default="json",
+                        help="输出格式（始终 JSON，text 渲染由 context-agent 负责）")
 
     args = parser.parse_args()
 
@@ -374,11 +375,7 @@ def main():
             else find_project_root()
         )
         payload = build_chapter_context_payload(project_root, args.chapter)
-
-        if args.format == "json":
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-        else:
-            print(_render_text(payload), end="")
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
 
     except Exception as exc:
         print(f"❌ 错误: {exc}", file=sys.stderr)
