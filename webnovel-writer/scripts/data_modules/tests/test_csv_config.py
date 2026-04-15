@@ -29,8 +29,7 @@ def test_csv_config_columns_exist_in_csv_header(table_name, config):
     for col in config.get("output_cols", []):
         all_cols.add(col)
     poison = config.get("poison_col", "")
-    # poison_col "毒点" will be added by Task 2 rename; skip for now
-    if poison and poison != "毒点":
+    if poison:
         all_cols.add(poison)
 
     missing = all_cols - headers
