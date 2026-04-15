@@ -59,6 +59,16 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" memo
 
 这些字段由 `story-system` 引擎根据题材自动裁决，必须在阶段 D 织入任务书第 4 段"这章怎么写更顺"。
 
+**数据权重（高→低）**：
+1. 用户明确要求
+2. 大纲/章纲原文（`大纲/第X卷-详细大纲.md` 中的本章内容）
+3. Story Contracts 中的 `MASTER_SETTING`（题材、调性、核心禁忌）
+4. `chapter_{NNN}.json` 的 `reasoning` 字段（裁决层的风格/节奏/毒点建议）
+5. accepted `CHAPTER_COMMIT`（写后事实）
+6. CSV 检索结果（创作参考，不覆盖大纲）
+
+**注意**：`chapter_{NNN}.json` 的 `chapter_focus` 字段是 CSV 检索派生的参考，不代表本章实际目标。本章目标以章纲原文为准。`chapter_{NNN}.json` 的核心价值是 `reasoning` 中的裁决元数据。
+
 写后真源（已发布章节的"定稿状态"）：
 - latest accepted `.story-system/commits/chapter_{NNN}.commit.json` - 章节提交记录（accepted 才是有效定稿）
 

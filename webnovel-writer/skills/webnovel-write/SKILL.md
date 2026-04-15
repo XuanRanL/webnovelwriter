@@ -156,6 +156,11 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
 - `.story-system/volumes/volume_{volume_num}.json` - `VOLUME_BRIEF`，本卷节奏合同（卷级目标、爽点密度）
 - `.story-system/reviews/chapter_{chapter_num}.review.json` - `REVIEW_CONTRACT`，本章审查合同（必须覆盖节点、本章禁区）
 
+**chapter_brief 定位说明**：
+- `.story-system/chapters/chapter_{chapter_num}.json` 的 `chapter_focus` 是 CSV 检索派生的参考，不是本章实际目标
+- 本章目标以 `大纲/第X卷-详细大纲.md` 中的章纲原文为最高权重（仅次于用户意见）
+- `chapter_{chapter_num}.json` 的核心价值是 `reasoning` 字段中的裁决元数据（风格优先级、节奏策略、反模式）
+
 **阻断规则**：
 - 合同缺失或生成失败 → 直接阻断，不进入正文起草
 - 类比：作者没过完大纲就开写，容易写崩
