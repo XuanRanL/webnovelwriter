@@ -99,12 +99,50 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" \
 
 ### Step 1：加载项目数据并确认前置条件
 
+**必须加载**：
+
 ```bash
+# 项目状态与题材
 cat "$PROJECT_ROOT/.webnovel/state.json"
+
+# 总纲（全局蓝图）
 cat "$PROJECT_ROOT/大纲/总纲.md"
+
+# 题材（唯一真源，后续 CSV 检索和裁决匹配依赖此值）
+GENRE="$(python -X utf8 -c "import json; s=json.load(open('${PROJECT_ROOT}/.webnovel/state.json',encoding='utf-8')); print(s.get('project',{}).get('genre',''))")"
 ```
 
-按需读取：
+**已有卷的剧情状态**（跨卷规划时必须加载）：
+
+若已有已完成卷（`.webnovel/summaries/` 下有文件），加载以下数据感知已写内容：
+
+```bash
+# 最近 5 章摘要（了解剧情走向）
+for ch in $(seq $((START_CH - 5)) $((START_CH - 1))); do
+  cat "$PROJECT_ROOT/.webnovel/summaries/ch$(printf '%04d' $ch).md" 2>/dev/null
+done
+
+# 核心角色当前状态
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  knowledge query-entity-state --entity "{protagonist_id}" --at-chapter {上一卷最后章}
+
+# 核心关系当前状态
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  knowledge query-relationships --entity "{protagonist_id}" --at-chapter {上一卷最后章}
+
+# 活跃伏笔（跨卷未回收的伏笔）
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  memory-contract get-open-loops
+```
+
+**CSV 创作参考**（卷级规划时按需检索）：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/reference_search.py" --skill plan --table 爽点与节奏 --query "{卷级核心冲突}" --genre "${GENRE}"
+python -X utf8 "${SCRIPTS_DIR}/reference_search.py" --skill plan --table 桥段套路 --query "{卷级核心冲突}" --genre "${GENRE}"
+```
+
+**按需读取**（设定集）：
 - `设定集/世界观.md`
 - `设定集/力量体系.md`
 - `设定集/主角卡.md`
@@ -191,6 +229,11 @@ cat "$PROJECT_ROOT/.webnovel/idea_bank.json"
 - 爽点密度规划
 - 伏笔规划
 - 约束触发规划
+
+跨卷一致性检查（非首卷时必须执行）：
+- 上一卷未回收的伏笔必须出现在新卷的伏笔规划中（继续推进或标记回收）
+- 角色关系变化必须延续（不能当上一卷没发生过）
+- 主角能力/境界必须承接（不能回退也不能跳级，除非有剧情解释）
 
 ### Step 7：批量生成章纲
 
