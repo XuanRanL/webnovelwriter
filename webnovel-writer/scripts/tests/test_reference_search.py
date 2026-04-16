@@ -251,3 +251,35 @@ class TestPerTableSearchCols:
         assert out2["status"] == "success"
         assert out1["data"]["total"] >= 1
         assert out2["data"]["total"] >= 1
+
+
+class TestGenreCanonical:
+    def test_canonical_genres_has_15_entries(self):
+        from reference_search import GENRE_CANONICAL
+        assert len(GENRE_CANONICAL) == 15
+        expected = {
+            "都市", "玄幻", "仙侠", "奇幻", "科幻",
+            "历史", "悬疑", "游戏", "古言", "现言",
+            "幻言", "年代", "种田", "快穿", "衍生",
+        }
+        assert GENRE_CANONICAL == expected
+
+    def test_platform_to_canonical_maps_all_tags(self):
+        from reference_search import PLATFORM_TO_CANONICAL
+        # 34 unique tags (some tags like 科幻末世, 悬疑脑洞, 游戏体育 appear in both male/female)
+        assert len(PLATFORM_TO_CANONICAL) == 34
+        # Every value must be a canonical genre
+        from reference_search import GENRE_CANONICAL
+        for tag, canonical in PLATFORM_TO_CANONICAL.items():
+            assert canonical in GENRE_CANONICAL, f"{tag} -> {canonical} not in GENRE_CANONICAL"
+
+    def test_platform_to_canonical_spot_checks(self):
+        from reference_search import PLATFORM_TO_CANONICAL
+        assert PLATFORM_TO_CANONICAL["都市日常"] == "都市"
+        assert PLATFORM_TO_CANONICAL["战神赘婿"] == "都市"
+        assert PLATFORM_TO_CANONICAL["东方仙侠"] == "仙侠"
+        assert PLATFORM_TO_CANONICAL["西方奇幻"] == "奇幻"
+        assert PLATFORM_TO_CANONICAL["古风世情"] == "古言"
+        assert PLATFORM_TO_CANONICAL["豪门总裁"] == "现言"
+        assert PLATFORM_TO_CANONICAL["快穿"] == "快穿"
+        assert PLATFORM_TO_CANONICAL["科幻末世"] == "科幻"
