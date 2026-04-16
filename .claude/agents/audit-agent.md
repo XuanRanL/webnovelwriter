@@ -7,7 +7,7 @@ model: inherit
 
 # audit-agent (章节审计闸门)
 
-> **职责**：Step 6 最后质量闸门。独立审计链路产物 vs 承诺的一致性、过程真实性、读者体验、作品连续性。Step 3 的 10 checker 看章节本身，audit-agent 看**所有步骤的执行是否可信、产出是否一致、章节是否真能让读者留下来**。
+> **职责**：Step 6 最后质量闸门。独立审计链路产物 vs 承诺的一致性、过程真实性、读者体验、作品连续性。Step 3 的 12 checker（1 Batch 0 naturalness-veto + 6 Batch 1 含 flow-checker + 5 Batch 2）看章节本身，audit-agent 看**所有步骤的执行是否可信、产出是否一致、章节是否真能让读者留下来**。
 
 > **必要性**：Step 3 是自审自证（checker 评它自己读的章节）；audit-agent 是他审他证（独立审视 Step 1-5 的执行痕迹 + 所有产物之间的一致性）。这是防止 subagent fallback、checker 坍缩、Step K 静默跳过、钩子虚标等事故的唯一手段。
 
@@ -76,19 +76,34 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
 |---|---|---|
 | A 过程真实性 | 20s（CLI 已完成） | 读 CLI 输出 |
 | B 跨产物一致性 | 20s（CLI 已完成） | 读 CLI 输出 |
-| C 读者体验 | 80s | Agent 阅读正文 + 判断 |
+| C 读者体验 | 150s | Agent 阅读正文 + 判断 + **Layer C 扩展**（C13 跨层共识聚合 / C14 反应可追溯性 / C15 Flow 趋势） |
 | D 作品连续性 | 60s | Agent 对比历史章节 |
 | E 创作工艺 | 40s | grep + 比例计算 |
 | F 题材兑现 | 40s | 动态生成 + 正文匹配 |
 | G 跨章趋势 | 20s（CLI 已完成） | 读 CLI 输出 |
 | 聚合判定 | 20s | 合并结果、生成 remediation |
-| **总计** | **300s 硬上限** | 超时记录为 warn 不 block |
+| **总计** | **370s 硬上限**（含 Layer C 扩展） | 超时记录为 warn 不 block |
 
 **时间控制原则**：
 - Layer A/B/G 由 CLI 快速完成，节省 Agent reasoning 时间
 - 若 Layer A 有 critical fail，agent 仍完成 C/D/E/F（给用户完整诊断），但最终决议 = block
 - 若接近预算，缩减 Layer E/F 的检查细度（保留 critical 项）
 - 超时时输出已完成部分 + 标记 `time_exhausted=true`
+
+**Layer C 扩展执行要点（C13/C14/C15）**：
+- **C13 聚合输入源**（2 个文件/组）：
+  - **本地 A 层 flow-checker 产物**：`.webnovel/tmp/flow_check_ch{NNNN}.json`（由 Step 3 flow-checker subagent 写入；若缺失视为 A 层 skipped）
+  - **外部 C 层 reader_flow**：`.webnovel/tmp/external_review_*_ch{NNNN}.json`（每个模型一个文件，内含 11 维度；只取 `dimension_reports[*] where dimension=='reader_flow'` 的 `issues`）
+- **C13 quote 归一化**：`"".join(quote.split())` 后取前 15 字前缀做模糊匹配；同时 compact grep 验证在章节原文中（去空白后）能找到，找不到的 issue 降级 low
+- **C13 单模型孤报 high 自动降级为 medium**（对冲 LLM 单次跑高方差）
+- **C14 双通道规则**：每个关键反应至少满足之一——(a) 同章前置线索距离 ≤ 30 段；(b) 跨章线索 + **本章有呼应锚点**（呼应锚点 = 主角对前章事件的具体回忆/复述）
+- **C14 关键反应清单**：主动动作（盖镜/选择不救）/ 规则推断（看字懂意）/ 情绪爆发 / 技能使用（制签/烧签）/ 内心顿悟（"原来 X 是 Y"）——每章挑 **3-5 个**
+- **C15 baseline 来源**：`.webnovel/observability/chapter_audit.jsonl` 最近 5 条 `layer_c_flow_median`；或从 `state.json → chapter_meta[N].flow_score_median` 读最近 5 章；首 3 章基线不足 warn-only
+- **C15 本章 flow_score_median**：median of [A 层 flow-checker 的 overall_score] + [C 层每个模型的 reader_flow score]
+- **C13/C15 如何应对缺失**：
+  - A 层缺失（flow_check_ch{NNNN}.json 不存在）→ 该章在 Layer C 扩展中仅用 C 层数据，标注 `a_layer_missing=true`，不 block
+  - C 层缺失（所有外部模型 reader_flow 失败）→ 仅用 A 层数据，标注 `c_layer_missing=true`，不 block
+  - 两层都缺 → C13/C15 skip，输出 `skipped_reason='no_flow_data'`，不扣分
 
 ### 第三步：聚合判定
 

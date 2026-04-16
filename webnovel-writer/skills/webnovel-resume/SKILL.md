@@ -93,7 +93,7 @@ cat "${SKILL_ROOT}/references/system-data-flow.md"
 | Step 1 | ⭐ | 直接重新执行（Context Agent 生成执行包 + 内置 Contract） |
 | Step 2A | ⭐⭐ | 删除半成品，重新开始 |
 | Step 2B | ⭐⭐ | 继续适配或回到 2A |
-| Step 3 | ⭐⭐⭐ | 用户决定：重审或跳过（10 个内部 checker） |
+| Step 3 | ⭐⭐⭐ | 用户决定：重审或跳过（12 个内部 checker：1 Batch 0 naturalness-veto + 6 Batch 1 含 flow-checker + 5 Batch 2） |
 | Step 3.5 | ⭐⭐⭐ | 用户决定：重审或跳过（9 个外部模型） |
 | Step 4 | ⭐⭐ | 继续润色或删除重写 |
 | Step 5 | ⭐⭐ | 重新运行（幂等；state.json / index.db / summaries 写入） |

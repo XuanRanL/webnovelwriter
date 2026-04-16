@@ -554,7 +554,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `foreshadowing_paid` | list[str] | 本章兑现的伏笔 |
 | `strand_dominant` | str | 主导情节线（quest/fire/constellation） |
 | `review_score` | float | 审查综合分 |
-| `checker_scores` | dict | 各 checker 分数 |
+| `checker_scores` | dict | 各 checker 分数。**必须同时写入 `"overall"` 键（= `review_score`）**以满足 hygiene H9 交叉校验；缺 `"overall"` 会触发 P1 警告。示例: `{"设定一致性": 82, "连贯性": 89, ..., "overall": 91}` |
 | `allusions_used` | list[dict] | **本章引用的典故列表（Step B.5 产出），每条含 id/snippet/type/source/carrier/function/is_original 字段；无引用库或无引用时为空数组** |
 
 ### 第二层 · Extended 26 扩展字段（允许但不强制；B9 不检查；为长线质量积累服务）
