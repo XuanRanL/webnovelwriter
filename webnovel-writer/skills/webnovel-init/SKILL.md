@@ -865,6 +865,13 @@ chmod +x "{project_root}/.webnovel/hygiene_check.py" 2>/dev/null || true
 
 项目本地扩展（可选）：若项目有额外检查需求，可创建 `.webnovel/hygiene_check_local.py` 并定义 `run(root, chapter, report)` 函数。框架版会自动加载。
 
+**规划层一致性（推荐 · 中长篇必配）**：当详细大纲覆盖多卷、有关键章号事件（如"末世爆发章"、"金手指觉醒章"）或多线伏笔时，推荐在 `.webnovel/plan_consistency_config.json` 里配置规则，由 `scripts/plan_consistency_check.py`（框架版）在 hygiene_check 里自动检查。config 结构：
+- `drift.rules`：章号漂移规则列表（feature_pattern / old_values / new_value）
+- `gender.checks`：人物伏笔性别一致性（state.json + 规划文件跨源校验）
+- `density.tracks`：阅读密度滑窗统计（角色/反派出场频次）
+
+若项目本地另有 `.webnovel/plan_consistency_check.py`，shim 优先跑本地脚本；都没有时整体跳过（退出 0）。典型使用：短篇/中短篇可以不配；长篇（尤其末世/修仙/系列/多卷）强烈建议配，避免 v2 大纲修订后残留旧章号漂移到 commit。
+
 成功标准：
 - `state.json` 存在且关键字段不为空（title/genre/target_words/target_chapters）。
 - 设定集核心文件存在且有实质内容：`世界观.md`、`力量体系.md`、`主角卡.md`、`金手指设计.md`。

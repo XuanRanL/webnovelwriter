@@ -764,6 +764,17 @@ def main():
         "--data", required=True, help="JSON 格式的状态变化数据"
     )
 
+    # 写入场景（直接暴露 add_scenes 作为 CLI）
+    upsert_scenes_parser = subparsers.add_parser(
+        "upsert-scenes", help="批量写入本章场景到 index.db"
+    )
+    upsert_scenes_parser.add_argument("--chapter", type=int, required=True)
+    upsert_scenes_parser.add_argument(
+        "--scenes",
+        required=True,
+        help='JSON 数组: [{"scene_index":0,"start_line":1,"end_line":30,"location":"...","summary":"...","characters":["..."]}, ...]',
+    )
+
     # ==================== v5.4 新增命令 ====================
     invalid_parser = subparsers.add_parser("mark-invalid")
     invalid_parser.add_argument("--source-type", required=True)
@@ -1085,10 +1096,17 @@ def main():
 
     elif args.command == "upsert-relationship":
         data = load_json_arg(args.data)
+        # Accept both canonical names and legacy aliases (from/to) used by data-agent
+        from_entity = data.get("from_entity") or data.get("from")
+        to_entity = data.get("to_entity") or data.get("to")
+        rel_type = data.get("type") or data.get("relationship_type")
+        if not from_entity or not to_entity or not rel_type:
+            emit_error("MISSING_FIELD", "upsert-relationship requires from_entity/to_entity/type (or aliases from/to)")
+            return
         rel = RelationshipMeta(
-            from_entity=data["from_entity"],
-            to_entity=data["to_entity"],
-            type=data["type"],
+            from_entity=from_entity,
+            to_entity=to_entity,
+            type=rel_type,
             description=data.get("description", ""),
             chapter=data["chapter"],
         )
@@ -1100,16 +1118,55 @@ def main():
 
     elif args.command == "record-state-change":
         data = load_json_arg(args.data)
+        # Accept both canonical names (old_value/new_value) and legacy aliases (old/new)
+        old_value = data.get("old_value")
+        if old_value is None:
+            old_value = data.get("old", "")
+        new_value = data.get("new_value")
+        if new_value is None:
+            new_value = data.get("new")
+        if new_value is None:
+            emit_error("MISSING_FIELD", "record-state-change requires new_value (or alias new)")
+            return
         change = StateChangeMeta(
             entity_id=data["entity_id"],
             field=data["field"],
-            old_value=data.get("old_value", ""),
-            new_value=data["new_value"],
+            old_value=old_value,
+            new_value=new_value,
             reason=data.get("reason", ""),
             chapter=data["chapter"],
         )
         record_id = manager.record_state_change(change)
         emit_success({"id": record_id, "entity": change.entity_id, "field": change.field}, message="state_change_recorded")
+
+    elif args.command == "upsert-scenes":
+        scenes_data = load_json_arg(args.scenes)
+        if not isinstance(scenes_data, list):
+            emit_error("INVALID_ARG", "--scenes 必须是 JSON 数组")
+            return
+        scenes_list = []
+        for s in scenes_data:
+            if not isinstance(s, dict):
+                continue
+            # 接受 scene_index / index 两种字段名
+            si = s.get("scene_index", s.get("index", 0))
+            scenes_list.append(
+                SceneMeta(
+                    chapter=args.chapter,
+                    scene_index=int(si),
+                    start_line=int(s.get("start_line", 0)),
+                    end_line=int(s.get("end_line", 0)),
+                    location=str(s.get("location", "")),
+                    summary=str(s.get("summary", "")),
+                    characters=list(s.get("characters", [])),
+                )
+            )
+        manager.add_scenes(args.chapter, scenes_list)
+        emit_success(
+            {"chapter": args.chapter, "scenes_written": len(scenes_list)},
+            message="scenes_upserted",
+            chapter=args.chapter,
+        )
 
     # ==================== v5.4 无效事实命令处理 ====================
 
