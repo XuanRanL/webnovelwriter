@@ -7,6 +7,79 @@
 
 ---
 
+## [2026-04-16 · Round 11] 外部审查架构重构 · openclawroot 首位供应商 + 9 新模型 + all-high-thinking
+
+**触发**：用户追问"Step 3.5 各供应商成功率"，实测 Round 10- 架构（4 provider × 9 老模型）全局只有 6-7/9 成功，nextapi 48% no_api_key / healwrap 41% / minimax-m2.7 0% / doubao 28%。用户提供 openclawroot.com API key + 指定 9 新模型。
+
+### RC · 老架构 3 大痛点
+
+1. **nextapi 无 key 浪费**：157/324 失败是 no_api_key（48%）
+2. **healwrap RPM=8 严重限流**：99 rate_limited + 74 timeout + 53 http_502
+3. **minimax-m2.7 全面 0% + doubao 28.6%**：endpoint 支持度极低
+4. **role 字段误导架构**：每个模型 role 标签暗示分工，但代码实际每个模型都跑全 11 维度（共识机制不是分工机制）
+
+### 根治
+
+**PROVIDERS 精简 4 → 2**：
+- openclawroot（首位，`OPENCLAWROOT_API_KEY`，RPM=30，实测 9/9 路由正确）
+- siliconflow（兜底，仅 GLM 系有备用）
+- 删除 nextapi / healwrap / codexcc
+
+**MODELS 重写（9 新 · 按异构性组合）**：
+- Core 3（必须成功）：
+  - `qwen3.6-plus`（国产旗舰）
+  - `gpt-5.4`（OpenAI · 最快 2-7s）
+  - `gemini-3.1-pro`（Google · 画面感）
+- Supplemental 6（失败不阻塞）：
+  - `doubao-pro` / `glm-5` / `glm-4.7`
+  - `mimo-v2-pro`（小米推理）
+  - `minimax-m2.7-hs`（推理 highspeed）
+  - `deepseek-v3.2-thinking`（深度推理）
+
+**Thinking 全面开启 + max_tokens=65536**：
+- OpenAI 系（gpt-5.4）：`reasoning_effort: "high"`
+- Gemini 系：`thinking_budget: 16384`
+- Qwen/DeepSeek/Doubao/GLM/MiMo/MiniMax 系：`enable_thinking: True`
+- Claude 系：`thinking: {type:"enabled", budget_tokens:16384}`
+- 推理模型 content 为空时 fallback 读 `reasoning_content`
+
+**删除 role 字段**：消除"分工"误解。9 模型都跑全 11 维度 = 99 份独立评分（共识机制）。
+
+**MODEL_ALIASES 向后兼容**：老名 kimi/glm/qwen-plus/qwen/deepseek/minimax/doubao/glm4/minimax-m2.7 自动映射到新名（防止老 state.json 破坏）。
+
+**load_api_keys 多层查找**：
+- 原：只查 `cwd/.env` + `~/.claude/webnovel-writer/.env`
+- 新：先查 os.environ → cwd 向上 3 级 → script_dir 向上 3 级 → 全局
+- 支持 workspace root 布局（workspace/.env 可被 workspace/fork/scripts 读到）
+
+### 同步改动
+
+- `scripts/external_review.py`：PROVIDERS 精简 / MODELS 重写 / call_api payload thinking 参数 / content fallback
+- `scripts/data_modules/chapter_audit.py`：EXTERNAL_MODELS_CORE3 + EXTERNAL_MODELS_ALL9 同步新名
+- `agents/external-review-agent.md`：model_key 枚举 + 架构说明
+- `skills/webnovel-write/references/step-3.5-external-review.md`：完整重写架构段
+- `scripts/data_modules/tests/test_chapter_audit.py`：硬编码老模型名全部替换
+- `.env`：新增 `OPENCLAWROOT_API_KEY` + `OPENCLAWROOT_BASE_URL`
+
+### 实测验证
+
+- 9 模型连通性测试：**9/9 路由正确**（3 次重复验证稳定）
+- GLM 路由 bug 排查：glm-5-turbo → GLM-5.1 / glm-5.1 → MiniMax-M2.7，用 GLM-5 / GLM-4.7（大写）替换
+- 推理模型 max_tokens 深测：mimo-v2-pro 前 100 tokens 空内容；加到 65536 后 content + reasoning_content 双返
+- pytest scripts/data_modules/tests/ **339 passed**
+- sync-cache 289 文件对齐
+
+### 供应商成功率对比
+
+| | Round 10- | Round 11+ |
+|---|---|---|
+| provider 数 | 4 (nextapi/healwrap/codexcc/siliconflow) | 2 (openclawroot/siliconflow) |
+| 9 模型全成率 | 6-7/9 | 9/9 |
+| 延迟（最慢） | 60-120s (healwrap RPM=8) | ~30s (openclawroot) |
+| 架构清晰度 | role 分工暗示混淆 | 共识机制明确（无 role） |
+
+---
+
 ## [2026-04-16 · Round 10] Ch1 末世重生质量深审 · 5 个 checker rubric 升级 + Ch1 v3.2 精修
 
 **触发**：用户要求 "仔细研究认真思考详细调查分析第 1 章怎么样有什么问题"。深度审查 Ch1 v2 (overall=92) 暴露 1 critical + 7 high + 6 medium 内部 checker 漏检、外部模型命中但被标"low"。核心 RC：审查 rubric 覆盖盲区 + 外部模型 quote 幻觉。

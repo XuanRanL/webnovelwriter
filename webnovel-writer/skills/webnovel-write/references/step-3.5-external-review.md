@@ -1,51 +1,61 @@
-# Step 3.5 外部模型审查规范
+# Step 3.5 外部模型审查规范（Round 11+ openclawroot 架构）
 
-## 九模型双层架构
+## 九模型共识架构 · 2 供应商
 
-### 核心层（必须成功，四级 fallback 保障）
+### 核心层（必须成功，异构性覆盖）
 
-| 模型 | 角色 | nextapi | healwrap | codexcc | 硅基流动 |
-|------|------|---------|---------|---------|---------|
-| kimi-k2.5 | 严审/逻辑 | `kimi-k2.5` | `kimi-k2.5` | `kimi-k2.5` | `Pro/moonshotai/Kimi-K2.5` |
-| glm-5 | 编辑/读者感受 | `glm-5.0` | `glm-5` | `glm-5` | `Pro/zai-org/GLM-5` |
-| qwen3.5-plus | 网文/爽点 | — | `qwen3.5-plus` | `qwen3.5-plus` | `Qwen/Qwen3.5-397B-A17B` |
+| 模型 key | openclawroot id | siliconflow 备用 | 特点 |
+|---|---|---|---|
+| `qwen3.6-plus` | `qwen3.6-plus` | — | 国产旗舰，识别语义重复最细致 |
+| `gpt-5.4` | `gpt-5.4` | — | OpenAI 系，西方叙事视角，最快 2-7s |
+| `gemini-3.1-pro` | `gemini-3.1-pro-high` | — | 谷歌系，画面感审视 |
 
-### 补充层（失败不阻塞，累计3维度失败早停）
+### 补充层（失败不阻塞，累计 3 维度失败早停）
 
-| 模型 | 角色 | healwrap | nextapi | codexcc | 硅基流动 |
-|------|------|---------|---------|---------|---------|
-| qwen-3.5 | 宽松锚点 | `qwen-3.5` | — | — | `Qwen/Qwen3.5-397B-A17B` |
-| deepseek-v3.2 | 技术考据 | `deepseek-v3.2` | — | — | `Pro/deepseek-ai/DeepSeek-V3.2` |
-| minimax-m2.5 | 快速参考 | `minimax-m2.5` | `minimax-m2.5` | `minimax-m2.5` | `Pro/MiniMaxAI/MiniMax-M2.5` |
-| doubao-seed-2.0 | 结构审查 | `doubao-seed-2.0` | — | — | — |
-| glm-4.7 | 文学质感 | `glm-4.7` | — | — | `Pro/zai-org/GLM-4.7` |
-| minimax-m2.7 | 对话/情感 | `minimax-m2.7` | `minimax-m2.7` | `MiniMax-M2.7` | — |
+| 模型 key | openclawroot id | siliconflow 备用 | 特点 |
+|---|---|---|---|
+| `doubao-pro` | `Doubao-Seed-2.0-pro` | — | 结构审查严苛 |
+| `glm-5` | `GLM-5` | `Pro/zai-org/GLM-5` | 中文编辑权威 |
+| `glm-4.7` | `GLM-4.7` | `Pro/zai-org/GLM-4.7` | 文学质感 |
+| `mimo-v2-pro` | `mimo-v2-pro` | — | 小米推理 |
+| `minimax-m2.7-hs` | `MiniMax-M2.7-highspeed` | — | 对话情感推理 |
+| `deepseek-v3.2-thinking` | `DeepSeek-V3.2-Thinking` | `Pro/deepseek-ai/DeepSeek-V3.2` | 技术考据 + 深度推理 |
 
-## 供应商配置
+## 供应商配置（2-tier）
 
-**四级 fallback：**
-- 主力：nextapi (`https://api.nextapi.store/v1`)，key: NEXTAPI_API_KEY，RPM=999（无限制），支持 kimi/glm/minimax/minimax-m2.7
-- 次级：healwrap (`https://llm-api.healwrap.cn/v1`)，key: HEALWRAP_API_KEY，RPM=8（实测10仍频繁429）
-- 备用1：codexcc (`https://api.codexcc.top/v1`)，key: CODEXCC_API_KEY
-- 备用2/兜底：硅基流动 (`https://api.siliconflow.cn/v1`)，key: EMBED_API_KEY
+- **主力**：openclawroot (`https://openclawroot.com/v1`)，key: `OPENCLAWROOT_API_KEY`，RPM=30
+- **兜底**：siliconflow (`https://api.siliconflow.cn/v1`)，key: `EMBED_API_KEY`/`SILICONFLOW_API_KEY`，RPM=30（仅部分模型）
 
-**重试与 fallback 规则：**
-- 核心层 kimi/glm：nextapi(重试2次) → healwrap(重试2次) → codexcc(不重试) → 硅基流动(兜底)
-- 核心层 qwen-plus：healwrap(重试2次) → codexcc(不重试) → 硅基流动(兜底)
-- 补充层 minimax/minimax-m2.7：nextapi(重试2次) → healwrap(重试2次) → codexcc(不重试)
-- 补充层 qwen/deepseek/glm4：healwrap(重试2次) → 硅基流动(兜底)
-- 补充层 doubao：healwrap(重试2次) only（其他供应商无此模型）
-- 幽灵零分（score=0+空摘要）：provider 层自动检测并切下一供应商重试
-- 每次 API 调用后**必须验证路由**：检查 response.model 字段是否匹配请求模型
-- 路由错误视为该供应商不可用，不重试直接切下一个
-- 429限流：等6秒后重试；超时：计入重试次数
+## 共识机制（核心设计）
 
-**并发控制（RPM 安全策略）：**
-- `--model-key all` 模式：9模型并发 × 每模型最多6维度并发（`DEFAULT_MAX_CONCURRENT=6`），ProviderRateLimiter 混合限流（信号量+请求间隔）
-- nextapi RPM=999 无瓶颈；healwrap RPM=8 = 最多8个并发连接 + 每次请求间隔≥7.5秒，整个重试链只占一个槽位，403立即切换不重试
+- **9 模型 × 11 维度 = 99 份独立评分**
+- 每个模型都跑**全 11 维度**（无分工！role 字段已删除 2026-04-16 Round 11）
+- 多模型命中同一 issue → 真 bug；单模型孤例 → 模型偏见（cross_validation 自动过滤）
+- 异构覆盖：国产（Doubao/GLM×2/Qwen/MiMo/MiniMax/DeepSeek）+ 西方（GPT/Gemini）
+
+## Thinking 全开 + max_tokens 最大
+
+- 所有模型 `max_tokens = 65536`（模型最大）
+- OpenAI 系（gpt-5.4）：`reasoning_effort = "high"`
+- Gemini 系：`thinking_budget = 16384`
+- Qwen/DeepSeek/Doubao/GLM/MiMo 系：`enable_thinking = True`
+- MiniMax 推理：`enable_thinking = True`
+- 推理模型（mimo/minimax-hs/deepseek-thinking）若 `content` 为空，fallback 读 `reasoning_content`
+
+## 重试与 fallback 规则
+
+- **openclawroot**：重试 2 次，429 等 6s，403 立即切
+- **siliconflow**：兜底，重试 1 次
+- 幽灵零分（score=0 + 空摘要）：provider 层自动检测并切下一供应商重试
+- 每次 API 调用后**路由验证**：检查 `response.model` 字段是否匹配请求模型
+- Round 10+ 新增：外部模型 quote 幻觉自动 severity 降级（见 `_verify_quote_exists`）
+
+## 并发控制
+
+- `--model-key all` 模式：9 模型并发 × 每模型最多 6 维度并发（`DEFAULT_MAX_CONCURRENT=6`）
+- 单模型全并发：11 维度同时跑（openclawroot RPM=30 够用）
 - 补充层维度并发自动降至 min(6, 3) = 3（启用早停拦截排队中的维度）
-- fallback 到 codexcc/硅基流动不占 healwrap RPM
-- CLI 参数：`--max-concurrent N`（覆盖每模型的维度并发数）、`--rpm-override N`（覆盖 healwrap RPM）
+- CLI 参数：`--max-concurrent N`、`--rpm-override N`
 
 **推荐调用策略：**
 - **首选**：`--model-key all` 一次性跑全部9个模型（9模型并发 × 维度并发，ProviderRateLimiter 自动控制 RPM）

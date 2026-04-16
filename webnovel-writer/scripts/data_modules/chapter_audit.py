@@ -152,11 +152,14 @@ def normalize_checker_scores_keys(
             renamed.append(f"{src_key}→{canonical}")
     return normalized, renamed, invalid
 
-EXTERNAL_MODELS_CORE3 = ["kimi", "glm", "qwen-plus"]
+# 2026-04-16 Round 11 · openclawroot 9 新模型
+# Core 3 = 异构性覆盖（国产旗舰 + 西方快审 + 谷歌视角），必须成功
+# Supp 6 = 国产补充 + 推理深度，失败不阻塞
+EXTERNAL_MODELS_CORE3 = ["qwen3.6-plus", "gpt-5.4", "gemini-3.1-pro"]
 EXTERNAL_MODELS_ALL9 = [
-    "kimi", "glm", "qwen-plus",
-    "minimax", "doubao", "minimax-m2.7",
-    "qwen", "glm4", "deepseek",
+    "qwen3.6-plus", "gpt-5.4", "gemini-3.1-pro",
+    "doubao-pro", "glm-5", "glm-4.7",
+    "mimo-v2-pro", "minimax-m2.7-hs", "deepseek-v3.2-thinking",
 ]
 
 DATA_AGENT_STEPS_REQUIRED = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]  # K 为 best-effort
