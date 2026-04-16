@@ -29,6 +29,8 @@
     H10 项目根布局干净（5 个合法目录 + 允许的隐藏文件）
     H11 审查报告中 overall_score 出现次数 <= 1
     H17 chapter_meta.allusions_used schema 合规（list[dict] with 7 fields）
+    H18 checker_scores key 必须 canonical（11 个 CHECKER_NAMES ∪ {overall}）；
+        检测 AI fallback 写中文/legacy key（Ch1 血教训）
   P2 建议（exit 2）：
     H12 context_snapshot 存在
     H13 项目特定检查（通过 .webnovel/hygiene_check_local.py 扩展）
@@ -507,6 +509,51 @@ def check_polish_report_persistence(root: Path, chapter: int, rep: HygieneReport
     rep.record("P0", "H15", "润色报告齐全且 anti_ai_force_check=pass", True)
 
 
+def check_checker_scores_canonical(root: Path, chapter: int, rep: HygieneReport):
+    """H18: checker_scores key 必须 canonical
+
+    规则：
+    - 合法 key = 11 CHECKER_NAMES ∪ {"overall"}
+    - 支持通过 CHECKER_ALIASES 映射的中文/legacy 别名（映射后等价于 canonical）
+    - 非法 key（Anti-AI/钩子强度/伏笔埋设 等 AI 手写常见 fallback）→ P1 fail
+
+    根因：AI 受 data-agent.md 历史示例 `{"设定一致性": 82}` 诱导写中文 key，
+    而 chapter_audit 只认英文 canonical，导致 silent mismatch（Ch1 血教训）。
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    cs = meta.get("checker_scores")
+    if not isinstance(cs, dict) or not cs:
+        return  # H2 will cover missing case
+    # 延迟 import 防循环依赖（hygiene_check 是独立脚本）
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from data_modules.chapter_audit import normalize_checker_scores_keys
+    except Exception as exc:
+        rep.record("P1", "H18", f"无法加载 normalize_checker_scores_keys: {exc}", False)
+        return
+    _norm, renamed, invalid = normalize_checker_scores_keys(cs)
+    if invalid:
+        rep.record(
+            "P1",
+            "H18",
+            f"checker_scores 含非 canonical key {len(invalid)} 个: {invalid[:5]}（修：改成 CHECKER_NAMES 英文 key）",
+            False,
+        )
+    elif renamed:
+        rep.record(
+            "P1",
+            "H18",
+            f"checker_scores 用中文别名 {len(renamed)} 项（audit 会 normalize，但建议写 canonical 英文）：{renamed[:5]}",
+            True,
+        )
+    else:
+        rep.record("P1", "H18", f"checker_scores {len(cs)} 个 key 全部 canonical", True)
+
+
 def check_allusions_schema(root: Path, chapter: int, rep: HygieneReport):
     """H17: allusions_used 必须 list[dict] with 7 required fields"""
     state_p = root / ".webnovel" / "state.json"
@@ -580,6 +627,7 @@ def main():
     check_foreshadowing_dedup(root, args.chapter, rep)
     check_report_overall_score_count(root, args.chapter, rep)
     check_allusions_schema(root, args.chapter, rep)
+    check_checker_scores_canonical(root, args.chapter, rep)
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
