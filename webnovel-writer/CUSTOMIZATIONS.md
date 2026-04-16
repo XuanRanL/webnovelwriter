@@ -7,6 +7,121 @@
 
 ---
 
+## [2026-04-16 · Round 7] Plugin 三层缓存架构根治 · sync-cache CLI + preflight cache_sync 闸门
+
+**问题重审**：Round 6 发现 Ch6 flow-checker 未运行，并加 `sync-agents` 修了工作区 `.claude/agents/`。但用户追问"Step 3.5 真的有 11 维度吗"后，深入实测发现**更深一层的 bug**：**Ch6 外部审查 JSON 也只有 10 维度，缺 reader_flow**（<example-project>项目实测：Ch5=11✅ / Ch6=10❌ / <example-project> Ch1=10❌）。
+
+### Root Cause（比 Round 6 更底层的架构级 bug）
+
+**Claude Code plugin 系统是三层缓存架构**，不是我们以为的两层：
+
+```
+① fork           I:\AI-extention\webnovel-writer\webnovel-writer\
+     ↓ git push
+② GitHub         https://github.com/XuanRanL/webnovel-writer
+     ↓ claude /plugin update（不自动！）
+③ marketplace    ~\.claude\plugins\marketplaces\webnovel-writer-marketplace\
+   mirror             （Claude Code 维护的 github clone）
+     ↓ /plugin install/reinstall（不自动！）
+④ plugin cache   ~\.claude\plugins\cache\webnovel-writer-marketplace\
+                     webnovel-writer\{VERSION}\
+                     ← AI 运行时 CLAUDE_PLUGIN_ROOT 指向这里
+```
+
+**AI 运行脚本/agent 时从 ④ cache 加载，不从 fork 或 GitHub 读**。fork 改代码 → commit → push → GitHub 是一条链，marketplace mirror → cache 是另一条链，**两条链没自动同步机制**。
+
+### 证据
+
+- `installed_plugins.json` 的 `gitCommitSha: 535d60d1` 自 2026-03-26 安装以来**从未更新**
+- 自那次以来 fork 有 **79 个 commit**，cache 却停留在旧快照 + 零星手动同步
+- version 锁死 5.6.0 时，Claude Code 判定"已安装无需重装"，cache 永不更新
+- 实测 cache 的 `chapter_audit.py` 仍含 **37 行 `??????` 乱码**，fork 早已修复
+- 实测 cache 的 `external_review.py` 在 Ch6 审查时未含 reader_flow（c511802 已加到 fork，4-16 03:50 才同步到 cache，落后 3 天）
+
+### 根治清单
+
+#### 1. 新 CLI `webnovel.py sync-cache`（绕过 GitHub 直接 fork→cache）
+
+文件: `scripts/data_modules/webnovel.py`
+
+核心函数:
+- `_walk_plugin_files(plugin_root)` — 遍历 fork 所有需同步文件，跳过 `__pycache__`/`.pyc`/`.coverage`/`Thumbs.db`/`.DS_Store`/`htmlcov/` 等 runtime 垃圾
+- `_resolve_plugin_cache_dir(plugin_root, explicit=None)` — 从 `plugin.json` 读 version，推出 `~/.claude/plugins/cache/{name}-marketplace/{name}/{version}/`
+- `_compute_cache_drift(plugin_root, cache_root)` — bytes diff 计算 fork_only / cache_only / different 三集合
+- `cmd_sync_cache` — 主入口。支持三种模式：
+  - 默认：覆盖同步 + 清理 cache 里所有 .pyc（防止 stale bytecode shadow 新 .py）
+  - `--dry-run`：打印清单不写入
+  - `--check-only`：纯检测，漂移时退出码 2（供 CI/preflight 使用）
+  - `--cache-dir PATH`：手动指定 cache 位置
+
+输出示例:
+```json
+{"status": "success", "message": "cache 同步 v5.6.0: +0 新增, ~1 更新, =286 未变, -0 .pyc 清理", ...}
+```
+
+#### 2. preflight 新增 `cache_sync` 检查项（非阻断警告）
+
+文件: `scripts/data_modules/webnovel.py::_check_cache_sync`
+
+每次 `webnovel.py preflight` 自动扫描 fork↔cache 漂移。输出示例：
+
+```
+OK agents_sync: I:\AI-extention\webnovel-writer\.claude\agents
+OK cache_sync: C:\Users\Windows\.claude\plugins\cache\webnovel-writer-marketplace\webnovel-writer\5.6.0
+```
+
+漂移时：
+```
+ERROR cache_sync: C:\Users\...\5.6.0
+  detail: fork→cache 漂移 24 个文件 (cache 缺 5 / 内容不同 19); 跑 `webnovel.py sync-cache` 修复
+```
+
+exit code 仍为 0（非阻断），但 AI 看到 ERROR 就知道要跑 sync-cache。
+
+#### 3. SKILL.md Step 0 硬约束升级
+
+`skills/webnovel-write/SKILL.md` 原"agents 同步检查"段扩展为"**plugin 同步闸门**"，新增：
+
+- plugin 三层架构图（fork / marketplace mirror / cache）解释 AI 为什么从 cache 加载
+- `ERROR agents_sync` vs `ERROR cache_sync` 两种 warning 的职责区分
+- **硬规则**：任何 `ERROR agents_sync` 或 `ERROR cache_sync` 必须在 Step 1 前清零
+- 触发 sync-cache 的三个时机：git pull 后 / 修改 plugin 源码后 / 每次 session 开始时
+- 预检通过模板（preflight → sync-agents → sync-cache → preflight 验证）
+
+#### 4. auto-memory 新增 `feedback_plugin_three_layer_cache.md`
+
+讲清三层架构 + sync-cache vs sync-agents 区别 + 诊断命令。用户写其他小说时也会自动应用此规则。
+
+#### 5. 实际执行 sync-cache 把 Round 6 / Round 7 所有 fix 推到 cache
+
+- Before: cache `chapter_audit.py` 37 行 `??????`，0 个 flow-checker
+- After: cache `chapter_audit.py` 0 个乱码，3 个 flow-checker 引用
+- 同步结果：`+5 新增, ~19 更新, -67 .pyc 清理`（新增含 flow-checker.md / reader-naturalness-checker.md / flow_union_runner.py / plan_consistency_check.py）
+
+### 防御机制（三层都有闸门）
+
+| 层 | 漂移检测 | 漂移修复 |
+|---|---|---|
+| ① fork ↔ ② GitHub | `git status` / CI | `git push` |
+| ② GitHub ↔ ③ marketplace mirror | Claude Code 启动时 fetch | `/plugin update` |
+| ③ marketplace ↔ ④ cache | `webnovel.py preflight` 的 cache_sync 项 | `webnovel.py sync-cache` |
+| 工作区 `.claude/agents/` | `webnovel.py preflight` 的 agents_sync 项 | `webnovel.py sync-agents` |
+
+**开发模式最佳实践**：跳过 ② ③，直接 `sync-cache` 从 ① 推到 ④。这是本 commit 的默认行为。
+
+### 限制
+
+- sync-cache 只从 fork → cache，不会把 GitHub 上别人的 commit 同步下来（那还是走 `/plugin update`）
+- 如果 plugin.json 的 version 变了，cache 目录路径变，需手动 `claude /plugin reinstall` 初始化新 version 目录
+- preflight 的 cache_sync 检查依赖 `~/.claude/plugins/cache/` 路径约定，如果 Claude Code 改路径需要更新 `_resolve_plugin_cache_dir`
+
+### 已知残留（本轮不修）
+
+- `marketplace.json` 的 version 还是 5.6.0，理论上应该每次小改动 bump（5.6.1 / 5.6.2...），但这会污染 README 版本表，且用户需手动 `/plugin update`——sync-cache 绕过这个问题更实用
+- 长期方案：marketplace version 大版本跳（6.0.0）只在 breaking change 时 bump；日常开发全靠 sync-cache
+
+---
+
 ## [2026-04-16 · Round 6] flow-checker 未部署 + mojibake 脚本 + preflight agents_sync 根治
 
 **动机**：用户要求"再次仔细研究认真思考详细调查最近的更新有没有问题"，全流程审计（Step 0-7）后定位 4 个 bug 族——不是旧 bug，是 Round 1-5 遗留的横切问题。

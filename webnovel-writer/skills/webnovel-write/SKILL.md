@@ -176,15 +176,57 @@ export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-roo
 
 **硬门槛**：`preflight` 必须成功。它统一校验 `CLAUDE_PLUGIN_ROOT` 派生出的 `SKILL_ROOT` / `SCRIPTS_DIR`、`webnovel.py`、`extract_chapter_context.py` 和解析出的 `PROJECT_ROOT`。任一失败都立即阻断。
 
-**agents 同步检查**（preflight 非阻断警告，但必须处理）：
-preflight 输出中若出现 `ERROR agents_sync: 缺少 N 个 agent: [...]`，说明 plugin `agents/` 新增/修改的 checker 未同步到工作区 `.claude/agents/`。Task(subagent) 会静默 fallback 到 general-purpose，导致 checker 空跑（Ch6 血教训：flow-checker 加入后未同步到工作区，Step 3 Batch 2 只实际跑了 5 个而非 6 个，审查报告里写"内部 10 维度"其实应该是 11）。
+**plugin 同步闸门**（preflight 两个非阻断警告，必须在 Step 1 前全部清零）：
+
+Claude Code 的 plugin 系统是**三层缓存架构**：
+```
+fork (你改代码的地方) → marketplace mirror (~/.claude/plugins/marketplaces/...) → cache (~/.claude/plugins/cache/...)
+```
+AI 运行时通过 `CLAUDE_PLUGIN_ROOT` 从 **cache** 加载脚本和 subagent 定义，**不从 fork 读取**。fork 修改后 cache 不会自动同步——这是 Ch6 flow-checker 空跑的根因（fork 已含 flow-checker，但 cache 是旧版）。
+
+### warning 1: `ERROR agents_sync`
+
+说明 plugin `agents/` 新增/修改的 subagent 未同步到**工作区** `.claude/agents/`（工作区 fallback 层，独立于 cache）。Task(subagent) 会静默 fallback 到 general-purpose，导致 checker 空跑（Ch6 血教训：flow-checker 加入后未同步到工作区，Step 3 Batch 2 只实际跑了 5 个而非 6 个，审查报告里写"内部 10 维度"其实应该是 11）。
 
 一键修复：
 ```bash
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" sync-agents
 ```
 
-该命令把 `${CLAUDE_PLUGIN_ROOT}/agents/*.md` 同步到工作区 `.claude/agents/`（按内容 diff，只更新有变化的文件）。**每次 plugin 更新后（merge upstream / pull fork 新 commit）的第一次 preflight 必跑 sync-agents**。
+### warning 2: `ERROR cache_sync`
+
+说明 fork 内容与 plugin cache 不一致（通常因为 `git pull` 后没同步）。**直接后果：AI 跑的是 cache 的旧代码**，fork 的 bug fix / 新 checker / 新维度都不生效。例证：
+
+- 2026-04-13 c511802 commit 在 fork 加入 reader_flow，但 cache 没同步 → Ch6 外部审查只跑 10 维度（应 11）
+- 2026-04-13 某次修复把 chapter_audit.py 中文注释写坏，cache 同步了 37 行 `??????` → 后续审计 evidence 全乱码
+
+一键修复：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" sync-cache
+```
+
+该命令直接把 `${CLAUDE_PLUGIN_ROOT}/*`（= fork 内容）复制到 `~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/`，按 bytes diff 只更新变化文件，并清理 cache 里的 `.pyc`（防止 stale bytecode shadow 新 `.py`）。
+
+### 硬规则
+
+**任何 `ERROR agents_sync` 或 `ERROR cache_sync` 必须在 Step 1 前清零**。不得"跳过 warning 开始写章"，因为：
+- agents_sync 漂移 → Task checker 空跑（你看不见 fallback，章节走完了才发现审查报告维度少了）
+- cache_sync 漂移 → 所有 fix / 新功能不生效（你 commit 了但 AI 跑的是老代码）
+
+**触发 sync-cache 的时机**（硬约束）：
+1. 每次 `git pull` 或 `git checkout` 切换 fork 分支后
+2. 每次你修改 plugin 源码文件（`webnovel-writer/scripts/*.py` / `agents/*.md` / `skills/*.md` / `references/*.md`）后
+3. 每次使用 Claude Code 开始新 session 时（preflight 会提示）
+
+**预检一次通过模板**（推荐放 Step 0 起始）：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" preflight
+# 若看到 ERROR agents_sync 或 ERROR cache_sync：
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" sync-agents
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" sync-cache
+# 然后重跑 preflight 确认全 OK
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" preflight
+```
 
 典故引用库检查（非阻断，仅提示）：
 ```bash

@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -146,6 +147,42 @@ def _check_agents_sync(plugin_root: Path, workspace_root: Optional[Path]) -> Opt
     }
 
 
+def _check_cache_sync(plugin_root: Path) -> Optional[dict]:
+    """Verify fork plugin content matches the plugin cache Claude Code actually loads.
+
+    Claude Code 运行 subagent/scripts 时从 `~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/`
+    加载（环境变量 CLAUDE_PLUGIN_ROOT 指向这里），不从 fork 工作区加载。fork 改动不会
+    自动同步到 cache，导致 "commit 了但 AI 跑的还是旧代码" 的幽灵 bug。Ch6 flow-checker
+    未运行（2026-04-13）即此事故。
+
+    该检查非阻断，但在 drift 时打出 ERROR 行，提示用户跑 `webnovel.py sync-cache`。
+    Returns None if cache 目录不存在（可能用户没装 plugin / 用 local CLI）。
+    """
+    cache_root = _resolve_plugin_cache_dir(plugin_root)
+    if cache_root is None:
+        return None
+    drift = _compute_cache_drift(plugin_root, cache_root)
+    has_drift = bool(drift["fork_only"] or drift["different"])
+    evidence_samples = (drift["different"] + drift["fork_only"])[:5]
+    return {
+        "name": "cache_sync",
+        "ok": not has_drift,
+        "path": str(cache_root),
+        "fork_only_count": len(drift["fork_only"]),
+        "different_count": len(drift["different"]),
+        "identical_count": drift["identical_count"],
+        "sample_drift_files": evidence_samples,
+        **(
+            {"error": (
+                f"fork→cache 漂移 {len(drift['different']) + len(drift['fork_only'])} 个文件 "
+                f"(cache 缺 {len(drift['fork_only'])} / 内容不同 {len(drift['different'])}); "
+                f"跑 `webnovel.py sync-cache` 修复"
+            )}
+            if has_drift else {}
+        ),
+    }
+
+
 def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
     scripts_dir = _scripts_dir().resolve()
     plugin_root = scripts_dir.parent
@@ -182,7 +219,12 @@ def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
     if sync_check is not None:
         checks.append(sync_check)
 
-    # ok 聚合：只看 P0（必需）项；agents_sync 缺失只警告，不阻断 preflight
+    # Cache sync check — non-blocking warning（fork→cache 漂移检测，Ch6 根因）
+    cache_check = _check_cache_sync(plugin_root)
+    if cache_check is not None:
+        checks.append(cache_check)
+
+    # ok 聚合：只看 P0（必需）项；agents_sync/cache_sync 缺失只警告，不阻断 preflight
     p0_names = {"scripts_dir", "entry_script", "extract_context_script", "skill_root", "project_root"}
     return {
         "ok": all(bool(item["ok"]) for item in checks if item["name"] in p0_names),
@@ -284,6 +326,241 @@ def cmd_sync_agents(args: argparse.Namespace) -> int:
     return 0
 
 
+def _walk_plugin_files(src_root: Path):
+    """Yield (relative_path, absolute_path) for every file in fork plugin directory.
+
+    Skips __pycache__, .pyc, test coverage / fixture artifacts that shouldn't
+    propagate to plugin cache (where AI actually runs).
+    """
+    skip_dirs = {"__pycache__", ".git", ".pytest_cache", ".ruff_cache", ".mypy_cache", "htmlcov"}
+    skip_ext = {".pyc", ".pyo"}
+    # `.coverage` 和 `.coverage.<host>.<id>` 是 pytest-cov 运行产物；`.coveragerc` 是配置文件要保留
+    skip_exact = {".DS_Store", "Thumbs.db", ".coverage"}
+    for path in src_root.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part in skip_dirs for part in path.parts):
+            continue
+        if path.suffix in skip_ext:
+            continue
+        if path.name in skip_exact:
+            continue
+        # 匹配 .coverage.HOSTNAME.12345 这种 pattern 但放行 .coveragerc
+        if path.name.startswith(".coverage.") and not path.name == ".coveragerc":
+            continue
+        yield path.relative_to(src_root), path
+
+
+def _resolve_plugin_cache_dir(plugin_root: Path, explicit: Optional[str] = None) -> Optional[Path]:
+    """Resolve plugin cache directory for current version.
+
+    Returns the cache directory path if found, None otherwise. Does NOT raise.
+    Checks in order: --explicit override, standard cache location.
+    """
+    if explicit:
+        p = Path(explicit)
+        return p if p.is_dir() else None
+    plugin_json = plugin_root / ".claude-plugin" / "plugin.json"
+    if not plugin_json.exists():
+        return None
+    try:
+        version = json.loads(plugin_json.read_text(encoding="utf-8")).get("version", "").strip()
+    except Exception:
+        return None
+    if not version:
+        return None
+    home = Path(os.path.expanduser("~"))
+    plugin_name = plugin_root.name
+    cand = home / ".claude" / "plugins" / "cache" / f"{plugin_name}-marketplace" / plugin_name / version
+    return cand if cand.is_dir() else None
+
+
+def _compute_cache_drift(plugin_root: Path, cache_root: Path) -> dict:
+    """Compute drift between fork plugin and cache. Returns summary dict.
+
+    Returns:
+        {
+          "fork_only": [rel_paths],       # in fork but not cache
+          "cache_only": [rel_paths],      # in cache but not fork (legacy / .pyc)
+          "different": [rel_paths],       # exist in both but content differs
+          "identical_count": int,
+          "total_fork": int,
+          "total_cache": int,
+        }
+    """
+    fork_files = {}
+    for rel_path, abs_path in _walk_plugin_files(plugin_root):
+        fork_files[str(rel_path).replace("\\", "/")] = abs_path
+    cache_files = {}
+    skip_dirs = {"__pycache__", ".git", ".pytest_cache"}
+    for path in cache_root.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part in skip_dirs for part in path.parts):
+            continue
+        if path.suffix in {".pyc", ".pyo"}:
+            continue
+        rel = str(path.relative_to(cache_root)).replace("\\", "/")
+        cache_files[rel] = path
+    fork_set = set(fork_files.keys())
+    cache_set = set(cache_files.keys())
+    fork_only = sorted(fork_set - cache_set)
+    cache_only = sorted(cache_set - fork_set)
+    different: list[str] = []
+    identical = 0
+    for rel in sorted(fork_set & cache_set):
+        try:
+            if fork_files[rel].read_bytes() != cache_files[rel].read_bytes():
+                different.append(rel)
+            else:
+                identical += 1
+        except Exception:
+            different.append(rel)
+    return {
+        "fork_only": fork_only,
+        "cache_only": cache_only,
+        "different": different,
+        "identical_count": identical,
+        "total_fork": len(fork_set),
+        "total_cache": len(cache_set),
+    }
+
+
+def cmd_sync_cache(args: argparse.Namespace) -> int:
+    """Sync fork plugin files to Claude Code plugin cache — or just check drift.
+
+    Claude Code plugin 三层架构:
+      ① fork (I:\\AI-extention\\webnovel-writer\\webnovel-writer\\)
+      ② marketplace mirror (~\\.claude\\plugins\\marketplaces\\webnovel-writer-marketplace\\)
+      ③ plugin cache (~\\.claude\\plugins\\cache\\webnovel-writer-marketplace\\webnovel-writer\\{VERSION}\\)
+
+    AI 运行时通过 $CLAUDE_PLUGIN_ROOT 从 ③ 加载脚本和 agent 定义，不读 ①。
+    fork → cache 无自动同步：必须显式跑 /plugin update 或本命令。
+
+    Root cause of Ch6 flow-checker/reader_flow 从未运行（2026-04-13）：commit 96c9156
+    把 fork 的 chapter_audit.py 修复，但 cache 保留 37 行乱码 + 10 checker。
+    AI 每次都跑 cache 的旧代码。本命令绕过 marketplace 直接同步 fork→cache。
+
+    模式:
+      默认: 同步所有 fork 文件到 cache（overwrite）+ 清理 .pyc
+      --check-only: 只报告漂移，不写入（用于 preflight / CI 检测）
+      --dry-run: 打印将要同步的文件清单，不写入
+      --cache-dir PATH: 手动指定 cache 位置（调试用）
+
+    退出码:
+      0 = 无漂移 OR 同步成功
+      1 = 运行错误（plugin.json 缺失 / cache 目录不存在 / etc）
+      2 = --check-only 且检测到漂移（让 CI / preflight 能据此 alert）
+    """
+    import shutil
+    from .cli_output import print_success, print_error
+
+    scripts_dir = _scripts_dir().resolve()
+    plugin_root = scripts_dir.parent
+
+    plugin_json = plugin_root / ".claude-plugin" / "plugin.json"
+    if not plugin_json.exists():
+        print_error("plugin_json_missing", f"{plugin_json} 不存在")
+        return 1
+    try:
+        version = json.loads(plugin_json.read_text(encoding="utf-8")).get("version", "").strip()
+    except Exception as exc:
+        print_error("plugin_json_parse", f"parse {plugin_json}: {exc}")
+        return 1
+    if not version:
+        print_error("plugin_version_missing", f"{plugin_json} 缺 version 字段")
+        return 1
+
+    cache_root = _resolve_plugin_cache_dir(plugin_root, getattr(args, "cache_dir", None))
+    if cache_root is None:
+        print_error(
+            "cache_not_found",
+            f"未找到 plugin cache 目录 (version={version})",
+            suggestion="使用 --cache-dir 手动指定；或跑 `/plugin install webnovel-writer@webnovel-writer-marketplace` 初始化"
+        )
+        return 1
+
+    drift = _compute_cache_drift(plugin_root, cache_root)
+
+    # --check-only: 只报告，不写入
+    if getattr(args, "check_only", False):
+        has_drift = bool(drift["fork_only"] or drift["different"])
+        result = {
+            "fork": str(plugin_root),
+            "cache": str(cache_root),
+            "version": version,
+            "drift_detected": has_drift,
+            "fork_only_count": len(drift["fork_only"]),
+            "different_count": len(drift["different"]),
+            "cache_only_count": len(drift["cache_only"]),
+            "identical_count": drift["identical_count"],
+            "fork_only_sample": drift["fork_only"][:10],
+            "different_sample": drift["different"][:10],
+        }
+        if has_drift:
+            msg = (
+                f"检测到 cache 漂移 v{version}: "
+                f"fork 缺 cache {len(drift['fork_only'])} 个, "
+                f"内容不同 {len(drift['different'])} 个 "
+                f"→ 跑 `webnovel.py sync-cache` 修复"
+            )
+            print_error("cache_drift_detected", msg, suggestion="webnovel.py sync-cache")
+            return 2
+        else:
+            print_success(result, message=f"cache 对齐 v{version}, 无漂移 ({drift['identical_count']} 文件一致)")
+            return 0
+
+    # 实际同步（非 check-only）
+    added: list[str] = []
+    updated: list[str] = []
+    unchanged: list[str] = []
+    removed_pyc: list[str] = []
+
+    for rel_path, src in _walk_plugin_files(plugin_root):
+        dst = cache_root / rel_path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if not dst.exists():
+            if not args.dry_run:
+                shutil.copy2(src, dst)
+            added.append(str(rel_path))
+        else:
+            if src.read_bytes() != dst.read_bytes():
+                if not args.dry_run:
+                    shutil.copy2(src, dst)
+                updated.append(str(rel_path))
+            else:
+                unchanged.append(str(rel_path))
+
+    # 清理 cache 里的 .pyc（避免 stale bytecode shadow 新 .py）
+    if not args.dry_run:
+        for pyc in cache_root.rglob("*.pyc"):
+            try:
+                pyc.unlink()
+                removed_pyc.append(str(pyc.relative_to(cache_root)))
+            except Exception:
+                pass
+
+    result = {
+        "fork": str(plugin_root),
+        "cache": str(cache_root),
+        "version": version,
+        "added": added[:20],
+        "updated": updated[:20],
+        "added_count": len(added),
+        "updated_count": len(updated),
+        "unchanged_count": len(unchanged),
+        "removed_pyc_count": len(removed_pyc),
+        "dry_run": bool(args.dry_run),
+    }
+    msg = (
+        f"cache 同步 v{version}: +{len(added)} 新增, ~{len(updated)} 更新, "
+        f"={len(unchanged)} 未变, -{len(removed_pyc)} .pyc 清理"
+        + (" (dry-run)" if args.dry_run else "")
+    )
+    print_success(result, message=msg)
+    return 0
+
+
 def cmd_use(args: argparse.Namespace) -> int:
     project_root = normalize_windows_path(args.project_root).expanduser()
     try:
@@ -332,6 +609,12 @@ def main() -> None:
     p_sync_agents = sub.add_parser("sync-agents", help="将 plugin agents/ 同步到工作区 .claude/agents/（修复 Task subagent fallback）")
     p_sync_agents.add_argument("--dry-run", action="store_true", help="仅打印待同步清单，不写入")
     p_sync_agents.set_defaults(func=cmd_sync_agents)
+
+    p_sync_cache = sub.add_parser("sync-cache", help="将 fork 源码同步到 plugin cache（修复 fork↔cache 漂移，每次 git pull 后必跑）")
+    p_sync_cache.add_argument("--dry-run", action="store_true", help="打印待同步清单，不写入")
+    p_sync_cache.add_argument("--check-only", action="store_true", help="只检测漂移不同步（退出码 2=有漂移，供 CI/preflight 使用）")
+    p_sync_cache.add_argument("--cache-dir", help="手动指定 cache 目录（调试用）")
+    p_sync_cache.set_defaults(func=cmd_sync_cache)
 
     p_use = sub.add_parser("use", help="绑定当前工作区使用的书项目（写入指针/registry）")
     p_use.add_argument("project_root", help="书项目根目录（必须包含 .webnovel/state.json）")
