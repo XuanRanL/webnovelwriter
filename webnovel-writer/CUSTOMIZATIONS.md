@@ -7,6 +7,56 @@
 
 ---
 
+## [2026-04-16] Round 3 · webnovel-init 防伪神经科学污染 + .gitignore 强化
+
+**发现**：上轮深度审计发现 3 处真实遗漏：
+
+1. **webnovel-init 层未加防御** — 虽然 write 层加了 naturalness-veto，但新项目 init 时 AI 可能**再次自编伪神经科学**（《末世重生》项目开篇策略.md L193 "4 字激活杏仁核 0.3 秒"就是 init 时 AI 编的，不是 plugin 钦定）。根因不在 plugin 模板，而在 init 流程没有"反伪科学"硬约束提示 AI。
+
+2. **项目 `.gitignore` 漏洞** — `.webnovel/tmp/` / `.webnovel/backups/` / `.webnovel/state.json.before_*_backfill` / `.webnovel/observability/*.jsonl` 全部被 git track · 每章写完 git 膨胀 + 评审敏感数据泄漏风险。
+
+3. **hygiene_check 文案不一致** — "1/3" "2/3" "3/4" "4/4" 混乱 · 显示错乱伤用户信任。
+
+### 修复
+
+| 模块 | 文件 | 修改 |
+|---|---|---|
+| webnovel-init | `skills/webnovel-init/SKILL.md` Step 5.5B | 新增"硬约束（2026-04-16）"段 · 禁伪神经科学话术 · 禁机械字数阈值 · 必须爆款对比法 · 首句必须过双硬闸门 |
+| webnovel-init | `skills/webnovel-init/SKILL.md` 开篇策略文件生成段 | 加"生成内容硬约束" + 明确告知 AI 写作阶段首句会被 `post_draft_check` + `reader-naturalness-checker` 双闸门验证 + 模板规范含爆款对比示例 |
+| （项目侧）| `.gitignore` | 加 `.webnovel/tmp/` / `.webnovel/backups/` / `.webnovel/*.before_*_backfill` / `.webnovel/observability/*.jsonl` |
+| （项目侧）| `.webnovel/hygiene_check.py` | 扩展文案统一为 1/4 2/4 3/4 4/4 |
+
+### 防御覆盖
+
+- 新项目 init 时 AI 生成开篇策略 → 被 5.5B 硬约束阻止伪科学
+- 即使 AI 越线生成伪科学 → 起草时 `post_draft_check` 汉语语法红线硬拦
+- 即使硬拦失效 → Step 3 Batch 0 `reader-naturalness-checker` 独立审查兜底
+- **三层防御**：init 规范 → 起草闸门 → 审查 veto
+
+---
+
+## [2026-04-16] Round 2 · 补齐上轮遗漏 · step-3-review-gate Batch 0
+
+上轮 `d23ef81` 用户要求根治"陆沉在死"审查失灵，但**发现上轮有 4 处遗漏**：
+
+1. `step-3-review-gate.md` 没有真的加 Batch 0（Edit 路径问题 · 文件未真实修改）
+2. `SKILL.md` artifact 白名单未列 `naturalness_verdict`
+3. `hygiene_check.py` 不跑 naturalness 记录核对
+4. Ch1 v2 的 `chapter_meta.0001` 缺 naturalness 字段
+
+### 修复
+
+| 模块 | 文件 | 修改 |
+|---|---|---|
+| step-3-review-gate | `references/step-3-review-gate.md` | 完整替换"审查路由模式"段 · 12 审查器 0+6+5 三段 · Task 调用模板加 veto 分支 · Step 3 artifacts 必填 naturalness_verdict |
+| SKILL artifact | `SKILL.md` 白名单表 | 加 `naturalness_verdict`（2026-04-16 新增） |
+| hygiene_check | 项目本地 `.webnovel/hygiene_check.py` | 挂载第 4 个扩展 `naturalness_log_check` · 核对 chapter_meta.{NNNN}.naturalness_verdict · 2026-04-16 前豁免，之后必填 |
+| 历史补录 | 项目 `.webnovel/state.json` chapter_meta.0001 | 用 `data-agent` 合规 CLI 补 naturalness_verdict=PASS/score=88 · 禁 Python 手改 |
+
+Commit: `7556acf` (fork) · `d2cc4cd` (project)
+
+---
+
 ## [2026-04-16] 反规则污染 · naturalness-veto 硬闸门 · Ch1 v1 "陆沉在死"根治
 
 **问题根因**（基于《末世重生》Ch1 v1 走完整流程后用户一眼看出"很奇怪"的系统性失败）：
