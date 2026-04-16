@@ -51,6 +51,24 @@ DEFAULT_FORBIDDEN_TERMS: dict[int, dict[str, str]] = {}
 DEFAULT_BREAK_BUDGET: dict[int, dict[str, int]] = {}
 DEFAULT_REQUIRED_SEEDS: dict[int, list[tuple[str, str]]] = {}
 
+# ---------------------------------------------------------------------------
+# 汉语首句语法红线（2026-04-16 新增 · 全项目通用硬约束）
+# ---------------------------------------------------------------------------
+# 引入背景：Ch1 v1 "陆沉在死。" 语病首句被 19 个审查器+7 层审计全部放行
+# 用户一眼看出"很奇怪"。根因是规则同源污染（所有审查器读同一套设定集，
+# 其中开篇策略含"4字激活杏仁核"伪神经科学规则）。
+#
+# 本红线独立于任何设定集/开篇策略，纯中文母语语法检查。
+CHINESE_OPENING_REJECT_PATTERNS: list[tuple[str, str]] = [
+    # "X + 在 + 瞬时动词/抽象动词"：违反现代汉语体貌
+    # 中文的"在"只能接持续性动作（"在看书" "在走路"），不接瞬时动词
+    (
+        r"^[\u4e00-\u9fff]{1,5}在(死|亡|倒|碎|断|崩|醒|觉醒|死去|倒下)[。.]?\s*$",
+        "首句语病：'X 在 + 瞬时动词' 违反汉语体貌。'在'只接持续性动作，不接瞬时动词。"
+        "如'陆沉在死'应改为'陆沉快死了'/'陆沉濒死'/'陆沉正在死去'。",
+    ),
+]
+
 
 def load_project_config(project_root: Path) -> dict:
     cfg_path = project_root / ".webnovel" / "post_draft_config.json"
@@ -111,6 +129,19 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
     if not text.strip():
         errors.append("[ERROR] 章节文件为空")
         return errors, warnings
+
+    # 0. 首句汉语自然度（2026-04-16 新增 · Ch1 v1 "陆沉在死"语病根治）
+    first_line = ""
+    for line in text.split("\n"):
+        line = line.strip()
+        if line and not line.startswith("#"):
+            first_line = line
+            break
+    for pattern, reason in CHINESE_OPENING_REJECT_PATTERNS:
+        if re.match(pattern, first_line):
+            errors.append(
+                f"[CHINESE_OPENING_REJECT] 首句 '{first_line[:40]}' — {reason}"
+            )
 
     # 1. ASCII 双引号（硬约束 · 正文禁止）
     n_ascii_d = text.count(chr(34))

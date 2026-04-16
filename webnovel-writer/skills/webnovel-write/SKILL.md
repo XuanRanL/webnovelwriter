@@ -415,18 +415,23 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 
 调用约束：
 - 必须用 `Task` 调用审查 subagent，禁止主流程伪造审查结论。
-- **标准/--fast 模式必须 5+5 分批启动**（详见 `step-3-review-gate.md`），禁止 10 个 checker 同时并发。
+- **标准/--fast 模式必须分批启动**（详见 `step-3-review-gate.md`），禁止 12 个 checker 同时并发。
 - 必须等待全部 checker 返回后才能统一聚合 `issues/severity/overall_score`。
 - **禁止在任何 checker 仍在运行时进入 Step 4**。即使外部审查已完成，内部 checker 未全部返回也不得开始润色。
+- **2026-04-16 新增 Batch 0 · naturalness-veto**：`reader-naturalness-checker` 独立先跑，若 `verdict=REJECT_CRITICAL` 或 `REJECT_HIGH`，**立即 block** 并要求重写，不启动 Batch 1/2 和 Step 3.5（节省算力，避免在劝退文本上继续评分）
 
-审查器（标准模式全部执行，5+5 分批）：
-- Batch 1（核心优先，5个并发）：
+审查器（标准模式全部执行，0+6+6 三段）：
+- **Batch 0（veto 硬闸门，独立先跑 · 2026-04-16 新增）**：
+  - `reader-naturalness-checker`（汉语母语自然度 · 独立于规则污染 · 专补 Ch1 v1 "陆沉在死"语病被 10+9 审查器集体放行的盲区）
+  - 若 verdict=REJECT_*，立即 block 重写，不进入后续 batch
+- Batch 1（核心优先，6 个并发）：
   - `consistency-checker`（设定一致性）
   - `continuity-checker`（连贯性）
   - `ooc-checker`（人物OOC）
   - `reader-pull-checker`（追读力）
   - `high-point-checker`（爽点密度）
-- Batch 2（Batch 1 全部返回后启动，5个并发）：
+  - `flow-checker`（读者视角流畅度 · 失忆裸读协议）
+- Batch 2（Batch 1 全部返回后启动，5 个并发）：
   - `pacing-checker`（节奏平衡）
   - `dialogue-checker`（对话质量）
   - `density-checker`（信息密度）
@@ -434,8 +439,8 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
   - `emotion-checker`（情感表现）
 
 模式说明：
-- 标准/`--fast`：全量 10 个审查器，5+5 分批执行。
-- `--minimal`：固定核心 3 个（consistency/continuity/ooc），单批并发。
+- 标准/`--fast`：全量 12 个审查器（1 veto + 6 + 5），分段执行。
+- `--minimal`：固定核心 4 个（naturalness + consistency + continuity + ooc），单批并发。**naturalness 即使在 minimal 也必跑**（劝退检测是底线）。
 
 审查指标落库（必做）：
 ```bash
@@ -462,6 +467,7 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
 - `--minimal` 也必须产出 `overall_score`。
 - 未落库 `review_metrics` 不得进入 Step 5。
 - `overall_score` 必须按 `step-3-review-gate.md` 的"内外部分数合并规则"计算：`round(internal * 0.6 + external_avg * 0.4)`。若 Step 3.5 全部失败或被模式跳过（`--minimal`），则退化为纯内部分数。
+- **2026-04-16 新增 veto 前置**：`reader-naturalness-checker.verdict` 必须 ∈ {`PASS`, `POLISH_NEEDED`, `REWRITE_RECOMMENDED`} 才允许进入 Step 5；若 verdict ∈ {`REJECT_CRITICAL`, `REJECT_HIGH`}，无论其他分数多高都 block，回到 Step 2A 重写。原因：Ch1 v1 case 中，19 审查器 + 7 层审计给 91 分 approve_with_warnings，但用户一眼看出首句"陆沉在死"语病劝退——说明**没有 naturalness veto 时，规则同源污染会让评分系统集体失灵**。
 
 ### Step 3.5：外部模型审查（与 Step 3 并行或紧接执行）
 

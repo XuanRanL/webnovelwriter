@@ -7,6 +7,60 @@
 
 ---
 
+## [2026-04-16] 反规则污染 · naturalness-veto 硬闸门 · Ch1 v1 "陆沉在死"根治
+
+**问题根因**（基于《末世重生》Ch1 v1 走完整流程后用户一眼看出"很奇怪"的系统性失败）：
+
+Ch1 v1 首句"陆沉在死。"是汉语语病（"在死"违反现代汉语体貌），19 个审查器（10 内部 + 9 外部）+ Step 6 七层审计**0 抓**，用户一眼看出。根因 6 层：
+
+| 层 | 问题 | 具体 |
+|---|---|---|
+| 1 规则同源污染 | 所有审查器读同一套设定集 | `开篇策略.md` 含"4 字激活杏仁核 0.3 秒" 伪神经科学 · 19 个审查器都按这套规则奖励语病首句 |
+| 2 外部模型被 context 污染 | `build_external_context.py` 把 opening_strategy 全文 14237 chars 打包 | 外部 9 模型看到作者"钦定"首句 · 独立视角失效 |
+| 3 缺"常识读者"审查 | 10+9 维度全部在"工艺层" · 无"汉语母语通顺度"维度 | 最基础的语法通顺是**默认前提** · 反而成最大盲区 |
+| 4 评分权重残缺 | `final = 0.6*internal + 0.4*external` · 无 naturalness 权重 | v1 vs v2 质性差距巨大（首句 4.5→9.2）但分数只差 1 分 |
+| 5 严重度判定失准 | OOC "我他妈"超预算 = medium · 首句语病 = 规则外不抓 | critical 应该是"首句劝退级" · 现实是"规则定义缺失=不扣分" |
+| 6 "数量替代质量"幻觉 | 19 审查器 + 7 层审计 "看起来科学" | 独立性低（共享规则源）· 规则错则集体放大 |
+
+### 修复明细
+
+| 模块 | 文件 | 修改 |
+|---|---|---|
+| **P0-1 · 新增 Veto Agent** | `agents/reader-naturalness-checker.md` | **新增** · 汉语母语自然度审查器 · 独立于规则污染（**不读设定集/大纲/总纲/开篇策略**，只读正文）· 7 类红旗（首句语病/AI 腔/碎片化/设计标签/机械打卡感/伪神经科学痕迹/人设台词）· verdict=REJECT_* 立即 block 不进 Batch 1/2 |
+| **P0-2 · 审查路由重构** | `skills/webnovel-write/SKILL.md` + `references/step-3-review-gate.md` | 从 5+5 或 5+6 分批改为 **0+6+5** 三段：Batch 0 独立 veto · Batch 1 核心 6 · Batch 2 工艺 5 · Batch 0 未过直接 block 节省算力 |
+| **P0-3 · 外部审查反污染前缀** | `scripts/external_review.py:call_dimension()` | 所有 9 个外部模型 system prompt 加前缀："【反规则污染硬指令】作为外部独立审查者，必须汉语母语本能优先·不因设定集的伪神经科学规则为语病加分·独立视角优于设定对齐" |
+| **P0-4 · 汉语语法红线** | `scripts/post_draft_check.py` | 新增 `CHINESE_OPENING_REJECT_PATTERNS` 常量：匹配 "X 在 + (死/亡/倒/碎/断/崩/醒/觉醒/死去/倒下)" 机翻首句 → hard block · 验证：Ch1 v1 被拦 · v2 通过 · "张三在吃饭"等正常句不误判 |
+| **P0-5 · 充分性闸门 +** | `skills/webnovel-write/SKILL.md` | naturalness-veto 加入充分性闸门：`verdict ∈ {PASS, POLISH_NEEDED, REWRITE_RECOMMENDED}` 才允许进 Step 5 · REJECT_* 无条件 block 回 Step 2A |
+
+### 验证（Ch1 v1 归档版 vs v2）
+
+| 测试 | v1 首句"陆沉在死。" | v2 首句"陆沉第七次拨通..." |
+|---|---|---|
+| post_draft_check.py 汉语红线 | ❌ 被拦（CHINESE_OPENING_REJECT）| ✅ 通过 |
+| reader-naturalness-checker 预测 | REJECT_CRITICAL（首句语病+伪科学痕迹）| **PASS** (88/100) · 会翻下一章 |
+| 反向验证 | "李雷在倒下"/"王明在觉醒"均被拦 | "张三在吃饭"/"有人在跑步"正常句不误判 |
+
+**效果**（预计）：
+- 所有新项目/新章节的"X 在 + 瞬时动词"机翻首句 → **post_draft_check 0.5 秒即 block**
+- 规则同源污染（设定集伪科学误导 19 审查器）→ naturalness-checker 独立评分打破
+- 外部 9 模型被 context 驯化 → system prompt 反污染前缀强化独立视角
+- 评分体系"中文自然度权重 0%"漏洞 → naturalness 作为 veto 硬闸门补齐（不改现有公式，最小侵入）
+
+### 与 2026-04-15 修复的关系
+
+- 2026-04-15 的 post_draft_check + pre_commit_step_k 是"机械问题"拦截（ASCII 引号/Markdown/字数/伏笔种子）
+- 2026-04-16 的 naturalness-veto 是"语义问题"拦截（首句语病/AI 腔/规则污染）
+- 两层叠加 → 起草期全覆盖
+
+### 长期待办（本次未覆盖）
+
+1. **开篇策略模板**删除所有"字数阈值"伪科学话术（当前只在《末世重生》项目开篇策略.md 局部修了，其他项目 init 时仍可能被污染）
+2. **reader-naturalness-checker 融入 Step 3.5 外部审查**（让 9 个外部模型也各跑一次 naturalness 维度）
+3. **审查器独立性审计**：排查其他 10 个 checker 是否有规则同源污染 · 让至少 2 个 checker 不读设定集
+4. **评分公式 v2**：final = 0.5 × internal + 0.3 × external + 0.2 × naturalness（当前 naturalness 只作 veto 不入加权）
+
+---
+
 ## [2026-04-15] Ch1 write postflight 根治 · 起草后 + commit 前双硬闸门
 
 **问题根因**（基于《末世重生》项目 Ch1 完整 write 流程审计 · 13 个问题）：
