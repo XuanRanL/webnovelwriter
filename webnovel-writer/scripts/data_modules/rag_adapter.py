@@ -1407,6 +1407,11 @@ def main():
     index_parser.add_argument("--chapter", type=int, required=True)
     index_parser.add_argument("--scenes", required=True, help="JSON 格式的场景列表")
     index_parser.add_argument("--summary", required=False, help="章节摘要文本")
+    index_parser.add_argument(
+        "--chapter-file",
+        required=False,
+        help="章节正文路径（可选，覆盖默认 glob 查找）。支持标题命名不规则的章节。",
+    )
 
     # 搜索
     search_parser = subparsers.add_parser("search")
@@ -1511,6 +1516,19 @@ def main():
             if chapter_file_cache is not None:
                 return chapter_file_cache
             chapter_file_cache = []
+            # Priority 1: explicit --chapter-file override (robust to non-standard filenames)
+            explicit_path = getattr(args, "chapter_file", None)
+            if explicit_path:
+                from pathlib import Path as _Path
+                p = _Path(explicit_path)
+                if not p.is_absolute() and config is not None:
+                    p = config.project_root / explicit_path
+                if p.exists():
+                    try:
+                        chapter_file_cache = p.read_text(encoding="utf-8").splitlines()
+                        return chapter_file_cache
+                    except Exception:
+                        pass
             if config is None:
                 return chapter_file_cache
             正文_dir = config.project_root / "正文"

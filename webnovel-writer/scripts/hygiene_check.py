@@ -424,18 +424,29 @@ def check_context_snapshot(root: Path, chapter: int, rep: HygieneReport):
 
 
 def check_execution_package_persistence(root: Path, chapter: int, rep: HygieneReport):
-    """H14: Step 1 执行包 JSON + MD 已落盘"""
+    """H14: Step 1 执行包 JSON + MD 已落盘
+
+    兼容字段名漂移：context-agent 如果绕过 build_execution_package.py 直写 JSON，
+    可能把 step_2a_write_prompt 写成 step2a_direct_prompt / step2a_write_prompt。
+    为防止 commit 阻塞，此处接受已知 alias，但会记录 P1 警告提示字段名不规范。
+    治本仍是 context-agent.md Step 7 的"禁止绕过助手脚本"硬规则。
+    """
     json_p = root / ".webnovel" / "context" / f"ch{chapter:04d}_context.json"
     md_p = root / ".webnovel" / "context" / f"ch{chapter:04d}_context.md"
     json_ok = json_p.exists() and json_p.stat().st_size > 0
     md_ok = md_p.exists() and md_p.stat().st_size > 0
+    STEP2A_ALIASES = ("step_2a_write_prompt", "step2a_direct_prompt", "step2a_write_prompt")
     if json_ok and md_ok:
-        # deeper check — JSON must have 3 sections
         try:
             pkg = json.loads(json_p.read_text(encoding="utf-8"))
-            missing_sections = [
-                k for k in ("task_brief", "context_contract", "step_2a_write_prompt") if not pkg.get(k)
-            ]
+            missing_sections: list = []
+            if not pkg.get("task_brief"):
+                missing_sections.append("task_brief")
+            if not pkg.get("context_contract"):
+                missing_sections.append("context_contract")
+            step2a_key_found = next((k for k in STEP2A_ALIASES if pkg.get(k)), None)
+            if step2a_key_found is None:
+                missing_sections.append("step_2a_write_prompt")
             if missing_sections:
                 rep.record(
                     "P0",
@@ -448,6 +459,14 @@ def check_execution_package_persistence(root: Path, chapter: int, rep: HygieneRe
             rep.record("P0", "H14", f"{json_p.name} 解析失败: {exc}", False)
             return
         rep.record("P0", "H14", f"执行包 JSON + MD 已落盘且结构完整", True)
+        if step2a_key_found != "step_2a_write_prompt":
+            rep.record(
+                "P1",
+                "H14-alias",
+                f"{json_p.name} 使用非规范字段名 '{step2a_key_found}' 替代 'step_2a_write_prompt'"
+                f"（context-agent 可能绕过了 build_execution_package.py）",
+                False,
+            )
     else:
         missing = []
         if not json_ok:

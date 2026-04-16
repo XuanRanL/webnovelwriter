@@ -47,6 +47,7 @@ model: inherit
 - Protagonist's current realm/level matches state.json
 - Abilities used are within realm limitations
 - Power-ups follow established progression rules
+- **[2026-04-11 新增] 能力的使用步骤必须与设定集规定的机制链条一致**
 
 **危险信号** (POWER_CONFLICT):
 ```
@@ -57,11 +58,26 @@ model: inherit
 ❌ 上章境界淬体9层，本章突然变成凝气5层（无突破描写）
    → Previous: 淬体9 | Current: 凝气5 | Missing: Breakthrough scene
    → VIOLATION: Unexplained power jump
+
+❌ 【机制步骤冲突】设定："字必须先誊到账册→账册吸收→转化为签"
+   → 正文："主角从抽屉取黄纸直接誊字→签成"（完全跳过账册）
+   → VIOLATION: Mechanism step bypass (新类型)
+   → 检查依据：设定集/金手指设计.md、设定集/力量体系.md、执行包 immutable_facts 里的 mechanism_step facts
 ```
 
 **校验依据**:
 - state.json: `protagonist_state.power.realm`, `protagonist_state.power.layer`
-- 设定集/修炼体系.md: Realm ability restrictions
+- 设定集/修炼体系.md 或 设定集/力量体系.md: Realm ability restrictions
+- **[必读] 设定集/力量体系.md**：提取"操作链条/使用步骤/阶段能力"等段落
+- **[必读] 设定集/金手指设计.md**：提取金手指的完整操作流程
+- **[必读] .webnovel/context/ch{NNNN}_context.json** 里 `step_2a_write_prompt.immutable_facts` 中所有 `type: "mechanism_step"` 条目
+
+**机制步骤对照检查算法**（新增）：
+1. 列出本章涉及的所有能力使用场景（主角 + 配角都要）
+2. 对每一次能力使用，从设定集对应文件中查找该能力的"必经步骤序列"
+3. 在正文中按顺序搜索步骤关键词，任一必经步骤缺失即报 `MECHANISM_STEP_VIOLATION`，severity=high
+4. 如果执行包的 immutable_facts 含 mechanism_step fact，那是强约束：正文必须全部按序呈现该 fact 的 `required_sequence`；缺任一步或出现 `forbidden_shortcut` 即违规
+5. 若 immutable_facts 里 `mechanism_facts_count==0` 但本章涉及能力使用 → 输出 warn「上游 context-agent 可能漏注入 mechanism_facts，请核对设定」
 
 #### 第二层: 地点/角色一致性（地点/角色检查）
 

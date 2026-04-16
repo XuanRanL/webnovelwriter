@@ -7,6 +7,47 @@
 
 ---
 
+## [2026-04-16] Round 5 · fork↔cache 漂移根治 + plan_consistency_check 通用化
+
+**发现**：Round 4 深度审计扫 fork vs cache 全量 diff，发现 4 处真实漂移：
+
+1. **Ch3 时代 cache 手改从未 upstream**：
+   - `agents/consistency-checker.md` 缺"2026-04-11 机制步骤冲突"检查（机制步骤绕过即 `MECHANISM_STEP_VIOLATION`）
+   - `scripts/data_modules/index_manager.py` 缺 `upsert-scenes` CLI + `upsert-relationship` / `record-state-change` 别名兼容
+2. **cache 比 fork 多的"隐藏改进"**：
+   - `scripts/hygiene_check.py` H14 缺 step_2a 字段名别名兼容（`step2a_direct_prompt` / `step2a_write_prompt` → P1 警告不 block）
+   - `scripts/data_modules/rag_adapter.py` index-chapter 缺 `--chapter-file` 显式覆盖参数（题命名不规范章节需要）
+3. **项目本地 `plan_consistency_check.py` 硬编码**：13 条 drift 规则全写死在代码里，其他小说项目无法复用
+4. **init 流程未提 plan_consistency_check**：新项目 init 完成后不会自动创建 config，中长篇用户会再次踩坑
+
+### 修复
+
+| 模块 | 文件 | 修改 |
+|---|---|---|
+| Ch3 补 upstream | `agents/consistency-checker.md` | cache → fork 完整覆盖 · 加 MECHANISM_STEP_VIOLATION + 机制步骤对照检查算法 + immutable_facts mechanism_step 支持 |
+| Ch3 补 upstream | `scripts/data_modules/index_manager.py` | cache → fork · 加 `upsert-scenes` CLI + from/to 别名 + old/new 别名 |
+| 隐藏改进合并 | `scripts/hygiene_check.py` H14 | 加 `STEP2A_ALIASES` tuple + 别名检测 + 使用非规范字段名时 P1 警告（仍通过，但提示 context-agent 绕过了 build_execution_package.py） |
+| 隐藏改进合并 | `scripts/data_modules/rag_adapter.py` `index-chapter` | 加 `--chapter-file` 参数 + `_load_chapter_lines()` 优先使用显式路径 |
+| **通用化 · 新增** | `scripts/plan_consistency_check.py` | 框架版（config 驱动）· 支持 drift/gender/density 三类检查 · config 位置 `.webnovel/plan_consistency_config.json` · 无 config 退出 0 |
+| webnovel-init | `skills/webnovel-init/SKILL.md` L866 后 | 说明规划层一致性配置推荐（中长篇必配）· 指向 plan_consistency_config.json |
+| 项目侧 · 配置 | `.webnovel/plan_consistency_config.json` | 末世重生项目的规则集 · 13 条 drift + B1 gender + 密度 tracks |
+| 项目侧 · shim | `.webnovel/hygiene_check.py` | plan_consistency 检查增加 framework fallback 路径（cache + marketplaces 双兜底）|
+
+### 验证
+
+- 框架版 vs 项目本地版跑出相同结果：`⚠️ 反派阴影 5 章滑窗为 0 的窗口 1 个：ch32-36` · exit 0
+- 项目本地脚本删除后 shim 自动 fallback 到框架版 · 行为一致
+- 两个 cache→fork 完整覆盖 diff=0 验证无丢数据
+
+### 防御覆盖
+
+- 新项目 init 时自动提示配 plan_consistency_config.json（避免 v2 大纲修订漂移进 commit）
+- 所有小说项目共享 framework 引擎 · 只需维护各自 config.json
+- 机制步骤 bypass 检查自动惠及所有项目（Ch3 教训不再重演）
+- 非规范字段名不阻塞 commit（兼容性提升）但记录 P1 警告（长期仍向规范收敛）
+
+---
+
 ## [2026-04-16] Round 3 · webnovel-init 防伪神经科学污染 + .gitignore 强化
 
 **发现**：上轮深度审计发现 3 处真实遗漏：
