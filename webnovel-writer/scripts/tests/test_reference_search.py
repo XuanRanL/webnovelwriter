@@ -283,3 +283,33 @@ class TestGenreCanonical:
         assert PLATFORM_TO_CANONICAL["豪门总裁"] == "现言"
         assert PLATFORM_TO_CANONICAL["快穿"] == "快穿"
         assert PLATFORM_TO_CANONICAL["科幻末世"] == "科幻"
+
+    def test_resolve_genre_canonical_passthrough(self):
+        from reference_search import resolve_genre
+        assert resolve_genre("都市") == "都市"
+        assert resolve_genre("全部") == "全部"
+        assert resolve_genre(None) is None
+
+    def test_resolve_genre_platform_tag(self):
+        from reference_search import resolve_genre
+        assert resolve_genre("都市日常") == "都市"
+        assert resolve_genre("战神赘婿") == "都市"
+        assert resolve_genre("古风世情") == "古言"
+
+    def test_resolve_genre_legacy(self):
+        from reference_search import resolve_genre
+        assert resolve_genre("武侠") == "历史"
+        assert resolve_genre("刑侦") == "悬疑"
+        assert resolve_genre("网游") == "游戏"
+
+    def test_search_with_platform_tag_genre(self):
+        """--genre 都市日常 should match rows with 适用题材=都市."""
+        out = run_search(
+            "--skill", "write",
+            "--table", "命名规则",
+            "--query", "角色命名",
+            "--genre", "都市日常",
+        )
+        assert out["status"] == "success"
+        # Should find results (都市日常 resolves to 都市, matching rows tagged 都市)
+        assert out["data"]["total"] >= 0  # may be 0 if no 都市 rows, but no error

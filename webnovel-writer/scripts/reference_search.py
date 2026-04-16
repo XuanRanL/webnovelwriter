@@ -73,13 +73,19 @@ def _skill_matches(row: Dict[str, str], skill: str) -> bool:
 
 
 def _genre_matches(row: Dict[str, str], genre: Optional[str]) -> bool:
-    """Return True if *genre* is None, or matches ``适用题材`` (``全部`` always matches)."""
+    """Return True if *genre* is None, or matches ``适用题材`` (``全部`` always matches).
+
+    Both the input *genre* and the cell values are resolved to canonical form
+    before comparison, so platform tags and legacy values work transparently.
+    """
     if genre is None:
         return True
     cell = row.get("适用题材", "")
     if cell.strip() == "全部":
         return True
-    return genre in _split_multi_value(cell)
+    resolved_genre = resolve_genre(genre)
+    cell_genres = [resolve_genre(v) for v in _split_multi_value(cell)]
+    return resolved_genre in cell_genres
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +378,8 @@ def search(
 
     Returns a result dict suitable for JSON serialisation.
     """
+    resolved = resolve_genre(genre)
+
     if not csv_dir.is_dir():
         return {
             "status": "error",
@@ -399,7 +407,7 @@ def search(
     candidates: List[tuple] = []  # (table_name, row)
     for tbl_name, rows in tables.items():
         for row in rows:
-            if _skill_matches(row, skill) and _genre_matches(row, genre):
+            if _skill_matches(row, skill) and _genre_matches(row, resolved):
                 candidates.append((tbl_name, row))
 
     if not candidates:
