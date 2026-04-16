@@ -522,7 +522,7 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
   "start_chapter": 100,
   "end_chapter": 100,
   "overall_score": 85.0,
-  "dimension_scores": {"爽点密度": 85, "设定一致性": 80, "节奏控制": 78, "人物塑造": 82, "连贯性": 90, "追读力": 87, "对话质量": 83, "信息密度": 88, "文笔质感": 82, "情感表现": 80, "读者流畅度": 84},
+  "dimension_scores": {"consistency-checker": 80, "continuity-checker": 90, "ooc-checker": 82, "reader-pull-checker": 87, "high-point-checker": 85, "pacing-checker": 78, "dialogue-checker": 83, "density-checker": 88, "prose-quality-checker": 82, "emotion-checker": 80, "flow-checker": 84},
   "severity_counts": {"critical": 0, "high": 1, "medium": 2, "low": 0},
   "critical_issues": ["问题描述"],
   "report_file": "审查报告/第0100章审查报告.md",
@@ -712,8 +712,12 @@ Step 5 失败隔离规则：
 import json, re
 with open('.webnovel/state.json','r',encoding='utf-8') as f: s=json.load(f)
 meta = s['chapter_meta'][f'{chapter:04d}']
-# 1. checker_scores 非空
+# 1. checker_scores 非空 + 11 个 canonical key（禁中文 key/禁 Anti-AI）
 assert meta.get('checker_scores') and len(meta['checker_scores']) >= 3, 'FAIL: checker_scores empty'
+_canonical_set = {"consistency-checker","continuity-checker","ooc-checker","reader-pull-checker","high-point-checker","pacing-checker","dialogue-checker","density-checker","prose-quality-checker","emotion-checker","flow-checker","overall"}
+_banned = {"Anti-AI","anti-ai","naturalness","naturalness_veto"}
+_bad_keys = [k for k in meta['checker_scores'].keys() if k in _banned or (k not in _canonical_set and not any(k in al for al in [["设定一致性","一致性检查","伏笔埋设","伏笔检查"],["连贯性","连续性检查"],["人物塑造","人物OOC","OOC检查","人物"],["追读力","追读检查","钩子强度","钩子检查"],["爽点密度","爽点检查"],["节奏控制","节奏检查","节奏"],["对话质量","对话检查","对话"],["信息密度","密度检查"],["文笔质感","文笔检查","Prose质量","Prose","文笔"],["情感表现","情感检查","情绪曲线","情感"],["读者流畅度","读者视角流畅度","流畅度检查"]]))]
+assert not _bad_keys, f'FAIL: checker_scores 含非 canonical/banned key: {_bad_keys}（需用 11 个英文 checker 名）'
 # 2. word_count 准确（用标准方法重算对比，误差<=2%）
 with open(chapter_file,'r',encoding='utf-8') as f: text=f.read()
 actual = len(re.findall(r'[\u4e00-\u9fff]', text))

@@ -690,6 +690,90 @@ def cmd_sync_cache(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_normalize_checker_scores(args: argparse.Namespace) -> int:
+    """Normalize chapter_meta.checker_scores keys to canonical English checker names.
+
+    Ch1 血教训：AI 照 data-agent.md 历史示例写中文 key (`设定一致性/钩子强度/Anti-AI`)，
+    与 chapter_audit.py 的 canonical 英文 key 不匹配，导致 silent fallback。
+    本命令一次性修复 legacy 数据 + 可重复 idempotent 使用。
+
+    参数：
+      --chapter N   指定章号（省略 = 全章扫描）
+      --dry-run     只打印 diff，不写盘
+      --drop-banned 将 Anti-AI 等 banned key 丢弃（默认保留在 report 里警告）
+    """
+    project_root = normalize_windows_path(args.project_root).expanduser()
+    try:
+        project_root = project_root.resolve()
+    except Exception:
+        pass
+
+    from .cli_output import print_error
+    state_path = project_root / ".webnovel" / "state.json"
+    if not state_path.exists():
+        print_error("state_missing", f"{state_path} 不存在")
+        return 2
+    try:
+        from .chapter_audit import normalize_checker_scores_keys
+    except ImportError:
+        mod = importlib.import_module("data_modules.chapter_audit")
+        normalize_checker_scores_keys = mod.normalize_checker_scores_keys
+
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    chapter_meta = state.get("chapter_meta") or {}
+
+    target_keys = []
+    if args.chapter is not None:
+        target_keys = [f"{int(args.chapter):04d}"]
+    else:
+        target_keys = list(chapter_meta.keys())
+
+    changes = []
+    for ch_key in target_keys:
+        meta = chapter_meta.get(ch_key) or {}
+        raw = meta.get("checker_scores")
+        if not isinstance(raw, dict):
+            continue
+        normalized, renamed, invalid = normalize_checker_scores_keys(raw)
+        if not renamed and not invalid:
+            continue
+        changes.append({
+            "chapter": ch_key,
+            "renamed": renamed,
+            "invalid": invalid,
+            "before": raw,
+            "after": normalized,
+        })
+        if not args.dry_run:
+            meta["checker_scores"] = normalized
+            chapter_meta[ch_key] = meta
+
+    if not changes:
+        print(json.dumps({
+            "status": "clean",
+            "message": "所有 checker_scores key 已经是 canonical，无需修复",
+            "scanned_chapters": len(target_keys),
+        }, ensure_ascii=False))
+        return 0
+
+    backup_path = None
+    if not args.dry_run:
+        state["chapter_meta"] = chapter_meta
+        backup_path = state_path.with_suffix(".json.before_normalize_checker_scores")
+        backup_path.write_text(state_path.read_text(encoding="utf-8"), encoding="utf-8")
+        state_path.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    print(json.dumps({
+        "status": "normalized" if not args.dry_run else "dry-run",
+        "changes": changes,
+        "scanned_chapters": len(target_keys),
+        "backup": str(backup_path) if backup_path else None,
+    }, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_use(args: argparse.Namespace) -> int:
     project_root = normalize_windows_path(args.project_root).expanduser()
     try:
@@ -744,6 +828,15 @@ def main() -> None:
     p_sync_cache.add_argument("--check-only", action="store_true", help="只检测漂移不同步（退出码 2=有漂移，供 CI/preflight 使用）")
     p_sync_cache.add_argument("--cache-dir", help="手动指定 cache 目录（调试用）")
     p_sync_cache.set_defaults(func=cmd_sync_cache)
+
+    p_normalize_cs = sub.add_parser(
+        "normalize-checker-scores",
+        help="规范化 chapter_meta.checker_scores key 到 canonical 英文名（修 AI 写中文 key 的历史数据）",
+    )
+    p_normalize_cs.add_argument("--chapter", type=int, default=None, help="指定章号（省略=全章扫描）")
+    p_normalize_cs.add_argument("--dry-run", action="store_true", help="只打印 diff，不写盘")
+    p_normalize_cs.add_argument("--drop-banned", action="store_true", help="丢弃 banned key（如 Anti-AI）")
+    p_normalize_cs.set_defaults(func=cmd_normalize_checker_scores)
 
     p_use = sub.add_parser("use", help="绑定当前工作区使用的书项目（写入指针/registry）")
     p_use.add_argument("project_root", help="书项目根目录（必须包含 .webnovel/state.json）")

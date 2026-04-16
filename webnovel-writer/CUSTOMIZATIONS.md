@@ -7,6 +7,113 @@
 
 ---
 
+## [2026-04-16 · Round 9] Ch1 末世重生 RCA · checker_scores canonical key 根治
+
+**触发**：用户要求"再次仔细检查 Step 0-7 是否完美运行"。深度审查末世重生 Ch1 (task_001/002) 的 state.json，发现 `chapter_meta.0001.checker_scores` 是 10 个中文混 legacy key：`{设定一致性, 连贯性, 节奏, 对话, 爽点密度, 钩子强度, 情绪曲线, 伏笔埋设, Prose质量, Anti-AI}` —— 与 `chapter_audit.CHECKER_NAMES` 的 11 个英文 canonical 完全不匹配。audit silent fallback 到报告文本匹配，用户永远不知道 state 数据烂了。
+
+### RC · `data-agent.md` 历史示例教 AI 写中文 key vs `chapter_audit` 只认英文
+
+**症状**：
+- Ch1 state.json `checker_scores` 含 `"Anti-AI": 91`（naturalness veto，不该是 checker）+ `"钩子强度"/"伏笔埋设"`（子概念，不是独立 checker）+ 5 个中文简写（"节奏"/"对话"/"情绪曲线"/"Prose质量"）
+- chapter_audit.py:437 `checker_scores.get("consistency-checker")` 永远拿不到中文 key 的值
+- 回退到报告文本 `_checker_found()` grep，audit 看起来通过，state.json 实际上是坏的
+- hygiene_check H2 只验"字段存在"，H9 只验"overall 对齐"，都不验 key canonical
+
+**根因**：`agents/data-agent.md:557,623` 官方示例写成：
+```json
+"checker_scores": {"设定一致性": 100, "连贯性": 97}
+```
+AI 照文档写中文 key，但代码侧 `CHECKER_NAMES` 是 11 个英文（`consistency-checker` 等）。**文档/代码 schema 割裂**，永无匹配。
+
+### 根治（6 层防御）
+
+**Layer 1 · 源头防污染**：`agents/data-agent.md`
+- 示例 key 全改 canonical 英文：`{"consistency-checker": 92, "continuity-checker": 91, ..., "flow-checker": 88, "overall": 91}`
+- 新增"checker_scores key 硬约束"段，列 11 canonical + 明确禁用中文/legacy/veto key
+
+**Layer 2 · 兼容层 normalize**：`scripts/data_modules/chapter_audit.py`
+- 扩充 `CHECKER_ALIASES` 覆盖 Ch1 实测所有中文/legacy 别名：
+  - `consistency-checker` += ["伏笔埋设", "伏笔检查"]
+  - `reader-pull-checker` += ["钩子强度", "钩子检查"]
+  - `pacing-checker` += ["节奏"]；`dialogue-checker` += ["对话"]
+  - `emotion-checker` += ["情绪曲线", "情感"]
+  - `prose-quality-checker` += ["Prose质量", "Prose", "文笔"]
+  - `ooc-checker` += ["人物"]
+- 新增 `_CHECKER_ALIAS_TO_CANONICAL` 反向映射表（import 时构建，支持 case-insensitive）
+- 新增 `CHECKER_SCORES_RESERVED_KEYS = {"overall"}`（保留，不视为 checker）
+- 新增 `CHECKER_SCORES_BANNED_KEYS = {"Anti-AI", "anti-ai", "anti_ai", "naturalness", "naturalness_veto"}`（naturalness 是 veto verdict，不进 checker_scores）
+- 新增 `normalize_checker_scores_keys(dict) -> (normalized, renamed, invalid)`：
+  - canonical key 原样保留
+  - alias key 映射回 canonical
+  - banned key → `invalid` 列表，丢弃
+  - unknown key → `invalid` 列表，丢弃
+  - collision（两 alias 指向同一 canonical）→ 后者覆盖 + `invalid` 登记
+
+**Layer 3 · audit 可见性**：`chapter_audit.check_A2_*`
+- 读取 `checker_scores` 时走 `normalize_checker_scores_keys`（而不是直接 get）
+- `measured` 新增 `state_key_renames` + `state_key_invalid` 字段
+- 检测到 `invalid_keys` 时发 **A2 warning severity=high**（`STATE_KEY_NON_CANONICAL`），remediation 提示 normalize + 修 data-agent 写入路径
+
+**Layer 4 · hygiene 闸门**：`scripts/hygiene_check.py`
+- 新增 `check_checker_scores_canonical()` = H18（P1）
+- 延迟 import `normalize_checker_scores_keys`（防循环依赖）
+- invalid 非空 → P1 fail
+- 只有 renamed 没 invalid → P1 pass（兼容中文别名，但 record 提示用英文）
+
+**Layer 5 · SKILL.md 后验断言**：`skills/webnovel-write/SKILL.md:716`
+- Step 5 Python 验证块加：
+  ```python
+  _canonical_set = {11 英文 checker + overall}
+  _banned = {Anti-AI, naturalness}
+  _bad_keys = [non-canonical 且不在别名表]
+  assert not _bad_keys, 'FAIL: checker_scores 含非 canonical/banned key'
+  ```
+- `dimension_scores` 示例同步改 canonical 英文
+
+**Layer 6 · 一次性修复 CLI**：`scripts/data_modules/webnovel.py`
+- 新增 `cmd_normalize_checker_scores` + `sub.add_parser("normalize-checker-scores")`
+- 参数：`--chapter N`（单章）/ 默认全章 / `--dry-run` / `--drop-banned`
+- 自动写 backup `.webnovel/state.json.before_normalize_checker_scores`
+- 输出 JSON diff（before/after/renamed/invalid）
+
+### 实测验证
+
+**Ch1 normalize dry-run 输出**：
+```
+renamed: [设定一致性→consistency-checker, 连贯性→continuity-checker, 节奏→pacing-checker,
+         对话→dialogue-checker, 爽点密度→high-point-checker, 钩子强度→reader-pull-checker,
+         情绪曲线→emotion-checker, 伏笔埋设→consistency-checker, Prose质量→prose-quality-checker]
+invalid: [COLLISION:伏笔埋设→consistency-checker(prev=设定一致性), BANNED:Anti-AI]
+```
+9/10 成功映射，1 collision（伏笔埋设 94 覆盖 设定一致性 93，符合预期），1 banned（Anti-AI 丢弃）。
+
+**Ch1 state.json 补录**：
+- 应用 normalize 后，从审查报告补回缺失的 `ooc-checker=81` + `density-checker=97` + `overall=92`
+- 最终 11 个 canonical key（缺 `flow-checker`，因 Ch1 在 Round 7/8 cache 同步前跑，当时 11 维度未部署）
+- `overall_score=92` 与 `checker_scores.overall=92` 对齐 → H9 pass
+
+**hygiene_check 全跑**：16 项 pass + 1 warning（`.gitattributes` 历史外部项，非本轮 bug）
+
+### 回归测试（锁死 RC）
+
+新建 `scripts/data_modules/tests/test_ch8_rca_fixes.py` · 19 个 test 分 4 组：
+1. **normalize_checker_scores_keys 核心**（10 个）：canonical 原样/中文别名/legacy 别名/banned 丢/case-insensitive banned/unknown 丢/collision 检测/reserved overall 保留/空输入 graceful/Ch1 真实烂数据 shape
+2. **CHECKER_ALIASES 结构不变量**（3 个）：alias 覆盖所有 canonical / alias 不能跨 canonical 冲突 / 关键 legacy 术语必须映射
+3. **hygiene H18 集成**（4 个）：canonical pass / 中文别名 pass / banned fail / unknown fail
+4. **chapter_audit A2 用 normalize**（2 个）：state_count 基于 normalize 后的 dict 计算
+
+**验证**：`pytest scripts/data_modules/tests/` 全量 **324 passed**（305 老 + 19 新）。
+
+### auto-memory 新增
+
+`feedback_checker_scores_canonical_key.md` · 讲清：
+- 11 canonical 英文名
+- 禁用中文 / Anti-AI / legacy 术语
+- 6 层防御层级
+- 同类 pattern 识别（新增 checker 必须同步 6 处真源）
+
+---
+
 ## [2026-04-16 · Round 8] Round 7 回归审查 · 三个 root cause 根治
 
 **触发**：用户要求"再次检查 Round 7 是否完美运行"。深度审查发现 Round 7 的 cache_sync 闸门在**生产路径完全失效**，外加两个之前没发现的 root cause。

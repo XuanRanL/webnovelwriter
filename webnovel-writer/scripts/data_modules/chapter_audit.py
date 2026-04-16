@@ -62,19 +62,95 @@ CHECKER_NAMES = [
 ]
 
 # 审查报告使用中文维度名而非英文 checker 名，需做别名映射
+# 规则：key 必须是 canonical 英文 checker 名；alias 覆盖中文/简写/legacy 维度名
+# 新增 alias 原则：
+#   1. 覆盖"概念相近 AI 会手写"的别名（节奏/对话/情绪曲线/Prose质量）
+#   2. 覆盖 legacy 术语：钩子强度→reader-pull-checker, 伏笔埋设→consistency-checker
+#   3. Anti-AI 不是 checker，是 naturalness veto——不加 alias，应落在 naturalness_verdict
 CHECKER_ALIASES = {
-    "consistency-checker": ["设定一致性", "一致性检查", "consistency"],
+    "consistency-checker": ["设定一致性", "一致性检查", "consistency", "伏笔埋设", "伏笔检查"],
     "continuity-checker": ["连贯性", "连续性检查", "continuity"],
-    "ooc-checker": ["人物塑造", "人物OOC", "OOC检查", "ooc"],
-    "reader-pull-checker": ["追读力", "追读检查", "reader-pull"],
+    "ooc-checker": ["人物塑造", "人物OOC", "OOC检查", "ooc", "人物"],
+    "reader-pull-checker": ["追读力", "追读检查", "reader-pull", "钩子强度", "钩子检查"],
     "high-point-checker": ["爽点密度", "爽点检查", "high-point"],
-    "pacing-checker": ["节奏控制", "节奏检查", "pacing"],
-    "dialogue-checker": ["对话质量", "对话检查", "dialogue"],
+    "pacing-checker": ["节奏控制", "节奏检查", "pacing", "节奏"],
+    "dialogue-checker": ["对话质量", "对话检查", "dialogue", "对话"],
     "density-checker": ["信息密度", "密度检查", "density"],
-    "prose-quality-checker": ["文笔质感", "文笔检查", "prose"],
-    "emotion-checker": ["情感表现", "情感检查", "emotion"],
+    "prose-quality-checker": ["文笔质感", "文笔检查", "prose", "Prose质量", "Prose", "文笔"],
+    "emotion-checker": ["情感表现", "情感检查", "emotion", "情绪曲线", "情感"],
     "flow-checker": ["读者流畅度", "读者视角流畅度", "流畅度检查", "flow"],
 }
+
+# Reverse lookup: alias/canonical → canonical checker name
+# Built once at import time; used by normalize_checker_scores_keys + audit.
+_CHECKER_ALIAS_TO_CANONICAL: Dict[str, str] = {}
+for _canonical, _aliases in CHECKER_ALIASES.items():
+    _CHECKER_ALIAS_TO_CANONICAL[_canonical] = _canonical
+    _CHECKER_ALIAS_TO_CANONICAL[_canonical.lower()] = _canonical
+    for _a in _aliases:
+        _CHECKER_ALIAS_TO_CANONICAL[_a] = _canonical
+        _CHECKER_ALIAS_TO_CANONICAL[_a.lower()] = _canonical
+
+# Non-checker keys permitted in checker_scores (reserved)
+CHECKER_SCORES_RESERVED_KEYS = frozenset({"overall"})
+
+# Legacy/AI-fallback keys that must NOT be treated as checkers
+# (they are either veto verdicts or concept sub-metrics, not independent checkers)
+CHECKER_SCORES_BANNED_KEYS = frozenset({
+    "Anti-AI", "anti-ai", "anti_ai", "naturalness", "naturalness_veto",
+    # sub-metrics that used to be split out but are now folded into parent checkers
+    # listed here only when they have NO valid alias mapping
+})
+
+
+def normalize_checker_scores_keys(
+    checker_scores: Optional[Dict[str, Any]],
+) -> Tuple[Dict[str, Any], List[str], List[str]]:
+    """Normalize checker_scores keys to canonical English checker names.
+
+    Returns:
+        (normalized_dict, renamed_keys_log, invalid_keys_log)
+        - normalized_dict: keys mapped to canonical (CHECKER_NAMES ∪ reserved)
+        - renamed_keys_log: list of "src_key → canonical" entries (for audit trace)
+        - invalid_keys_log: list of src_keys that could not be mapped (banned or unknown)
+
+    Rules:
+        - canonical key (in CHECKER_NAMES) → kept as-is
+        - alias key (in CHECKER_ALIASES[*]) → mapped to canonical
+        - reserved key (overall) → kept
+        - banned key (Anti-AI etc.) → dropped + logged
+        - unknown key → dropped + logged
+        - on collision (two aliases map to same canonical), later value wins and
+          collision is logged to invalid_keys_log as "COLLISION:src→canonical"
+    """
+    if not isinstance(checker_scores, dict):
+        return {}, [], []
+    normalized: Dict[str, Any] = {}
+    renamed: List[str] = []
+    invalid: List[str] = []
+    seen_canonical: Dict[str, str] = {}  # canonical → src_key that set it
+    for src_key, value in checker_scores.items():
+        if src_key in CHECKER_SCORES_RESERVED_KEYS:
+            normalized[src_key] = value
+            continue
+        if src_key in CHECKER_SCORES_BANNED_KEYS or src_key.lower() in {
+            k.lower() for k in CHECKER_SCORES_BANNED_KEYS
+        }:
+            invalid.append(f"BANNED:{src_key}")
+            continue
+        canonical = _CHECKER_ALIAS_TO_CANONICAL.get(src_key) or _CHECKER_ALIAS_TO_CANONICAL.get(
+            src_key.lower()
+        )
+        if canonical is None:
+            invalid.append(f"UNKNOWN:{src_key}")
+            continue
+        if canonical in seen_canonical and seen_canonical[canonical] != src_key:
+            invalid.append(f"COLLISION:{src_key}→{canonical}(prev={seen_canonical[canonical]})")
+        normalized[canonical] = value
+        seen_canonical[canonical] = src_key
+        if src_key != canonical:
+            renamed.append(f"{src_key}→{canonical}")
+    return normalized, renamed, invalid
 
 EXTERNAL_MODELS_CORE3 = ["kimi", "glm", "qwen-plus"]
 EXTERNAL_MODELS_ALL9 = [
@@ -411,10 +487,15 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
 
     missing = [c for c in CHECKER_NAMES if not _checker_found(c, text)]
     chapter_meta = _chapter_meta_entry(project_root, chapter)
-    checker_scores = chapter_meta.get("checker_scores") or {}
-    state_checker_count = 0
-    if isinstance(checker_scores, dict):
-        state_checker_count = len([k for k, v in checker_scores.items() if v is not None])
+    checker_scores_raw = chapter_meta.get("checker_scores") or {}
+    # Normalize checker_scores keys via CHECKER_ALIASES reverse map
+    # (defends against AI fallback writing 中文 key like "钩子强度"/"Anti-AI")
+    normalized_scores, renamed_keys, invalid_keys = normalize_checker_scores_keys(
+        checker_scores_raw if isinstance(checker_scores_raw, dict) else {}
+    )
+    checker_scores = normalized_scores
+    state_checker_count = len([k for k, v in checker_scores.items()
+                               if v is not None and k not in CHECKER_SCORES_RESERVED_KEYS])
 
     report_rows: Dict[str, List[str]] = {}
     report_score_map: Dict[str, float] = {}
@@ -463,7 +544,24 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
         "state_checker_scores_count": state_checker_count,
         "unique_scores": unique_scores,
         "duplicated_snippets": duplicated_snippets,
+        "state_key_renames": renamed_keys,
+        "state_key_invalid": invalid_keys,
     }
+    # A2.1 · canonical key 校验（检测 AI fallback 写 legacy/中文 key）
+    if invalid_keys:
+        return CheckResult(
+            id="A2", name="11 checker 独立调用 · canonical key", layer="A",
+            status="warn", severity="high",
+            evidence=(
+                f"state.json checker_scores 含非 canonical key: {invalid_keys[:5]}. "
+                f"应使用 CHECKER_NAMES 英文 key 或中文别名映射后的 canonical 名。"
+            ),
+            measured=measured,
+            remediation=[
+                "normalize state.json chapter_meta.checker_scores via CHECKER_ALIASES",
+                "update data-agent 写入路径强制 canonical key",
+            ],
+        )
     if len(missing) >= 3:
         return CheckResult(
             id="A2", name="11 checker 独立调用", layer="A",
