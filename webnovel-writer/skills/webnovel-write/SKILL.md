@@ -49,10 +49,10 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
 
-1. Step 3 的内部 checker 全部返回并汇总出 overall_score。**术语固定**（见 `feedback_checker_count_11`）：`checker` = 跑的 subagent 数量；`评分维度` = 计入 overall_score 的数量；`verdict` = naturalness-veto 专用不计分。标准/`--fast` = **12 checker**（1 veto + 11 评分，含 flow-checker）。`--minimal` = **4 checker**（1 veto + 3 评分，naturalness + consistency + continuity + ooc）。`overall_score` 只平均 11（或 3）个评分维度，veto 仅用于 block。
-2. Step 3.5 的 9 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充6模型失败不阻塞），每模型审查 11 个维度含 reader_flow（`--minimal` 模式跳过此条件）
+1. Step 3 的内部 checker 全部返回并汇总出 overall_score。**术语固定**（见 `feedback_checker_count_13`）：`checker` = 跑的 subagent 数量 = 评分维度数量（**Round 13 v2 取消 veto 架构**，全部 checker 平等参与评分）。标准/`--fast` = **13 checker / 13 评分维度**（2 读者视角维度：naturalness + reader-critic，11 工艺维度含 flow-checker）。`--minimal` = **5 checker**（naturalness + reader-critic + consistency + continuity + ooc）。`overall_score = avg(所有评分维度)`。**两个读者视角 checker 不 block 流程**，其 problems 和其他 checker 同等进入 Step 4 定向修复。极端情况（Step 4 修复后 critical 仍未消除）才回 Step 2A 重写。
+2. Step 3.5 的 9 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充6模型失败不阻塞），每模型审查 **13 个维度**（11 工艺维度 + naturalness_dim + reader_critic_dim，Round 13 v2 新增后 2 个，让外部模型也做读者视角评估）（`--minimal` 模式跳过此条件）
 3. 所有 critical 问题已修复，high 问题已修复或有 deviation 记录
-4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 11 评分维度分数 + Batch 0 naturalness verdict + 外部9模型×11维度评分矩阵；`--minimal` 模式仅含内部 3 评分维度分数 + naturalness verdict）
+4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 9 模型×13 维度评分矩阵；`--minimal` 模式仅含内部 5 评分维度分数）
 5. Step 4 的 `anti_ai_force_check=pass`
 6. Step 5 Data Agent 已完成
 7. Step 6 Audit Gate 决议 ∈ {approve, approve_with_warnings}（block 禁止进入 Step 7）
@@ -282,7 +282,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 | Step 1 | `file` / `snapshot` / `context_file` | 执行包 JSON 路径、context_snapshot 路径 |
 | Step 2A | `word_count` | 正文字数（整数，>0） |
 | Step 2B | `style_applied` / `deviation_notes` | 正常执行填 `style_applied: true`；跳过则填 `deviation_notes: "..."` |
-| Step 3 | `overall_score` / `checker_count` / `internal_avg` / `review_score` / **`naturalness_verdict`（2026-04-16 新增）** | 内部 12 checker = 1 veto（naturalness）+ 11 评分维度（Batch 1 的 6 含 flow-checker + Batch 2 的 5）；`overall_score` 只聚合 11 评分维度，`naturalness_verdict` ∈ {PASS, POLISH_NEEDED, REWRITE_RECOMMENDED, REJECT_HIGH, REJECT_CRITICAL} |
+| Step 3 | `overall_score` / `checker_count` / `internal_avg` / `review_score` / `naturalness_score` / `reader_critic_score` | 内部 13 checker = 13 评分维度（Batch 0 的 2 个读者视角维度：naturalness + reader-critic；Batch 1 的 6 含 flow-checker；Batch 2 的 5）；`overall_score = avg(13 维度)`。**Round 13 v2 取消 veto 架构**：两个读者视角 checker 输出 score + problems 与其他 checker 同等进入 Step 4 修复，不 block 流程 |
 | Step 3.5 | `external_avg` / `models_ok` / `external_models_ok` | 外部 9 模型均分 + 成功模型列表 |
 | Step 4 | `anti_ai_force_check` / `polish_report` / `fixes` | `pass`/`fail`, 润色报告路径, 修复项列表 |
 | Step 5 | `state_modified` / `entities` / `foreshadowing` / `scene_count` / `chapter_meta_fields` | data-agent 写库确认 + 实体/伏笔/场景计数 |
@@ -499,15 +499,17 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 
 调用约束：
 - 必须用 `Task` 调用审查 subagent，禁止主流程伪造审查结论。
-- **标准/--fast 模式必须分批启动**（0+6+5 三段，详见 `step-3-review-gate.md`），禁止 12 个 checker 同时并发。
+- **标准/--fast 模式必须分批启动**（0+6+5 三段，详见 `step-3-review-gate.md`），禁止 13 个 checker 同时并发（Claude Code Agent 并发池上限约 4-6 个）。
 - 必须等待全部 checker 返回后才能统一聚合 `issues/severity/overall_score`。
 - **禁止在任何 checker 仍在运行时进入 Step 4**。即使外部审查已完成，内部 checker 未全部返回也不得开始润色。
-- **2026-04-16 新增 Batch 0 · naturalness-veto**：`reader-naturalness-checker` 独立先跑，若 `verdict=REJECT_CRITICAL` 或 `REJECT_HIGH`，**立即 block** 并要求重写，不启动 Batch 1/2 和 Step 3.5（节省算力，避免在劝退文本上继续评分）
+- **Round 13 v2 · 取消 veto block**：两个读者视角 checker（naturalness + reader-critic）和其他 11 个 checker **平等参与评分**。它们的 `problems` 和其他 checker 的 `issues` 同等进入 Step 4 修复。不再单方面 block 流程——因为 block 回 Step 2A 重写整章对大多数问题是浪费，Step 4 能修的就应该在 Step 4 修。
 
 审查器（标准模式全部执行，0+6+5 三段）：
-- **Batch 0（veto 硬闸门，独立先跑 · 2026-04-16 新增）**：
+- **Batch 0（读者视角维度，2 个并行先跑，Round 13 v2）**：
   - `reader-naturalness-checker`（汉语母语自然度 · 独立于规则污染 · 专补 Ch1 v1 "<protagonist>在死"语病被 10+9 审查器集体放行的盲区）
-  - 若 verdict=REJECT_*，立即 block 重写，不进入后续 batch
+  - `reader-critic-checker`（读者锐评 · 极简 prompt · 无规则约束 · 模拟追更读者本能反应 · Round 13 新增，专补"规则 pass 但读者会弃"的盲区）
+  - 两个 checker 都返回 `overall_score` 和 `problems`，统一计入 `internal_avg`
+  - Batch 0 先跑的原因：规模小（2 个）+ 读者视角反馈对 Batch 1/2 无依赖，早跑早反馈
 - Batch 1（核心优先，6 个并发）：
   - `consistency-checker`（设定一致性）
   - `continuity-checker`（连贯性）
@@ -523,8 +525,8 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
   - `emotion-checker`（情感表现）
 
 模式说明：
-- 标准/`--fast`：全量 12 个审查器（1 veto + 6 + 5），分段执行。
-- `--minimal`：固定核心 4 个（naturalness + consistency + continuity + ooc），单批并发。**naturalness 即使在 minimal 也必跑**（劝退检测是底线）。
+- 标准/`--fast`：全量 13 个审查器（2 + 6 + 5），分段执行。
+- `--minimal`：固定核心 5 个（naturalness + reader-critic + consistency + continuity + ooc），单批并发。**两个读者视角 checker 即使在 minimal 也必跑**。
 
 审查指标落库（必做）：
 ```bash
@@ -551,7 +553,7 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
 - `--minimal` 也必须产出 `overall_score`。
 - 未落库 `review_metrics` 不得进入 Step 5。
 - `overall_score` 必须按 `step-3-review-gate.md` 的"内外部分数合并规则"计算：`round(internal * 0.6 + external_avg * 0.4)`。若 Step 3.5 全部失败或被模式跳过（`--minimal`），则退化为纯内部分数。
-- **2026-04-16 新增 veto 前置**：`reader-naturalness-checker.verdict` 必须 ∈ {`PASS`, `POLISH_NEEDED`, `REWRITE_RECOMMENDED`} 才允许进入 Step 5；若 verdict ∈ {`REJECT_CRITICAL`, `REJECT_HIGH`}，无论其他分数多高都 block，回到 Step 2A 重写。原因：Ch1 v1 case 中，19 审查器 + 7 层审计给 91 分 approve_with_warnings，但用户一眼看出首句"<protagonist>在死"语病劝退——说明**没有 naturalness veto 时，规则同源污染会让评分系统集体失灵**。
+- **Round 13 v2 · naturalness 和 reader-critic 作为常规评分维度**：两个读者视角 checker 的 `overall_score` 和 `problems` 与其他 11 个 checker **平等进入 `overall_score` 聚合**，不 block 流程。它们的 high/critical problems 与其他 checker 的 issues **合并**给 Step 4 做定向修复。**极端 block 条件**：仅当 Step 4 polish 后重新审查，`naturalness` 或 `reader-critic` 仍返回 `REJECT_CRITICAL` / `will_continue_reading=no`，才回到 Step 2A 重写。背景：Ch1 v1 case 中 19 审查器 + 7 层审计给 91 分 approve_with_warnings，但用户一眼看出"<protagonist>在死"语病——说明规则同源污染会让评分系统集体失灵。解决方案不是 block，而是**把读者视角纳入评分，强制 Step 4 必须修**。
 
 ### Step 3.5：外部模型审查（与 Step 3 并行或紧接执行）
 
@@ -567,7 +569,7 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 - 每次 API 调用后验证路由（检查 response.model 字段）。
 - 核心模型四级 fallback 链：nextapi(2次) → healwrap(2次) → codexcc(1次) → 硅基流动(兜底)。
 - 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
-- 生成审查报告必须包含 9 模型 × 11 维度（含 reader_flow）评分矩阵 + 共识问题 + Step 4 修复清单。
+- 生成审查报告必须包含 9 模型 × 13 维度（含 reader_flow + naturalness + reader_critic · Round 13 v2）评分矩阵 + 共识问题 + Step 4 修复清单。
 
 **上下文文件准备（调用脚本前必须完成）**：
 
@@ -601,7 +603,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 
 输出：
 - 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共9个文件）
-- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 9 模型 × 11 维度矩阵，包括 reader_flow）
+- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 9 模型 × 13 维度矩阵，包括 reader_flow + naturalness + reader_critic · Round 13 v2）
 
 ### Step 3+3.5 完成闸门（进入 Step 4 前必须通过）
 
@@ -611,15 +613,15 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 1. 逐一检查所有 Step 3 内部 checker 的 Task 状态（`TaskOutput` 或等价轮询），确认每个 checker 都已返回结果（非空输出）。
 2. 确认 Step 3.5 外部审查脚本已退出且 9 个 `external_review_{model_key}_ch{NNNN}.json` 文件已生成。
 3. 按 `step-3-review-gate.md` 的"内外部分数合并规则"计算 `overall_score`（需要内部 + 外部都有分数）。
-4. 生成审查报告（含内部 11 评分维度 + Batch 0 naturalness verdict + 外部 9 模型×11 维度矩阵，内部外部均含 reader_flow，naturalness 仅内部）。
+4. 生成审查报告（含内部 13 评分维度 + 外部 9 模型×13 维度矩阵，内外均含 reader_flow + naturalness + reader_critic · Round 13 v2 读者视角双维度进入外部模型评分体系）。
 5. 落库 `review_metrics`。
 
 **以上 5 步全部完成后，方可进入 Step 4。等待是流程的一部分。**
 
 **Step 3→4 闸门强制验证**（在标记 Step 3 完成前必须执行）：
-1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，每批最多等待10分钟，总超时20分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。注意：0+6+5 三段模式下，Batch 0（naturalness-veto）先跑，verdict 通过后启动 Batch 1（6 个含 flow-checker），Batch 1 全部返回后再启动 Batch 2（5 个），每段独立计时。
+1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，每批最多等待10分钟，总超时20分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。注意：0+6+5 三段模式下，Batch 0（2 个读者视角 checker 并行：naturalness + reader-critic · Round 13 v2）先跑，两个都返回后启动 Batch 1（6 个含 flow-checker），Batch 1 全部返回后再启动 Batch 2（5 个），每段独立计时。Round 13 v2 取消 veto block——Batch 0 的结果直接合并进聚合，不单独 block。
 2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：核心3模型文件必须存在且非空，补充模型缺失可接受。
-3. 聚合分数：内部 11 个评分维度取平均（含 flow-checker，naturalness veto 不计入评分只做 block）；外部已成功模型取平均；合并 `round(internal * 0.6 + external * 0.4)`。
+3. 聚合分数：内部 13 个评分维度取平均（含 flow-checker + naturalness + reader-critic · Round 13 v2）；外部已成功模型取平均（13 维度）；合并 `round(internal * 0.6 + external * 0.4)`。
 4. 写审查报告 + 落库 review_metrics。
 **违规后果**：跳过此验证直接进入 Step 4，Step 6 审计 A2 检查项将检测到 checker 坍缩并可能 block 提交。
 
@@ -727,12 +729,13 @@ Step 5 失败隔离规则：
 import json, re
 with open('.webnovel/state.json','r',encoding='utf-8') as f: s=json.load(f)
 meta = s['chapter_meta'][f'{chapter:04d}']
-# 1. checker_scores 非空 + 11 个 canonical key（禁中文 key/禁 Anti-AI）
+# 1. checker_scores 非空 + 13 个 canonical key（Round 13 v2 · 新增 reader-naturalness / reader-critic）
 assert meta.get('checker_scores') and len(meta['checker_scores']) >= 3, 'FAIL: checker_scores empty'
-_canonical_set = {"consistency-checker","continuity-checker","ooc-checker","reader-pull-checker","high-point-checker","pacing-checker","dialogue-checker","density-checker","prose-quality-checker","emotion-checker","flow-checker","overall"}
-_banned = {"Anti-AI","anti-ai","naturalness","naturalness_veto"}
-_bad_keys = [k for k in meta['checker_scores'].keys() if k in _banned or (k not in _canonical_set and not any(k in al for al in [["设定一致性","一致性检查","伏笔埋设","伏笔检查"],["连贯性","连续性检查"],["人物塑造","人物OOC","OOC检查","人物"],["追读力","追读检查","钩子强度","钩子检查"],["爽点密度","爽点检查"],["节奏控制","节奏检查","节奏"],["对话质量","对话检查","对话"],["信息密度","密度检查"],["文笔质感","文笔检查","Prose质量","Prose","文笔"],["情感表现","情感检查","情绪曲线","情感"],["读者流畅度","读者视角流畅度","流畅度检查"]]))]
-assert not _bad_keys, f'FAIL: checker_scores 含非 canonical/banned key: {_bad_keys}（需用 11 个英文 checker 名）'
+_canonical_set = {"consistency-checker","continuity-checker","ooc-checker","reader-pull-checker","high-point-checker","pacing-checker","dialogue-checker","density-checker","prose-quality-checker","emotion-checker","flow-checker","reader-naturalness-checker","reader-critic-checker","overall"}
+_banned = {"Anti-AI","anti-ai","naturalness_veto"}
+_alias_lists = [["设定一致性","一致性检查","伏笔埋设","伏笔检查"],["连贯性","连续性检查"],["人物塑造","人物OOC","OOC检查","人物"],["追读力","追读检查","钩子强度","钩子检查"],["爽点密度","爽点检查"],["节奏控制","节奏检查","节奏"],["对话质量","对话检查","对话"],["信息密度","密度检查"],["文笔质感","文笔检查","Prose质量","Prose","文笔"],["情感表现","情感检查","情绪曲线","情感"],["读者流畅度","读者视角流畅度","流畅度检查"],["汉语母语自然度","自然度","naturalness","reader-naturalness"],["读者锐评","reader-critic","读者视角锐评"]]
+_bad_keys = [k for k in meta['checker_scores'].keys() if k in _banned or (k not in _canonical_set and not any(k in al for al in _alias_lists))]
+assert not _bad_keys, f'FAIL: checker_scores 含非 canonical/banned key: {_bad_keys}（需用 13 个英文 checker 名）'
 # 2. word_count 准确（用标准方法重算对比，误差<=2%）
 with open(chapter_file,'r',encoding='utf-8') as f: text=f.read()
 actual = len(re.findall(r'[\u4e00-\u9fff]', text))
@@ -864,9 +867,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 1. 章节正文文件存在且非空：`正文/第{chapter_padded}章-{title_safe}.md` 或 `正文/第{chapter_padded}章.md`
 2. **Step 1 执行包已落盘**：`.webnovel/context/ch{chapter_padded}_context.json` 与 `.webnovel/context/ch{chapter_padded}_context.md` 同时存在且非空
 3. **Step 2A/2B 后 `post_draft_check.py` exit=0**（2026-04-15 新增 · 7 类硬检查通过）
-4. Step 3 已产出 `overall_score`（聚合 11 评分维度）且 `review_metrics` 成功落库；`naturalness_verdict` ∈ {PASS, POLISH_NEEDED, REWRITE_RECOMMENDED}（REJECT_* 直接 block，不会到此闸门）
+4. Step 3 已产出 `overall_score`（聚合 **13 评分维度** · Round 13 v2）且 `review_metrics` 成功落库；`naturalness_verdict` / `reader_critic_verdict` 作为报告字段记录，不 block 流程；其 problems 与其他 checker 的 issues 合并进入 Step 4 修复
 5. Step 3.5 外部审查已完成（核心3模型必须成功）（`--minimal` 模式跳过此条件）
-6. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部 11 评分维度分数 + naturalness verdict + 外部 9 模型×11 维度评分矩阵，内/外部均含 reader_flow，naturalness 仅内部；`--minimal` 模式含内部 3 评分维度分数 + naturalness verdict）
+6. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 9 模型×13 维度评分矩阵，内外均含 reader_flow + naturalness + reader_critic · Round 13 v2；`--minimal` 模式含内部 5 评分维度分数）
 7. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
 8. **Step 4 润色报告已落盘**：`.webnovel/polish_reports/ch{chapter_padded}.md` 存在且非空，含 `anti_ai_force_check` 字段
 9. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）

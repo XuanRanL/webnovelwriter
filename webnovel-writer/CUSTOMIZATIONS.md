@@ -7,6 +7,134 @@
 
 ---
 
+## [2026-04-16 · Round 13 v2] 读者视角双 checker 完整集成 · 13 维度 + 取消 veto 架构
+
+**触发**：用户要求创建 `reader-critic-checker`（prompt：`仔细研究认真思考详细调查搜索分析 以正常读者的角度锐评和找这个章节小说的问题。{章节小说}`），并质疑 veto block 机制——认为所有读者视角反馈应该进入 Step 4 修复，而不是 block 回 Step 2A 重写。
+
+### 决策 · 取消 veto 架构
+
+原 Batch 0 veto（naturalness REJECT_* 即 block）对 95% 问题是**浪费**——回 Step 2A 重写整章远比 Step 4 定向润色代价大。新架构：两个读者视角 checker（naturalness + reader-critic）**平等参与评分**，其 `problems` 与其他 checker 的 `issues` 合并进入 Step 4 修复。极端 block 条件仅一种：Step 4 polish 后复查仍 REJECT_CRITICAL / will_continue_reading=no，才回 Step 2A 重写。
+
+### 架构升级 · 11 → 13
+
+| 层 | 原 Round 12 | Round 13 v2 |
+|---|---|---|
+| 内部 checker | 11 评分 + 1 veto（naturalness） | **13 评分**（原 11 + naturalness + reader-critic） |
+| 内部 Batch 0 | naturalness 单独先跑，REJECT 即 block | **2 读者视角并行**，不 block，结果进聚合 |
+| 外部维度 | 9 × 11（含 reader_flow） | **9 × 13**（新增 naturalness + reader_critic 维度 · 让外部 AI 也参与读者视角评估）|
+| `checker_count` artifact | 12 | **13** |
+| `EXTERNAL_REVIEW_EXPECTED_DIMENSIONS` | 11 | **13** |
+| Minimal 模式 | 4（naturalness + 核心 3）| **5**（2 读者视角 + 核心 3）|
+
+### 新增 Agent · reader-critic-checker
+
+极简 prompt 设计：核心指令就是用户原话，agent 文件只保留两条硬约束（只读本章 / quote 必须 grep 到），无规则污染、无学术语言、无评委语气。AI 扮演追更读者直接锐评。
+
+- 输出字段：`will_continue_reading` (yes/hesitant/no) + `overall_score` + `problems` + `highlights`
+- 评分规则：base = {yes:75, hesitant:55, no:30}；+highlights*3 −high*6 −medium*2 −low*1
+
+### 落地改动清单
+
+**Agent 新增**：
+- `agents/reader-critic-checker.md`（极简 prompt）
+
+**Skills 文档（所有真源同步）**：
+- `skills/webnovel-write/SKILL.md` · 9 处（术语 L52 / 数据真源表 L285 / 调用约束 L502-527 / 落库规则 L554 / 报告模板 L614 / 聚合逻辑 L622 / 闸门 L869-871 / hygiene Python 片段 L733）
+- `skills/webnovel-write/references/step-3-review-gate.md` · Batch 0 重写（2 读者视角并行）/ artifact 字段 / 内外分数合并
+- `skills/webnovel-init/SKILL.md` L896-898（首章 checker 列表）
+- `skills/webnovel-query/references/system-data-flow.md` L100-108
+
+**Code 常量**：
+- `scripts/data_modules/chapter_audit.py`：CHECKER_NAMES 11→13、CHECKER_ALIASES 加 naturalness/reader-critic、EXTERNAL_REVIEW_EXPECTED_DIMENSIONS 11→13、A2 evidence "11 checkers"→"13 checkers"、A2 name 两处 "11 checker"→"13 checker"、CHECKER_SCORES_BANNED_KEYS 删掉 "naturalness"（升格为合法 alias）
+- `scripts/external_review.py`：DIMENSIONS dict 新增 `naturalness` + `reader_critic` 两个维度 prompt、header 注释 11→13
+- `scripts/workflow_manager.py`：Step 3 artifact 字段加 `reader_critic_verdict` + `reader_critic_score`
+
+**Agent 定义同步**：
+- `agents/audit-agent.md`：Step 3 checker 数 12→13
+- `agents/external-review-agent.md`：维度数 11→13、共识评分 99→117
+- `skills/webnovel-write/references/step-3.5-external-review.md`：9×11→9×13
+
+**测试更新**：
+- `scripts/data_modules/tests/test_chapter_audit.py`：good_project fixture checker_scores 加 reader-naturalness + reader-critic；审查报告 markdown 加 2 行；external review payload dimension_names 加 naturalness + reader_critic
+- `scripts/data_modules/tests/test_ch8_rca_fixes.py`：naturalness 不再 banned（升格为合法 alias，映射到 reader-naturalness-checker）
+
+### 验证
+
+- `pytest scripts/data_modules/tests/ --no-cov` **339 passed**
+- `sync-cache` → cache 已更新
+- grep 扫描：`12 checker` / `1 veto` / `11 dimension` / `9 模型 × 11` 已清零（除 test 内注释外）
+
+### 与 Round 12 的关系
+
+Round 12 完成了 6 道 POV 披露防御（context-agent 红线 / flow-checker 第 8 类 / quote elision 识别等）。Round 13 v2 在其上做**审查架构重构**：把读者视角从"block 工具"升级为"定向修复反馈源"，让 Step 4 polish 能消费更全面的读者痛点。
+
+---
+
+## [2026-04-16 · Round 12] Ch1 披露时序 bug 根治 · POV 知情权六道防御
+
+**触发**：用户指出 Ch1《<example-project>》L49"这一次得改。三十天后末世爆发，前世他没活到那一天"逻辑硬伤——前世<protagonist>死于 11:47 月台，根本没活到末世那天，唯一信息来源"铜面具档案灌注"在 L69 才发生，读者读到 L49 会立刻发问"他怎么知道？"。11 轮迭代 + 91 分审查 + 10 内部维度 + 9 外部模型全部没查出。
+
+### RC · 六层系统性盲区
+
+1. **大纲层**：Ch1 大纲只写"倒计时状态：D-30"结果态，无字段规定主角何时/通过何载体首次知道末世 → writer 默认主角已知
+2. **context-agent**：红线 3"信息无因果来源（突然知道）"定义过窄——本 bug **有**因果来源（档案灌注）只是披露时序倒置
+3. **flow-checker**：UNGROUNDED_TERM 只判"3 段内有无解释"不判"角色是否应该知道"
+4. **external quote 验证**：`_verify_quote_exists` 做严格连续 substring 匹配，把 Qwen 的"A…B"省略引用（省掉"那声音说"旁白）误判幻觉，12 条真实 issue 被降级 info 静默吞掉
+5. **审查决策**：91 分光环 + 平均化稀释 Gemini 75.3 差异，分差 ≥10 未触发人工复核
+6. **审查架构**：12 checker 全部"作品工艺视角"（设定/连贯/对话/文笔），无一专查"POV 视角知情权"
+
+### 六道防御（全部落地）
+
+**防御 1 · 大纲认知路径**（context-agent.md 红线 7 新增）
+- 开篇章/重生章/穿越章必须在执行包列出"情报-载体-段号"锚点
+- 例：`{情报:末世爆发倒计时, 载体:铜面具档案灌注, beat:Beat2}`
+
+**防御 2 · context-agent 红线 3 扩写**
+- 原："信息无因果来源（突然知道）"
+- 新：额外包含"**POV 披露时序倒置**"（情报披露点早于载体出现点）
+
+**防御 3 · flow-checker 新增第 8 类 POV_UNEARNED_KNOWLEDGE**
+- 触发信号 5 条：未来事件名/远处状态/对话外泄/金手指前披露/前世亲历错位
+- Severity 三档：high=核心设定时序倒置 / medium=次级情报 / low=几段后就有载体
+- 与 UNGROUNDED_TERM / JUMP_LOGIC / META_BREAK 明确区分
+
+**防御 4 · external_review.py quote 验证扩展**
+- `_verify_quote_style` 新增 "elision" 识别：
+  - 显式标记（…/…/...）按分隔符拆段分别 substring 验证（段间距 ≤ 200 归一化字符）
+  - 隐式省略：quote 长 ≥12 字时取 head+tail（4-6 字），两者在归一化文本中距离 ≤120 视为 elision
+- `_norm_text` 现在 strip 全部引号（含「」『』《》） + em-dash 归一化
+- 调用点：`quote_style == "elision"` 保留原 severity + 打 `quote_elision_note` 标签；`missing` 才降级并打 `needs_human_verify: true`
+
+**防御 5 · chapter_audit A3 分差拦截**
+- 外部模型 overall_score 的 max-min ≥ 10 时，A3 status 从 pass → warn（severity medium）
+- evidence 显化最高/最低分模型，remediation 要求"人工复核最低分模型的 high/medium issues"
+
+**防御 6 · 暂不做（与防御 3 overlap）**
+- 独立 `pov-knowledge-checker` 与 flow-checker 的 POV_UNEARNED_KNOWLEDGE 功能重叠
+- 观察 2-3 章 flow-checker 扩展效果后再决定
+
+### 同步改动
+
+- `agents/flow-checker.md` · `agents/context-agent.md`（fork + .claude/agents/ 两份同步）
+- `scripts/external_review.py` · `_verify_quote_style` + elision 识别 + `_norm_text` 增强
+- `scripts/data_modules/chapter_audit.py` · A3 分差拦截 + measured.score_spread
+- memory：`feedback_pov_disclosure_order.md` / `feedback_quote_hallucination_false_positive.md` / `feedback_rca_ch1_disclosure.md`
+
+### 验证
+
+- `pytest scripts/data_modules/tests/ --no-cov` **339 passed**
+- `sync-cache` updated 5 文件（CUSTOMIZATIONS + 2 agents + 2 scripts）
+- `sync-agents` 同步 11 个 agent 到 workspace
+- `_verify_quote_style` 单测 5/5：外层引号/隐式省略/显式省略/真幻觉/精确匹配全部正确分类
+
+### Ch1 正文修复
+
+- L49 "这一次得改。三十天后末世爆发，前世他没活到那一天" → "这一次得改。前世那个月台，他没能走下来"
+- L73-79 档案灌注后新增 4 段："沙漏三十格——他看懂了，那是天数。脑子里那份正在淡化的摘要，最靠前也最清晰的一行只有四个字：末世爆发。/ 三十天后。/ 他前世死在今晚十一点四十七分。根本没活到那一天。"
+- 字数 2765 → 2800（仍在 2200-3500 合规）
+
+---
+
 ## [2026-04-16 · Round 11] 外部审查架构重构 · openclawroot 首位供应商 + 9 新模型 + all-high-thinking
 
 **触发**：用户追问"Step 3.5 各供应商成功率"，实测 Round 10- 架构（4 provider × 9 老模型）全局只有 6-7/9 成功，nextapi 48% no_api_key / healwrap 41% / minimax-m2.7 0% / doubao 28%。用户提供 openclawroot.com API key + 指定 9 新模型。

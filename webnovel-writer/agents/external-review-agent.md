@@ -7,7 +7,7 @@ model: inherit
 
 # external-review-agent (外部模型审查器)
 
-> **职责**: 读取完整项目上下文，构建 11 维度审查prompt（含 reader_flow 读者视角流畅度），调用外部模型API获取独立审查意见，交叉验证后输出结构化报告。
+> **职责**: 读取完整项目上下文，构建 13 维度审查prompt（含 reader_flow 读者视角流畅度），调用外部模型API获取独立审查意见，交叉验证后输出结构化报告。
 
 > **输出格式**: 遵循 `${CLAUDE_PLUGIN_ROOT}/references/checker-output-schema.md` 统一 JSON Schema
 >
@@ -26,8 +26,8 @@ model: inherit
 ```
 
 **model_key 说明（九模型共识架构 · Round 11+ openclawroot 首位）**:
-- **架构**：2 供应商（openclawroot 主 + siliconflow 备）× 9 模型 × 11 维度 = 99 份独立评分
-- **共识机制**：每个模型都跑**全 11 维度**（无分工），多模型共识 → 真 bug；单模型孤例 → 模型偏见
+- **架构**：2 供应商（openclawroot 主 + siliconflow 备）× 9 模型 × 13 维度 = 99 份独立评分
+- **共识机制**：每个模型都跑**全 13 维度**（无分工），多模型共识 → 真 bug；单模型孤例 → 模型偏见
 - **所有模型开 high thinking + max_tokens=65536**
 - **核心层**（tier=core · 必须成功，异构覆盖）：
   - `qwen3.6-plus`（国产旗舰，文学细致度最高）

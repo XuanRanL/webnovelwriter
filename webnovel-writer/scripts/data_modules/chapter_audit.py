@@ -59,6 +59,8 @@ CHECKER_NAMES = [
     "reader-pull-checker", "high-point-checker", "pacing-checker",
     "dialogue-checker", "density-checker", "prose-quality-checker",
     "emotion-checker", "flow-checker",
+    # Round 13 v2 (2026-04-16) · 读者视角双维度，与其他 checker 平等参与 overall_score 聚合
+    "reader-naturalness-checker", "reader-critic-checker",
 ]
 
 # 审查报告使用中文维度名而非英文 checker 名，需做别名映射
@@ -66,7 +68,7 @@ CHECKER_NAMES = [
 # 新增 alias 原则：
 #   1. 覆盖"概念相近 AI 会手写"的别名（节奏/对话/情绪曲线/Prose质量）
 #   2. 覆盖 legacy 术语：钩子强度→reader-pull-checker, 伏笔埋设→consistency-checker
-#   3. Anti-AI 不是 checker，是 naturalness veto——不加 alias，应落在 naturalness_verdict
+#   3. Round 13 v2：naturalness 和 reader-critic 升格为评分维度（原 veto 架构取消）
 CHECKER_ALIASES = {
     "consistency-checker": ["设定一致性", "一致性检查", "consistency", "伏笔埋设", "伏笔检查"],
     "continuity-checker": ["连贯性", "连续性检查", "continuity"],
@@ -79,6 +81,8 @@ CHECKER_ALIASES = {
     "prose-quality-checker": ["文笔质感", "文笔检查", "prose", "Prose质量", "Prose", "文笔"],
     "emotion-checker": ["情感表现", "情感检查", "emotion", "情绪曲线", "情感"],
     "flow-checker": ["读者流畅度", "读者视角流畅度", "流畅度检查", "flow"],
+    "reader-naturalness-checker": ["汉语母语自然度", "自然度", "naturalness", "reader-naturalness"],
+    "reader-critic-checker": ["读者锐评", "reader-critic", "读者视角锐评"],
 }
 
 # Reverse lookup: alias/canonical → canonical checker name
@@ -95,11 +99,13 @@ for _canonical, _aliases in CHECKER_ALIASES.items():
 CHECKER_SCORES_RESERVED_KEYS = frozenset({"overall"})
 
 # Legacy/AI-fallback keys that must NOT be treated as checkers
-# (they are either veto verdicts or concept sub-metrics, not independent checkers)
+# (they are concept sub-metrics or old veto verdict names, not canonical checker scores)
+# Round 13 v2: naturalness / reader-critic 升格为正式 checker，不再视为 veto
+# 但保留 "naturalness_veto"/"Anti-AI" 这些旧字符串以兼容老 state.json（走 alias 映射到 reader-naturalness-checker）
 CHECKER_SCORES_BANNED_KEYS = frozenset({
-    "Anti-AI", "anti-ai", "anti_ai", "naturalness", "naturalness_veto",
+    "Anti-AI", "anti-ai", "anti_ai",
+    "naturalness_veto",
     # sub-metrics that used to be split out but are now folded into parent checkers
-    # listed here only when they have NO valid alias mapping
 })
 
 
@@ -163,7 +169,7 @@ EXTERNAL_MODELS_ALL9 = [
 ]
 
 DATA_AGENT_STEPS_REQUIRED = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]  # K 为 best-effort
-EXTERNAL_REVIEW_EXPECTED_DIMENSIONS = 11  # Ch6 后含 reader_flow（ABC 方案 C 第 11 维度）
+EXTERNAL_REVIEW_EXPECTED_DIMENSIONS = 13  # Round 13 v2: 11 工艺维度 + naturalness + reader_critic
 WORKFLOW_REQUIRED_STEPS = {
     "webnovel-write": ["Step 1", "Step 2A", "Step 2B", "Step 3", "Step 3.5", "Step 4", "Step 5", "Step 6", "Step 7"],
     "webnovel-review": ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6", "Step 7", "Step 8"],
@@ -443,7 +449,7 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
     report = _find_review_report(project_root, chapter)
     if report is None:
         return CheckResult(
-            id="A2", name="11 checker 独立调用", layer="A",
+            id="A2", name="13 checker 独立调用", layer="A",
             status="fail", severity="critical",
             evidence="review report is missing",
             remediation=["rerun Step 3 with all 11 internal checkers"],
@@ -553,7 +559,7 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
     # A2.1 · canonical key 校验（检测 AI fallback 写 legacy/中文 key）
     if invalid_keys:
         return CheckResult(
-            id="A2", name="11 checker 独立调用 · canonical key", layer="A",
+            id="A2", name="13 checker 独立调用 · canonical key", layer="A",
             status="warn", severity="high",
             evidence=(
                 f"state.json checker_scores 含非 canonical key: {invalid_keys[:5]}. "
@@ -567,7 +573,7 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
         )
     if len(missing) >= 3:
         return CheckResult(
-            id="A2", name="11 checker 独立调用", layer="A",
+            id="A2", name="13 checker 独立调用", layer="A",
             status="fail", severity="critical",
             evidence=f"review report is missing checker entries: {missing}",
             measured=measured,
@@ -575,7 +581,7 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
         )
     if missing:
         return CheckResult(
-            id="A2", name="11 checker 独立调用", layer="A",
+            id="A2", name="13 checker 独立调用", layer="A",
             status="warn", severity="high",
             evidence=f"review report is missing checker entries: {missing}",
             measured=measured,
@@ -583,7 +589,7 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
         )
     if len(score_values) >= 8 and len(unique_scores) <= 2:
         return CheckResult(
-            id="A2", name="11 checker 独立调用", layer="A",
+            id="A2", name="13 checker 独立调用", layer="A",
             status="fail", severity="critical",
             evidence=f"checker scores collapsed into only {len(unique_scores)} distinct values: {unique_scores}",
             measured=measured,
@@ -591,7 +597,7 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
         )
     if duplicated_snippets:
         return CheckResult(
-            id="A2", name="11 checker 独立调用", layer="A",
+            id="A2", name="13 checker 独立调用", layer="A",
             status="fail", severity="critical",
             evidence="checker review snippets look duplicated across multiple checkers",
             measured=measured,
@@ -599,16 +605,16 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
         )
     if state_checker_count and state_checker_count < 8:
         return CheckResult(
-            id="A2", name="11 checker 独立调用", layer="A",
+            id="A2", name="13 checker 独立调用", layer="A",
             status="warn", severity="high",
             evidence=f"state.json only persisted {state_checker_count} checker scores",
             measured=measured,
             remediation=["inspect Step 5 and ensure checker_scores are persisted into chapter_meta"],
         )
     return CheckResult(
-        id="A2", name="11 checker 独立调用", layer="A",
+        id="A2", name="13 checker 独立调用", layer="A",
         status="pass", severity="high",
-        evidence="review report contains all 11 checkers (含 flow-checker)",
+        evidence="review report contains all 13 checkers (含 flow-checker + naturalness + reader-critic, Round 13 v2)",
         measured=measured,
     )
 
@@ -686,18 +692,56 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
                 measured=measured,
                 remediation=["rerun Step 3.5 for all core external models"],
             )
+        # Round 12: external score spread alert.
+        # Ch1《<example-project>》血教训——Gemini 75.3 与其他模型 87-91 分差 ≥ 10，
+        # 平均化稀释后主审查员未读 Gemini 低分 issue，漏掉时间线矛盾。
+        # 分差 ≥ 10 分视为"模型共识低"，强制 warn 要求人工复核最低分模型。
+        model_scores: Dict[str, float] = {}
+        for model_key, payload in external_results.items():
+            data = payload.get("data") or {}
+            score = data.get("overall_score")
+            if isinstance(score, (int, float)) and score > 0:
+                model_scores[model_key] = float(score)
+        spread_alert_note = None
+        if len(model_scores) >= 2:
+            max_score = max(model_scores.values())
+            min_score = min(model_scores.values())
+            score_spread = max_score - min_score
+            if score_spread >= 10:
+                lowest_model = min(model_scores, key=model_scores.get)
+                highest_model = max(model_scores, key=model_scores.get)
+                spread_alert_note = (
+                    f"external_score_spread={score_spread:.1f} >= 10 "
+                    f"(lowest={lowest_model}:{min_score:.1f}, highest={highest_model}:{max_score:.1f}). "
+                    f"人工强制复核 {lowest_model} 的 all high/medium issues."
+                )
+            measured["score_spread"] = round(score_spread, 1)
+            measured["lowest_model"] = min(model_scores, key=model_scores.get)
+            measured["highest_model"] = max(model_scores, key=model_scores.get)
+
         if len(valid_models) < len(EXTERNAL_MODELS_ALL9):
             missing_models = [m for m in EXTERNAL_MODELS_ALL9 if m not in valid_models]
             extra_issues = []
             if invalid_supplemental:
                 extra_issues.append(f"invalid_supplemental={sorted(invalid_supplemental)}")
+            if spread_alert_note:
+                extra_issues.append(f"spread_alert={spread_alert_note}")
             return CheckResult(
                 id="A3", name="9 外部模型覆盖", layer="A",
                 status="warn", severity="high",
                 evidence="external review model coverage is incomplete: "
                 f"missing={missing_models}" + (f", {'; '.join(extra_issues)}" if extra_issues else ""),
                 measured=measured,
-                remediation=["backfill the missing external model reviews"],
+                remediation=["backfill the missing external model reviews"] +
+                    (["人工复核最低分模型的 high/medium issues"] if spread_alert_note else []),
+            )
+        if spread_alert_note:
+            return CheckResult(
+                id="A3", name="9 外部模型覆盖", layer="A",
+                status="warn", severity="medium",
+                evidence=f"{len(valid_models)} external review JSON files are valid; {spread_alert_note}",
+                measured=measured,
+                remediation=["人工复核最低分模型的 high/medium issues，确认是共识低还是观察视角差异"],
             )
         return CheckResult(
             id="A3", name="9 外部模型覆盖", layer="A",

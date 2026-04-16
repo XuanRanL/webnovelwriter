@@ -39,6 +39,8 @@ nul
 <example-project-A>/
 <example-project-D>/
 <example-project-B>/
+<example-project>/
+<example-project>/
 
 # Local research / sibling projects (avoid accidental commit)
 .sisyphus/

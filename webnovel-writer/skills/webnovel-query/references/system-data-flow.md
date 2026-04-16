@@ -97,14 +97,16 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
    → Step 2A 粗稿（纯正文）
    → Step 2B 风格适配（--fast/--minimal 跳过）
 
-3. Step 3 内部审查 (11 个 Checker 并行，5+6 分批)
-   → 一致性/连贯性/OOC/追读力/爽点密度/节奏/对话/信息密度/文笔质感/情感表现/**读者流畅度 (flow-checker)**
-   → 输出内部审查分数
+3. Step 3 内部审查 (13 个 Checker 并行，0+6+5 分批 · Round 13 v2)
+   → Batch 0（2 读者视角）: reader-naturalness-checker + reader-critic-checker
+   → Batch 1（6 核心）: 一致性/连贯性/OOC/追读力/爽点密度/读者流畅度 (flow-checker)
+   → Batch 2（5 工艺）: 节奏/对话/信息密度/文笔质感/情感表现
+   → 输出内部审查分数（13 维度平均）
 
-4. Step 3.5 外部模型审查（9 模型双层架构）
+4. Step 3.5 外部模型审查（9 模型双层架构 · 13 维度）
    → 核心3（kimi/glm/qwen-plus）+ 补充6
-   → 每模型 11 维度评分（含 reader_flow）
-   → 输出 9 模型 × 11 维度评分矩阵
+   → 每模型 13 维度评分（含 reader_flow + naturalness + reader_critic · Round 13 v2）
+   → 输出 9 模型 × 13 维度评分矩阵
 
 5. Step 4 网文化润色
    → 基于内外审查报告修复问题

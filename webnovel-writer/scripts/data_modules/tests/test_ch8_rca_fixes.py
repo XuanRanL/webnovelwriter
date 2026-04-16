@@ -140,10 +140,16 @@ def test_normalize_banned_anti_ai_dropped():
 
 def test_normalize_banned_case_insensitive():
     audit = _load_audit_module()
-    for banned_variant in ("anti-ai", "anti_ai", "naturalness", "naturalness_veto"):
+    # Round 13 v2: "naturalness" 不再是 banned（升格为 reader-naturalness-checker alias）
+    # 仅保留真正的老 veto 别名作为 banned
+    for banned_variant in ("anti-ai", "anti_ai", "naturalness_veto"):
         _, _, invalid = audit.normalize_checker_scores_keys({banned_variant: 50})
         assert invalid, f"应该拒 {banned_variant}"
         assert any(banned_variant.lower() in i.lower() or banned_variant in i for i in invalid)
+    # "naturalness" 现在是合法 alias → 正常映射到 reader-naturalness-checker
+    normalized, _, invalid = audit.normalize_checker_scores_keys({"naturalness": 88})
+    assert "reader-naturalness-checker" in normalized
+    assert not invalid
 
 
 def test_normalize_unknown_key_dropped():

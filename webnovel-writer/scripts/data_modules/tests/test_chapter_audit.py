@@ -66,6 +66,9 @@ def good_project(tmp_path):
                     "density-checker": 92,
                     "prose-quality-checker": 90,
                     "emotion-checker": 91,
+                    "flow-checker": 88,
+                    "reader-naturalness-checker": 91,
+                    "reader-critic-checker": 78,
                 },
             }
         },
@@ -128,7 +131,9 @@ def good_project(tmp_path):
         "- density-checker: 92\n"
         "- prose-quality-checker: 90\n"
         "- emotion-checker: 91\n"
-        "- flow-checker: 88\n\n"
+        "- flow-checker: 88\n"
+        "- reader-naturalness-checker: 91\n"
+        "- reader-critic-checker: 78\n\n"
         "## 外部模型\n"
         "- kimi: 90 (摘要: 质量良好，人物塑造清晰，场景描写到位)\n"
         "- glm: 91 (摘要: 节奏把控出色，钩子强度到位)\n"
@@ -151,6 +156,8 @@ def good_project(tmp_path):
         "prose_quality",
         "emotion_expression",
         "reader_flow",
+        "naturalness",       # Round 13 v2
+        "reader_critic",     # Round 13 v2
     ]
     for model_key in ("qwen3.6-plus", "gpt-5.4", "gemini-3.1-pro"):
         payload = {
@@ -317,6 +324,8 @@ def test_A2_checker_diversity_fails_on_duplicated_snippets(good_project):
                 "| prose-quality-checker | 90 | 文笔保持稳定 |",
                 "| emotion-checker | 91 | 情感张力在线 |",
                 "| flow-checker | 88 | 读者流畅度稳定 |",
+                "| reader-naturalness-checker | 91 | 母语自然度 |",
+                "| reader-critic-checker | 78 | 读者视角锐评 |",
             ]
         ),
         encoding="utf-8",

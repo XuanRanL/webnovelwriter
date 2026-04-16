@@ -28,8 +28,8 @@
 
 ## 共识机制（核心设计）
 
-- **9 模型 × 11 维度 = 99 份独立评分**
-- 每个模型都跑**全 11 维度**（无分工！role 字段已删除 2026-04-16 Round 11）
+- **9 模型 × 13 维度 = 99 份独立评分**
+- 每个模型都跑**全 13 维度**（无分工！role 字段已删除 2026-04-16 Round 11）
 - 多模型命中同一 issue → 真 bug；单模型孤例 → 模型偏见（cross_validation 自动过滤）
 - 异构覆盖：国产（Doubao/GLM×2/Qwen/MiMo/MiniMax/DeepSeek）+ 西方（GPT/Gemini）
 
@@ -53,7 +53,7 @@
 ## 并发控制
 
 - `--model-key all` 模式：9 模型并发 × 每模型最多 6 维度并发（`DEFAULT_MAX_CONCURRENT=6`）
-- 单模型全并发：11 维度同时跑（openclawroot RPM=30 够用）
+- 单模型全并发：13 维度同时跑（openclawroot RPM=30 够用）
 - 补充层维度并发自动降至 min(6, 3) = 3（启用早停拦截排队中的维度）
 - CLI 参数：`--max-concurrent N`、`--rpm-override N`
 

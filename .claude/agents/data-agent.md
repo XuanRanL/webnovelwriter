@@ -554,7 +554,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `foreshadowing_paid` | list[str] | 本章兑现的伏笔 |
 | `strand_dominant` | str | 主导情节线（quest/fire/constellation） |
 | `review_score` | float | 审查综合分 |
-| `checker_scores` | dict | 各 checker 分数。**必须同时写入 `"overall"` 键（= `review_score`）**以满足 hygiene H9 交叉校验；缺 `"overall"` 会触发 P1 警告。示例: `{"设定一致性": 82, "连贯性": 89, ..., "overall": 91}` |
+| `checker_scores` | dict | 各 checker 分数。**key 必须是 11 个 canonical 英文 checker 名**（见 CHECKER_NAMES）+ `"overall"` 键（= `review_score`）。**禁用中文 key**（"设定一致性"/"钩子强度"/"Anti-AI" 等是 hygiene H18 P1 警告）。示例: `{"consistency-checker": 92, "continuity-checker": 91, "ooc-checker": 88, "reader-pull-checker": 94, "high-point-checker": 89, "pacing-checker": 91, "dialogue-checker": 91, "density-checker": 97, "prose-quality-checker": 92, "emotion-checker": 95, "flow-checker": 90, "overall": 91}` |
 | `allusions_used` | list[dict] | **本章引用的典故列表（Step B.5 产出），每条含 id/snippet/type/source/carrier/function/is_original 字段；无引用库或无引用时为空数组** |
 
 ### 第二层 · Extended 26 扩展字段（允许但不强制；B9 不检查；为长线质量积累服务）
@@ -594,6 +594,13 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 - `allusions_used` 遵循 Step B.5 的 schema 硬约束（见上方）
 - Core 层字段如 `review_score` 与 Extended 层 `overall_score` 不同：`review_score` 是 Step 3 内部均分，`overall_score` 是合并后加权分；两者同时存在不矛盾
 - `foreshadowing_added` / `foreshadowing_resolved` 为历史别名，写入时必须用 `foreshadowing_planted` / `foreshadowing_paid`（hygiene_check H8 会阻断同时存在）
+- **`checker_scores` key 硬约束**（Ch1 血教训 · hygiene H18）：
+  - 合法 key = 11 canonical 英文 checker 名 ∪ `{"overall"}`
+  - 11 canonical 英文名：`consistency-checker / continuity-checker / ooc-checker / reader-pull-checker / high-point-checker / pacing-checker / dialogue-checker / density-checker / prose-quality-checker / emotion-checker / flow-checker`
+  - **禁用中文 key**：AI 常写的 `{"设定一致性": 92, "钩子强度": 93, "Anti-AI": 91}` 会被 hygiene H18 P1 拦截
+  - Legacy 术语（"钩子强度"/"伏笔埋设"/"情绪曲线"/"节奏"/"对话"/"Prose质量"）**不是独立 checker**，别单独列维度
+  - `Anti-AI`/naturalness 是 **veto verdict**（写到 `naturalness_verdict` 字段），不进 checker_scores
+  - audit 会自动用 CHECKER_ALIASES 反向映射中文（兼容层），但写入时强制 canonical 英文
 
 Agent 输出格式（正确）：
 ```json
@@ -620,7 +627,7 @@ Agent 输出格式（正确）：
     "foreshadowing_paid": ["玉佩灼痕延续"],
     "strand_dominant": "quest",
     "review_score": 93.0,
-    "checker_scores": {"设定一致性": 100, "连贯性": 97},
+    "checker_scores": {"consistency-checker": 100, "continuity-checker": 97, "overall": 93},
     "allusions_used": [
       {
         "id": "S01",

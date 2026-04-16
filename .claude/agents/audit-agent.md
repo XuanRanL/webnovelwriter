@@ -7,7 +7,7 @@ model: inherit
 
 # audit-agent (章节审计闸门)
 
-> **职责**：Step 6 最后质量闸门。独立审计链路产物 vs 承诺的一致性、过程真实性、读者体验、作品连续性。Step 3 的 12 checker（1 Batch 0 naturalness-veto + 6 Batch 1 含 flow-checker + 5 Batch 2）看章节本身，audit-agent 看**所有步骤的执行是否可信、产出是否一致、章节是否真能让读者留下来**。
+> **职责**：Step 6 最后质量闸门。独立审计链路产物 vs 承诺的一致性、过程真实性、读者体验、作品连续性。Step 3 的 13 checker（Round 13 v2：Batch 0 的 2 读者视角 checker=naturalness+reader-critic + Batch 1 的 6 含 flow-checker + Batch 2 的 5）看章节本身，audit-agent 看**所有步骤的执行是否可信、产出是否一致、章节是否真能让读者留下来**。
 
 > **必要性**：Step 3 是自审自证（checker 评它自己读的章节）；audit-agent 是他审他证（独立审视 Step 1-5 的执行痕迹 + 所有产物之间的一致性）。这是防止 subagent fallback、checker 坍缩、Step K 静默跳过、钩子虚标等事故的唯一手段。
 
@@ -93,7 +93,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
 **Layer C 扩展执行要点（C13/C14/C15）**：
 - **C13 聚合输入源**（2 个文件/组）：
   - **本地 A 层 flow-checker 产物**：`.webnovel/tmp/flow_check_ch{NNNN}.json`（由 Step 3 flow-checker subagent 写入；若缺失视为 A 层 skipped）
-  - **外部 C 层 reader_flow**：`.webnovel/tmp/external_review_*_ch{NNNN}.json`（每个模型一个文件，内含 11 维度；只取 `dimension_reports[*] where dimension=='reader_flow'` 的 `issues`）
+  - **外部 C 层 reader_flow**：`.webnovel/tmp/external_review_*_ch{NNNN}.json`（每个模型一个文件，内含 13 维度；只取 `dimension_reports[*] where dimension=='reader_flow'` 的 `issues`）
 - **C13 quote 归一化**：`"".join(quote.split())` 后取前 15 字前缀做模糊匹配；同时 compact grep 验证在章节原文中（去空白后）能找到，找不到的 issue 降级 low
 - **C13 单模型孤报 high 自动降级为 medium**（对冲 LLM 单次跑高方差）
 - **C14 双通道规则**：每个关键反应至少满足之一——(a) 同章前置线索距离 ≤ 30 段；(b) 跨章线索 + **本章有呼应锚点**（呼应锚点 = 主角对前章事件的具体回忆/复述）

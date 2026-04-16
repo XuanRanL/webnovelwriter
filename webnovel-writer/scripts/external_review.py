@@ -6,13 +6,16 @@ Supports two modes:
 
 Architecture (2026-04-16 Round 11):
   - 2 providers: openclawroot (primary, all 9 models) + siliconflow (fallback, partial)
-  - 9 models × 11 dimensions = 99 independent rater scores (consensus mechanism)
-  - 每个模型都跑全 11 维度（无分工）；role 字段已删除以消除"分工"误解
+  - 9 models × 13 dimensions = 117 independent rater scores (consensus mechanism · Round 13 v2)
+  - 每个模型都跑全 13 维度（无分工）；role 字段已删除以消除"分工"误解
+  - 13 维度 = 11 工艺维度 + naturalness（汉语母语自然度）+ reader_critic（读者锐评）
   - tier 字段仅用于早停机制（core 必须成功，supplemental 失败不阻塞）
   - Heterogeneous coverage: 国产 (Doubao/GLM×2/Qwen/MiMo/MiniMax/DeepSeek) × 异构 (GPT/Gemini)
 
-11 dimensions: consistency/continuity/ooc/reader_pull/high_point/pacing/dialogue_quality/
-information_density/prose_quality/emotion_expression/reader_flow (2026-04-13 added)
+13 dimensions: consistency/continuity/ooc/reader_pull/high_point/pacing/dialogue_quality/
+information_density/prose_quality/emotion_expression/reader_flow/naturalness/reader_critic
+(2026-04-13 added reader_flow; Round 13 v2 2026-04-16 added naturalness + reader_critic,
+让外部模型也参与读者视角评估，与内部 13 checker 对齐)
 
 History:
   Round 10-: 4-tier (nextapi/healwrap/codexcc/siliconflow) × 9 老模型，实测 6-7/9 成功，
@@ -104,7 +107,7 @@ class ProviderRateLimiter:
 REASONING_MODELS = {"mimo-v2-pro", "minimax-m2.7-hs", "deepseek-v3.2-thinking"}
 
 # 9 模型 × 2 供应商（openclawroot 首位 + siliconflow 备用）
-# 每个模型跑全 11 维度（共识机制：9×11 = 99 份独立评分）
+# 每个模型跑全 13 维度（共识机制：9×11 = 99 份独立评分）
 # tier 仅用于早停机制（core 必须成功；supplemental 失败不阻塞）
 # role 字段已删除（2026-04-16 Round 11）—— 每个模型都是全维度 rater，没有分工
 MODELS = {
@@ -386,6 +389,76 @@ DIMENSIONS = {
 {{"dimension":"emotion_expression","score":0-100,"issues":[{{"id":"EE_001","type":"EMOTION_SHALLOW","severity":"critical/high/medium/low","location":"位置","description":"问题","suggestion":"建议","quote":"引用正文原句"}}],"summary":"一句话总评"}}
 
 评分标准：95-100出版级｜90-94优秀仅轻微瑕疵｜85-89良好少量可优化｜80-84合格若干需改进｜75-79及格有明显问题｜<75不合格有严重问题
+
+## 本章正文
+{chapter_text}"""
+    },
+    "naturalness": {
+        "name": "汉语母语自然度",
+        "system": "你是一个汉语母语中国读者，凭语感判断章节是否像真人写的。不按写作规则打分，按母语本能打分。quote 必须原文逐字。",
+        "prompt": """**核心任务**：以中国母语读者本能判断这一章**像不像真人写的**——是否有机翻味、AI 套话、首句语病、设计标签暴露、伪神经科学公式痕迹、机械打卡感。
+
+## 判断维度（读者本能，不是规则）
+
+1. **首句语感**（极重要）：第一句是否汉语合法？如"<protagonist>在死"这种体貌违反/首句语病直接 REJECT_CRITICAL。
+2. **AI 腔检测**：是否出现"不由得"/"心中一震"/"一股暖流"/"时间仿佛静止了"/"这一刻他突然明白"/"值得注意的是"/"总的来说"等 AI 高频套话？
+3. **机翻味**：句式是否有外语 calque（"让 X 做某事"/"这是一个很好的例子"这种英文逻辑翻译体）？
+4. **设计标签暴露**：是否能明显看出"作者在按某公式/某规则写"（如"4 字激活杏仁核"/"首句必含感官词"的公式痕迹）？
+5. **碎片化过度**：是否过多 3-8 字的碎句独立成段，让段落看起来像诗？
+6. **机械打卡感**：是否为了凑爽点/钩子/伏笔，让情节推进感觉像在打卡而非自然发生？
+
+{context_block}
+
+严格按 JSON 输出（quote 必须原文逐字出现，否则丢弃整份）：
+{{"dimension":"naturalness","score":0-100,"verdict":"PASS|POLISH_NEEDED|REWRITE_RECOMMENDED|REJECT_HIGH|REJECT_CRITICAL","first_sentence_score":0-10,"issues":[{{"id":"NAT_001","type":"NATURALNESS","severity":"critical/high/medium/low","location":"原文前 8 字","description":"[category:首句语病|AI腔|机翻|设计标签|碎片化|机械打卡] 具体读者感受","suggestion":"修复方向","quote":"原文一句 ≤ 40 字"}}],"summary":"一句话总评这章汉语自然度"}}
+
+## verdict 档位
+
+- `PASS`：像真人写的，母语读者不皱眉
+- `POLISH_NEEDED`：有 1-2 处 AI 腔/机翻痕迹但不影响整体
+- `REWRITE_RECOMMENDED`：多处不像人写的，建议重写段落
+- `REJECT_HIGH`：首句或开篇有明显语病，读者第一眼就出戏
+- `REJECT_CRITICAL`：首句语病严重或全文像 AI 套路模板，无法当正常小说阅读
+
+## 评分
+
+`score = max(0, 100 - (critical × 25 + high × 15 + medium × 8 + low × 3))`。首句语病直接 -30 起。
+
+95-100 母语范本｜90-94 少量轻微 AI 腔｜85-89 偶有机翻味但读得下去｜80-84 多处不像人写｜75-79 明显 AI 公式痕迹｜<75 劝退级
+
+## 本章正文
+{chapter_text}"""
+    },
+    "reader_critic": {
+        "name": "读者锐评",
+        "system": "你是在番茄/起点/晋江追更的普通网文读者。看得爽就追，看得假/装B/脑瘫就弃。不是编辑不是评委不是规则执行器。",
+        "prompt": """**你的唯一任务**（压倒所有其他约束）：
+
+**仔细研究认真思考详细调查搜索分析 以正常读者的角度锐评和找这个章节小说的问题。**
+
+## 语言污染禁令（保护读者视角纯度）
+
+❌ **禁止使用作者/编辑术语**：`Show vs Tell` / `POV` / `earned vs forced` / `金手指铺垫` / `节奏段` / `勾子` / `伏笔` / `大纲` / `设定` / `人设崩塌`（改说"这主角不像人"）
+❌ **禁止评委语气**：`瑕不掩瑜` / `整体优秀，仅有微小瑕疵` / `值得一读` / `建议作者` / `可以考虑`
+❌ **禁止规则引用**：`这违反 X 原则` / `按网文写作标准`
+❌ **禁止和稀泥**：每条问题独立锋利，不许"但整体不错"圆回来
+✅ **允许并鼓励**：口语、吐槽、"卧槽"、"wtf"、"离谱"、"脑瘫"、"装B"、"作者开上帝视角了"、"这他妈谁信"、"我想滑走了"
+
+## 你要做什么
+
+读完本章后，**找至少 5 条 problems + 至少 2 条 highlights**，每条给 quote + 读者口吻吐槽/夸赞。最后回答**唯一硬指标**：**我会追下一章吗？**（yes/hesitant/no）
+
+{context_block}
+
+严格按 JSON 输出（quote 必须原文逐字出现，否则丢弃整份）：
+{{"dimension":"reader_critic","score":0-100,"will_continue_reading":"yes|hesitant|no","continue_reason":"一句读者口吻","issues":[{{"id":"RC_001","type":"READER_CRITIC","severity":"critical/high/medium/low","location":"原文前 8 字","description":"[category:上帝视角|降智|出戏|装B|水段|套路|人物假|情感假|莫名其妙|其他] 读者一句话真实反应（口语/吐槽）","suggestion":"读者口吻的修改建议（如果有）","quote":"原文一句 ≤ 40 字"}}],"highlights":[{{"quote":"原文一句","reason":"读者为什么记住了这处"}}],"summary":"一段 60-120 字读者总评，读起来像读者给朋友发微信"}}
+
+## 评分
+
+- yes → base 75，每个 highlight +3，每个 high -6 / medium -2 / low -1
+- hesitant → base 55，同样加减
+- no → base 30，同样加减
+- clamp [0, 100]
 
 ## 本章正文
 {chapter_text}"""
@@ -1028,42 +1101,120 @@ def build_context_block(context_data, project_root=None, chapter_num=None):
     return "\n".join(parts)
 
 
-def _verify_quote_exists(quote: str, chapter_text: str) -> bool:
-    """Check whether `quote` actually appears in chapter_text (with tolerance for quote-mark variants).
+def _norm_text(s: str) -> str:
+    """Normalize quote marks + whitespace + common Chinese punct for fuzzy matching.
 
-    Returns True if quote is found verbatim or with minor normalization:
-    - quote marks: 直/弯/ASCII 引号互换后仍匹配
-    - whitespace: 内部连续空白归一化为单空格
-    - 标点: 中文逗号/句号/顿号互换后仍匹配
-    - 截断: 若 quote > 15 字，允许核心 10 字子串存在即视为匹配
+    Round 12: strip ALL quote marks entirely (both curly & straight) so that
+    external models wrapping quote strings in leading/trailing quote marks
+    don't break substring matching. Also strips em-dash variants.
+    """
+    if not s:
+        return ""
+    out = s
+    # Remove all quote-like chars (they're mostly visual markers in model outputs)
+    for ch in ('"', '"', '"', ''', ''', "'", '「', '」', '『', '』', '《', '》'):
+        out = out.replace(ch, '')
+    # Normalize CJK punctuation to ASCII equivalents
+    out = (out
+           .replace('，', ',').replace('。', '.').replace('；', ';')
+           .replace('：', ':').replace('！', '!').replace('？', '?')
+           .replace('—', '-').replace('–', '-').replace('·', '.'))
+    return ''.join(out.split())
 
-    Used in Round 10 to catch external model hallucinated quotes (Ch1 <example-project>
-    qwen 实测瞎引 "妹妹那时候在外地读书，他在合肥加班" 根本不在正文里)。
+
+def _verify_quote_style(quote: str, chapter_text: str) -> str:
+    """Return match style for quote against chapter_text.
+
+    Styles (from strongest to weakest evidence):
+    - "exact": raw substring match
+    - "normalized": matches after punct/whitespace/quote-mark normalization
+    - "elision": quote uses explicit elision markers (……/…/...) OR is an implicit
+      segmented quote whose head+tail both appear within <= 120 normalized chars
+      of each other in the chapter — the external model is doing legitimate
+      "A…B" style omission quoting, which is NOT a hallucination.
+    - "truncated": long quote (>=15) whose first 10 chars appear in chapter
+    - "missing": none of the above — likely hallucination
+
+    Rationale (Ch1 <example-project> Round 12 RCA): Qwen 正确识别"三十天后末世爆发"信息倾倒 bug，
+    但其 quote 用省略引用（跳过中间旁白"那声音说"），被误判幻觉 severity 强降 info，
+    导致真实问题被吞。elision 识别使省略引用保留原 severity。
     """
     if not quote or not chapter_text:
-        return False
+        return "missing"
+
     # Fast path: raw substring match
     if quote in chapter_text:
-        return True
+        return "exact"
 
-    def _norm(s: str) -> str:
-        # Normalize quote marks + whitespace + common Chinese punct
-        out = (s
-               .replace('"', '"').replace('"', '"')
-               .replace(''', "'").replace(''', "'")
-               .replace('"', '"').replace("'", "'")
-               .replace('，', ',').replace('。', '.').replace('；', ';')
-               .replace('：', ':').replace('！', '!').replace('？', '?'))
-        return ''.join(out.split())
+    nq = _norm_text(quote)
+    nc = _norm_text(chapter_text)
+    if nq and nq in nc:
+        return "normalized"
 
-    if _norm(quote) in _norm(chapter_text):
-        return True
+    # Explicit elision marker: quote contains …/.../……
+    # Split by any ellipsis token, verify every non-empty segment appears in chapter
+    # AND verify the segments appear in-order with reasonable distance (<= 200 norm chars)
+    ellipsis_tokens = ['……', '...', '…', '… …']
+    has_ellipsis = any(tok in quote for tok in ellipsis_tokens)
+    if has_ellipsis:
+        # Replace all ellipsis variants with a single delimiter for splitting
+        split_quote = quote
+        for tok in ellipsis_tokens:
+            split_quote = split_quote.replace(tok, '\x00')
+        segments = [s.strip() for s in split_quote.split('\x00') if s.strip()]
+        if len(segments) >= 2 and all(len(s) >= 2 for s in segments):
+            positions = []
+            search_pos = 0
+            all_found = True
+            for seg in segments:
+                nseg = _norm_text(seg)
+                if not nseg:
+                    continue
+                idx = nc.find(nseg, search_pos)
+                if idx < 0:
+                    all_found = False
+                    break
+                positions.append(idx)
+                search_pos = idx + len(nseg)
+            if all_found and positions:
+                # Check max gap between consecutive segments is reasonable (<= 200 chars in normalized text)
+                gaps = []
+                for i in range(1, len(positions)):
+                    prev_end = positions[i-1] + len(_norm_text(segments[i-1]))
+                    gaps.append(positions[i] - prev_end)
+                if all(g <= 200 for g in gaps):
+                    return "elision"
+
+    # Implicit elision: head + tail both appear and are reasonably close
+    # Guards against false-positives: require quote long enough to carry info
+    if len(quote) >= 12:
+        head_len = min(6, max(4, len(quote) // 4))
+        tail_len = head_len
+        head = _norm_text(quote[:head_len])
+        tail = _norm_text(quote[-tail_len:])
+        if head and tail and head != tail:
+            head_idx = nc.find(head)
+            if head_idx >= 0:
+                # Tail must appear AFTER head, within 120 normalized chars
+                search_from = head_idx + len(head)
+                tail_idx = nc.find(tail, search_from)
+                if 0 <= tail_idx - search_from <= 120:
+                    return "elision"
+
     # Fallback: for long quotes, require core 10-char substring presence
     if len(quote) >= 15:
         core = quote[:10]
-        if core in chapter_text or _norm(core) in _norm(chapter_text):
-            return True
-    return False
+        if core in chapter_text or _norm_text(core) in nc:
+            return "truncated"
+    return "missing"
+
+
+def _verify_quote_exists(quote: str, chapter_text: str) -> bool:
+    """Backwards-compatible boolean wrapper around _verify_quote_style.
+
+    Returns True for exact/normalized/elision/truncated styles; False for missing.
+    """
+    return _verify_quote_style(quote, chapter_text) != "missing"
 
 
 def _downgrade_severity(severity: str) -> str:
@@ -1232,7 +1383,7 @@ def run_dimensions_mode(args, api_keys):
 
 
 def _run_single_model(args, api_keys):
-    """执行单个模型的 11 维度审查（含 reader_flow）。"""
+    """执行单个模型的 13 维度审查（含 reader_flow）。"""
     project_root = Path(args.project_root)
     chapter_num = args.chapter
     model_key = args.model_key
@@ -1328,9 +1479,19 @@ def _run_single_model(args, api_keys):
                     issue["source_dimension"] = dim_key
                     quote = issue.get("quote")
                     if isinstance(quote, str) and quote.strip():
-                        verified = _verify_quote_exists(quote, chapter_text)
+                        # Round 12 RCA: style-aware quote verification.
+                        # elision (A…B 式省略引用) 属于合法引用，不降级。
+                        # 只有 style == "missing" 才按幻觉处理。
+                        style = _verify_quote_style(quote, chapter_text)
+                        verified = style != "missing"
                         issue["quote_verified"] = verified
-                        if not verified:
+                        issue["quote_style"] = style
+                        if style == "elision":
+                            issue["quote_elision_note"] = (
+                                "quote 使用省略引用（head+tail 均在正文中），"
+                                "保留原 severity 不降级"
+                            )
+                        elif not verified:
                             # 幻觉 quote → severity 降一档（critical→high→medium→low→info）
                             original_severity = issue.get("severity", "medium")
                             issue["original_severity"] = original_severity
@@ -1339,6 +1500,7 @@ def _run_single_model(args, api_keys):
                                 f"quote '{quote[:30]}...' 不在正文中（可能模型幻觉），"
                                 f"severity {original_severity}→{issue['severity']}"
                             )
+                            issue["needs_human_verify"] = True
                 all_issues.extend(dim_issues)
                 if usage:
                     total_prompt_tokens += usage.get("prompt_tokens", 0)
