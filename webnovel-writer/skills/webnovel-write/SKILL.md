@@ -381,6 +381,21 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" con
 - Ch1-3：至少 5 个冲突点
 - Ch1-3：第一个场景必须包含至少 1 个具象数字（展示世界观量级）
 
+**首章专属审查 rubric（2026-04-16 Round 10 新增 · Ch1 末世重生血教训）**：
+当 chapter == 1 时，下列 checker 自动启用"首章加严"子项：
+
+| Checker | 首章额外检查 | 触发条件 → 判级 |
+|---|---|---|
+| consistency-checker | **金手指激活时序交叉校验**（设定集·激活章节 vs 正文·前世闪回描写） | "前世 + 金手指具名使用"共现句 → critical |
+| reader-pull-checker | **核心悬念不裸露**（payoff ≥80 章的 A 级伏笔，Ch1 不得泄露内容关键字） | 首章泄露跨卷悬念 → high |
+| reader-pull-checker | **大纲爽点兑现**（卷大纲承诺本章爽点必须落点） | 承诺未兑现 → high |
+| density-checker | **前 500 字认知载入量**（新设定计数） | ≥10 个 → high；7-9 个 → medium |
+| density-checker | **信息锚点密度**（新设定必须有 ≥2 个具象锚） | 纯抽象新设定（无视觉/触觉/数字锚） → medium |
+| emotion-checker | **首章 distress 具身化**（主角绝望情绪必须有外化生理反应） | 只内心描写无具身动作 → medium |
+| pacing-checker | **前 500 字节奏分段合理性**（避免多个大信息同段轰炸） | 单段 ≥ 4 个新设定 → high |
+| prose-quality-checker | **反派妥协博弈深度**（首章反派决策至少经过 1 次"先拒绝/压价" 拉扯） | 反派一次性通过主角要求 → medium |
+| external-review-agent | **quote 存在性验证**（外部模型引用的"原文"必须真实在正文出现） | 幻觉 quote → 该 issue severity 降一档 |
+
 ### Step 2A：正文起草
 
 执行前必须加载：

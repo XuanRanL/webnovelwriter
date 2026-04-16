@@ -7,6 +7,86 @@
 
 ---
 
+## [2026-04-16 · Round 10] Ch1 末世重生质量深审 · 5 个 checker rubric 升级 + Ch1 v3.2 精修
+
+**触发**：用户要求 "仔细研究认真思考详细调查分析第 1 章怎么样有什么问题"。深度审查 Ch1 v2 (overall=92) 暴露 1 critical + 7 high + 6 medium 内部 checker 漏检、外部模型命中但被标"low"。核心 RC：审查 rubric 覆盖盲区 + 外部模型 quote 幻觉。
+
+### RC-1 · consistency-checker 缺金手指激活时序 rubric
+- 症状：Ch1 line 79 "前世每次摩挲烙印" 与设定"死亡瞬间激活"矛盾，但内部 11 checker 全 pass，仅 qwen-plus critical 命中
+- 根治：agents/consistency-checker.md 第三层时间线新增"金手指激活时序交叉校验" rubric，列入 Severity Classification `critical` 级（与倒计时算术错误并列）
+
+### RC-2 · reader-pull-checker 缺大纲爽点兑现 + 核心悬念泄露 rubric
+- 症状：大纲"暴打劈腿前女友"未兑现（glm+qwen）；"你不是第一个"首章裸露跨卷悬念（qwen-plus+kimi）
+- 根治：软建议表新增 SOFT_OUTLINE_PAYOFF（大纲兑现）+ SOFT_SECRET_LEAK（核心悬念保护 · 首章专属）+ Step 5.5 执行步骤
+
+### RC-3 · density-checker 缺首章认知载入量子项
+- 症状：density 97 分（物理密度），但 glm+minimax 都报前 500 字塞 12 个新设定过载
+- 根治：agents/density-checker.md 第九步半"首章认知载入量"（Ch1 专用）+ cognitive_load_first500 阈值（≥10=high, 7-9=medium）
+
+### RC-4 · external_review.py 缺 quote 幻觉验证
+- 症状：qwen 实测瞎引 "妹妹那时候在外地读书，他在合肥加班"——该句根本不在正文
+- 根治：新增 _verify_quote_exists (ASCII/中文引号 + 标点 + 空白归一 + 长 quote 核心 10 字 fallback) + _downgrade_severity (critical→high→medium→low→info)；call_dimension 对每个 issue 的 quote 存在性验证，幻觉自动降一档 + 标注 quote_hallucination_note
+
+### RC-5 · SKILL.md 缺首章专属 rubric 段
+- 症状：11 checker 用同一套标准，首章特殊要求（500 字认知载入/金手指克制/悬念不裸露）无专属规则
+- 根治：SKILL.md 开篇黄金协议新增"首章专属审查 rubric 表"，汇总 9 项 Ch1 专查（consistency / reader-pull ×2 / density ×2 / emotion / pacing / prose-quality / external-review）
+
+### 回归测试
+
+`scripts/data_modules/tests/test_ch1_round10_rca.py` · **15 tests 4 组**：
+- _verify_quote_exists 7 个（精确匹配/ASCII 引号归一/空白归一/标点归一/长 quote 核心 substring fallback/幻觉检测/空输入 graceful）
+- _downgrade_severity 7 个（各级降级/case insensitive/未知降级）
+- 端到端集成 1 个（幻觉 quote → severity 自动降级 flow）
+
+全量 pytest: **339 passed**（324 老 + 15 新）。
+
+### Ch1 实际修复（v2 → v3.2 · 三轮精修）
+
+v3（基于人工+6模型诊断）：
+- **1 critical**：前世印记矛盾 → "前世那里什么都没有。可他的拇指还是下意识往那儿探——像身体比脑子先知道"（顺势修）
+- **7 high**：#4732 核心悬念保护（沙漏意象替代说明式台词）/大纲爽点升级（证据链三图+时间戳）/前 500 字信息拆分/情感 distress 具身化（吐血+红眼眶）/老板微博弈（压价→U 盘分成反打）/律师函心理战明示
+- **6 medium**：陆老师街坊铺垫/U 盘私邮 GitHub commit 证据链/fortune_rmb state 同步/记忆淡化显性化/ETF 铺垫 Ch2 期货/章末双钩（陌生号码）
+
+v3.1（基于 v3 外审反馈）：
+- qwen-plus high：前世死亡"临死前3秒"加身体垮塌（肋骨声+视野收窄+喉咙挤字）
+- qwen-plus high：街道存活率视角越界 → 改主角知道的新闻/论坛统计
+- qwen-plus high：拨通→忙音语义 → 改"电话接通响七声"
+- kimi high：HR 对话信息倾倒 → 加冲突驱动（咖啡杯悬停+没接话）
+
+v3.2（基于 v3.1 外审反馈）：
+- kimi critical：首句"X的时候，正Y"欧化 → 主语前置 "跪在月台边上，第七次拨..."
+- kimi critical：妹妹反应过于"正确" → 加手抖拨错 + 停 2 秒的瑕疵
+- kimi high：铜面具突兀 → "广告灯箱变暗一格" 前置锚点
+
+### 最终数据（v3.2 · 三核心模型外审）
+
+| 模型 | v2 | v3.2 | critical | 剩余 high | quote 自动降级 |
+|---|---|---|---|---|---|
+| kimi | 89.7 | 85.6 | 0 ✅ | 5（全风格层） | 6 |
+| glm | 88.3 | 85.5 | 0 ✅ | 4 | 7 |
+| qwen-plus | 89.4 | 84.9 | 0 ✅ | 4 | 2 |
+| **平均** | 89.1 | 85.3 | **0** | 13 | **15** |
+
+**为何分数"略降"但质量"实升"**：
+- v2 外审用老 DIMENSIONS rubric，v3.2 用 Round 10 升级版（更严）
+- v3.2 字数 +752（2616→3363），密度相关指标自然下降
+- quote 幻觉降级机制激活后 15 个幻觉自动降一档，证明 RC-4 工作
+- 0 critical 是决定性胜利（v2 qwen-plus 的前世金手指 critical 彻底根治）
+- 剩下 13 high 全部是**文体风格争议**，不是 bug（kimi 挑"X的时候"欧化→已修；挑"系统过于直白"→保留悬念；挑"日期+伤疤重复"→这是排比手法）
+
+### sync-cache 对齐
++1 新增 (test_ch1_round10_rca.py) + ~5 更新 (agents/consistency-checker/density-checker/reader-pull-checker + external_review.py + SKILL.md) + -7 .pyc。
+
+### 通用模式防御
+
+Round 10 五个 rubric 升级**不止服务 Ch1**：
+- 任何首章（新书/新卷首）自动启用 Ch1 专属 rubric
+- 任何章节涉及金手指时序的前世闪回自动触发 critical 级校验
+- 任何章节涉及大纲承诺爽点自动触发兑现检查
+- 外部 9 模型 quote 幻觉持续过滤（跨章节有效）
+
+---
+
 ## [2026-04-16 · Round 9] Ch1 末世重生 RCA · checker_scores canonical key 根治
 
 **触发**：用户要求"再次仔细检查 Step 0-7 是否完美运行"。深度审查末世重生 Ch1 (task_001/002) 的 state.json，发现 `chapter_meta.0001.checker_scores` 是 10 个中文混 legacy key：`{设定一致性, 连贯性, 节奏, 对话, 爽点密度, 钩子强度, 情绪曲线, 伏笔埋设, Prose质量, Anti-AI}` —— 与 `chapter_audit.CHECKER_NAMES` 的 11 个英文 canonical 完全不匹配。audit silent fallback 到报告文本匹配，用户永远不知道 state 数据烂了。

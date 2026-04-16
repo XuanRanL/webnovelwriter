@@ -989,6 +989,58 @@ def build_context_block(context_data, project_root=None, chapter_num=None):
     return "\n".join(parts)
 
 
+def _verify_quote_exists(quote: str, chapter_text: str) -> bool:
+    """Check whether `quote` actually appears in chapter_text (with tolerance for quote-mark variants).
+
+    Returns True if quote is found verbatim or with minor normalization:
+    - quote marks: 直/弯/ASCII 引号互换后仍匹配
+    - whitespace: 内部连续空白归一化为单空格
+    - 标点: 中文逗号/句号/顿号互换后仍匹配
+    - 截断: 若 quote > 15 字，允许核心 10 字子串存在即视为匹配
+
+    Used in Round 10 to catch external model hallucinated quotes (Ch1 末世重生
+    qwen 实测瞎引 "妹妹那时候在外地读书，他在合肥加班" 根本不在正文里)。
+    """
+    if not quote or not chapter_text:
+        return False
+    # Fast path: raw substring match
+    if quote in chapter_text:
+        return True
+
+    def _norm(s: str) -> str:
+        # Normalize quote marks + whitespace + common Chinese punct
+        out = (s
+               .replace('"', '"').replace('"', '"')
+               .replace(''', "'").replace(''', "'")
+               .replace('"', '"').replace("'", "'")
+               .replace('，', ',').replace('。', '.').replace('；', ';')
+               .replace('：', ':').replace('！', '!').replace('？', '?'))
+        return ''.join(out.split())
+
+    if _norm(quote) in _norm(chapter_text):
+        return True
+    # Fallback: for long quotes, require core 10-char substring presence
+    if len(quote) >= 15:
+        core = quote[:10]
+        if core in chapter_text or _norm(core) in _norm(chapter_text):
+            return True
+    return False
+
+
+def _downgrade_severity(severity: str) -> str:
+    """Downgrade severity one tier for hallucinated-quote issues.
+
+    critical → high → medium → low → info
+    Unknown levels default to 'info' (safest reduction).
+    """
+    tiers = ["critical", "high", "medium", "low", "info"]
+    try:
+        idx = tiers.index((severity or "").lower())
+        return tiers[min(idx + 1, len(tiers) - 1)]
+    except ValueError:
+        return "info"
+
+
 def _compute_cross_validation(all_issues):
     """Cross-validate issues: group by type+location similarity, mark consensus.
 
@@ -1229,9 +1281,25 @@ def _run_single_model(args, api_keys):
                     continue
                 dim_issues = parsed.get("issues", [])
                 scores[dim_key] = dim_score
+                # 2026-04-16 Round 10 · quote 幻觉检测
+                # Ch1 末世重生 qwen 实测报告引用"妹妹那时候在外地读书，他在合肥加班"
+                # 该句根本不在正文里——外部模型幻觉。把所有 quote 做文本存在性验证。
                 for issue in dim_issues:
                     issue["source_model"] = resolved_key
                     issue["source_dimension"] = dim_key
+                    quote = issue.get("quote")
+                    if isinstance(quote, str) and quote.strip():
+                        verified = _verify_quote_exists(quote, chapter_text)
+                        issue["quote_verified"] = verified
+                        if not verified:
+                            # 幻觉 quote → severity 降一档（critical→high→medium→low→info）
+                            original_severity = issue.get("severity", "medium")
+                            issue["original_severity"] = original_severity
+                            issue["severity"] = _downgrade_severity(original_severity)
+                            issue["quote_hallucination_note"] = (
+                                f"quote '{quote[:30]}...' 不在正文中（可能模型幻觉），"
+                                f"severity {original_severity}→{issue['severity']}"
+                            )
                 all_issues.extend(dim_issues)
                 if usage:
                     total_prompt_tokens += usage.get("prompt_tokens", 0)
