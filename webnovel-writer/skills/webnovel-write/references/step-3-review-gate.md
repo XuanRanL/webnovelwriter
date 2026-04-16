@@ -9,53 +9,81 @@
 
 ## 审查路由模式
 
-- 标准/`--fast`：全量 11 个审查器始终执行。
-- `--minimal`：固定核心 3 个（consistency/continuity/ooc，不启用扩展审查器）。
+- 标准/`--fast`：全量 12 个审查器（1 veto + 6 核心 + 5 工艺）分 0+6+5 三段执行。
+- `--minimal`：固定核心 4 个（naturalness + consistency + continuity + ooc）。**naturalness 在任何模式下都必跑**——劝退检测是底线。
 
 审查器（标准模式全部执行）：
+
+**Batch 0 · Veto 硬闸门（2026-04-16 新增）**：
+- `reader-naturalness-checker`（汉语母语自然度 · 首句语病/AI 腔/伪神经科学痕迹 · 独立于规则污染 · 不读设定集）
+  - `verdict=REJECT_CRITICAL/REJECT_HIGH` → **立即 block**，不启动 Batch 1/2 和 Step 3.5，回到 Step 2A 重写
+  - `verdict ∈ {PASS, POLISH_NEEDED, REWRITE_RECOMMENDED}` → 进入 Batch 1
+
+**Batch 1 · 核心审查（6 个并发）**：
 - `consistency-checker`（设定一致性）
 - `continuity-checker`（连贯性）
 - `ooc-checker`（人物OOC）
 - `reader-pull-checker`（追读力）
 - `high-point-checker`（爽点密度）
+- `flow-checker`（读者视角流畅度——一人分饰两角失忆阅读协议）
+
+**Batch 2 · 工艺维度（5 个并发）**：
 - `pacing-checker`（节奏平衡）
 - `dialogue-checker`（对话质量）
 - `density-checker`（信息密度）
 - `prose-quality-checker`（文笔质感）
 - `emotion-checker`（情感表现）
-- `flow-checker`（读者视角流畅度——一人分饰两角失忆阅读协议）
 
 ## Task 调用模板（示意）
 
-**硬规则：5+6 分批启动，禁止 11 个 checker 同时并发。**
+**硬规则：0+6+5 三段启动，Batch 0 veto 先跑，禁止 12 个 checker 同时并发。**
 
-原因：Claude Code Agent 并发池限制约 4-6 个，11 个同时启动会导致排队超时（全部 0 bytes output 直到轮询窗口耗尽）。
+原因：Claude Code Agent 并发池限制约 4-6 个，12 个同时启动会排队超时。另外 naturalness-veto 独立先跑可在劝退文本上**提前 block**，节省 Batch 1/2 和外部审查算力。
 
 ```text
 if mode == "minimal":
-  selected = ["consistency-checker", "continuity-checker", "ooc-checker"]
-  # minimal 模式仅 3 个，直接并行
+  # minimal 模式 4 个（naturalness + 核心 3）
+  selected = ["reader-naturalness-checker", "consistency-checker",
+              "continuity-checker", "ooc-checker"]
   parallel Task(agent, {chapter, chapter_file, project_root}) for agent in selected
+  # naturalness 返回 verdict=REJECT_* 时仍 block
 else:
-  # 标准/--fast 模式：分两批（5+6）
-  batch1 = ["consistency-checker", "continuity-checker", "ooc-checker",
-            "reader-pull-checker", "high-point-checker"]
-  batch2 = ["pacing-checker", "dialogue-checker", "density-checker",
-            "prose-quality-checker", "emotion-checker", "flow-checker"]
+  # 标准/--fast 模式：Batch 0（veto）→ Batch 1（6 核心）→ Batch 2（5 工艺）
 
-  # Batch 1：启动 5 个 checker
+  # Batch 0：单独先跑 naturalness veto
+  result0 = Task("reader-naturalness-checker", {chapter, chapter_file, project_root})
+  if result0.verdict in ("REJECT_CRITICAL", "REJECT_HIGH"):
+      # 立即 block，不启动 Batch 1/2 和 Step 3.5
+      raise BlockStep3("naturalness-veto rejected: " + result0.first_sentence_analysis)
+
+  # Batch 1：启动 6 个 checker（verdict 通过后）
+  batch1 = ["consistency-checker", "continuity-checker", "ooc-checker",
+            "reader-pull-checker", "high-point-checker", "flow-checker"]
   batch1_tasks = parallel Task(agent, {chapter, chapter_file, project_root}) for agent in batch1
-  # 等待 Batch 1 全部返回（轮询间隔 30s，单批最多等 10 分钟）
   wait_all(batch1_tasks, polling=30s, timeout=600s)
 
-  # Batch 2：Batch 1 全部返回后再启动
+  # Batch 2：Batch 1 全部返回后再启动 5 个
+  batch2 = ["pacing-checker", "dialogue-checker", "density-checker",
+            "prose-quality-checker", "emotion-checker"]
   batch2_tasks = parallel Task(agent, {chapter, chapter_file, project_root}) for agent in batch2
-  # 等待 Batch 2 全部返回
   wait_all(batch2_tasks, polling=30s, timeout=600s)
 
-  # 合并两批结果
-  all_results = batch1_tasks + batch2_tasks
+  # 合并：veto + Batch 1 + Batch 2
+  all_results = [result0] + batch1_tasks + batch2_tasks
 ```
+
+**Step 3 artifacts 要求（workflow complete-step 必须含）**：
+```json
+{
+  "overall_score": 92,
+  "checker_count": 12,
+  "internal_avg": 93.7,
+  "review_score": 92,
+  "naturalness_verdict": "PASS",
+  "naturalness_score": 88
+}
+```
+若 `naturalness_verdict ∉ {PASS, POLISH_NEEDED, REWRITE_RECOMMENDED}` 不得 complete Step 3。
 
 **分批规则**：
 - Batch 1（核心优先）：consistency + continuity + ooc + reader-pull + high-point
