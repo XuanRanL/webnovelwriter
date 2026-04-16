@@ -155,19 +155,56 @@ def _check_cache_sync(plugin_root: Path) -> Optional[dict]:
     自动同步到 cache，导致 "commit 了但 AI 跑的还是旧代码" 的幽灵 bug。Ch6 flow-checker
     未运行（2026-04-13）即此事故。
 
-    该检查非阻断，但在 drift 时打出 ERROR 行，提示用户跑 `webnovel.py sync-cache`。
-    Returns None if cache 目录不存在（可能用户没装 plugin / 用 local CLI）。
+    两条工作模式（Ch7 RCA 修复）：
+
+    * **invoked from fork** — plugin_root 就是 fork 路径。直接跑 fork↔cache 漂移检查。
+    * **invoked from cache** — plugin_root 是 cache 路径（CLAUDE_PLUGIN_ROOT 指向 cache，
+      生产路径）。先通过 ``WEBNOVEL_FORK_PATH`` env var / fork-registry 找到 fork，
+      然后用 fork vs 当前 plugin_root(cache) 做漂移对比。若找不到 fork，**返回带 note 的非 ok 项**
+      （不再静默 return None）——让用户看到"未检查"提示而不是以为"无漂移"。
     """
     cache_root = _resolve_plugin_cache_dir(plugin_root)
     if cache_root is None:
-        return None
-    drift = _compute_cache_drift(plugin_root, cache_root)
+        # plugin cache 不存在（用户可能没装 plugin 或走 local CLI）
+        return {
+            "name": "cache_sync",
+            "ok": True,
+            "path": "(cache_not_installed)",
+            "note": "plugin cache 目录不存在，跳过漂移检查",
+        }
+
+    # 判断当前 plugin_root 是 fork 还是 cache
+    try:
+        running_from_cache = plugin_root.resolve() == cache_root.resolve()
+    except Exception:
+        running_from_cache = False
+
+    if running_from_cache:
+        # 生产路径：CLAUDE_PLUGIN_ROOT 指向 cache。必须通过 env/registry 找 fork。
+        fork_root = _resolve_fork_for_cache(plugin_root)
+        if fork_root is None:
+            return {
+                "name": "cache_sync",
+                "ok": True,  # 非阻断，但 note 显眼
+                "path": str(cache_root),
+                "note": (
+                    "invoked_from_cache 且 fork 未登记：跳过 fork→cache 漂移检查。"
+                    "修复：从 fork 跑一次 `python /path/to/fork/scripts/webnovel.py sync-cache` "
+                    "自动写入 registry；或设置 WEBNOVEL_FORK_PATH 环境变量。"
+                ),
+            }
+        fork_side = fork_root
+    else:
+        fork_side = plugin_root
+
+    drift = _compute_cache_drift(fork_side, cache_root)
     has_drift = bool(drift["fork_only"] or drift["different"])
     evidence_samples = (drift["different"] + drift["fork_only"])[:5]
     return {
         "name": "cache_sync",
         "ok": not has_drift,
         "path": str(cache_root),
+        "fork_path": str(fork_side),
         "fork_only_count": len(drift["fork_only"]),
         "different_count": len(drift["different"]),
         "identical_count": drift["identical_count"],
@@ -176,7 +213,7 @@ def _check_cache_sync(plugin_root: Path) -> Optional[dict]:
             {"error": (
                 f"fork→cache 漂移 {len(drift['different']) + len(drift['fork_only'])} 个文件 "
                 f"(cache 缺 {len(drift['fork_only'])} / 内容不同 {len(drift['different'])}); "
-                f"跑 `webnovel.py sync-cache` 修复"
+                f"从 fork 跑 `webnovel.py sync-cache` 修复"
             )}
             if has_drift else {}
         ),
@@ -354,8 +391,13 @@ def _walk_plugin_files(src_root: Path):
 def _resolve_plugin_cache_dir(plugin_root: Path, explicit: Optional[str] = None) -> Optional[Path]:
     """Resolve plugin cache directory for current version.
 
+    Reads plugin name+version from `.claude-plugin/plugin.json` (NOT from
+    ``plugin_root.name``). This matters because when running from cache the
+    directory name is the version string (e.g. ``5.6.0``), not the plugin name;
+    using ``plugin_root.name`` would construct a wrong path and silently return
+    None — this was the Round 7 cache_sync silent-skip bug (Ch7 RCA).
+
     Returns the cache directory path if found, None otherwise. Does NOT raise.
-    Checks in order: --explicit override, standard cache location.
     """
     if explicit:
         p = Path(explicit)
@@ -364,15 +406,82 @@ def _resolve_plugin_cache_dir(plugin_root: Path, explicit: Optional[str] = None)
     if not plugin_json.exists():
         return None
     try:
-        version = json.loads(plugin_json.read_text(encoding="utf-8")).get("version", "").strip()
+        data = json.loads(plugin_json.read_text(encoding="utf-8"))
+        plugin_name = str(data.get("name", "")).strip()
+        version = str(data.get("version", "")).strip()
     except Exception:
         return None
-    if not version:
+    if not version or not plugin_name:
         return None
     home = Path(os.path.expanduser("~"))
-    plugin_name = plugin_root.name
     cand = home / ".claude" / "plugins" / "cache" / f"{plugin_name}-marketplace" / plugin_name / version
     return cand if cand.is_dir() else None
+
+
+def _fork_registry_path() -> Path:
+    """Registry that maps plugin name → fork path.
+
+    Written by ``sync-cache`` when invoked from fork; read by ``preflight``
+    when invoked from cache so drift can still be detected in the production
+    invocation path (CLAUDE_PLUGIN_ROOT points to cache).
+    """
+    return Path(os.path.expanduser("~")) / ".claude" / "plugins" / "webnovel-fork-registry.json"
+
+
+def _read_fork_registry() -> dict:
+    path = _fork_registry_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_fork_registry(plugin_name: str, fork_path: Path) -> None:
+    """Record ``plugin_name → fork_path`` so cache-side preflight can find fork."""
+    path = _fork_registry_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = _read_fork_registry()
+        data[plugin_name] = str(fork_path.resolve())
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        # best-effort; registry is optional
+        pass
+
+
+def _resolve_fork_for_cache(plugin_root: Path) -> Optional[Path]:
+    """When running from cache, locate the fork via env var or registry.
+
+    Priority:
+      1. ``WEBNOVEL_FORK_PATH`` env var (explicit override)
+      2. Fork registry at ``~/.claude/plugins/webnovel-fork-registry.json``
+      3. None (caller should emit actionable note)
+    """
+    env_fork = os.environ.get("WEBNOVEL_FORK_PATH", "").strip()
+    if env_fork:
+        p = Path(env_fork)
+        if (p / ".claude-plugin" / "plugin.json").exists():
+            return p.resolve()
+    plugin_json = plugin_root / ".claude-plugin" / "plugin.json"
+    if not plugin_json.exists():
+        return None
+    try:
+        name = json.loads(plugin_json.read_text(encoding="utf-8")).get("name", "").strip()
+    except Exception:
+        return None
+    if not name:
+        return None
+    registry = _read_fork_registry()
+    fork_path_str = registry.get(name, "")
+    if not fork_path_str:
+        return None
+    p = Path(fork_path_str)
+    if (p / ".claude-plugin" / "plugin.json").exists():
+        return p.resolve()
+    return None
 
 
 def _compute_cache_drift(plugin_root: Path, cache_root: Path) -> dict:
@@ -479,6 +588,26 @@ def cmd_sync_cache(args: argparse.Namespace) -> int:
             suggestion="使用 --cache-dir 手动指定；或跑 `/plugin install webnovel-writer@webnovel-writer-marketplace` 初始化"
         )
         return 1
+
+    # 防止"从 cache 里跑 sync-cache"自反拷贝（会让 cache → cache，无意义）
+    try:
+        if plugin_root.resolve() == cache_root.resolve():
+            print_error(
+                "invoked_from_cache",
+                "sync-cache 在 cache 目录内被调用，无法自同步。请 cd 到 fork 目录再跑。",
+                suggestion=f"cd 到 fork（例如 `~/AI-extention/webnovel-writer/webnovel-writer`），再跑 `python scripts/webnovel.py sync-cache`"
+            )
+            return 1
+    except Exception:
+        pass
+
+    # 写入 fork 登记（让从 cache 跑的 preflight 能找到 fork 做漂移检查）
+    try:
+        plugin_name = json.loads((plugin_root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8")).get("name", "").strip()
+        if plugin_name:
+            _write_fork_registry(plugin_name, plugin_root)
+    except Exception:
+        pass
 
     drift = _compute_cache_drift(plugin_root, cache_root)
 

@@ -7,6 +7,55 @@
 
 ---
 
+## [2026-04-16 · Round 8] Round 7 回归审查 · 三个 root cause 根治
+
+**触发**：用户要求"再次检查 Round 7 是否完美运行"。深度审查发现 Round 7 的 cache_sync 闸门在**生产路径完全失效**，外加两个之前没发现的 root cause。
+
+### RC-1 · `_resolve_plugin_cache_dir` 使用 `plugin_root.name` → 生产路径静默失效
+
+**症状**：Round 7 新增的 `cache_sync` preflight gate 在从 cache 跑时（`${CLAUDE_PLUGIN_ROOT}/scripts/webnovel.py` —— SKILL.md 全部调用方式的生产路径）完全不报警。
+
+**根因**：旧 `_resolve_plugin_cache_dir` 用 `plugin_root.name` 推 plugin 名字。从 cache 跑时 `plugin_root = .../cache/webnovel-writer-marketplace/webnovel-writer/5.6.0/`，`plugin_root.name = "5.6.0"`（版本号），拼出来的 cache 路径是 `~/.claude/plugins/cache/5.6.0-marketplace/5.6.0/5.6.0/` → 不存在 → 函数返回 `None` → `_check_cache_sync` 返回 `None` → preflight 的 `checks` 列表里不追加 cache_sync 项 → 用户永远看不到这个 gate 的存在。
+
+**修复**（`scripts/data_modules/webnovel.py`）：
+- `_resolve_plugin_cache_dir` 改为从 `.claude-plugin/plugin.json` 的 `name` 字段读取 plugin 名
+- 新增 `_fork_registry_path()` + `_read_fork_registry()` + `_write_fork_registry()` 三个辅助函数，在 `~/.claude/plugins/webnovel-fork-registry.json` 登记 fork 位置
+- 新增 `_resolve_fork_for_cache(plugin_root)` —— 优先读 `WEBNOVEL_FORK_PATH` env var，其次读 registry
+- `_check_cache_sync` 判断 `plugin_root == cache_root`（running from cache），从 registry / env 找 fork，再做漂移对比；绝不再返回 `None`（改返回带 `note` 的 dict，保证 preflight 总是显示这一行）
+- `cmd_sync_cache` 在检测到从 cache 内跑时直接 `exit 1` + 错误提示；成功从 fork 跑时自动写 registry
+
+### RC-2 · Step 3 artifact 白名单缺 `naturalness_verdict` / `naturalness_score`
+
+**症状**：SKILL.md 第 268 行和 `step-3-review-gate.md` 第 82 行在 2026-04-16 Round 5 声明 `naturalness_verdict` 是 Step 3 合法语义字段，但 `workflow_manager.py:163` 的 `REQUIRED_ARTIFACT_FIELDS["Step 3"]` 没包含。若用户只填 `{"naturalness_verdict": "PASS"}` 就完成 Step 3，`complete-step` 会被 reject。
+
+**修复**（`scripts/workflow_manager.py:163`）：
+```python
+"Step 3": ["overall_score", "checker_count", "internal_avg", "review_score",
+           "naturalness_verdict", "naturalness_score"],  # 2026-04-16 Round 8
+```
+
+**追加防御**：`feedback_doc_counter_single_source.md` 的"真源清单"从 6 处增到 7 处，把 `workflow_manager.py::REQUIRED_ARTIFACT_FIELDS` 列为第 7 处；任何 Step N artifact 字段变更都必须同步改这里。
+
+### RC-3 · SKILL.md checker 术语（11/12/3/4）仍有歧义
+
+**症状**：Round 6 commit `5a2ae85` 统一了"12 checker / 11 评分维度 / 1 veto"术语，但 SKILL.md 第 52 行（章节间闸门）仍写"11 个含 flow-checker" / "3 个核心 checker"，易被读成"总共 11 个 checker"。
+
+**修复**（`skills/webnovel-write/SKILL.md`）：
+- 第 52 行改为显式 "**12 checker**（1 veto + 11 评分，含 flow-checker）"，"**4 checker**（1 veto + 3 评分）"
+- 第 590 行"内部11个 checker"改为"内部 11 个评分维度"
+
+### 回归测试（锁死三个 RC）
+
+新建 `scripts/data_modules/tests/test_ch7_rca_fixes.py`，13 个 test 分三组：
+1. `test_resolve_cache_dir_uses_plugin_json_name_not_dirname` — 从 cache 目录出发能找到自己，证明 plugin.json 读取路径正确
+2. `test_fork_registry_roundtrip` / `test_fork_registry_env_var_takes_priority` / `test_check_cache_sync_from_cache_with_registry_detects_drift` — fork-registry 机制可工作
+3. `test_check_cache_sync_from_cache_without_fork_emits_note` — 绝不静默返回 None
+4. `test_step3_whitelist_accepts_naturalness_verdict_alone` / `test_step3_whitelist_contains_all_documented_fields` — Step 3 artifact 白名单同步文档
+
+**验证**：`pytest scripts/data_modules/tests/` 全量 305 passed（含新增 13 个）。
+
+---
+
 ## [2026-04-16 · Round 7] Plugin 三层缓存架构根治 · sync-cache CLI + preflight cache_sync 闸门
 
 **问题重审**：Round 6 发现 Ch6 flow-checker 未运行，并加 `sync-agents` 修了工作区 `.claude/agents/`。但用户追问"Step 3.5 真的有 11 维度吗"后，深入实测发现**更深一层的 bug**：**Ch6 外部审查 JSON 也只有 10 维度，缺 reader_flow**（<example-project>项目实测：Ch5=11✅ / Ch6=10❌ / <example-project> Ch1=10❌）。

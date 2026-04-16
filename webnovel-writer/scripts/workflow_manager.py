@@ -160,7 +160,7 @@ REQUIRED_ARTIFACT_FIELDS = {
         "Step 1": ["file", "snapshot", "context_file"],
         "Step 2A": ["word_count"],
         "Step 2B": ["style_applied", "deviation_notes"],
-        "Step 3": ["overall_score", "checker_count", "internal_avg", "review_score"],
+        "Step 3": ["overall_score", "checker_count", "internal_avg", "review_score", "naturalness_verdict", "naturalness_score"],
         "Step 3.5": ["external_avg", "models_ok", "external_models_ok"],
         "Step 4": ["anti_ai_force_check", "polish_report", "fixes"],
         "Step 5": ["state_modified", "entities", "foreshadowing", "scene_count", "chapter_meta_fields"],

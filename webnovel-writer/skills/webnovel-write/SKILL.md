@@ -49,7 +49,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
 
-1. Step 3 的内部 checker 全部返回并汇总出 overall_score（标准/`--fast` 为 11 个含 flow-checker，`--minimal` 为 3 个核心 checker）
+1. Step 3 的内部 checker 全部返回并汇总出 overall_score。**术语固定**（见 `feedback_checker_count_11`）：`checker` = 跑的 subagent 数量；`评分维度` = 计入 overall_score 的数量；`verdict` = naturalness-veto 专用不计分。标准/`--fast` = **12 checker**（1 veto + 11 评分，含 flow-checker）。`--minimal` = **4 checker**（1 veto + 3 评分，naturalness + consistency + continuity + ooc）。`overall_score` 只平均 11（或 3）个评分维度，veto 仅用于 block。
 2. Step 3.5 的 9 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充6模型失败不阻塞），每模型审查 11 个维度含 reader_flow（`--minimal` 模式跳过此条件）
 3. 所有 critical 问题已修复，high 问题已修复或有 deviation 记录
 4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 11 评分维度分数 + Batch 0 naturalness verdict + 外部9模型×11维度评分矩阵；`--minimal` 模式仅含内部 3 评分维度分数 + naturalness verdict）
@@ -200,12 +200,24 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" syn
 - 2026-04-13 c511802 commit 在 fork 加入 reader_flow，但 cache 没同步 → Ch6 外部审查只跑 10 维度（应 11）
 - 2026-04-13 某次修复把 chapter_audit.py 中文注释写坏，cache 同步了 37 行 `??????` → 后续审计 evidence 全乱码
 
-一键修复：
+**注意：`sync-cache` 必须从 fork 跑，不能从 cache 跑**（Ch7 RCA：从 cache 跑会自反拷贝 + 无法找到 fork）。生产里 AI 会通过 `CLAUDE_PLUGIN_ROOT`（= cache 路径）跑 `webnovel.py`，所以：
+
+一键修复（**必须 cd 到 fork 目录跑，不是从 cache 跑**）：
 ```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" sync-cache
+# 从 fork 目录跑（替换为你的 fork 路径）：
+cd /path/to/fork/webnovel-writer
+python -X utf8 scripts/webnovel.py sync-cache
 ```
 
-该命令直接把 `${CLAUDE_PLUGIN_ROOT}/*`（= fork 内容）复制到 `~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/`，按 bytes diff 只更新变化文件，并清理 cache 里的 `.pyc`（防止 stale bytecode shadow 新 `.py`）。
+该命令：
+1. 把 fork 所有文件复制到 `~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/`，按 bytes diff 只更新变化文件
+2. 清理 cache 里的 `.pyc`（防止 stale bytecode shadow 新 `.py`）
+3. 写入 `~/.claude/plugins/webnovel-fork-registry.json`，登记 fork 路径，让后续 preflight（从 cache 跑）也能检测到漂移
+
+**`preflight` 的 cache_sync 检查**（2026-04-16 Ch7 RCA 修复后的行为）：
+- 从 fork 跑：直接 fork↔cache 漂移对比，有漂移 → ERROR
+- 从 cache 跑（生产路径）：先通过 `WEBNOVEL_FORK_PATH` env var 或 fork-registry 找 fork；找到则对比；找不到则输出 NOTE "fork 未登记，跳过"（不阻断，但提示修复）
+- **从 fork 跑过一次 sync-cache 后，registry 自动建立，后续从 cache 跑也能查漂移**
 
 ### 硬规则
 
@@ -221,9 +233,14 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" syn
 **预检一次通过模板**（推荐放 Step 0 起始）：
 ```bash
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" preflight
-# 若看到 ERROR agents_sync 或 ERROR cache_sync：
+# 若看到 ERROR agents_sync：
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" sync-agents
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" sync-cache
+# 若看到 ERROR cache_sync（注意：SKILL 里的 SCRIPTS_DIR 指向 cache，sync-cache 从 cache 跑会失败，
+# 必须 cd 到 fork 再跑）：
+#   cd /path/to/fork/webnovel-writer
+#   python scripts/webnovel.py sync-cache
+# 若看到 NOTE "invoked_from_cache 且 fork 未登记"：
+#   说明从 cache 跑 preflight 时找不到 fork。从 fork 跑一次 sync-cache 即自动登记 registry。
 # 然后重跑 preflight 确认全 OK
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" preflight
 ```
@@ -587,7 +604,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 **Step 3→4 闸门强制验证**（在标记 Step 3 完成前必须执行）：
 1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，每批最多等待10分钟，总超时20分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。注意：0+6+5 三段模式下，Batch 0（naturalness-veto）先跑，verdict 通过后启动 Batch 1（6 个含 flow-checker），Batch 1 全部返回后再启动 Batch 2（5 个），每段独立计时。
 2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：核心3模型文件必须存在且非空，补充模型缺失可接受。
-3. 聚合分数：内部11个 checker 取平均（含 flow-checker）；外部已成功模型取平均；合并 `round(internal * 0.6 + external * 0.4)`。
+3. 聚合分数：内部 11 个评分维度取平均（含 flow-checker，naturalness veto 不计入评分只做 block）；外部已成功模型取平均；合并 `round(internal * 0.6 + external * 0.4)`。
 4. 写审查报告 + 落库 review_metrics。
 **违规后果**：跳过此验证直接进入 Step 4，Step 6 审计 A2 检查项将检测到 checker 坍缩并可能 block 提交。
 
