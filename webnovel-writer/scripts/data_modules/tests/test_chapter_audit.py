@@ -152,7 +152,7 @@ def good_project(tmp_path):
         "emotion_expression",
         "reader_flow",
     ]
-    for model_key in ("kimi", "glm", "qwen-plus"):
+    for model_key in ("qwen3.6-plus", "gpt-5.4", "gemini-3.1-pro"):
         payload = {
             "agent": f"external-{model_key}",
             "chapter": 1,
@@ -358,16 +358,16 @@ def test_A5_fallback_pass(good_project):
 def test_A3_external_models_json_phantom_zero(good_project):
     mod = _load_module()
     payload = {
-        "agent": "external-kimi",
+        "agent": "external-qwen3.6-plus",
         "chapter": 1,
-        "model_key": "kimi",
+        "model_key": "qwen3.6-plus",
         "overall_score": 0,
         "pass": False,
         "dimension_reports": [
             {"dimension": "consistency", "status": "ok", "score": 0, "summary": ""},
         ],
     }
-    (good_project / ".webnovel" / "tmp" / "external_review_kimi_ch0001.json").write_text(
+    (good_project / ".webnovel" / "tmp" / "external_review_qwen3.6-plus_ch0001.json").write_text(
         json.dumps(payload, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -378,19 +378,19 @@ def test_A3_external_models_json_phantom_zero(good_project):
 
 def test_A3_external_models_fails_on_core_partial_dimensions(good_project):
     mod = _load_module()
-    core_path = good_project / ".webnovel" / "tmp" / "external_review_kimi_ch0001.json"
+    core_path = good_project / ".webnovel" / "tmp" / "external_review_qwen3.6-plus_ch0001.json"
     payload = json.loads(core_path.read_text(encoding="utf-8"))
     payload["dimension_reports"] = payload["dimension_reports"][:9]
     core_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     r = mod.check_A3_external_models(good_project, 1)
     assert r.status == "fail"
     assert r.severity == "critical"
-    assert "kimi" in json.dumps(r.measured, ensure_ascii=False)
+    assert "qwen3.6-plus" in json.dumps(r.measured, ensure_ascii=False)
 
 
 def test_A3_external_models_fails_on_core_routing_unverified(good_project):
     mod = _load_module()
-    core_path = good_project / ".webnovel" / "tmp" / "external_review_glm_ch0001.json"
+    core_path = good_project / ".webnovel" / "tmp" / "external_review_gpt-5.4_ch0001.json"
     payload = json.loads(core_path.read_text(encoding="utf-8"))
     payload["routing_verified"] = False
     core_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -403,10 +403,10 @@ def test_A3_external_models_fails_on_core_routing_unverified(good_project):
 def test_A3_external_models_warns_on_partial_supplemental_model(good_project):
     mod = _load_module()
     payload = {
-        "agent": "external-qwen",
+        "agent": "external-doubao-pro",
         "chapter": 1,
-        "model_key": "qwen",
-        "model_actual": "qwen-3.5",
+        "model_key": "doubao-pro",
+        "model_actual": "doubao-seed-2.0-pro",
         "routing_verified": True,
         "overall_score": 88.0,
         "pass": True,
@@ -416,14 +416,14 @@ def test_A3_external_models_warns_on_partial_supplemental_model(good_project):
             {"dimension": "ooc", "status": "ok", "score": 87, "summary": "ok"},
         ],
     }
-    (good_project / ".webnovel" / "tmp" / "external_review_qwen_ch0001.json").write_text(
+    (good_project / ".webnovel" / "tmp" / "external_review_doubao-pro_ch0001.json").write_text(
         json.dumps(payload, ensure_ascii=False),
         encoding="utf-8",
     )
     r = mod.check_A3_external_models(good_project, 1)
     assert r.status == "warn"
     assert r.severity == "high"
-    assert "qwen" in json.dumps(r.measured, ensure_ascii=False)
+    assert "doubao-pro" in json.dumps(r.measured, ensure_ascii=False)
 
 
 def test_A4_data_agent_steps_passes_with_timing_ms(good_project):
@@ -869,9 +869,9 @@ def test_A3_external_models_markdown_only_uses_report_fallback(good_project):
     assert report_path is not None
     report_path.write_text(
         "# report\n"
-        "- kimi: 90 (summary: solid prose and scene work)\n"
-        "- glm: 91 (summary: strong pacing and hook)\n"
-        "- qwen-plus: 89 (summary: emotion lands well)\n",
+        "- qwen3.6-plus: 90 (summary: solid prose and scene work)\n"
+        "- gpt-5.4: 91 (summary: strong pacing and hook)\n"
+        "- gemini-3.1-pro: 89 (summary: emotion lands well)\n",
         encoding="utf-8",
     )
     r = mod.check_A3_external_models(good_project, 1)

@@ -3,14 +3,26 @@ Step 3.5 External Model Review Script
 Supports two modes:
   - legacy: single prompt, 4-dimension combined review (backward compatible)
   - dimensions: 11 separate dimension prompts (incl. reader_flow), concurrent API calls
-Four-tier fallback: nextapi (primary) → healwrap (secondary) → codexcc (backup) → siliconflow (fallback)
-Nine-model architecture: 3 core (kimi/glm/qwen-plus) + 6 supplemental (qwen/deepseek/minimax/doubao/glm4/minimax-m2.7)
+
+Architecture (2026-04-16 Round 11):
+  - 2 providers: openclawroot (primary, all 9 models) + siliconflow (fallback, partial)
+  - 9 models × 11 dimensions = 99 independent rater scores (consensus mechanism)
+  - 每个模型都跑全 11 维度（无分工）；role 字段已删除以消除"分工"误解
+  - tier 字段仅用于早停机制（core 必须成功，supplemental 失败不阻塞）
+  - Heterogeneous coverage: 国产 (Doubao/GLM×2/Qwen/MiMo/MiniMax/DeepSeek) × 异构 (GPT/Gemini)
+
 11 dimensions: consistency/continuity/ooc/reader_pull/high_point/pacing/dialogue_quality/
 information_density/prose_quality/emotion_expression/reader_flow (2026-04-13 added)
+
+History:
+  Round 10-: 4-tier (nextapi/healwrap/codexcc/siliconflow) × 9 老模型，实测 6-7/9 成功，
+             nextapi 无 key 48% 失败 / minimax-m2.7 全面 0% / doubao 28.6%
+  Round 11+: 2-tier × 9 新模型（openclawroot 实测 9/9 路由正确），供应商精简 2x
 """
 import json
 import time
 import sys
+import os
 import argparse
 import re
 import threading
@@ -19,20 +31,10 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 PROVIDERS = {
-    "nextapi": {
-        "base_url": "https://api.nextapi.store/v1/chat/completions",
-        "env_key_names": ["NEXTAPI_API_KEY"],
-        "rpm": 999,  # 无限制
-    },
-    "healwrap": {
-        "base_url": "https://llm-api.healwrap.cn/v1/chat/completions",
-        "env_key_names": ["HEALWRAP_API_KEY"],
-        "rpm": 8,  # 实测 RPM=10 频繁 429；降到 8 = semaphore(8) + min_interval=7.5s
-    },
-    "codexcc": {
-        "base_url": "https://api.codexcc.top/v1/chat/completions",
-        "env_key_names": ["CODEXCC_API_KEY"],
-        "rpm": 30,
+    "openclawroot": {
+        "base_url": "https://openclawroot.com/v1/chat/completions",
+        "env_key_names": ["OPENCLAWROOT_API_KEY"],
+        "rpm": 30,  # 实测 9 模型并发稳定；保守起步，观察后可调高
     },
     "siliconflow": {
         "base_url": "https://api.siliconflow.cn/v1/chat/completions",
@@ -97,112 +99,99 @@ class ProviderRateLimiter:
         """Release a concurrent slot after the entire request (including retries) completes."""
         self._semaphore.release()
 
-# Core models: must succeed, have full fallback chain
+# Reasoning models: 需要更大 max_tokens 容纳 reasoning_content
+# 且解析时若 content 为空，fallback 读 reasoning_content 的最后段作为 answer
+REASONING_MODELS = {"mimo-v2-pro", "minimax-m2.7-hs", "deepseek-v3.2-thinking"}
+
+# 9 模型 × 2 供应商（openclawroot 首位 + siliconflow 备用）
+# 每个模型跑全 11 维度（共识机制：9×11 = 99 份独立评分）
+# tier 仅用于早停机制（core 必须成功；supplemental 失败不阻塞）
+# role 字段已删除（2026-04-16 Round 11）—— 每个模型都是全维度 rater，没有分工
 MODELS = {
-    "qwen-plus": {
+    # Core 3：异构性覆盖（国产旗舰 + 西方快审 + 谷歌视角）
+    "qwen3.6-plus": {
         "tier": "core",
-        "role": "网文/爽点结构",
         "providers": [
-            {"provider": "healwrap", "id": "qwen3.5-plus", "name": "Qwen3.5-Plus"},
-            {"provider": "codexcc", "id": "qwen3.5-plus", "name": "Qwen3.5-Plus"},
-            {"provider": "siliconflow", "id": "Qwen/Qwen3.5-397B-A17B", "name": "Qwen3.5-397B"},
+            {"provider": "openclawroot", "id": "qwen3.6-plus", "name": "Qwen3.6-Plus"},
         ],
         "timeout": 300,
     },
-    "kimi": {
+    "gpt-5.4": {
         "tier": "core",
-        "role": "严审/逻辑设定",
         "providers": [
-            {"provider": "nextapi", "id": "kimi-k2.5", "name": "Kimi-K2.5"},
-            {"provider": "healwrap", "id": "kimi-k2.5", "name": "Kimi-K2.5"},
-            {"provider": "codexcc", "id": "kimi-k2.5", "name": "Kimi-K2.5"},
-            {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF"},
+            {"provider": "openclawroot", "id": "gpt-5.4", "name": "GPT-5.4"},
+        ],
+        "timeout": 180,
+    },
+    "gemini-3.1-pro": {
+        "tier": "core",
+        "providers": [
+            {"provider": "openclawroot", "id": "gemini-3.1-pro-high", "name": "Gemini-3.1-Pro-High"},
         ],
         "timeout": 300,
     },
-    "glm": {
-        "tier": "core",
-        "role": "编辑/读者感受",
+    # Supplemental 6：国产补充 + 推理深度
+    "doubao-pro": {
+        "tier": "supplemental",
         "providers": [
-            {"provider": "nextapi", "id": "glm-5.0", "name": "GLM-5.0"},
-            {"provider": "healwrap", "id": "glm-5", "name": "GLM-5"},
-            {"provider": "codexcc", "id": "glm-5", "name": "GLM-5"},
+            {"provider": "openclawroot", "id": "Doubao-Seed-2.0-pro", "name": "Doubao-Seed-2.0-pro"},
+        ],
+        "timeout": 300,
+    },
+    "glm-5": {
+        "tier": "supplemental",
+        "providers": [
+            {"provider": "openclawroot", "id": "GLM-5", "name": "GLM-5"},
             {"provider": "siliconflow", "id": "Pro/zai-org/GLM-5", "name": "GLM-5-SF"},
         ],
         "timeout": 300,
     },
-    # Supplemental models: multi-provider fallback, failure doesn't block
-    # NOTE: Supplemental models use siliconflow (RPM=30) as PRIMARY to avoid
-    # healwrap (RPM=8) bottleneck. When --model-key all runs 9 models,
-    # putting 5+ models on healwrap primary causes semaphore exhaustion
-    # (5×3 concurrent = 15 slots needed, only 8 available → cascading timeouts).
-    # Distribution: nextapi handles kimi/glm/minimax/minimax-m2.7 (RPM=999),
-    # healwrap handles qwen-plus core only (RPM=8, 11 dims fits fine),
-    # siliconflow handles qwen/deepseek/glm4/doubao supplemental (RPM=30).
-    "qwen": {
+    "glm-4.7": {
         "tier": "supplemental",
-        "role": "宽松锚点",
         "providers": [
-            {"provider": "siliconflow", "id": "Qwen/Qwen3.5-397B-A17B", "name": "Qwen3.5-397B-SF"},
-            {"provider": "healwrap", "id": "qwen-3.5", "name": "Qwen-3.5"},
-        ],
-        "timeout": 300,
-    },
-    "deepseek": {
-        "tier": "supplemental",
-        "role": "技术考据",
-        "providers": [
-            {"provider": "siliconflow", "id": "Pro/deepseek-ai/DeepSeek-V3.2", "name": "DeepSeek-V3.2-SF"},
-            {"provider": "healwrap", "id": "deepseek-v3.2", "name": "DeepSeek-V3.2"},
-        ],
-        "timeout": 300,
-    },
-    "minimax": {
-        "tier": "supplemental",
-        "role": "快速参考",
-        "providers": [
-            {"provider": "nextapi", "id": "minimax-m2.5", "name": "MiniMax-M2.5"},
-            {"provider": "healwrap", "id": "minimax-m2.5", "name": "MiniMax-M2.5"},
-            {"provider": "codexcc", "id": "minimax-m2.5", "name": "MiniMax-M2.5"},
-            {"provider": "siliconflow", "id": "Pro/MiniMaxAI/MiniMax-M2.5", "name": "MiniMax-M2.5-SF"},
-        ],
-        "timeout": 300,
-    },
-    "doubao": {
-        "tier": "supplemental",
-        "role": "结构审查/逻辑一致性",
-        "providers": [
-            {"provider": "healwrap", "id": "doubao-seed-2.0", "name": "Doubao-Seed-2.0"},
-            {"provider": "codexcc", "id": "doubao-seed-2.0", "name": "Doubao-Seed-2.0"},
-            {"provider": "siliconflow", "id": "Pro/bytedance/Doubao-Seed-2.0", "name": "Doubao-Seed-2.0-SF"},
-        ],
-        "timeout": 300,
-    },
-    "glm4": {
-        "tier": "supplemental",
-        "role": "文学质感/角色声音",
-        "providers": [
+            {"provider": "openclawroot", "id": "GLM-4.7", "name": "GLM-4.7"},
             {"provider": "siliconflow", "id": "Pro/zai-org/GLM-4.7", "name": "GLM-4.7-SF"},
-            {"provider": "healwrap", "id": "glm-4.7", "name": "GLM-4.7"},
         ],
         "timeout": 300,
     },
-    "minimax-m2.7": {
+    "mimo-v2-pro": {
         "tier": "supplemental",
-        "role": "对话/情感深度",
         "providers": [
-            {"provider": "nextapi", "id": "minimax-m2.7", "name": "MiniMax-M2.7"},
-            {"provider": "healwrap", "id": "minimax-m2.7", "name": "MiniMax-M2.7"},
-            {"provider": "codexcc", "id": "MiniMax-M2.7", "name": "MiniMax-M2.7"},
+            {"provider": "openclawroot", "id": "mimo-v2-pro", "name": "MiMo-V2-Pro"},
+        ],
+        "timeout": 300,
+    },
+    "minimax-m2.7-hs": {
+        "tier": "supplemental",
+        "providers": [
+            {"provider": "openclawroot", "id": "MiniMax-M2.7-highspeed", "name": "MiniMax-M2.7-HS"},
+        ],
+        "timeout": 300,
+    },
+    "deepseek-v3.2-thinking": {
+        "tier": "supplemental",
+        "providers": [
+            {"provider": "openclawroot", "id": "DeepSeek-V3.2-Thinking", "name": "DeepSeek-V3.2-Thinking"},
+            {"provider": "siliconflow", "id": "Pro/deepseek-ai/DeepSeek-V3.2", "name": "DeepSeek-V3.2-SF"},
         ],
         "timeout": 300,
     },
 }
 
 # Backward-compatible aliases for legacy --model-key usage
-# NOTE: "qwen" is now a distinct supplemental model (qwen-3.5) in MODELS dict,
-# so it must NOT be aliased to "qwen-plus". Only add aliases for truly retired keys.
-MODEL_ALIASES = {}
+# 老代码/老 state.json 可能用老名字，映射到新名字
+MODEL_ALIASES = {
+    # Round 10- 老名字 → Round 11+ 新名字
+    "qwen-plus": "qwen3.6-plus",   # qwen-plus (Qwen3.5) → qwen3.6-plus (Qwen3.6)
+    "qwen": "qwen3.6-plus",         # 合并同家族
+    "kimi": "gpt-5.4",               # kimi 退役（openclawroot 无稳定 kimi），用 gpt-5.4 占位为"快审 core"
+    "glm": "glm-5",                  # glm 泛指 → glm-5
+    "glm4": "glm-4.7",
+    "minimax": "minimax-m2.7-hs",
+    "minimax-m2.7": "minimax-m2.7-hs",
+    "deepseek": "deepseek-v3.2-thinking",
+    "doubao": "doubao-pro",
+}
 
 DIMENSIONS = {
     "consistency": {
@@ -459,28 +448,62 @@ ROUTING_BUGS = {
 
 
 def load_api_keys():
-    env_paths = [
-        Path.home() / ".claude" / "webnovel-writer" / ".env",
-    ]
-    # Also check project .env if WEBNOVEL_PROJECT_ROOT is set
-    project_root = Path.cwd()
-    project_env = project_root / ".env"
-    if project_env.exists():
-        env_paths.insert(0, project_env)
+    """查找 .env 文件的多层策略（Round 11 新增 workspace root + env override 支持）:
 
+    1. os.environ 直接读（最高优先级，运行环境已设置）
+    2. 当前目录 .env / 父级 2 层 .env（workspace root 常见位置）
+    3. ~/.claude/webnovel-writer/.env（用户全局）
+    4. 插件 root .env（通过脚本路径反推）
+    """
+    # Priority 1: direct os.environ（如果已设）
     keys = {}
-    for env_path in env_paths:
-        if env_path.exists():
+    for pname, pcfg in PROVIDERS.items():
+        for kname in pcfg["env_key_names"]:
+            val = os.environ.get(kname)
+            if val and pname not in keys:
+                keys[pname] = val
+
+    # Priority 2+: .env 文件链
+    env_paths = []
+    # 当前目录向上 3 级
+    cur = Path.cwd()
+    for _ in range(4):
+        env_paths.append(cur / ".env")
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    # 插件脚本目录向上 3 级（脚本可能被 plugin cache 加载）
+    script_dir = Path(__file__).resolve().parent
+    for _ in range(4):
+        env_paths.append(script_dir / ".env")
+        if script_dir.parent == script_dir:
+            break
+        script_dir = script_dir.parent
+    # 用户全局
+    env_paths.append(Path.home() / ".claude" / "webnovel-writer" / ".env")
+
+    # 去重保序
+    seen = set()
+    env_paths_uniq = []
+    for p in env_paths:
+        s = str(p.resolve()) if p.exists() else str(p)
+        if s not in seen:
+            seen.add(s); env_paths_uniq.append(p)
+
+    for env_path in env_paths_uniq:
+        if not env_path.exists(): continue
+        try:
             for line in env_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
+                if not line or line.startswith("#"): continue
                 for pname, pcfg in PROVIDERS.items():
                     for kname in pcfg["env_key_names"]:
                         if line.startswith(f"{kname}="):
                             val = line.split("=", 1)[1].strip().strip('"').strip("'")
-                            if pname not in keys:  # first found wins (project .env > global)
+                            if pname not in keys:
                                 keys[pname] = val
+        except Exception:
+            continue
     return keys
 
 
@@ -527,6 +550,8 @@ def verify_routing(model_key, provider_name, response_model, requested_model_id=
 
 def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max_retries=2, provider_name=None):
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    # 2026-04-16 Round 11：所有模型 max_tokens=65536（模型最大）+ 全面 high thinking
+    # openclawroot 统一 endpoint 会按模型厂家转发，未知参数被 ignore 不会 400
     payload = {
         "model": model_id,
         "messages": [
@@ -534,17 +559,24 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
             {"role": "user", "content": user_msg},
         ],
         "temperature": 0.3,
-        "max_tokens": 8192,
+        "max_tokens": 65536,
     }
-    # Thinking models (qwen-3.5, deepseek-v3.2, doubao-seed-2.0, glm-4.7, etc.) wrap output in <think> tags,
-    # consuming most of max_tokens on reasoning. Remove limit to let API use model max.
-    # Thinking models (qwen-3.5, qwen3.5-plus, deepseek-v3.2, doubao-seed-2.0, glm-4.7):
-    # - 需要更高 max_tokens（推理+输出共用 completion token 预算）
-    # - enable_thinking 可靠激活 qwen-3.5 的 thinking，其余模型无害
     model_lower = model_id.lower()
-    if any(t in model_lower for t in ("qwen-3", "qwen3", "deepseek", "doubao", "glm-4")):
-        payload["max_tokens"] = 65536
+    # OpenAI 系（gpt-5.4）用 reasoning_effort
+    if "gpt-" in model_lower:
+        payload["reasoning_effort"] = "high"
+    # Gemini 系 · thinking budget
+    if "gemini" in model_lower:
+        payload["thinking_budget"] = 16384
+    # Qwen/DeepSeek/Doubao/GLM 系 · enable_thinking 激活推理
+    if any(t in model_lower for t in ("qwen", "deepseek", "doubao", "glm", "mimo")):
         payload["enable_thinking"] = True
+    # MiniMax / MiMo 推理类 · 明确开 thinking
+    if any(t in model_lower for t in ("minimax", "mimo")):
+        payload["enable_thinking"] = True
+    # Anthropic 风格（claude-opus 等）· thinking budget_tokens
+    if "claude" in model_lower:
+        payload["thinking"] = {"type": "enabled", "budget_tokens": 16384}
     # 整个重试链只占一个 limiter slot（acquire 一次，return/fail 后 release 一次）
     limiter = ProviderRateLimiter.get(provider_name) if provider_name else None
     provider_chain = []
@@ -559,7 +591,14 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
                 elapsed = int((time.time() - start_ts) * 1000)
                 if resp.status_code == 200:
                     data = resp.json()
-                    content = data["choices"][0]["message"]["content"]
+                    msg = data["choices"][0]["message"]
+                    content = msg.get("content") or ""
+                    # 2026-04-16 Round 11：推理模型（mimo/minimax-highspeed/deepseek-thinking）
+                    # 可能把答案全部写到 reasoning_content 而 content 为空；fallback 读取
+                    if not content.strip():
+                        reasoning = msg.get("reasoning_content") or ""
+                        if reasoning.strip():
+                            content = reasoning
                     model_actual = data.get("model", "")
                     usage = data.get("usage", {})
                     provider_chain.append({
