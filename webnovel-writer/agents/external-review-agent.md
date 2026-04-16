@@ -79,7 +79,7 @@ EOF
 
 > **注意**：脚本对每个字段有磁盘 fallback——如果 JSON 中某字段缺失或为空，会自动从 `设定集/`、`正文/`、`.webnovel/` 目录读取。但 agent 应尽量填充完整以减少磁盘 I/O。
 
-脚本会对10个维度并发调用外部模型API，返回10份JSON报告。
+脚本会对 11 个维度（含 reader_flow）并发调用外部模型API，返回 11 份维度报告合并为每模型一个 JSON。
 
 ### 第三步: 交叉验证（不可省略）
 
@@ -134,7 +134,7 @@ EOF
     "attempts_total": 10
   },
   "metrics": {
-    "dimensions_ok": 10,
+    "dimensions_ok": 11,
     "dimensions_failed": 0,
     "dimensions_skipped": 0
   }

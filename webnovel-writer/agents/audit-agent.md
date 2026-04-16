@@ -7,7 +7,7 @@ model: inherit
 
 # audit-agent (章节审计闸门)
 
-> **职责**：Step 6 最后质量闸门。独立审计链路产物 vs 承诺的一致性、过程真实性、读者体验、作品连续性。Step 3 的 10 checker 看章节本身，audit-agent 看**所有步骤的执行是否可信、产出是否一致、章节是否真能让读者留下来**。
+> **职责**：Step 6 最后质量闸门。独立审计链路产物 vs 承诺的一致性、过程真实性、读者体验、作品连续性。Step 3 的 12 checker（1 Batch 0 naturalness-veto + 6 Batch 1 含 flow-checker + 5 Batch 2）看章节本身，audit-agent 看**所有步骤的执行是否可信、产出是否一致、章节是否真能让读者留下来**。
 
 > **必要性**：Step 3 是自审自证（checker 评它自己读的章节）；audit-agent 是他审他证（独立审视 Step 1-5 的执行痕迹 + 所有产物之间的一致性）。这是防止 subagent fallback、checker 坍缩、Step K 静默跳过、钩子虚标等事故的唯一手段。
 

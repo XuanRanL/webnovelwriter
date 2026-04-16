@@ -106,6 +106,46 @@ def cmd_where(args: argparse.Namespace) -> int:
     return 0
 
 
+def _check_agents_sync(plugin_root: Path, workspace_root: Optional[Path]) -> Optional[dict]:
+    """Verify plugin agents/ fully covered by workspace .claude/agents/ (fallback copy).
+
+    Rationale: Workspace .claude/agents/ is the fallback when plugin cache is stale or
+    when plugin cache version lags behind fork. If a checker exists in plugin agents/
+    but NOT in workspace .claude/agents/, Task(checker) may silently fallback to
+    general-purpose, causing phantom "skipped" steps. This has happened (Ch6 with
+    flow-checker, 2026-04-13). Gate catches drift at Step 0 preflight.
+
+    Returns None if workspace_root is None or agents/ does not exist (non-applicable).
+    Returns dict with ok/missing when drift is detected or verified.
+    """
+    plugin_agents_dir = plugin_root / "agents"
+    if not plugin_agents_dir.is_dir():
+        return None
+    if workspace_root is None:
+        return None
+    ws_agents_dir = workspace_root / ".claude" / "agents"
+    if not ws_agents_dir.is_dir():
+        return None  # workspace 未启用 .claude/agents 覆盖，不检查
+
+    plugin_set = {p.name for p in plugin_agents_dir.glob("*.md")}
+    ws_set = {p.name for p in ws_agents_dir.glob("*.md")}
+    missing_in_ws = sorted(plugin_set - ws_set)
+    extra_in_ws = sorted(ws_set - plugin_set)
+    return {
+        "name": "agents_sync",
+        "ok": not missing_in_ws,
+        "path": str(ws_agents_dir),
+        "plugin_agents_count": len(plugin_set),
+        "workspace_agents_count": len(ws_set),
+        "missing_in_workspace": missing_in_ws,
+        "extra_in_workspace": extra_in_ws,
+        **(
+            {"error": f"workspace .claude/agents/ 缺少 {len(missing_in_ws)} 个 agent: {missing_in_ws[:5]}"}
+            if missing_in_ws else {}
+        ),
+    }
+
+
 def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
     scripts_dir = _scripts_dir().resolve()
     plugin_root = scripts_dir.parent
@@ -122,16 +162,30 @@ def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
 
     project_root = ""
     project_root_error = ""
+    workspace_root: Optional[Path] = None
     try:
         resolved_root = _resolve_root(explicit_project_root)
         project_root = str(resolved_root)
         checks.append({"name": "project_root", "ok": True, "path": project_root})
+        # 把 workspace_root 猜成 project_root 的父目录（多项目工作区）或自身（单项目）
+        # 检查两级：父级 和 自身
+        for candidate in (resolved_root, resolved_root.parent):
+            if (candidate / ".claude" / "agents").is_dir():
+                workspace_root = candidate
+                break
     except Exception as exc:
         project_root_error = str(exc)
         checks.append({"name": "project_root", "ok": False, "path": explicit_project_root or "", "error": project_root_error})
 
+    # Agents sync check — non-blocking warning (不阻断 preflight)
+    sync_check = _check_agents_sync(plugin_root, workspace_root)
+    if sync_check is not None:
+        checks.append(sync_check)
+
+    # ok 聚合：只看 P0（必需）项；agents_sync 缺失只警告，不阻断 preflight
+    p0_names = {"scripts_dir", "entry_script", "extract_context_script", "skill_root", "project_root"}
     return {
-        "ok": all(bool(item["ok"]) for item in checks),
+        "ok": all(bool(item["ok"]) for item in checks if item["name"] in p0_names),
         "project_root": project_root,
         "scripts_dir": str(scripts_dir),
         "skill_root": str(skill_root),
@@ -152,6 +206,82 @@ def cmd_preflight(args: argparse.Namespace) -> int:
             if item.get("error"):
                 print(f"  detail: {item['error']}")
     return 0 if report["ok"] else 1
+
+
+def cmd_sync_agents(args: argparse.Namespace) -> int:
+    """Sync plugin agents/ to workspace .claude/agents/ to prevent subagent fallback.
+
+    Root cause of Ch6 flow-checker silent skip (2026-04-13): `.claude/agents/` in
+    workspace was not re-synced after new agents (e.g. flow-checker.md) were added
+    to `webnovel-writer/agents/`. Task(flow-checker) silently fell back to
+    general-purpose agent, so the 11th checker never ran even though ABC deployment
+    had been marked complete.
+
+    This command copies every .md in plugin agents/ into workspace .claude/agents/,
+    printing added/updated/unchanged counts. Use after every commit that modifies
+    plugin agents/.
+    """
+    import shutil
+    from .cli_output import print_success, print_error
+
+    scripts_dir = _scripts_dir().resolve()
+    plugin_root = scripts_dir.parent
+    plugin_agents_dir = plugin_root / "agents"
+    if not plugin_agents_dir.is_dir():
+        print_error("plugin_agents_missing", f"{plugin_agents_dir} 不存在")
+        return 1
+
+    try:
+        resolved_root = _resolve_root(args.project_root)
+    except Exception as exc:
+        print_error("project_root_error", str(exc))
+        return 1
+
+    workspace_root: Optional[Path] = None
+    for candidate in (resolved_root, resolved_root.parent):
+        if (candidate / ".claude").is_dir():
+            workspace_root = candidate
+            break
+    if workspace_root is None:
+        print_error("workspace_not_found", f"未在 {resolved_root} 或父目录找到 .claude/ 子目录")
+        return 1
+
+    ws_agents_dir = workspace_root / ".claude" / "agents"
+    ws_agents_dir.mkdir(parents=True, exist_ok=True)
+
+    added: list[str] = []
+    updated: list[str] = []
+    unchanged: list[str] = []
+    for src in sorted(plugin_agents_dir.glob("*.md")):
+        dst = ws_agents_dir / src.name
+        if not dst.exists():
+            if not args.dry_run:
+                shutil.copy2(src, dst)
+            added.append(src.name)
+        else:
+            src_bytes = src.read_bytes()
+            dst_bytes = dst.read_bytes()
+            if src_bytes != dst_bytes:
+                if not args.dry_run:
+                    shutil.copy2(src, dst)
+                updated.append(src.name)
+            else:
+                unchanged.append(src.name)
+
+    result = {
+        "workspace": str(workspace_root),
+        "agents_dir": str(ws_agents_dir),
+        "added": added,
+        "updated": updated,
+        "unchanged_count": len(unchanged),
+        "dry_run": bool(args.dry_run),
+    }
+    msg = (
+        f"agents 同步: +{len(added)} 新增, ~{len(updated)} 更新, ={len(unchanged)} 未变"
+        + (" (dry-run)" if args.dry_run else "")
+    )
+    print_success(result, message=msg)
+    return 0
 
 
 def cmd_use(args: argparse.Namespace) -> int:
@@ -198,6 +328,10 @@ def main() -> None:
     p_preflight = sub.add_parser("preflight", help="校验统一 CLI 运行环境与 project_root")
     p_preflight.add_argument("--format", choices=["text", "json"], default="text", help="输出格式")
     p_preflight.set_defaults(func=cmd_preflight)
+
+    p_sync_agents = sub.add_parser("sync-agents", help="将 plugin agents/ 同步到工作区 .claude/agents/（修复 Task subagent fallback）")
+    p_sync_agents.add_argument("--dry-run", action="store_true", help="仅打印待同步清单，不写入")
+    p_sync_agents.set_defaults(func=cmd_sync_agents)
 
     p_use = sub.add_parser("use", help="绑定当前工作区使用的书项目（写入指针/registry）")
     p_use.add_argument("project_root", help="书项目根目录（必须包含 .webnovel/state.json）")

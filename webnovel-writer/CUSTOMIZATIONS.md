@@ -7,6 +7,94 @@
 
 ---
 
+## [2026-04-16 · Round 6] flow-checker 未部署 + mojibake 脚本 + preflight agents_sync 根治
+
+**动机**：用户要求"再次仔细研究认真思考详细调查最近的更新有没有问题"，全流程审计（Step 0-7）后定位 4 个 bug 族——不是旧 bug，是 Round 1-5 遗留的横切问题。
+
+### RCA（4 个 bug 族）
+
+1. **Ch6 实测 flow-checker 从未运行**（Round 3 ABC 方案 A 部署不完整）
+   - 审查报告写"内部 10 维度"（应为 11），`.webnovel/tmp/` 只有 10 份 `review_*_ch6.json`，没 `flow_check_ch0006.json`
+   - 根因：`.claude/agents/` 工作区目录缺 `flow-checker.md`。Task(flow-checker) 静默 fallback 到 general-purpose，checker 空跑无人察觉
+
+2. **`scripts/data_modules/chapter_audit.py` 37 行中文乱码 `??????`**（Round 2 或更早误伤）
+   - commit 2e3be61 批量改动时 A2/A3/A4/A6/B4 的 name/evidence/remediation 中文被吞
+   - audit 报告可读性退化，用户看到一片 `??????`
+
+3. **external-review-agent.md 内部不自洽**
+   - header "11 维度" 但 line 82 "10个维度" / metrics 示例 `dimensions_ok: 10`
+
+4. **`skills/webnovel-resume` 两处仍写 "10 个内部 checker"**（Round 3 遗漏）
+
+### Root Cause 家族图谱
+
+- **family 1 "workspace agent 部署漂移"**：plugin `agents/` 新增 checker 后，workspace `.claude/agents/` 未自动同步。之前没有任何 preflight/hygiene 闸门能检测此漂移，Task 静默 fallback 无人察觉（Ch6 flow-checker = 真实案例）。
+- **family 2 "文档 counter 一致性失守"**：新增 checker 后，多文件 counter（SKILL/reference/agent/script/resume）必须同步。Round 3 claim "9 处"实际漏改 >15 处。Round 6 发现 Round 5（naturalness-veto 升级到 12 dim）后仍有 webnovel-resume 写 11 dim 的残留。
+- **family 3 "多语言混编误伤"**：批量 mojibake/quote 修复脚本扫 Python 文件内中文字符串时 encoding handling 不对会吞字符。2e3be61 即此事故。
+
+### 根治清单（本 commit）
+
+#### Plugin 层
+1. **`scripts/data_modules/chapter_audit.py`**：
+   - `CHECKER_NAMES` 加 `"flow-checker"`（10→11；注：naturalness-veto 由 Round 3 已独立处理，不走此列表）
+   - `CHECKER_ALIASES` 加 `"flow-checker": ["读者流畅度", "读者视角流畅度", "流畅度检查", "flow"]`
+   - `EXTERNAL_REVIEW_EXPECTED_DIMENSIONS = 10 → 11`（外部审查含 reader_flow；naturalness 不上 external，仍 11）
+   - 恢复 37 行中文乱码：A2="11 checker 独立调用" / A3="9 外部模型覆盖" / A4="Data Agent 子步完成" / A6="Workflow 时序校验" / B4="review_metrics 一致性"
+
+2. **`skills/webnovel-write/SKILL.md`** rebase 合并：
+   - Step 3 artifact 表保持 12 维度 + naturalness_verdict（Round 3 成果）
+   - Step 3 Batch 清单：0+6+5 三段（Round 3 架构，flow-checker 在 Batch 1）
+   - 充分性闸门 #6: "内部10维度+外部9模型×10维度" → "内部12维度 + 外部9模型×11维度"（含 reader_flow）
+   - Step 0 段末新增"agents 同步检查"+ `sync-agents` 一键修复指引
+
+3. **`agents/external-review-agent.md`**: line 82 + metrics 示例 10→11（含 reader_flow）
+
+4. **`agents/audit-agent.md`**: 职责段 "Step 3 的 10 checker" → "Step 3 的 11 checker（含 flow-checker）"（与 chapter_audit.CHECKER_NAMES 对齐；Batch 0 naturalness-veto 在 SKILL 层另行 gate）
+
+5. **`skills/webnovel-resume/SKILL.md`** + **`references/workflow-resume.md`**: "10 个内部 checker" → "11 个内部 checker，含 flow-checker"
+
+#### 自动化防御（新增，根因 fix）
+
+6. **`scripts/data_modules/webnovel.py::_check_agents_sync`**：
+   - preflight 新增 `agents_sync` 检查项。对比 plugin `agents/*.md` 与工作区 `.claude/agents/*.md`，列出 missing_in_workspace
+   - 非阻断警告：preflight exit code 不变；ERROR 行打印，用户 + AI 都能看到
+   - 目的：Step 0 就暴露 agent 漂移，不用等到 Step 3 checker 空跑才发现
+
+7. **`webnovel.py sync-agents` 新 CLI 子命令**：
+   - 一键同步 plugin `agents/` → 工作区 `.claude/agents/`（bytes diff，只更新有变化的文件）
+   - `--dry-run` 打印待同步清单不写入
+   - 每次 plugin 更新后的第一次 preflight 必跑此命令
+
+8. **工作区 `.claude/agents/flow-checker.md` 真实部署**（本 commit 手动补）
+
+9. **测试 fixture 升级**（`tests/test_chapter_audit.py`）：
+   - 审查报告 fixture 加 flow-checker 行
+   - dimension_names 加 `reader_flow`（11 项，外部审查视角）
+   - duplicated_snippets 测试 fixture 加 flow-checker 行
+   - 72 tests passed ✅
+
+### 防御机制（以后不会再犯）
+
+- **Step 0 preflight 闸门**：agent 漂移在 Step 0 就被揭示
+- **`sync-agents` 一键修复**：降低 cp 手动同步的成本
+- **真源表**（增新 checker 时必改）：
+  - plugin `agents/xxx.md`
+  - 工作区 `.claude/agents/`（跑 `sync-agents` 自动）
+  - `chapter_audit.py::CHECKER_NAMES` + `CHECKER_ALIASES`
+  - `chapter_audit.py::EXTERNAL_REVIEW_EXPECTED_DIMENSIONS`（外部维度）
+  - `external_review.py::DIMENSIONS`（外部维度）
+  - SKILL.md Batch 清单 + 并发上限 + 模式说明 + 充分性闸门
+  - step-3-review-gate.md + step-3.5-external-review.md + step-6-audit-matrix.md
+  - webnovel-resume SKILL + workflow-resume.md
+  - test_chapter_audit.py fixture
+
+### 已知残留（非本次修复范围）
+
+- Ch6 实际没跑 flow-checker 的历史数据不可回溯，只能从 Ch7 起正常走 11 checker 流程（+ Batch 0 naturalness 共 12）
+- CUSTOMIZATIONS.md 内 Round 1-4 历史段落仍有"10 checker"的文字（那是当时的历史实录，不改）
+
+---
+
 ## [2026-04-16] Round 5 · fork↔cache 漂移根治 + plan_consistency_check 通用化
 
 **发现**：Round 4 深度审计扫 fork vs cache 全量 diff，发现 4 处真实漂移：
@@ -203,7 +291,6 @@ Ch1 v1 首句"陆沉在死。"是汉语语病（"在死"违反现代汉语体貌
 2. CLI `audit chapter` 支持中英文维度名双匹配（避免 A2 误报）
 3. `external_review.py` 加 `provider-health` 预检子命令
 4. 字数目标 SSOT 到 state.json（Context Agent 只读 `state.project_info.average_words_per_chapter_min/max`）
-
 ---
 
 ## [2026-04-13 · Ch6 Bug 根治] 彻底修复 Ch6 首写暴露的 7 类系统 bug

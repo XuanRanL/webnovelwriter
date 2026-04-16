@@ -114,7 +114,7 @@ def good_project(tmp_path):
     )
     (root / ".webnovel" / "summaries" / "ch0001.md").write_text(summary, encoding="utf-8")
 
-    # 审查报告（含 10 checker + 核心 3 模型）
+    # 审查报告（含 11 checker + 核心 3 模型）
     report = (
         "# 第0001章审查报告\n\n"
         "## 内部检查\n"
@@ -127,7 +127,8 @@ def good_project(tmp_path):
         "- dialogue-checker: 87\n"
         "- density-checker: 92\n"
         "- prose-quality-checker: 90\n"
-        "- emotion-checker: 91\n\n"
+        "- emotion-checker: 91\n"
+        "- flow-checker: 88\n\n"
         "## 外部模型\n"
         "- kimi: 90 (摘要: 质量良好，人物塑造清晰，场景描写到位)\n"
         "- glm: 91 (摘要: 节奏把控出色，钩子强度到位)\n"
@@ -149,6 +150,7 @@ def good_project(tmp_path):
         "information_density",
         "prose_quality",
         "emotion_expression",
+        "reader_flow",
     ]
     for model_key in ("kimi", "glm", "qwen-plus"):
         payload = {
@@ -314,6 +316,7 @@ def test_A2_checker_diversity_fails_on_duplicated_snippets(good_project):
                 "| density-checker | 92 | 信息密度平衡 |",
                 "| prose-quality-checker | 90 | 文笔保持稳定 |",
                 "| emotion-checker | 91 | 情感张力在线 |",
+                "| flow-checker | 88 | 读者流畅度稳定 |",
             ]
         ),
         encoding="utf-8",

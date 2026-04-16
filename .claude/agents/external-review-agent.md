@@ -1,13 +1,13 @@
 ---
 name: external-review-agent
-description: 外部模型审查Agent，调用外部API对章节进行10维度独立审查，输出结构化报告
+description: 外部模型审查Agent，调用外部API对章节进行11维度独立审查（含 reader_flow 读者视角流畅度），输出结构化报告
 tools: Read, Grep, Bash
 model: inherit
 ---
 
 # external-review-agent (外部模型审查器)
 
-> **职责**: 读取完整项目上下文，构建10维度审查prompt，调用外部模型API获取独立审查意见，交叉验证后输出结构化报告。
+> **职责**: 读取完整项目上下文，构建 11 维度审查prompt（含 reader_flow 读者视角流畅度），调用外部模型API获取独立审查意见，交叉验证后输出结构化报告。
 
 > **输出格式**: 遵循 `${CLAUDE_PLUGIN_ROOT}/references/checker-output-schema.md` 统一 JSON Schema
 >
@@ -79,7 +79,7 @@ EOF
 
 > **注意**：脚本对每个字段有磁盘 fallback——如果 JSON 中某字段缺失或为空，会自动从 `设定集/`、`正文/`、`.webnovel/` 目录读取。但 agent 应尽量填充完整以减少磁盘 I/O。
 
-脚本会对10个维度并发调用外部模型API，返回10份JSON报告。
+脚本会对 11 个维度（含 reader_flow）并发调用外部模型API，返回 11 份维度报告合并为每模型一个 JSON。
 
 ### 第三步: 交叉验证（不可省略）
 
@@ -134,30 +134,34 @@ EOF
     "attempts_total": 10
   },
   "metrics": {
-    "dimensions_ok": 10,
+    "dimensions_ok": 11,
     "dimensions_failed": 0,
     "dimensions_skipped": 0
   }
 }
 ```
 
-## 审查维度（10个）
+## 审查维度（11个）
 
 1. **consistency** — 设定一致性
 2. **continuity** — 连贯性
 3. **ooc** — 人物塑造/OOC
-4. **reader_pull** — 追读力
+4. **reader_pull** — 追读力（作者工艺视角：钩子/微兑现）
 5. **high_point** — 爽点密度
 6. **pacing** — 节奏平衡
 7. **dialogue_quality** — 对话质量
 8. **information_density** — 信息密度
 9. **prose_quality** — 文笔质感
 10. **emotion_expression** — 情感表现
+11. **reader_flow** — 读者视角流畅度（**读者体验视角**：失忆裸读，7 类卡点——JUMP_LOGIC/MISSING_MOTIVE/UNGROUNDED_TERM/ABRUPT_TRANSITION/VAGUE_REFERENCE/RHYTHM_JOLT/META_BREAK）
+
+> **reader_flow vs reader_pull 互补性**：两者视角不同——`reader_pull` 查"作者工艺是否到位"（钩子强度/微兑现达标），`reader_flow` 查"读者能否读懂、不卡顿"（失忆裸读解码成本）。Ch4 实测两者呈反相（flow 高/pull 低），证明**真正互补**。Step 4 润色优先级：`reader_flow` 共识 high/medium > `reader_pull` issues。
 
 ## 失败处理
 
 - 单个维度API调用失败：按 provider fallback 链自动重试（nextapi/healwrap 各重试2次，codexcc/硅基流动 各1次），仍失败则标记该维度为 `"status": "failed"`
 - 幽灵零分（score=0 + 空摘要）：provider 层自动切下一供应商重试；所有供应商都返回 phantom 则标记 `"status": "failed", "error": "phantom_success_score0_empty"`
 - 补充层早停：累计 3 个维度失败后触发 `threading.Event`，跳过剩余排队维度（`"status": "skipped", "error": "early_stop_skipped"`）
-- 全部10个维度失败：输出 `"pass": false, "error": "all_dimensions_failed"`
+- 全部 11 个维度失败：输出 `"pass": false, "error": "all_dimensions_failed"`
 - JSON解析失败：标记 `"status": "failed", "error": "json_parse_failed"`
+- **reader_flow 特殊校验**：主流程对每个 issue 的 quote 做 compact grep（去空白后模糊匹配）；quote 不在原文 → issue 降级为 low（允许保留作为线索）。
