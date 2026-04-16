@@ -7,6 +7,76 @@
 
 ---
 
+## [2026-04-16 · Round 14] Round 13 v2 余波清扫 · 四道根治护栏 + Ch1 读者复审
+
+**触发**：用户要求"彻底检查 Round 13 v2 是否完美落地，root cause 根治不再复发，最后对 Ch1 跑一次 Step 3/3.5 + Step 4 修复看有没有爆款优化空间"。
+
+### 根因调查 · 发现 4 个未根治的漏洞
+
+1. **代码真源漂移 · P0**：`scripts/hygiene_check.py` Step 3 artifact 白名单仍是旧 4 字段（`overall_score/checker_count/internal_avg/review_score`），`scripts/workflow_manager.py` 已是 8 字段（加 `naturalness_verdict/_score + reader_critic_verdict/_score`）。两份 hardcode 副本必然漂移——Ch7 RCA 已踩一次，Round 14 再次踩。
+2. **文档真源漂移 · P1 × 14 处**：Round 13 v2 commit message 说"grep 清零"但实测仍有 14 处"11 维度 / 11 checker / 9×11 = 99 份"未改，覆盖 `agents/external-review-agent.md` 3 处 / `step-3.5-external-review.md` prompt 模板 2 处 / `step-6-audit-matrix.md` + `step-6-audit-gate.md` / `step-3-review-gate.md` Batch 描述 + dimension_scores 键名映射 + 等待方式 + 违规示例 / `SKILL.md` review_metrics 示例缺 2 key / `webnovel-init/SKILL.md` checker 列表 / `workflow-resume.md` / `post_draft_check.py` + `post-draft-gate.md` 注释 / `reader-naturalness-checker.md`
+3. **Session 级 plugin 漂移 · P0**：新 agent `reader-critic-checker.md` 文件齐全 + `sync-cache` + `sync-agents` 都成功，**但当前 Claude Code session 启动时已固化 agent registry，新 agent 调用时报 `Agent type 'webnovel-writer:reader-critic-checker' not found`**。Ch6 教训是三层缓存（fork/marketplace/cache），Round 14 教训是**第四层缓存：session in-memory agent registry**。
+4. **测试硬编码字段列表滞后 · P1**：`test_ch7_rca_fixes::test_step3_whitelist_contains_all_documented_fields` 里 `required_in_docs` 集合硬编码 6 字段，Round 13 v2 应是 8 字段，测试没 fail 是因为它用 `issubset` 而非 `==`——漏报但不误报。
+
+### 修复 · 4 道根治护栏
+
+**护栏 1 · hygiene_check 改为 import workflow_manager**（消除副本）
+- `hygiene_check.py` 删本地 `REQUIRED_ARTIFACT_FIELDS` / `PLACEHOLDER_ONLY_FIELDS` / `_is_semantically_empty`，改 `from workflow_manager import ...` 共享同一对象
+- `CORE_22_FIELDS` 改名 `CORE_META_FIELDS`（实际 23 字段含 allusions_used），保留旧名作 back-compat alias
+- 打印行从硬编码 `"core 22 字段"` 改为 `f"core {len(CORE_META_FIELDS)} 字段"`
+- `test_round13_consistency::test_hygiene_check_imports_from_workflow_manager` 锁死退化：assert `hygiene_check.X is workflow_manager.X`
+
+**护栏 2 · 文档批量刷新**（14 处 11→13）
+- `agents/external-review-agent.md` description/执行流程/失败返回 3 处 11→13
+- `skills/webnovel-write/references/step-3.5-external-review.md` prompt 模板从"11 个维度 + 1-11 项"改为"13 个维度 + 1-13 项（新增 naturalness + reader_critic）"，报告矩阵 11→13，乘积 99→117
+- `skills/webnovel-write/references/step-6-audit-matrix.md` A2 "11 checker 独立性" → "13 checker 独立性"
+- `skills/webnovel-write/references/step-6-audit-gate.md` 失败恢复路径 "A2 11 checker 坍缩" → "13"
+- `skills/webnovel-write/references/step-3-review-gate.md`：
+  - 分批规则从 "Batch 1 = 5 个 / Batch 2 = 6 个"改为 Round 13 v2 的 "Batch 0 = 2 / Batch 1 = 6（含 flow-checker）/ Batch 2 = 5"
+  - 等待方式从 "5+6 分批模式" 改为 "0+6+5 分批模式"，违规场景示例 11→13
+  - dimension_scores 键名映射从 11 键（缺 naturalness + reader-critic）改为 13 键，并推荐直接用 canonical 英文 key
+- `skills/webnovel-write/SKILL.md`：
+  - Step 3 artifact 表从 6 字段扩到 8 字段（加 naturalness_verdict + reader_critic_verdict 两个 verdict 字段）
+  - review_metrics 示例 dimension_scores 从 11 key 扩到 13 key（加 reader-naturalness-checker + reader-critic-checker）
+- `skills/webnovel-init/SKILL.md` ABC 启用表重写为 Round 13 v2 的 0+6+5 Batch 结构 + 117 份独立评分
+- `skills/webnovel-resume/references/workflow-resume.md` Step 3 说明 "12 个 checker：Batch 0 naturalness-veto" 改为 "13 个 checker · Round 13 v2 · 0+6+5 · Batch 0 不 block"
+- `scripts/post_draft_check.py` + `references/post-draft-gate.md` 注释 "10 个 checker" → "13"
+- `scripts/external_review.py` 注释 "9×11 = 99 份" → "9×13 = 117 份"
+- `agents/reader-naturalness-checker.md` "其他 10 个 checker" → "其他 12 个 checker"，删除"为什么作为 veto"段，改写为"为什么取消 veto 改评分维度（Round 13 v2）"
+
+**护栏 3 · 新增 pytest 跨文件一致性回归**
+- `tests/test_round13_consistency.py` 13 个测试：
+  - `test_internal_checker_count_matches_external_dimensions` 三真源一致（CHECKER_NAMES / EXTERNAL_REVIEW_EXPECTED_DIMENSIONS / DIMENSIONS dict 都==13）
+  - `test_canonical_checker_names_contains_round13_v2_pair` 新 2 checker 必须在 CHECKER_NAMES
+  - `test_external_dimensions_contains_reader_visual_pair` naturalness/reader_critic/reader_flow 必须在 DIMENSIONS
+  - `test_hygiene_check_imports_from_workflow_manager` is 锁死
+  - `test_step3_whitelist_has_round13_v2_fields` 4 个新字段必须在白名单
+  - `test_live_rule_docs_no_obsolete_counter` 5 个活规则文件参数化扫描 11/12 checker|维度
+  - `test_external_review_prompt_uses_13_dimensions` prompt 模板含"13 个维度" + 三个读者维度名
+  - `test_external_review_agent_desc_uses_13_dimensions` description 行含"13"
+  - `test_nine_times_dimensions_product_correctness` 扫 `9×N=M 份` 算术正确（杜绝 9×13=99 的数学错误）
+- 测试集从 339 passed → **352 passed**
+
+**护栏 4 · Session agent 漂移登记**（第四层缓存）
+- `memory/feedback_plugin_session_reload_required.md` 新增：登记"新增 plugin agent 后必须重启 Claude Code session"的硬规则
+- `memory/feedback_hygiene_import_workflow.md` 新增：登记"hygiene_check 必须 import workflow_manager，不得副本"
+- `MEMORY.md` 更新索引
+- `test_ch7_rca_fixes::test_step3_whitelist_contains_all_documented_fields` 的 `required_in_docs` 集合从 6 字段扩到 8 字段
+
+### Ch1《<example-project>》读者视角复审（Round 13 v2 新 checker）
+
+因为 Ch1 于 Round 10 前写完，历史 `checker_scores` 只有 11 个 key（缺 flow-checker + reader-naturalness + reader-critic）。Round 14 增量调用 3 个新 checker 看读者视角盲区：
+
+| Checker | 分数 | verdict | 主要 problems |
+|---|---|---|---|
+| reader-naturalness-checker | **91** | PASS | 5 条 low 级微调（逐秒数拍 / 澄清句 / "抹"字重复 / 抒情密度 / 流派金句） |
+| reader-critic-checker | **84** | yes（追读） | 3 条 medium（"重生者 #4732" 系统音出戏 / 空白 A4 唬人太丝滑 / "档案已灌注" 节奏赶）+ 2 条 low |
+| flow-checker | pending | — | — |
+
+读者视角结论：**Ch1 在<example-project>开局里算上游水准**（首句 9/10，"会翻下一章"），有 5-8 处 low/medium 微调空间可以从"上游"推到"爆款"级。亮点：月台钩子三连 / HR 回旋镖 / 踢床头柜 / 妹妹求救语音 / 拿铁对速溶的对比，都被 reader-critic 点名为"钉在屏幕上"级。
+
+---
+
 ## [2026-04-16 · Round 13 v2] 读者视角双 checker 完整集成 · 13 维度 + 取消 veto 架构
 
 **触发**：用户要求创建 `reader-critic-checker`（prompt：`仔细研究认真思考详细调查搜索分析 以正常读者的角度锐评和找这个章节小说的问题。{章节小说}`），并质疑 veto block 机制——认为所有读者视角反馈应该进入 Step 4 修复，而不是 block 回 Step 2A 重写。

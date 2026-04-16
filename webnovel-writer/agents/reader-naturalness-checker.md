@@ -227,15 +227,15 @@ else:
 
 ### 为什么独立于其他 checker
 
-- **规则同源问题**：其他 10 个 checker 都读设定集。设定集若含伪科学规则（如"4 字激活杏仁核"），10 checker 会**一致**按这套规则评分，无论规则对错
+- **规则同源问题**：其他 12 个 checker 都读设定集（Round 13 v2 · 本 checker 之外还有 12 个：11 工艺 + reader-critic）。设定集若含伪科学规则（如"4 字激活杏仁核"），12 checker 会**一致**按这套规则评分，无论规则对错
 - **外部模型也被污染**：external_review.py 会把 opening_strategy 全文打包给 9 个外部模型。外部模型看到作者"钦定"某首句，倾向按"符合作者意图"打分
-- **本 checker 是唯一独立视角**：不读设定集 → 不被污染 → 可以反驳作者的"自证"
+- **本 checker 与 reader-critic 是仅有的读者视角独立尺子**：都不读设定集 → 不被污染 → 可以反驳作者的"自证"。naturalness 量"字句像不像人写的"，reader-critic 量"读者本能愿不愿追"
 
-### 为什么作为 veto（硬闸门）
+### 为什么取消 veto 改为评分维度（Round 13 v2）
 
-- 首句语病是**劝退级问题**（番茄读者 0.5 秒关小说）
-- 应该 block commit，不是 medium 扣分
-- 被 naturalness-checker 拒的章节必须**重写**，不是润色
+- 原 veto block 对 95% 问题是浪费——回 Step 2A 重写整章远比 Step 4 定向润色代价大
+- 新架构：本 checker 产出 `overall_score` + `problems` + `verdict`，平等参与 `internal_avg` 聚合；`REJECT_*` / `REWRITE_RECOMMENDED` 生成的 critical/high 级 problems 强制 Step 4 修复
+- **极端 block 条件**（仅一种）：Step 4 polish 后复查仍 `REJECT_CRITICAL`，才考虑回 Step 2A 重写整章
 
 ### 在 Step 3 中的位置
 

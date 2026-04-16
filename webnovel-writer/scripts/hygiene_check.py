@@ -29,7 +29,8 @@
     H10 项目根布局干净（5 个合法目录 + 允许的隐藏文件）
     H11 审查报告中 overall_score 出现次数 <= 1
     H17 chapter_meta.allusions_used schema 合规（list[dict] with 7 fields）
-    H18 checker_scores key 必须 canonical（11 个 CHECKER_NAMES ∪ {overall}）；
+    H18 checker_scores key 必须 canonical（13 个 CHECKER_NAMES ∪ {overall}，
+        Round 13 v2 · 含 reader-naturalness-checker + reader-critic-checker）；
         检测 AI fallback 写中文/legacy key（Ch1 血教训）
   P2 建议（exit 2）：
     H12 context_snapshot 存在
@@ -50,51 +51,39 @@ from pathlib import Path
 from typing import Optional
 
 
-REQUIRED_ARTIFACT_FIELDS = {
-    "webnovel-write": {
-        "Step 1": ["file", "snapshot", "context_file"],
-        "Step 2A": ["word_count"],
-        "Step 2B": ["style_applied", "deviation_notes"],
-        "Step 3": ["overall_score", "checker_count", "internal_avg", "review_score"],
-        "Step 3.5": ["external_avg", "models_ok", "external_models_ok"],
-        "Step 4": ["anti_ai_force_check", "polish_report", "fixes"],
-        "Step 5": ["state_modified", "entities", "foreshadowing", "scene_count", "chapter_meta_fields"],
-        "Step 6": ["decision", "audit_report", "audit_decision"],
-        "Step 7": ["commit", "branch", "commit_sha"],
-    }
-}
-PLACEHOLDER_ONLY_FIELDS = {"v2", "ok", "chapter_completed", "committed"}
+# Single source of truth: import the artifact whitelist + helpers from
+# workflow_manager rather than mirror them here. Round 13 v2 RCA showed that
+# duplicating these constants drifts the moment one file is updated — Step 3
+# gained naturalness_verdict/reader_critic_score but the local copy stayed on
+# the old 4-field list. See memory:feedback_hygiene_import_workflow.
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
 
+from workflow_manager import (  # noqa: E402  (sys.path must be primed first)
+    REQUIRED_ARTIFACT_FIELDS,
+    PLACEHOLDER_ONLY_FIELDS,
+    _is_semantically_empty,
+)
 
-def _is_semantically_empty(value):
-    """Mirror of workflow_manager._is_semantically_empty — must stay in sync.
-
-    Numeric 0 / 0.0 counts as empty (word_count=0 / score=0 are forgery signals).
-    bool False/True always count as non-empty (style_applied=False is signal).
-    """
-    if value is None or value == "":
-        return True
-    if isinstance(value, (list, dict, tuple, set)) and len(value) == 0:
-        return True
-    if type(value) is bool:
-        return False
-    if isinstance(value, (int, float)) and value == 0:
-        return True
-    return False
-
-CORE_22_FIELDS = {
+CORE_META_FIELDS = {
     "chapter", "title", "word_count", "summary", "hook_strength", "scene_count",
     "key_beats", "characters", "locations", "created_at", "updated_at",
     "protagonist_state", "location_current", "power_realm", "golden_finger_level",
     "time_anchor", "end_state", "foreshadowing_planted", "foreshadowing_paid",
     "strand_dominant", "review_score", "checker_scores", "allusions_used",
 }
-# Fields in CORE_22 where an empty list/dict is semantically valid
+# Back-compat alias: older code referenced CORE_22_FIELDS even though the set
+# actually contains 23 fields (allusions_used was added in Round 9). Keep the
+# alias so any straggler import keeps working; drop after a deprecation cycle.
+CORE_22_FIELDS = CORE_META_FIELDS
+# Fields in CORE_META where an empty list/dict is semantically valid
 # (e.g. Ch1 has 0 paid foreshadowing; a bridge chapter has 0 new allusions)
-CORE_22_LIST_FIELDS_ALLOW_EMPTY = {
+CORE_META_LIST_FIELDS_ALLOW_EMPTY = {
     "foreshadowing_planted", "foreshadowing_paid", "allusions_used",
     "key_beats", "characters", "locations", "checker_scores",
 }
+CORE_22_LIST_FIELDS_ALLOW_EMPTY = CORE_META_LIST_FIELDS_ALLOW_EMPTY
 
 ALLUSION_REQUIRED_KEYS = {"id", "snippet", "type", "source", "carrier", "function", "is_original"}
 # 注意：type 和 function 允许作者扩展与复合（例如 "伏笔+氛围+角色底色"），hygiene 只检查字段结构
@@ -195,7 +184,7 @@ def check_chapter_meta_core(root: Path, chapter: int, rep: HygieneReport):
         rep.record("P0", "H2", f"chapter_meta[{ch_key}] 不存在", False)
         return
     missing = []
-    for f in CORE_22_FIELDS:
+    for f in CORE_META_FIELDS:
         if f not in meta:
             missing.append(f)
             continue
@@ -204,17 +193,18 @@ def check_chapter_meta_core(root: Path, chapter: int, rep: HygieneReport):
             missing.append(f)
             continue
         if v == [] or v == {}:
-            if f not in CORE_22_LIST_FIELDS_ALLOW_EMPTY:
+            if f not in CORE_META_LIST_FIELDS_ALLOW_EMPTY:
                 missing.append(f)
+    total = len(CORE_META_FIELDS)
     if missing:
         rep.record(
             "P0",
             "H2",
-            f"core 22 字段缺失 {len(missing)}/{len(CORE_22_FIELDS)}: {sorted(missing)[:8]}",
+            f"core {total} 字段缺失 {len(missing)}/{total}: {sorted(missing)[:8]}",
             False,
         )
     else:
-        rep.record("P0", "H2", "core 22 字段齐全", True)
+        rep.record("P0", "H2", f"core {total} 字段齐全", True)
 
 
 def check_score_alignment(root: Path, chapter: int, rep: HygieneReport):

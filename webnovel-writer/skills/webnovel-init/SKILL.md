@@ -893,9 +893,11 @@ chmod +x "{project_root}/.webnovel/hygiene_check.py" 2>/dev/null || true
 
 新项目自动享用以下插件级能力，无需项目侧配置：
 
-- **Step 3 第 11 个 checker**：`flow-checker` 读者视角流畅度（一人分饰两角失忆裸读协议）
-- **Step 3 第 12-13 个 checker（Round 13 v2）**：`reader-naturalness-checker` 汉语母语自然度 + `reader-critic-checker` 读者锐评。两个读者视角 checker 与其他 11 个平等参与 overall_score 聚合，不 block 流程——其 problems 和其他 checker 的 issues 合并进入 Step 4 定向修复
-- **Step 3.5 第 11-13 维度**：`reader_flow` / `naturalness` / `reader_critic` 外部 9 模型同样跑 13 维度（让外部 AI 也参与读者视角评估，与内部 13 checker 对齐）
+- **Step 3 内部 13 个 checker（Round 13 v2 · 0+6+5 分批）**：
+  - **Batch 0 读者视角 2 个**：`reader-naturalness-checker` 汉语母语自然度 + `reader-critic-checker` 读者锐评（先跑，与其他 11 个平等参与 overall_score 聚合，不 block 流程——其 problems 和其他 checker 的 issues 合并进入 Step 4 定向修复）
+  - **Batch 1 核心 6 个**：consistency / continuity / ooc / reader-pull / high-point / `flow-checker`（读者视角流畅度 · 一人分饰两角失忆裸读协议）
+  - **Batch 2 工艺 5 个**：pacing / dialogue / density / prose-quality / emotion
+- **Step 3.5 外部 9 模型 × 13 维度（Round 13 v2）**：11 工艺维度 + `reader_flow` + `naturalness` + `reader_critic`，让外部 AI 也参与读者视角评估，与内部 13 checker 对齐，共 117 份独立评分
 - **Step 6 Layer C 扩展**：C13 跨层共识聚合 / C14 反应可追溯性（双通道）/ C15 Flow 趋势滑动窗口
 
 init 完成后的 `/webnovel-write` 会自动触发全部 ABC 流程。首章/规则揭示章/反派首露章等关键章节可手动用 `flow_union_runner.py --runs 3` 做 N=3 重跑 issue union 聚合。

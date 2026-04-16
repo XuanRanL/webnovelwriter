@@ -273,7 +273,11 @@ def test_step3_whitelist_still_rejects_pure_placeholder():
 
 
 def test_step3_whitelist_contains_all_documented_fields():
-    """SKILL.md Step 0.5 artifact 表必须与 REQUIRED_ARTIFACT_FIELDS 保持一致。"""
+    """SKILL.md Step 0.5 artifact 表必须与 REQUIRED_ARTIFACT_FIELDS 保持一致。
+
+    Round 13 v2 扩展：Step 3 新增 reader_critic_verdict + reader_critic_score
+    两个字段（读者锐评 checker 产出），SKILL.md 表已同步登记。
+    """
     _ensure_scripts_on_path()
     import workflow_manager
 
@@ -285,6 +289,8 @@ def test_step3_whitelist_contains_all_documented_fields():
         "review_score",
         "naturalness_verdict",
         "naturalness_score",
+        "reader_critic_verdict",
+        "reader_critic_score",
     }
     assert required_in_docs.issubset(set(step3)), (
         f"SKILL.md 声明的字段 {required_in_docs - set(step3)} 不在 REQUIRED_ARTIFACT_FIELDS"

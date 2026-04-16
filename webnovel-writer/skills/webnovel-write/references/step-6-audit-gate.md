@@ -110,7 +110,7 @@ elif decision == 'approve':
 
 ### Layer A 失败（过程真实性）
 - A1 Context Contract 不全 → 重跑 Step 1：`Task(context-agent, ...)`
-- A2 11 checker 坍缩 → 重跑 Step 3，显式 Task 调用 11 个 checker（含 flow-checker）
+- A2 13 checker 坍缩 → 重跑 Step 3，显式 Task 调用 13 个 checker（含 flow-checker + reader-naturalness + reader-critic · Round 13 v2）
 - A3 9 外部模型异常 → 重跑 Step 3.5：`external_review.py --model-key all`
 - A4 Data Agent 子步跳过 → 重跑 Step 5
 - A5 fallback 检测 → 确认 `claude plugin enable webnovel-writer@webnovel-writer-marketplace`，会话重启后重跑

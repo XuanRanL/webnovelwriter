@@ -107,7 +107,7 @@ class ProviderRateLimiter:
 REASONING_MODELS = {"mimo-v2-pro", "minimax-m2.7-hs", "deepseek-v3.2-thinking"}
 
 # 9 模型 × 2 供应商（openclawroot 首位 + siliconflow 备用）
-# 每个模型跑全 13 维度（共识机制：9×11 = 99 份独立评分）
+# 每个模型跑全 13 维度（共识机制：9×13 = 117 份独立评分 · Round 13 v2）
 # tier 仅用于早停机制（core 必须成功；supplemental 失败不阻塞）
 # role 字段已删除（2026-04-16 Round 11）—— 每个模型都是全维度 rater，没有分工
 MODELS = {

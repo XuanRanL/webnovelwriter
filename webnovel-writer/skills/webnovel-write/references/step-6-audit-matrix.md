@@ -18,7 +18,7 @@ Ch1 事故全在这一层。目的：验证 Step 1-5 的子代理真的跑了而
 | ID | 检查项 | 方法 | 通过标准 | 严重 | 修复 |
 |---|---|---|---|---|---|
 | A1 | Context Contract 完整性 | 读 `context_snapshots/ch{NNNN}.json`，验证 8 板块全在、Contract 12 字段全填 | 字段覆盖 ≥ 18/20 | critical | 重跑 Step 1 context-agent |
-| A2 | 11 checker 独立性 | 读 `审查报告/第{NNNN}章审查报告.md`，提取 11 个 checker 段落（含 flow-checker），计算两两文本相似度（词袋 Jaccard） | 最高相似度 < 0.6；分数方差 ≥ 3 | critical | 重跑 Step 3（显式 Task 调用每个 checker） |
+| A2 | 13 checker 独立性 | 读 `审查报告/第{NNNN}章审查报告.md`，提取 13 个 checker 段落（含 flow-checker + reader-naturalness + reader-critic · Round 13 v2），计算两两文本相似度（词袋 Jaccard） | 最高相似度 < 0.6；分数方差 ≥ 3 | critical | 重跑 Step 3（显式 Task 调用每个 checker） |
 | A3 | 9 外部模型多样性 | 读 `.webnovel/tmp/external_review_*_ch{NNNN}.json`，验证 `model_actual` 9 种不同值、`routing_verified=true`、无 0 分维度 | 9 模型，无幽灵 | critical | 重跑 Step 3.5（`--model-key all`） |
 | A4 | Data Agent A-K 子步真实执行 | 读 `.webnovel/observability/data_agent_timing.jsonl` 最后一条，每子步 elapsed_ms > 0；B 步 > 3000ms；K 步有 applied_additions | A-F 均 > 100ms | critical | 重跑 Step 5 |
 | A5 | 无 fallback subagent | 读 `.webnovel/observability/call_trace.jsonl` 本章区间，grep `"subagent_type": "general-purpose"` | 命中数 = 0 | critical | 确认插件 enable + 重跑对应 Step |
