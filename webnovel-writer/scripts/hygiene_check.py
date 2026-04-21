@@ -22,6 +22,8 @@
     H14 Step 1 执行包已落盘：.webnovel/context/chNNNN_context.json + .md
     H15 Step 4 润色报告已落盘：.webnovel/polish_reports/chNNNN.md 且含 anti_ai_force_check
     H16 workflow_state completed_steps 每步 artifact 含语义字段（非 {"v2":true} 占位）
+    H19a 正文与 HEAD 不一致 + narrative_version=v1 → 必须立即跑 polish_cycle
+         （Round 14.5 · <example-project> Ch1 血教训：禁止裸跑 polish commit）
   P1 重要（exit 2，不阻断但警告）：
     H7  章节字数与 state.word_count 一致（误差 < 2%）
     H8  foreshadowing 字段无重复（planted vs added、paid vs resolved）
@@ -32,6 +34,7 @@
     H18 checker_scores key 必须 canonical（13 个 CHECKER_NAMES ∪ {overall}，
         Round 13 v2 · 含 reader-naturalness-checker + reader-critic-checker）；
         检测 AI fallback 写中文/legacy key（Ch1 血教训）
+    H19 polish_log 末尾时间早于 git 最新 commit（可能历史裸跑 polish）
   P2 建议（exit 2）：
     H12 context_snapshot 存在
     H13 项目特定检查（通过 .webnovel/hygiene_check_local.py 扩展）
@@ -578,6 +581,103 @@ def check_allusions_schema(root: Path, chapter: int, rep: HygieneReport):
         rep.record("P1", "H17", f"allusions_used {len(allusions)} 条全部合规", True)
 
 
+def check_post_commit_polish_drift(root: Path, chapter: int, rep: HygieneReport):
+    """H19: post-commit polish 漂移检测（2026-04-20 Round 14.5 新增）
+
+    背景：Step 7 commit 之后，作者/AI 经常根据读者视角 checker 反馈手动改正文然后
+    裸跑 `git commit -m "polish"`。这绕过了 post_draft_check / hygiene_check / state
+    同步 / workflow 登记。本检查在 commit 前发现这种"未走 polish_cycle"的迹象。
+
+    检测策略：
+    - 读 git show HEAD:正文/第NNNN章*.md → 与工作区文件 hash 比对
+    - 若 hash 不一致（=正文已改动但未 commit）→ 检查是否需要走 polish_cycle：
+        H19a (P0): 仍是 v1（从未走过 polish_cycle）→ 必须立即跑
+        H19  (P1): chapter_meta.polish_log 末尾时间 < git log 最新 commit 时间 →
+                   可能存在历史裸跑 polish commit
+    - 若 hash 一致 → skip（无 drift）
+    - 若 git show HEAD 失败（文件未跟踪）→ skip（首次 commit 走 Step 1-7）
+    """
+    import subprocess
+    chapter_files = sorted((root / "正文").glob(f"第{chapter:04d}章*.md"))
+    if not chapter_files:
+        return
+    chapter_file = chapter_files[0]
+    rel = str(chapter_file.relative_to(root)).replace("\\", "/")
+
+    try:
+        out = subprocess.run(
+            ["git", "show", f"HEAD:{rel}"],
+            cwd=root,
+            capture_output=True,
+            timeout=10,
+        )
+    except Exception as exc:
+        rep.record("P2", "H19", f"git show HEAD 调用失败: {exc}", True)
+        return
+    if out.returncode != 0:
+        return
+
+    head_text = out.stdout.decode("utf-8", errors="replace")
+    cur_text = chapter_file.read_text(encoding="utf-8")
+    if head_text == cur_text:
+        rep.record("P2", "H19", "正文与 HEAD 一致（无 polish drift）", True)
+        return
+
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        rep.record("P0", "H19a", "state.json 缺失，无法判断 polish 状态", False)
+        return
+
+    try:
+        s = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        rep.record("P0", "H19a", f"state.json 解析失败: {exc}", False)
+        return
+
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    narrative_version = meta.get("narrative_version")
+    polish_log = meta.get("polish_log", [])
+
+    if not narrative_version or narrative_version == "v1":
+        rep.record(
+            "P0", "H19a",
+            f"正文已改动但 narrative_version={narrative_version!r}（从未走 polish_cycle）。"
+            f"必须运行：python scripts/polish_cycle.py {chapter} --reason '...' --narrative-version-bump",
+            False,
+        )
+        return
+
+    try:
+        log_out = subprocess.run(
+            ["git", "log", "-1", "--format=%cI", "--", rel],
+            cwd=root,
+            capture_output=True,
+            timeout=10,
+        )
+        last_commit_iso = log_out.stdout.decode("utf-8", errors="replace").strip()
+    except Exception:
+        last_commit_iso = ""
+
+    last_polish_iso = ""
+    if polish_log:
+        last_polish_iso = polish_log[-1].get("timestamp", "")
+
+    if last_commit_iso and last_polish_iso and last_polish_iso < last_commit_iso:
+        rep.record(
+            "P1", "H19",
+            f"polish_log 末尾时间 ({last_polish_iso}) 早于 git 最新 commit ({last_commit_iso})。"
+            f"可能存在裸跑 polish commit。建议：补登一次 polish_cycle --allow-no-change --no-commit",
+            False,
+        )
+        return
+
+    rep.record(
+        "P1", "H19",
+        f"正文已改动且未 commit；narrative_version={narrative_version}，建议走 polish_cycle 提交",
+        False,
+    )
+
+
 def run_project_local_checks(root: Path, chapter: int, rep: HygieneReport):
     """H13: 调用 .webnovel/hygiene_check_local.py（若存在）"""
     local_p = root / ".webnovel" / "hygiene_check_local.py"
@@ -618,6 +718,7 @@ def main():
     check_report_overall_score_count(root, args.chapter, rep)
     check_allusions_schema(root, args.chapter, rep)
     check_checker_scores_canonical(root, args.chapter, rep)
+    check_post_commit_polish_drift(root, args.chapter, rep)
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)

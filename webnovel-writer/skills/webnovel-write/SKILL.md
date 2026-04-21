@@ -44,6 +44,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 - **禁止自审替代**：Step 3 审查必须由 Task 子代理执行，主流程不得内联伪造审查结论。
 - **禁止主观估分**：`overall_score` 必须来自审查子代理的聚合结果，不得因为"子代理还没返回"而自行估算分数。
 - **禁止源码探测**：脚本调用方式以本文档与 data-agent 文档中的命令示例为准，命令失败时查日志定位问题，不去翻源码学习调用方式。
+- **禁止裸跑 polish commit**（2026-04-20 新增）：Step 7 commit 之后任何对正文文件（`正文/第NNNN章*.md`）的修改，**必须**通过 `polish_cycle.py`（Step 8）完成，**严禁**直接 `git add . && git commit -m "polish"` 或 `git commit --amend`。裸跑会绕过 `post_draft_check`/`hygiene_check`，让 ASCII 引号、word_count 漂移、checker 数据滞留，并且 polish 任务在 `workflow_state.json` 不留痕。
 
 ### 章节间闸门（Chapter Gate）
 
@@ -126,6 +127,9 @@ git log --oneline -1 | grep "第${chapter_num}章"
 - `references/writing/genre-hook-payoff-library.md`
   - 用途：电竞/直播文/克苏鲁的钩子与微兑现快速库。
   - 触发：Step 1 题材命中 `esports/livestream/cosmic-horror` 时必读。
+- `references/post-commit-polish.md`
+  - 用途：Step 8（Post-Commit Polish）完整规范：触发场景、polish_cycle.py 用法、多轮 polish、跨章影响、审计兼容性、恢复策略。
+  - 触发：Step 7 commit 之后任何修改正文前必读。
 
 ### writing（问题定向加读）
 
@@ -859,6 +863,63 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
   - 跳过 start-step/complete-step 直接 commit
   - 用 Edit/Write 工具直接改 `workflow_state.json`
   - complete-step artifact 为空或只含 `{"ok": true}` / `{"v2": true}`
+
+### Step 8：Post-Commit Polish Loop（提交后再润色循环 · 2026-04-20 新增）
+
+**定位**：Step 7 commit 完成后，**任何对正文的修改**都必须走本步骤，**严禁裸跑 `git commit`**。
+
+**为什么需要**（2026-04-20 <example-project> Ch1 血教训）：
+Round 13 v2 上线 13 checker 后，作者/AI 经常根据 reader-critic / reader-naturalness 反馈手动改正文，然后裸跑 `git commit -m "v3 polish"`。结果：
+- `post_draft_check.py` 不再跑 → 58 个 ASCII 引号漏过去（H5 P0 fail）
+- `hygiene_check.py` 不再跑 → `word_count` 漂移（state=3498 vs actual=3084）
+- `workflow_state.json` 不再登记 → polish 任务在工作流系统里"不存在"
+- `chapter_meta.narrative_version` 不变 → 下章 context-agent 看到旧版本
+- `checker_scores` 仍是旧 10 维 → A2 审计跨章 trend 失真
+
+**触发场景**（满足任一即必须走 Step 8）：
+- 根据读者视角 checker 反馈修正语病/AI 腔/逻辑跳跃
+- 根据外部模型 reader_flow 反馈修读者卡点
+- 修复 hygiene_check 报告的 P1 警告（如 ASCII 引号、字数误差）
+- 任何在 Step 7 commit 之后对 `正文/第NNNN章*.md` 的内容修改
+
+**唯一入口**（禁止替代）：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
+  --project-root "${PROJECT_ROOT}" \
+  --reason "读者视角 6 medium 修复" \
+  --narrative-version-bump \
+  --round-tag round13v2 \
+  [--checker-scores '{"reader-naturalness-checker": 91, "reader-critic-checker": 88}']
+```
+
+`polish_cycle.py` 自动完成 6 步：
+1. **变化检测**：`git show HEAD:正文/...` vs 工作区文件，无变化默认拒绝（`--allow-no-change` 例外）
+2. **`post_draft_check`**：必须 exit 0（ASCII 引号/Markdown/字数/U+FFFD/虚词等 7 类硬约束）
+3. **state.json 同步**：
+   - `chapter_meta.{NNNN}.word_count` ← 实测中文字符数
+   - `chapter_meta.{NNNN}.narrative_version` ← `vN+1`（或手动指定）
+   - `chapter_meta.{NNNN}.updated_at` ← 当前 UTC
+   - `chapter_meta.{NNNN}.polish_log[]` ← 追加 `{version, timestamp, notes}`
+   - 可选：`chapter_meta.{NNNN}.checker_scores` ← 补录新 checker 分
+4. **`hygiene_check`**：必须 exit 0（P0 fail = block，P1 warn 允许继续但建议修）
+5. **`git commit`**：消息格式 `第N章 v{X}: {reason} [polish:roundN]`，自动 stage 全部
+6. **workflow_state 登记**：在 `history[]` 追加 `task_id=polish_NNN`，`Step 8` artifact 含 `narrative_version` / `reason` / `diff_lines` / `state_diff` / `commit_sha`
+
+**硬约束**：
+- 退出码 0 = 全通过 + commit 完成；1 = 检查 fail 必须先修；2 = 结构错（无变化/state 缺失）；3 = git fail
+- `--no-commit` 模式仅供 dry-run / CI；正常流程必须 commit
+- **禁止**：`git commit -m "polish"` / `git commit --amend --no-verify` 等绕过手段
+- **禁止**：用 Edit/Write 直接改 `state.json` 的 `word_count` / `narrative_version`（必须经 polish_cycle.py）
+- 同一章节多轮 polish 应每轮独立调用一次（每轮 v3 → v4 → v5），保留完整 polish_log
+
+**与 Step 1-7 的关系**：
+- Step 8 是 **Step 7 之后的开放循环**，可无限次触发（每次产生一个 `polish_NNN` task）
+- Step 8 **不替代** Step 1-7：从草稿到首次 commit 必须走完整 Step 1-7
+- Step 8 的 `Step 8` 只是 `completed_steps` 里的单步标识，不与 Step 1-7 序号冲突
+- 触发新章节写作时，下章 context-agent 读取 `state.json` 自动获取最新 `narrative_version` 与 polish_log
+
+完整规范见 `references/post-commit-polish.md`（含恢复策略、多轮 polish、跨章影响、审计兼容性）。
 
 ## 充分性闸门（必须通过）
 

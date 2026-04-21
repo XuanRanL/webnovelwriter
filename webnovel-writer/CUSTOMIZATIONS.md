@@ -7,6 +7,91 @@
 
 ---
 
+## [2026-04-20 · Round 14.5] Step 8 Post-Commit Polish 引入 · 根治"裸跑 polish commit"漏洞
+
+**触发**：用户要求"再次仔细检查 Step 0-7 是否完美运行 + 流程完整"；调查发现<example-project> Ch1 已 commit `第1章 v3: 读者视角 6 medium 定向修复 [polish:round13v2]`，但实测：
+- 正文仍含 58 个 ASCII 双引号（H5 P0 fail）
+- `state.word_count=3498` vs 实测 `3084`（414 字漂移，H7 P1 fail）
+- `chapter_meta.checker_scores` 仍是 10 key（缺 reader-critic / naturalness / flow，与 Round 13 v2 13 维度脱节）
+- audit-agent A3 critical fail：外部审查 JSON 只有 4-11 个 dimension（Round 13 v2 之前的 cache）
+- `workflow_state.history[]` 完全没有该 polish commit 的登记记录
+
+### 根因（不是 Round 14 漏改，而是流程结构性缺口）
+
+`SKILL.md` 定义了完整的 Step 0-7 写章流程，但**完全没有定义"Step 7 commit 之后任何修改正文该走什么流程"**。Round 13 v2 上线 13 checker 后，作者/AI 经常根据 reader-critic / naturalness 反馈手动改正文然后裸跑 `git commit -m "polish"`，导致：
+
+1. `post_draft_check.py`（7 类硬约束）不再跑 → ASCII 引号 / Markdown 残留 / U+FFFD 全部漏过
+2. `hygiene_check.py`（19 项卫生）不再跑 → word_count 漂移 / checker_scores 滞后无人发现
+3. `state.json.chapter_meta` 不更新 → `narrative_version` 永远停在旧值，下章 context-agent 看到旧版本
+4. `workflow_state.json` 不登记 → polish 任务在工作流系统里"不存在"，跨章 trend / Step 6 Layer A 链路真实性都失真
+5. 裸 commit 完全绕过 `pre_commit_step_k.py` 闸门（虽然 polish 通常不动设定集，但风险存在）
+
+**架构层面的根因**：所有现有闸门（post_draft / hygiene / pre_commit_step_k）都是"主流程内嵌的硬约束"，假设走 Step 0-7 才会触发。**没有一个独立入口能在 polish 场景下强制串联这些闸门**。
+
+### 五道根治护栏（防再发）
+
+#### 护栏 1：`scripts/polish_cycle.py` · Step 8 唯一入口
+
+新建专门的 polish 通道，强制串联 6 步：
+1. **变化检测** — `git show HEAD:正文/...` vs 工作区，无变化默认 exit 2
+2. **post_draft_check** — 必须 exit 0
+3. **state.json 同步** — `word_count` / `narrative_version`（自动 vN→vN+1 或手动）/ `updated_at` / `polish_log[]` 追加 / `checker_scores` 合并
+4. **hygiene_check** — P0 fail = exit 1；P1 warn 允许继续
+5. **git commit** — 消息格式 `第N章 vX: {reason} [polish:{round_tag}]`，自动 stage
+6. **workflow_state 登记** — `history[]` 追加 `task_id=polish_NNN` + `Step 8` artifact（含 `narrative_version` / `reason` / `diff_lines` / `state_diff` / `commit_sha`）
+
+支持参数：`--reason` / `--narrative-version-bump` / `--narrative-version vX` / `--round-tag` / `--checker-scores` / `--no-commit` / `--allow-no-change`
+
+#### 护栏 2：`SKILL.md` 新增 Step 8 章节 + 流程硬约束
+
+- 在 Step 7 之后新增 "Step 8：Post-Commit Polish Loop" 完整章节（触发场景、唯一入口、6 步流程、硬约束、与 Step 1-7 的关系）
+- 在"流程硬约束（禁止事项）"列表追加：
+  > **禁止裸跑 polish commit**（2026-04-20）：Step 7 commit 之后任何对正文文件的修改必须通过 `polish_cycle.py`，严禁直接 `git commit -m "polish"` 或 `git commit --amend`
+
+#### 护栏 3：`hygiene_check.py` 新增 H19/H19a 检测项
+
+```
+H19a (P0): 正文 vs HEAD 不一致 + narrative_version=v1（从未走过 polish_cycle）
+           → 必须立即跑 polish_cycle 补登
+H19  (P1): polish_log 末尾时间 < git 最新 commit 时间
+           → 可能存在历史裸跑 polish commit
+H19  (P1): 正文已改动且未 commit，提示走 polish_cycle 提交
+```
+
+H19 在 Step 7 commit 前 + Step 8 polish 中都会跑，构成双重防御：即使将来有人想绕过 polish_cycle 直接 commit，hygiene_check H19a P0 会阻断；即使阻断被绕过，下一章流程跑 hygiene 时 H19 P1 也会留下警示。
+
+#### 护栏 4：`references/post-commit-polish.md` 完整规范
+
+新文件 12 章节：定位、触发场景、唯一入口、6 步执行流程、数据写入契约（`chapter_meta` 增量字段 / `workflow_state.history` 条目格式 / commit message 格式）、多轮 polish 规范、跨章影响（context-agent 读取行为 / Layer G 趋势）、审计兼容性（历史章节 + 旧外部审查 JSON 处理）、恢复策略（中途失败 / 历史漏登补录）、与现有规则边界、H19 实现、FAQ。
+
+#### 护栏 5：`tests/test_polish_cycle.py` 15 项回归测试
+
+覆盖：`parse_narrative_version` 边界 / `update_state_after_polish` 三种字段写入 / `register_workflow_polish_task` 累加正确 / `detect_chapter_changed` 真假 / `check_post_commit_polish_drift` 干净状态 vs v1 drift / `SKILL.md` 与 `references/post-commit-polish.md` 关键字存在性 / `polish_cycle` 找得到 `post_draft_check` 与 `hygiene_check` / `hygiene_check.main()` 已注册 H19。
+
+### 验证
+
+- `pytest webnovel-writer/scripts/data_modules/tests/` → **367 passed**（前次 352 + 新增 15）
+- <example-project> Ch1 验证：
+  - 修复 58 个 ASCII 引号（脚本内段独立配对，0 个残留）
+  - `polish_cycle 1 --reason "ASCII 引号 58 处修正 + word_count 同步" --narrative-version v3.8.2 --round-tag round14.5 --no-commit` 全程正常：
+    - state.word_count: 3498 → 3084
+    - state.narrative_version: v3.8.1 → v3.8.2
+    - polish_log[] 追加 1 条
+    - workflow_state.history[] 追加 polish_003 task（Step 8 artifact 完整）
+- `sync-cache` → "+3 新增, ~2 更新"（`polish_cycle.py` / `post-commit-polish.md` / `test_polish_cycle.py` 进 cache；`hygiene_check.py` / `SKILL.md` 更新）
+
+### 修改文件
+
+| 文件 | 类型 | 说明 |
+| --- | --- | --- |
+| `scripts/polish_cycle.py` | 新增 | Step 8 唯一入口，415 行 |
+| `scripts/hygiene_check.py` | 修改 | 新增 `check_post_commit_polish_drift` (H19/H19a) + 注册 main + docstring |
+| `skills/webnovel-write/SKILL.md` | 修改 | 新增 "Step 8: Post-Commit Polish Loop" 完整章节 + 流程硬约束追加禁止裸跑 polish commit + references 列表新增 post-commit-polish.md |
+| `skills/webnovel-write/references/post-commit-polish.md` | 新增 | Step 8 完整规范，12 章节 |
+| `scripts/data_modules/tests/test_polish_cycle.py` | 新增 | 15 项回归测试 |
+
+---
+
 ## [2026-04-16 · Round 14] Round 13 v2 余波清扫 · 四道根治护栏 + Ch1 读者复审
 
 **触发**：用户要求"彻底检查 Round 13 v2 是否完美落地，root cause 根治不再复发，最后对 Ch1 跑一次 Step 3/3.5 + Step 4 修复看有没有爆款优化空间"。
