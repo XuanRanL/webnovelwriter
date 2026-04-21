@@ -107,6 +107,47 @@ model: inherit
 
 ---
 
+## Post-Commit Polish 传递（2026-04-20 Round 14.5.2 新增）
+
+**背景**：Step 8 `polish_cycle.py` 是 Step 7 commit 之后对正文做修订的唯一入口。每次 polish
+会往 `chapter_meta[NNNN]` 写三项关键信息：`narrative_version` / `polish_log[]` / `updated_at`。
+context-agent 必须在"接住上章"环节读取这些字段，否则上章 polish 的所有工艺经验无法跨章传递。
+
+**读取规则**（context-agent Step 1.5 "接住上章" 新增子任务）：
+
+在读取 `chapter_meta[N-1]` 构造"接住上章"板块时，额外读取以下字段（若存在）：
+
+| 字段 | 路径 | 用途 |
+|------|------|------|
+| `narrative_version` | `chapter_meta[N-1].narrative_version` | 上章最终稿版本号（`v1` = 从未 polish；`v2+` = 有过 Step 8 修订） |
+| `polish_log` | `chapter_meta[N-1].polish_log[]` | 每次 polish 的 `{version, timestamp, notes}` |
+| `checker_scores` | `chapter_meta[N-1].checker_scores` | 最终 13 维度分数（含 reader-naturalness-checker / reader-critic-checker · Round 13 v2） |
+
+**若 `narrative_version` ∈ {`v2`, `v3`, ...}（即上章 polish 过）**，context-agent 必须：
+
+1. 把 `polish_log` 最新一条的 `notes` 视为"作者/AI 在上章发现并修正的问题类型"
+2. 在本章任务书的 **第 6 板块「风格指导」** 追加一条：
+   ```markdown
+   ## 上章 polish 经验传递（v{X}）
+   - 问题类型: {polish_log[-1].notes}
+   - 本章规避: 若本章涉及同类场景/对话/设定，起草时优先避免该问题
+   - polish 版本: v1 → v{X}（经历 {len(polish_log)} 轮修订）
+   ```
+3. 若最新一条 `notes` 含「ASCII 引号」/「word_count 漂移」/「AI 腔」/「语病」等关键词：
+   - 第 6 板块「风格指导」明确标注本类问题为"上章血教训，本章起草必须绕开"
+   - Step 2A 的 `writing_guidance.constraints` 新增一条 "避免 {问题类型}"
+4. 若 `polish_log` 为空但 `narrative_version != v1`（数据漂移），输出 WARN 并按 `v1` 处理
+5. 若 `narrative_version == v1`（上章从未 polish），本段落输出 "上章为首稿（未 polish），无修订经验"
+
+**设计目的**：Polish 的根本价值是"发现 → 修正 → 学习"闭环。Round 14.5 引入 Step 8 时
+只做了"发现 + 修正"，没做"学习"环节。Round 14.5.2 补齐学习环节——上章 polish 过的问题
+类型必须在下章起草前被主 agent 看到，避免同一类问题反复在每章 polish 里修（徒劳重复）。
+
+**Round 14.5.1 对比**：Round 14.5 + Round 14.5.1 解决了"polish 本身的顺序与原子性"，
+Round 14.5.2 解决"polish 经验跨章传递"，三者合起来才形成完整的 Step 8 闭环。
+
+---
+
 ## 执行流程（精简版）
 
 ### Step -1: CLI 入口与脚本目录校验（必做）

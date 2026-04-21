@@ -51,6 +51,15 @@ ai-writing-knowledge/
 novel/
 novel-refined/
 
+# Ad-hoc backup files created by agent-sync / manual snapshots
+*.bak_*
+*.md.bak_*
+*.py.bak_*
+
+# Runtime locks (auto-managed by scheduler, not source)
+.claude/scheduled_tasks.lock
+scheduled_tasks.lock
+
 # Local analysis snapshots and draft docs
 PROJECT_MINDMAP*.md
 webnovel-writer-v5*-architecture.svg

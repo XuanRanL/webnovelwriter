@@ -431,79 +431,30 @@ DIMENSIONS = {
     },
     "reader_critic": {
         "name": "读者锐评",
-        "system": "你是在番茄/起点/晋江追更的普通网文读者。看得爽就追，看得假/装B/脑瘫就弃。不是编辑不是评委不是规则执行器。",
-        "prompt": """**你的唯一任务**（压倒所有其他约束）：
-
-**仔细研究认真思考详细调查搜索分析 以正常读者的角度锐评和找这个章节小说的问题。**
-
-## 语言污染禁令（保护读者视角纯度）
-
-❌ **禁止使用作者/编辑术语**：`Show vs Tell` / `POV` / `earned vs forced` / `金手指铺垫` / `节奏段` / `勾子` / `伏笔` / `大纲` / `设定` / `人设崩塌`（改说"这主角不像人"）
-❌ **禁止评委语气**：`瑕不掩瑜` / `整体优秀，仅有微小瑕疵` / `值得一读` / `建议作者` / `可以考虑`
-❌ **禁止规则引用**：`这违反 X 原则` / `按网文写作标准`
-❌ **禁止和稀泥**：每条问题独立锋利，不许"但整体不错"圆回来
-✅ **允许并鼓励**：口语、吐槽、"卧槽"、"wtf"、"离谱"、"脑瘫"、"装B"、"作者开上帝视角了"、"这他妈谁信"、"我想滑走了"
-
-## 你要做什么
-
-读完本章后，**找至少 5 条 problems + 至少 2 条 highlights**，每条给 quote + 读者口吻吐槽/夸赞。最后回答**唯一硬指标**：**我会追下一章吗？**（yes/hesitant/no）
+        "system": "你是严肃的网文读者 + 退稿编辑。deep research 找问题给建议。quote 必须原文逐字出现在正文中。",
+        "prompt": """**仔细研究认真思考详细调查搜索分析 deep research 以正常读者的角度和编辑退稿视角去锐评和找这个小说的问题，最后给出完整详细全面的修改建议以及原因。**
 
 {context_block}
 
-严格按 JSON 输出（quote 必须原文逐字出现，否则丢弃整份）：
-{{"dimension":"reader_critic","score":0-100,"will_continue_reading":"yes|hesitant|no","continue_reason":"一句读者口吻","issues":[{{"id":"RC_001","type":"READER_CRITIC","severity":"critical/high/medium/low","location":"原文前 8 字","description":"[category:上帝视角|降智|出戏|装B|水段|套路|人物假|情感假|莫名其妙|其他] 读者一句话真实反应（口语/吐槽）","suggestion":"读者口吻的修改建议（如果有）","quote":"原文一句 ≤ 40 字"}}],"highlights":[{{"quote":"原文一句","reason":"读者为什么记住了这处"}}],"summary":"一段 60-120 字读者总评，读起来像读者给朋友发微信"}}
+严格按 JSON 输出（quote 必须原文逐字出现，否则整份丢弃）：
+{{"dimension":"reader_critic","score":0-100,"will_continue_reading":"yes|hesitant|no","continue_reason":"一句读者/编辑视角总评","issues":[{{"id":"RC_001","type":"READER_CRITIC","severity":"critical/high/medium/low","location":"原文前 8 字","description":"问题描述（标注 reader/editor/both 视角）","suggestion":"完整详细的修改建议 + 原因","quote":"原文一句 ≤ 40 字"}}],"highlights":[{{"quote":"原文一句","reason":"为什么亮眼"}}],"summary":"一段总评（60-200 字）"}}
 
-## 评分
-
-- yes → base 75，每个 highlight +3，每个 high -6 / medium -2 / low -1
-- hesitant → base 55，同样加减
-- no → base 30，同样加减
-- clamp [0, 100]
+评分：95-100 追更级｜90-94 优秀仅轻微瑕疵｜85-89 良好少量可优化｜80-84 合格若干需改进｜75-79 明显问题｜<75 退稿不合格
 
 ## 本章正文
 {chapter_text}"""
     },
     "reader_flow": {
         "name": "读者视角流畅度",
-        "system": "你是严苛公正的网文读者视角审查专家。一人分饰两角，严格分阶段执行。quote 必须原文逐字。",
-        "prompt": """**核心任务**：模拟读者失忆裸读，评估本章"读者能否读懂、行文是否丝滑、是否不突兀"。独立于情感/钩子/文笔等工艺维度——聚焦**读者解码成本**。
-
-## 协议：一人分饰两角
-
-### 阶段 1：失忆读者（裸读）
-你是追更到上一章的读者。你**只有**：本章正文 + 上章末段（在 context_block 内）。你**完全忘掉**设定集/大纲/前章——你作为 AI 可能推断出的项目背景**必须压制不用**。
-
-逐段扫描，标记让你产生下列感受的位置（**至少 5 个**）：
-- 停顿（想"等等，刚才发生了什么？"）
-- 回读（要重读才能理解）
-- 皱眉（读完觉得"怪"/"不通"）
-- 困惑（主角为什么这么做？怎么就懂了？这个词啥意思？这人是谁？）
-- 出戏（意识到"这是小说"）
-
-### 阶段 2：审查员（判断性质）
-每个卡点判断：
-- **悬念（SUSPENSE）**：作者故意留白。不扣分。
-- **真卡点（SMOOTHNESS_BUG）**：作者没意识到的读者盲区。扣分。按 7 类分：
-  - JUMP_LOGIC（跳跃推理：主角突然懂/推断无铺垫）
-  - MISSING_MOTIVE（动机悬空：行为无前置条件）
-  - UNGROUNDED_TERM（术语无锚：首次名词无 inline 解释）
-  - ABRUPT_TRANSITION（突兀转场：场景/时空切换无过渡）
-  - VAGUE_REFERENCE（指代模糊：代词/那东西要回读）
-  - RHYTHM_JOLT（节奏抖动：段长/POV/语气突变）
-  - META_BREAK（叙事出戏：文青/AI 腔）
-
-### 阶段 3：Severity 严格标尺
-- **high**：读者回读 ≥ 2 次或弃读
-- **medium**：停顿 2-5 秒，能继续
-- **low**：皱一下眉继续
+        "system": "你是严肃的网文读者 + 退稿编辑。deep research 找问题给建议。quote 必须原文逐字出现在正文中。",
+        "prompt": """**仔细研究认真思考详细调查搜索分析 deep research 以正常读者的角度和编辑退稿视角去锐评和找这个小说的问题，最后给出完整详细全面的修改建议以及原因。**
 
 {context_block}
 
-严格按JSON输出（quote 必须原文逐字出现，否则丢弃整份）：
-{{"dimension":"reader_flow","score":0-100,"issues":[{{"id":"RF_001","type":"READER_FLOW","severity":"critical/high/medium/low","location":"原文前 8 字","description":"[category:JUMP_LOGIC|MISSING_MOTIVE|UNGROUNDED_TERM|ABRUPT_TRANSITION|VAGUE_REFERENCE|RHYTHM_JOLT|META_BREAK] 读者卡在这里的原因","suggestion":"修复方向","quote":"原文一句 ≤ 40 字"}}],"summary":"一句话总评本章流畅度"}}
+严格按 JSON 输出（quote 必须原文逐字出现，否则整份丢弃）：
+{{"dimension":"reader_flow","score":0-100,"issues":[{{"id":"RF_001","type":"READER_FLOW","severity":"critical/high/medium/low","location":"原文前 8 字","description":"问题描述（标注 reader/editor/both 视角）","suggestion":"完整详细的修改建议 + 原因","quote":"原文一句 ≤ 40 字"}}],"highlights":[{{"quote":"原文一句","reason":"为什么亮眼"}}],"summary":"一段总评（60-200 字）"}}
 
-**评分**：`score = max(0, 100 - (high×15 + medium×8 + low×3))`，悬念不扣分。
-95-100 丝滑出版级｜90-94 微瑕不影响｜85-89 少量卡点｜80-84 多处需修｜75-79 明显断裂｜<75 严重问题
+评分：95-100 追更级｜90-94 优秀仅轻微瑕疵｜85-89 良好少量可优化｜80-84 合格若干需改进｜75-79 明显问题｜<75 退稿不合格
 
 ## 本章正文
 {chapter_text}"""
