@@ -66,28 +66,63 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 
 ---
 
-## 4. 执行流程（脚本内部 6 步）
+## 4. 执行流程（脚本内部 7 步 · commit 最后一步原子落盘）
+
+与 Step 7 对称设计：workflow 登记**在 commit 前**落盘一次（保证 commit 含 workflow 痕迹），**commit 之后**仅回填 sha（唯一尾巴，与 Step 7 的 `complete-step` 性质一致）。
 
 ```
-[1/6] 变化检测     git show HEAD:正文/第NNNN章*.md vs 工作区
-                  无变化默认拒绝（exit 2），除非 --allow-no-change
-[2/6] post_draft_check  ASCII引号/Markdown/U+FFFD/字数/虚词/术语 7 类
-                        必须 exit 0；fail 即 exit 1
-[3/6] state.json 同步   word_count / narrative_version / updated_at
+[1/7] 变化检测        git show HEAD:正文/第NNNN章*.md vs 工作区
+                     无变化默认拒绝（exit 2），除非 --allow-no-change
+[2/7] post_draft_check   ASCII引号/Markdown/U+FFFD/字数/虚词/术语 7 类
+                         必须 exit 0；fail 即 exit 1
+[3/7] state.json 同步    word_count / narrative_version / updated_at
                         polish_log[] 追加 / checker_scores 合并
-[4/6] hygiene_check     17+ 类项目卫生
-                        P0 fail = exit 1；P1 warn 允许继续
-[5/6] git commit        消息：第N章 vX: {reason} [polish:{round_tag}]
-                        自动 git add . + commit
-[6/6] workflow_state    history[] 追加 polish_NNN task
-                        完整登记 Step 8 artifact
+[4/7] hygiene_check      17+ 类项目卫生
+                         P0 fail = exit 1；P1 warn 允许继续
+[5/7] workflow 预登记    history[] 追加 polish_NNN task
+                        commit_sha=None 占位 · artifact 其它字段完整
+                        ★ 关键：让 commit 本身含 workflow 登记快照
+[6/7] git commit         真正最后一步原子落盘
+                        消息：第N章 vX: {reason} [polish:{round_tag}]
+                        commit 含：正文 + state.json + workflow_state.json 全部变更
+[7/7] 回填 commit_sha    把 sha 写回刚登记的 polish task
+                        唯一尾巴（与 Step 7 complete-step 尾巴性质一致）
+                        回填失败不致命（commit message 标签可兜底）
 ```
 
 **退出码语义**：
-- `0` 全通过 + commit 完成
+- `0` 全通过 + commit 完成 + sha 回填成功
 - `1` 检查 fail（post_draft 或 hygiene P0），必须修到通过
 - `2` 结构错（无变化、文件缺失、state 损坏、参数冲突）
-- `3` git 操作失败
+- `3` git 操作失败（workflow 已预登记，需要修复 git 后补跑 `--allow-no-change` 重新 commit）
+
+### 4.1 为什么 commit 是最后一步（v2 设计修正 · 2026-04-20）
+
+v1 设计把 workflow 登记放在 commit **之后**，导致 commit 里完全没有 workflow 痕迹，git 历史与 workflow 解耦。用户质疑"提交不是应该在最后一步吗？"后重构为 v2：
+
+| 维度 | v1（错） | v2（当前） |
+| --- | --- | --- |
+| commit 内容 | 正文 + state.json | 正文 + state.json + workflow 登记 |
+| git 历史自证 | ✗ 需要外部解释 | ✓ 单个 commit 可重建 polish 语义 |
+| 与 Step 7 对称性 | ✗ Step 7 commit 前 start-step，Step 8 却完全后置 | ✓ 都在 commit 前有 workflow 预登记 |
+| "commit 最后" 直觉 | ✗ commit 在第 5 步 | ✓ commit 在第 6 步（第 7 是必然的 sha 回填尾巴） |
+| 尾巴数量 | 一整个 polish task 登记 | 仅 commit_sha 一个字段 |
+
+### 4.2 Commit 失败的恢复路径
+
+v2 设计下如果 `[6/7] git commit` 失败：
+- workflow_state.json 已含"预登记但无 sha"的 polish task
+- 工作区还有正文 + state 的修改没 commit
+- **恢复办法**：修复 git 问题后跑 `polish_cycle --reason "..." --allow-no-change`
+  重新进入流程，第 [5/7] 预登记会在 history[] 追加另一个 polish task，第 [6/7] commit 带走所有
+- 或手动 `git add . && git commit` 完成提交，然后跑 `--allow-no-change --no-commit` 让 Step 8 补登（会产生一个新的 polish task，老的预登记作为历史痕迹保留）
+
+### 4.3 Sha 回填失败的处理
+
+第 [7/7] 步即使失败也不致命：
+- commit 已成功，所有真实内容落盘
+- commit message 里的 `[polish:{round_tag}]` 标签 + `第N章 vX:` 前缀足以被 `git log --grep` 定位
+- 跨章 trend 分析如需精确 sha，可通过 `git log --format="%H %s" --grep="\[polish:"` 重建映射
 
 ---
 

@@ -893,7 +893,7 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
   [--checker-scores '{"reader-naturalness-checker": 91, "reader-critic-checker": 88}']
 ```
 
-`polish_cycle.py` 自动完成 6 步：
+`polish_cycle.py` 自动完成 7 步（**commit 是最后一步原子落盘**，与 Step 7 对称设计）：
 1. **变化检测**：`git show HEAD:正文/...` vs 工作区文件，无变化默认拒绝（`--allow-no-change` 例外）
 2. **`post_draft_check`**：必须 exit 0（ASCII 引号/Markdown/字数/U+FFFD/虚词等 7 类硬约束）
 3. **state.json 同步**：
@@ -903,8 +903,9 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
    - `chapter_meta.{NNNN}.polish_log[]` ← 追加 `{version, timestamp, notes}`
    - 可选：`chapter_meta.{NNNN}.checker_scores` ← 补录新 checker 分
 4. **`hygiene_check`**：必须 exit 0（P0 fail = block，P1 warn 允许继续但建议修）
-5. **`git commit`**：消息格式 `第N章 v{X}: {reason} [polish:roundN]`，自动 stage 全部
-6. **workflow_state 登记**：在 `history[]` 追加 `task_id=polish_NNN`，`Step 8` artifact 含 `narrative_version` / `reason` / `diff_lines` / `state_diff` / `commit_sha`
+5. **workflow 预登记**：在 `history[]` 追加 `task_id=polish_NNN`，`Step 8` artifact 含 `narrative_version` / `reason` / `diff_lines` / `state_diff`（`commit_sha=None` 占位）— 与 Step 7 的 `start-step` 对称，确保 commit 里含 workflow 痕迹
+6. **`git commit`**（真正最后一步原子落盘）：一次 commit 包含正文 + `state.json` + `workflow_state.json` 三者全部变更。消息格式 `第N章 v{X}: {reason} [polish:roundN]`
+7. **回填 commit_sha**：把 commit 的 sha 写回 workflow_state 刚登记的 polish task — 这是唯一尾巴，与 Step 7 的 `complete-step` 尾巴性质一致；即使回填失败，commit message `[polish:{round_tag}]` 标签 + `git log --grep` 也能重建 sha 映射
 
 **硬约束**：
 - 退出码 0 = 全通过 + commit 完成；1 = 检查 fail 必须先修；2 = 结构错（无变化/state 缺失）；3 = git fail

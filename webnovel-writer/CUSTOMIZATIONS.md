@@ -7,6 +7,95 @@
 
 ---
 
+## [2026-04-20 · Round 14.5.1] Step 8 顺序修正 · commit 成为真正的最后一步
+
+**触发**：用户质疑"提交不是应该在最后一步吗？"，要求 deep research v1 设计的逻辑严谨性。
+
+### 问题诊断
+
+Round 14.5 v1 设计把 workflow 登记放在 git commit **之后**，导致：
+
+| 维度 | v1 (错) | 参照 Step 7 设计 |
+| --- | --- | --- |
+| commit 前是否写 workflow_state | ✗ 完全未登记 | ✓ `start-step` 写入 running 状态 |
+| commit 内容 | 仅正文 + state.json | 正文 + state.json + workflow 的 running 标记 |
+| git 历史自证 polish 语义 | ✗ 需外部 workflow_state 解释 | ✓ commit 内可重建 |
+| 与 Step 7 对称性 | ✗ Step 7 有 commit 前登记，Step 8 却无 | — |
+
+**Root cause**：我错误地把"commit 之后回填 commit_sha"当成了核心登记动作，忽略了 Step 7 的成熟设计其实是"commit 前 `start-step` 预登记 + commit 后 `complete-step` 回填"的双阶段模式。
+
+### v2 修正（6 步 → 7 步 · commit 下沉到第 6 步作为真正最后一步）
+
+```
+[1/7] 变化检测
+[2/7] post_draft_check
+[3/7] state.json 同步
+[4/7] hygiene_check
+[5/7] workflow 预登记（commit_sha=None 占位） ← 新增 · 对应 Step 7 的 start-step
+[6/7] git commit                              ← 真正最后一步原子落盘
+[7/7] 回填 commit_sha                         ← 对应 Step 7 的 complete-step（唯一尾巴）
+```
+
+**关键设计点**：
+- commit 现在包含三者全部变更：正文 + state.json + workflow_state.json
+- commit 本身自证是 Step 8 polish（polish_NNN task 已在 commit 里）
+- 唯一尾巴仅一个字段（commit_sha），与 Step 7 的 complete-step 性质一致
+- 回填失败不致命：commit message `[polish:{round_tag}]` 标签可让 `git log --grep` 重建映射
+
+### 修改的 4 个文件
+
+1. **`scripts/polish_cycle.py`**：
+   - main() 重排顺序，print 标签 `[N/6]` → `[N/7]`
+   - 新增 `backfill_commit_sha()` helper（仅改最近一个 polish task 的 sha 字段）
+   - 模块 docstring 更新 7 步顺序 + 解释"commit 最后一步"
+
+2. **`skills/webnovel-write/SKILL.md`**：
+   - Step 8 说明从 6 步改为 7 步，明确标注"commit 是最后一步原子落盘"
+   - 说明与 Step 7 的对称设计关系
+
+3. **`skills/webnovel-write/references/post-commit-polish.md`**：
+   - 第 4 章 7 步流程图 + 退出码语义
+   - 新增 4.1 节 "为什么 commit 是最后一步（v2 设计修正）" 含 v1/v2 对比表
+   - 新增 4.2 节 "Commit 失败的恢复路径"
+   - 新增 4.3 节 "Sha 回填失败的处理"
+
+4. **`scripts/data_modules/tests/test_polish_cycle.py`**：
+   - 新增 `test_backfill_commit_sha_updates_latest_polish_task` · 回填正确性
+   - 新增 `test_backfill_commit_sha_only_affects_last_polish_task` · 多 task 隔离
+   - 新增 `test_polish_cycle_main_has_workflow_preregister_before_commit` · 顺序锁死（预登记 < commit < 回填）
+   - 新增 `test_polish_cycle_preregister_uses_commit_sha_none` · 预登记传参正确
+   - 新增 `test_polish_cycle_documentation_describes_v2_ordering` · 文档同步
+
+### E2E 验证
+
+临时测试项目跑完整流程后 `git show HEAD`：
+```
+HEAD commit files:
+  .webnovel/state.json                  ← 本次 polish 元数据
+  .webnovel/workflow_state.json         ← 本次 polish 的 workflow 登记
+  正文/第0001章-测试.md                  ← 本次 polish 修改的正文
+```
+
+4 个断言全通过：
+- ✓ commit 包含 workflow_state.json
+- ✓ commit 里的 workflow_state 已含 polish task (commit_sha=None 占位)
+- ✓ 工作区 workflow_state 里 sha 已正确回填
+- ✓ sha 回填产生了预期的脏尾巴（与 Step 7 complete-step 一致）
+
+### 测试结果
+
+```
+372 passed in 75.30s (0:01:15)   # Round 14.5 v1 是 367，新增 5 个 v2 专项测试
+```
+
+### 兼容性
+
+- 对用户：无感知，只是 print 从 `[N/6]` 变 `[N/7]`；已 commit 的旧 polish task 不受影响
+- 对 H19/H19a：不受影响（检查逻辑与顺序无关，仍检测漂移）
+- 对跨章 trend：更好，因为 commit 本身就能定位 polish（`git log --grep="[polish:"`）
+
+---
+
 ## [2026-04-20 · Round 14.5] Step 8 Post-Commit Polish 引入 · 根治"裸跑 polish commit"漏洞
 
 **触发**：用户要求"再次仔细检查 Step 0-7 是否完美运行 + 流程完整"；调查发现<example-project> Ch1 已 commit `第1章 v3: 读者视角 6 medium 定向修复 [polish:round13v2]`，但实测：

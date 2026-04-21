@@ -14,17 +14,24 @@ Step 8 · 提交后再润色循环 (Post-Commit Polish Loop)
 
 Step 7 commit 之后任何对正文的修改都必须走本脚本，**不得裸跑 git commit**。
 
-职责：
+职责顺序（**commit 是最后一步原子落盘 · 2026-04-20 v2 修正**）：
 1. 检测变化（hash diff against last committed version）
 2. 重跑 post_draft_check（必须 exit 0）
-3. 重跑 hygiene_check（必须 exit 0 或 仅 P1 警告）
-4. 同步 state.json:
+3. 同步 state.json:
    - chapter_meta.{NNNN}.word_count = actual chapter word count
    - chapter_meta.{NNNN}.narrative_version 自增（v2 → v3）
    - chapter_meta.{NNNN}.updated_at = now
-5. 登记 workflow_state（polish-only task，含 reason + diff_lines）
-6. 可选：补录 reader-perspective checker（naturalness/reader-critic/flow）的新分数
-7. Git commit `第N章 v{X}: {reason} [polish:roundN]`
+   - chapter_meta.{NNNN}.polish_log 追加
+   - 可选：补录 reader-perspective checker 的新分数
+4. 重跑 hygiene_check（必须 exit 0 或 仅 P1 警告）
+5. **预登记** workflow_state polish_NNN task（commit_sha=None 占位）
+   — 与 Step 7 的 start-step 对称：commit 里必须包含 workflow 登记痕迹
+6. **Git commit**（真正最后一步原子落盘）：一次 commit 包含
+   正文 + state.json + workflow_state.json 三者全部变更
+7. 回填 commit_sha 到 workflow_state.json
+   — 唯一尾巴，与 Step 7 的 complete-step 尾巴性质一致；
+   即使回填失败，commit message `[polish:{round_tag}]` 标签 + `git log --grep`
+   也足以重建 sha 映射
 
 用法：
   python polish_cycle.py <chapter> --reason "读者视角 6 medium 修复"
@@ -313,6 +320,49 @@ def register_workflow_polish_task(
     return True
 
 
+def backfill_commit_sha(project_root: Path, commit_sha: str) -> None:
+    """Commit 成功后，把 sha 回填到最近一次预登记的 polish task。
+
+    这一步是必要的尾巴：sha 是 commit 的内容 hash，不可能提前预测，只能 commit 后回填。
+    回填发生在 commit 之后，会让 workflow_state.json 相对工作区为脏（未 commit），
+    但这和 Step 7 的 complete-step/complete-task 尾巴是同一性质：下次 git add 带走。
+
+    回填失败不致命：commit message 里的 [polish:{round_tag}] 标签足以让
+    `git log --grep="[polish:"` 重建 sha 映射。
+    """
+    wf_p = project_root / ".webnovel" / "workflow_state.json"
+    if not wf_p.exists():
+        return
+    wf = json.loads(wf_p.read_text(encoding="utf-8"))
+    history = wf.get("history", [])
+    if not history:
+        return
+    # 找到最后一个 polish task
+    for task in reversed(history):
+        if task.get("command") != "webnovel-polish":
+            continue
+        task.setdefault("artifacts", {})["commit"] = commit_sha
+        task["artifacts"]["commit_sha"] = commit_sha
+        task["artifacts"]["branch"] = "master"
+        # completed_steps 里 Step 8 artifact 也同步
+        for cs in task.get("completed_steps", []):
+            if cs.get("id") == "Step 8":
+                cs.setdefault("artifacts", {})["commit"] = commit_sha
+                cs["artifacts"]["commit_sha"] = commit_sha
+                cs["artifacts"]["branch"] = "master"
+        # last_stable_state 也同步
+        lss = wf.get("last_stable_state", {})
+        if lss.get("command") == "webnovel-polish":
+            lss.setdefault("artifacts", {})["commit"] = commit_sha
+            lss["artifacts"]["commit_sha"] = commit_sha
+            lss["artifacts"]["branch"] = "master"
+        break
+    wf_p.write_text(
+        json.dumps(wf, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def git_status(project_root: Path) -> str:
     rc, out = run_subprocess(["git", "status", "--porcelain"], project_root)
     return out
@@ -413,12 +463,12 @@ def main() -> int:
     print("=" * 70)
 
     changed, diff_lines = detect_chapter_changed(project_root, chapter_file)
-    print(f"\n[1/6] 变化检测：changed={changed}, diff_lines={diff_lines}")
+    print(f"\n[1/7] 变化检测：changed={changed}, diff_lines={diff_lines}")
     if not changed and not args.allow_no_change:
         print("  ✓ 章节文件与 HEAD 一致，无需 polish。如需仅修 state，加 --allow-no-change")
         return 2
 
-    print(f"\n[2/6] post_draft_check（硬约束 7 类）...")
+    print(f"\n[2/7] post_draft_check（硬约束 7 类）...")
     rc, out = run_post_draft_check(project_root, args.chapter)
     if rc != 0:
         print("  ❌ post_draft_check 失败：")
@@ -450,7 +500,7 @@ def main() -> int:
             print(f"ERROR: --checker-scores JSON 解析失败: {exc}")
             return 2
 
-    print(f"\n[3/6] state.json 同步（narrative_version: {cur_version} → {new_version}）...")
+    print(f"\n[3/7] state.json 同步（narrative_version: {cur_version} → {new_version}）...")
     state_diff = update_state_after_polish(
         project_root,
         args.chapter,
@@ -465,7 +515,7 @@ def main() -> int:
     else:
         print("  · state 无字段变化")
 
-    print(f"\n[4/6] hygiene_check...")
+    print(f"\n[4/7] hygiene_check...")
     rc, out = run_hygiene_check(project_root, args.chapter)
     print(out)
     if rc == 1:
@@ -476,35 +526,10 @@ def main() -> int:
     else:
         print("  ✓ hygiene_check 全通过")
 
-    if args.no_commit:
-        print("\n[5/6] --no-commit 模式：跳过 git commit")
-        register_workflow_polish_task(
-            project_root,
-            args.chapter,
-            args.reason,
-            new_version,
-            diff_lines,
-            state_diff,
-            commit_sha=None,
-            round_tag=args.round_tag,
-        )
-        print("[6/6] workflow_state 已登记（无 commit_sha）")
-        return 0
-
-    print(f"\n[5/6] git commit...")
-    pending = git_status(project_root)
-    if not pending.strip():
-        print("  ⚠ git 工作区无待提交修改（可能 state.json 也已 stage 在 commit 里）")
-    rc, out, sha = git_commit_polish(
-        project_root, args.chapter, new_version, args.reason, args.round_tag
-    )
-    if rc != 0:
-        print("  ❌ git commit 失败：")
-        print(out)
-        return 3
-    print(f"  ✓ commit {sha}")
-
-    print(f"\n[6/6] workflow_state 登记 polish task...")
+    # [5/7] workflow 预登记 —— 与 Step 7 对称：commit 里必须包含 workflow 登记痕迹，
+    # 而不是登记完全发生在 commit 之后。这样 git 历史能自证"这个 commit 属于 Step 8 polish
+    # 的 polish_NNN task"。commit_sha 留 pending，commit 后回填（唯一尾巴，一个字段）。
+    print(f"\n[5/7] workflow 预登记 polish task（commit_sha=pending）...")
     register_workflow_polish_task(
         project_root,
         args.chapter,
@@ -512,13 +537,51 @@ def main() -> int:
         new_version,
         diff_lines,
         state_diff,
-        commit_sha=sha,
+        commit_sha=None,
         round_tag=args.round_tag,
     )
-    print("  ✓ workflow_state.history 已追加 polish task")
+    print("  ✓ workflow_state.history 已预登记 polish task")
+
+    if args.no_commit:
+        print("\n[6/7] --no-commit 模式：跳过 git commit")
+        print("[7/7] 跳过 commit_sha 回填（dry-run）")
+        return 0
+
+    # [6/7] git commit —— 真正的最后一步原子落盘。本次 commit 内容包含：
+    #   - 正文（用户手工 polish 的修订）
+    #   - state.json（word_count / narrative_version / polish_log 等同步）
+    #   - workflow_state.json（polish_NNN task 登记，带 commit_sha=None 占位）
+    # 所以 git 历史单独看这一个 commit 就能重建 polish 语义，不再依赖外部解释。
+    print(f"\n[6/7] git commit（最后一步原子落盘）...")
+    pending = git_status(project_root)
+    if not pending.strip():
+        print("  ⚠ git 工作区无待提交修改")
+    rc, out, sha = git_commit_polish(
+        project_root, args.chapter, new_version, args.reason, args.round_tag
+    )
+    if rc != 0:
+        print("  ❌ git commit 失败：")
+        print(out)
+        print("\n  注意：workflow_state.json 已预登记 polish task 但 commit 失败。")
+        print("  修复办法（任选其一）：")
+        print("   a) 修复 git 问题后再跑一次 polish_cycle --allow-no-change 会重新登记+commit")
+        print("   b) 手动 git add + git commit 完成本次修订后跑 --allow-no-change 回填 sha")
+        return 3
+    print(f"  ✓ commit {sha}")
+
+    # [7/7] 回填 commit_sha —— 唯一尾巴（与 Step 7 的 complete-step 尾巴性质一致）。
+    # 这一步只改 workflow_state.json 里刚才预登记那个 task 的 commit_sha 字段，
+    # 留在工作区等下次 git add 带走。失败不致命（有 commit message 里的 [polish:...] 标签兜底）。
+    print(f"\n[7/7] 回填 commit_sha 到 workflow_state.json...")
+    try:
+        backfill_commit_sha(project_root, sha)
+        print(f"  ✓ polish task commit_sha 已回填 = {sha[:12]}...")
+    except Exception as exc:
+        print(f"  ⚠ sha 回填失败（不致命，commit 已成功）: {exc}")
 
     print("\n" + "=" * 70)
     print(" ✅ Step 8 完成。修订版本：" + new_version)
+    print(" ℹ workflow_state.json 的 sha 回填未 commit（与 Step 7 尾巴一致，下次 git add 带走）")
     print("=" * 70)
     return 0
 

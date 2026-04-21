@@ -224,6 +224,81 @@ def test_register_workflow_polish_task_creates_history(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# 3b. backfill_commit_sha · commit 后回填 sha（v2 顺序修正）
+# ---------------------------------------------------------------------------
+
+
+def test_backfill_commit_sha_updates_latest_polish_task(tmp_path):
+    """预登记（commit_sha=None）+ commit + 回填 sha 的三步流水正确性"""
+    _ensure_scripts_on_path()
+    import polish_cycle as pc
+
+    project = _make_minimal_project(tmp_path)
+
+    # 预登记（模拟 [5/7] 步：commit_sha 留 None）
+    pc.register_workflow_polish_task(
+        project_root=project,
+        chapter=1,
+        reason="sha 回填测试",
+        new_version="v3",
+        diff_lines=10,
+        state_diff={},
+        commit_sha=None,
+    )
+    wf_before = json.loads(
+        (project / ".webnovel" / "workflow_state.json").read_text(encoding="utf-8")
+    )
+    task = wf_before["history"][-1]
+    # 预登记时不应有 commit_sha 字段
+    assert "commit_sha" not in task["artifacts"]
+    assert "commit" not in task["artifacts"]
+
+    # 回填（模拟 [7/7] 步）
+    pc.backfill_commit_sha(project, "deadbeef1234cafebabe5678")
+
+    wf_after = json.loads(
+        (project / ".webnovel" / "workflow_state.json").read_text(encoding="utf-8")
+    )
+    task = wf_after["history"][-1]
+    assert task["artifacts"]["commit_sha"] == "deadbeef1234cafebabe5678"
+    assert task["artifacts"]["commit"] == "deadbeef1234cafebabe5678"
+    assert task["artifacts"]["branch"] == "master"
+    # completed_steps Step 8 也应同步
+    step8 = next(
+        (s for s in task["completed_steps"] if s["id"] == "Step 8"), None
+    )
+    assert step8 is not None
+    assert step8["artifacts"]["commit_sha"] == "deadbeef1234cafebabe5678"
+
+
+def test_backfill_commit_sha_only_affects_last_polish_task(tmp_path):
+    """若历史里有多个 polish task，回填只修改最后一个（刚预登记的）"""
+    _ensure_scripts_on_path()
+    import polish_cycle as pc
+
+    project = _make_minimal_project(tmp_path)
+
+    pc.register_workflow_polish_task(
+        project_root=project, chapter=1, reason="r1", new_version="v3",
+        diff_lines=1, state_diff={}, commit_sha="OLD_SHA_AAAA",
+    )
+    pc.register_workflow_polish_task(
+        project_root=project, chapter=1, reason="r2", new_version="v4",
+        diff_lines=1, state_diff={}, commit_sha=None,
+    )
+
+    pc.backfill_commit_sha(project, "NEW_SHA_BBBB")
+
+    wf = json.loads(
+        (project / ".webnovel" / "workflow_state.json").read_text(encoding="utf-8")
+    )
+    # 旧任务不应被改
+    assert wf["history"][0]["artifacts"]["commit_sha"] == "OLD_SHA_AAAA"
+    # 新任务被回填
+    assert wf["history"][1]["artifacts"]["commit_sha"] == "NEW_SHA_BBBB"
+
+
+# ---------------------------------------------------------------------------
 # 4. CLI --no-commit / --allow-no-change smoke
 # ---------------------------------------------------------------------------
 
@@ -389,3 +464,61 @@ def test_hygiene_check_h19_registered_in_main():
     assert "check_post_commit_polish_drift(root, args.chapter, rep)" in text, (
         "hygiene_check.main() must invoke check_post_commit_polish_drift"
     )
+
+
+# ---------------------------------------------------------------------------
+# 7. v2 顺序修正：commit 必须是最后一步原子落盘
+# ---------------------------------------------------------------------------
+
+
+def test_polish_cycle_main_has_workflow_preregister_before_commit():
+    """polish_cycle.main() 顺序验证：workflow 预登记必须在 git commit 之前调用
+
+    v1 设计把 workflow 登记放 commit 后，导致 commit 内容完全不含 workflow 痕迹。
+    v2 修正为预登记（commit_sha=None）在前、git commit 居中、backfill_commit_sha
+    在后。这个测试锁死 v2 顺序不再退回 v1。
+    """
+    pc_path = _plugin_root() / "scripts" / "polish_cycle.py"
+    text = pc_path.read_text(encoding="utf-8")
+
+    # 找到 main() 函数里三个关键调用的位置
+    pre_idx = text.find("[5/7] workflow 预登记")
+    commit_idx = text.find("[6/7] git commit")
+    backfill_idx = text.find("[7/7] 回填 commit_sha")
+
+    assert pre_idx > 0, "polish_cycle.main must have [5/7] workflow 预登记 step"
+    assert commit_idx > 0, "polish_cycle.main must have [6/7] git commit step"
+    assert backfill_idx > 0, "polish_cycle.main must have [7/7] 回填 commit_sha step"
+    assert pre_idx < commit_idx < backfill_idx, (
+        f"顺序错误：预登记({pre_idx}) < commit({commit_idx}) < 回填({backfill_idx}) "
+        f"这是 v2 关键约束（commit 含 workflow 痕迹），禁止退回 v1"
+    )
+
+
+def test_polish_cycle_preregister_uses_commit_sha_none():
+    """预登记调用必须传 commit_sha=None（让 commit 带走"pending" 状态）"""
+    pc_path = _plugin_root() / "scripts" / "polish_cycle.py"
+    text = pc_path.read_text(encoding="utf-8")
+
+    # 找到 [5/7] 代码块里的 register_workflow_polish_task 调用
+    anchor = text.find("[5/7] workflow 预登记 polish task")
+    assert anchor > 0
+    block = text[anchor:anchor + 2000]
+    assert "register_workflow_polish_task" in block
+    assert "commit_sha=None" in block, (
+        "预登记必须传 commit_sha=None；commit_sha 留到 [7/7] 回填"
+    )
+
+
+def test_polish_cycle_documentation_describes_v2_ordering():
+    """SKILL.md 与 references/post-commit-polish.md 必须描述 v2 的 7 步顺序"""
+    skill = _plugin_root() / "skills" / "webnovel-write" / "SKILL.md"
+    skill_text = skill.read_text(encoding="utf-8")
+    assert "自动完成 7 步" in skill_text, "SKILL.md 必须描述 7 步流程（v2）"
+    assert "commit 是最后一步" in skill_text or "commit 是真正最后一步" in skill_text
+
+    ref = _plugin_root() / "skills" / "webnovel-write" / "references" / "post-commit-polish.md"
+    ref_text = ref.read_text(encoding="utf-8")
+    assert "[5/7] workflow 预登记" in ref_text
+    assert "[6/7] git commit" in ref_text
+    assert "[7/7] 回填 commit_sha" in ref_text
