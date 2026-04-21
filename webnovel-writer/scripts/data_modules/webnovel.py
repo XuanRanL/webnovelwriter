@@ -220,6 +220,115 @@ def _check_cache_sync(plugin_root: Path) -> Optional[dict]:
     }
 
 
+def _check_polish_drift(project_root: Path) -> Optional[dict]:
+    """Detect post-commit polish drift at preflight time (Round 14.5.2).
+
+    Root cause addressed: SKILL.md Step 8 禁止"裸跑 git commit"，但之前只有 hygiene_check
+    H19/H19a 在 commit 前 / 写下章中才检测。若用户直接手动改正文 + git commit，直到下章
+    Step 0 才能被 hygiene_check 看到——中间可能已经写了几段，上下文已经污染。
+
+    这个 preflight 检查在**每次执行 preflight** 都跑，比 hygiene_check 更早、更频繁。
+    检测策略与 hygiene H19/H19a 对齐但更宽松：只报告，不阻断 preflight（依然是非 P0 项）。
+
+    逻辑：
+    1. 扫描 ``正文/第{NNNN}章*.md`` 所有正文文件
+    2. 对每个文件：``git show HEAD:<file>`` vs 工作区
+    3. 若内容不同：
+       - 若 state.chapter_meta[{NNNN}].narrative_version in (None, 'v1') → P0 drift
+       - 否则 → P1 warn（可能正常的 polish 流程中，或 polish_cycle 已跑但未 commit）
+
+    返回 None → 非项目目录（跳过）
+    返回 dict → 含 ok / drifted_chapters / 修复提示
+    """
+    if project_root is None or not (project_root / ".webnovel" / "state.json").exists():
+        return None
+    text_dir = project_root / "正文"
+    if not text_dir.is_dir():
+        return None
+
+    import subprocess
+    try:
+        state = json.loads((project_root / ".webnovel" / "state.json").read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    chapter_meta_all = state.get("chapter_meta", {}) or {}
+
+    drifted: list[dict] = []
+    for cf in sorted(text_dir.glob("第*章*.md")):
+        stem = cf.stem
+        import re
+        m = re.match(r"第(\d+)章", stem)
+        if not m:
+            continue
+        ch_num = int(m.group(1))
+        ch_key = f"{ch_num:04d}"
+        rel = str(cf.relative_to(project_root)).replace("\\", "/")
+
+        try:
+            out = subprocess.run(
+                ["git", "show", f"HEAD:{rel}"],
+                cwd=project_root, capture_output=True, timeout=5,
+            )
+        except Exception:
+            continue
+        if out.returncode != 0:
+            # 新章节文件（HEAD 里没有），不属于 polish drift
+            continue
+
+        head_text = out.stdout.decode("utf-8", errors="replace")
+        cur_text = cf.read_text(encoding="utf-8")
+        if head_text == cur_text:
+            continue
+
+        meta = chapter_meta_all.get(ch_key, {})
+        nv = meta.get("narrative_version")
+        severity = "P0" if nv in (None, "", "v1") else "P1"
+        drifted.append({
+            "chapter": ch_num,
+            "file": rel,
+            "narrative_version": nv,
+            "severity": severity,
+        })
+
+    if not drifted:
+        return {
+            "name": "polish_drift",
+            "ok": True,
+            "path": str(text_dir),
+            "note": "无裸跑 polish drift",
+        }
+
+    p0_drifts = [d for d in drifted if d["severity"] == "P0"]
+    msg_lines = []
+    for d in drifted:
+        tag = "[P0 裸跑]" if d["severity"] == "P0" else "[P1 polish 中]"
+        msg_lines.append(
+            f"  {tag} ch{d['chapter']:04d}: narrative_version={d['narrative_version']!r}"
+        )
+    return {
+        "name": "polish_drift",
+        # P0 drift 阻断 preflight；P1 不阻断
+        "ok": len(p0_drifts) == 0,
+        "path": str(text_dir),
+        "drifted_chapters": [d["chapter"] for d in drifted],
+        "drifted_count": len(drifted),
+        **(
+            {"error": (
+                "检测到 " + str(len(drifted)) + " 个章节正文与 HEAD 不一致：\n"
+                + "\n".join(msg_lines) + "\n"
+                "修复：对每个 drifted 章节运行：\n"
+                "  python scripts/polish_cycle.py {N} --reason '补录裸跑 commit' --narrative-version-bump\n"
+                "若改动是 WIP（未完成）而非应 commit，则 git stash 暂存。"
+            )} if p0_drifts else {
+                "note": (
+                    f"polish_drift: {len(drifted)} 个章节工作区已改但未 commit。"
+                    "若是 polish_cycle 流程中可忽略；若是手动改请跑 polish_cycle.py 提交。"
+                )
+            }
+        ),
+    }
+
+
 def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
     scripts_dir = _scripts_dir().resolve()
     plugin_root = scripts_dir.parent
@@ -261,8 +370,19 @@ def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
     if cache_check is not None:
         checks.append(cache_check)
 
+    # Polish drift check — Round 14.5.2 · 早期检测裸跑 polish commit 情况
+    # P0 drift（正文已改 + narrative_version=v1）阻断 preflight；P1 drift 仅警告
+    if project_root:
+        try:
+            polish_check = _check_polish_drift(Path(project_root))
+            if polish_check is not None:
+                checks.append(polish_check)
+        except Exception as exc:
+            checks.append({"name": "polish_drift", "ok": True, "path": "", "note": f"检测失败: {exc}"})
+
     # ok 聚合：只看 P0（必需）项；agents_sync/cache_sync 缺失只警告，不阻断 preflight
-    p0_names = {"scripts_dir", "entry_script", "extract_context_script", "skill_root", "project_root"}
+    # polish_drift 的 ok=False 只在 P0 drift 时；此时阻断
+    p0_names = {"scripts_dir", "entry_script", "extract_context_script", "skill_root", "project_root", "polish_drift"}
     return {
         "ok": all(bool(item["ok"]) for item in checks if item["name"] in p0_names),
         "project_root": project_root,

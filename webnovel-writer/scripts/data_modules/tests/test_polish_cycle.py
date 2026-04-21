@@ -522,3 +522,119 @@ def test_polish_cycle_documentation_describes_v2_ordering():
     assert "[5/7] workflow 预登记" in ref_text
     assert "[6/7] git commit" in ref_text
     assert "[7/7] 回填 commit_sha" in ref_text
+
+
+# ---------------------------------------------------------------------------
+# 8. Round 14.5.2 · context-agent polish 传递 / H20 schema / preflight polish_drift
+# ---------------------------------------------------------------------------
+
+
+def test_context_agent_reads_polish_log():
+    """agents/context-agent.md 必须提到读 polish_log / narrative_version 做跨章传递"""
+    ca = _plugin_root() / "agents" / "context-agent.md"
+    text = ca.read_text(encoding="utf-8")
+    assert "polish_log" in text, "context-agent 必须读 polish_log（Round 14.5.2 跨章传递闸门）"
+    assert "narrative_version" in text
+    assert "上章 polish 经验" in text or "polish 经验传递" in text, (
+        "context-agent 必须在读 polish_log 后把经验注入任务书"
+    )
+
+
+def test_hygiene_h20_polish_log_schema_registered():
+    """hygiene_check 必须挂载 check_polish_log_schema，且 docstring 含 H20 描述"""
+    hc = _plugin_root() / "scripts" / "hygiene_check.py"
+    text = hc.read_text(encoding="utf-8")
+    assert "def check_polish_log_schema" in text
+    assert "check_polish_log_schema(root, args.chapter, rep)" in text
+    assert "H20" in text
+
+
+def test_hygiene_h20_validates_required_fields(tmp_path):
+    """H20：polish_log 里每条必须含 version + timestamp + notes"""
+    _ensure_scripts_on_path()
+    from hygiene_check import check_polish_log_schema, HygieneReport  # type: ignore
+
+    root = tmp_path
+    webnovel = root / ".webnovel"
+    webnovel.mkdir()
+    state = {
+        "chapter_meta": {
+            "0001": {
+                "polish_log": [
+                    {"version": "v2", "timestamp": "2026-04-20T01:00:00Z", "notes": "ok"},
+                    {"version": "v3", "notes": "missing timestamp"},
+                ]
+            }
+        }
+    }
+    (webnovel / "state.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    rep = HygieneReport()
+    check_polish_log_schema(root, 1, rep)
+    assert rep.p1_fails, "缺 timestamp 的 polish_log 必须报 H20 P1"
+    assert "H20" in rep.p1_fails[0]
+
+
+def test_hygiene_h20_accepts_valid_schema(tmp_path):
+    """H20：完整 schema 的 polish_log 必须通过"""
+    _ensure_scripts_on_path()
+    from hygiene_check import check_polish_log_schema, HygieneReport  # type: ignore
+
+    root = tmp_path
+    webnovel = root / ".webnovel"
+    webnovel.mkdir()
+    state = {
+        "chapter_meta": {
+            "0001": {
+                "polish_log": [
+                    {"version": "v3.8.1", "timestamp": "2026-04-20T01:00:00Z", "notes": "ASCII 引号清理"},
+                    {"version": "v3.8.2", "timestamp": "2026-04-20T02:00:00Z", "notes": "字数同步"},
+                ]
+            }
+        }
+    }
+    (webnovel / "state.json").write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    rep = HygieneReport()
+    check_polish_log_schema(root, 1, rep)
+    assert not rep.p1_fails, f"完整 schema 不应触发 P1，实际 fails={rep.p1_fails}"
+
+
+def test_preflight_check_polish_drift_exists():
+    """webnovel.py 必须实现 _check_polish_drift"""
+    wn = _plugin_root() / "scripts" / "data_modules" / "webnovel.py"
+    text = wn.read_text(encoding="utf-8")
+    assert "def _check_polish_drift" in text
+    assert "polish_drift" in text
+    assert "narrative_version" in text
+
+
+def test_install_git_hooks_script_exists():
+    """scripts/install_git_hooks.py 必须存在且含 HOOK_SCRIPT 定义"""
+    hook = _plugin_root() / "scripts" / "install_git_hooks.py"
+    assert hook.exists(), "Round 14.5.2 必须提供可选 pre-commit hook 安装脚本"
+    text = hook.read_text(encoding="utf-8")
+    assert "HOOK_SCRIPT" in text
+    assert "polish_cycle" in text
+    assert "no-verify" in text, "hook 描述必须说明可通过 --no-verify 绕过"
+
+
+def test_gate_matrix_reference_exists():
+    """Round 14.5.2 · gate-matrix.md 必须存在且被 SKILL.md 引用"""
+    gm = _plugin_root() / "skills" / "webnovel-write" / "references" / "gate-matrix.md"
+    assert gm.exists()
+    gm_text = gm.read_text(encoding="utf-8")
+    assert "多层拦截" in gm_text or "多层防御" in gm_text
+
+    skill = _plugin_root() / "skills" / "webnovel-write" / "SKILL.md"
+    assert "gate-matrix.md" in skill.read_text(encoding="utf-8"), (
+        "SKILL.md 必须引用 gate-matrix.md（闸门一致性来源）"
+    )
+
+
+def test_polish_cycle_has_idempotent_warning():
+    """polish_cycle.py 必须检测同版本重复登记（P1-7）"""
+    pc = _plugin_root() / "scripts" / "polish_cycle.py"
+    text = pc.read_text(encoding="utf-8")
+    assert "幂等" in text or "idempotent" in text.lower()
+    assert "existing_versions" in text or "polish_log_existing" in text

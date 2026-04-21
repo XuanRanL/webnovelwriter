@@ -35,6 +35,8 @@
         Round 13 v2 · 含 reader-naturalness-checker + reader-critic-checker）；
         检测 AI fallback 写中文/legacy key（Ch1 血教训）
     H19 polish_log 末尾时间早于 git 最新 commit（可能历史裸跑 polish）
+    H20 chapter_meta[{NNNN}].polish_log schema 合规：每条含
+        {version=vN/vN.M.K, timestamp=ISO-8601, notes=非空}（Round 14.5.2）
   P2 建议（exit 2）：
     H12 context_snapshot 存在
     H13 项目特定检查（通过 .webnovel/hygiene_check_local.py 扩展）
@@ -678,6 +680,59 @@ def check_post_commit_polish_drift(root: Path, chapter: int, rep: HygieneReport)
     )
 
 
+def check_polish_log_schema(root: Path, chapter: int, rep: HygieneReport):
+    """H20: chapter_meta[{NNNN}].polish_log schema 合规（Round 14.5.2）。
+
+    每条 polish_log 条目必须含 version / timestamp / notes 三个必填字段，
+    且 version 匹配 ``vN`` 或 ``vN.M.K`` 形式，timestamp 为 ISO-8601。
+    违规会让 context-agent 解析上章 polish 经验时失败（跨章传递断层）。
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return
+    try:
+        s = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    polish_log = meta.get("polish_log")
+    if polish_log is None:
+        rep.record("P1", "H20", "polish_log 字段缺失（非必需，首稿未 polish 时允许缺）", True)
+        return
+    if not isinstance(polish_log, list):
+        rep.record("P1", "H20", f"polish_log 不是 list（{type(polish_log).__name__}）", False)
+        return
+    if not polish_log:
+        rep.record("P1", "H20", "polish_log 存在但为空数组", True)
+        return
+
+    required = {"version", "timestamp", "notes"}
+    version_re = re.compile(r"^v\d+(\.\d+){0,3}$")
+    errs: list[str] = []
+    for i, entry in enumerate(polish_log):
+        if not isinstance(entry, dict):
+            errs.append(f"[{i}] 非 dict")
+            continue
+        missing = required - set(entry.keys())
+        if missing:
+            errs.append(f"[{i}] 缺字段 {sorted(missing)}")
+            continue
+        v = entry.get("version", "")
+        if not isinstance(v, str) or not version_re.match(v):
+            errs.append(f"[{i}] version={v!r} 不合规（应形如 v2/v3.8.1）")
+        t = entry.get("timestamp", "")
+        if not isinstance(t, str) or "T" not in t:
+            errs.append(f"[{i}] timestamp={t!r} 非 ISO-8601")
+        n = entry.get("notes", "")
+        if not isinstance(n, str) or not n.strip():
+            errs.append(f"[{i}] notes 为空或非字符串")
+
+    if errs:
+        rep.record("P1", "H20", f"polish_log schema 违规 {len(errs)} 处: {errs[:3]}", False)
+    else:
+        rep.record("P1", "H20", f"polish_log {len(polish_log)} 条全部合规", True)
+
+
 def run_project_local_checks(root: Path, chapter: int, rep: HygieneReport):
     """H13: 调用 .webnovel/hygiene_check_local.py（若存在）"""
     local_p = root / ".webnovel" / "hygiene_check_local.py"
@@ -719,6 +774,7 @@ def main():
     check_allusions_schema(root, args.chapter, rep)
     check_checker_scores_canonical(root, args.chapter, rep)
     check_post_commit_polish_drift(root, args.chapter, rep)
+    check_polish_log_schema(root, args.chapter, rep)
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
