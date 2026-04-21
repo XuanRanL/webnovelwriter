@@ -7,6 +7,149 @@
 
 ---
 
+## [2026-04-20 · Round 14.5.2] 全流程 Step 0-8 深度审计 · 根治 7 类隐性漏洞
+
+**触发**：用户要求 deep research 整个 Step 0-8 流程，找出所有隐性问题并根治。
+
+### 发现的问题（按严重度）
+
+| # | 级别 | 问题 | Root Cause | 影响 |
+|---|------|------|-----------|------|
+| P0-1 | 严重 | **context-agent 不读 polish_log / narrative_version** | Round 14.5 引入 Step 8 时只改了 data agent 侧，没改 context-agent；"polish 经验跨章传递"是文档里的空头支票 | polish 修的同类问题每章反复修，学习环节断层 |
+| P0-2 | 严重 | **无技术闸门拦截裸跑 git commit** | SKILL.md "禁止裸跑 polish commit" 只是文字规则，git pre-commit hook 未提供 | AI/用户仍可能 `git add . && git commit -m "polish"` 完全绕过 |
+| P0-3 | 严重 | **preflight 不检测 polish drift** | preflight 只检 agents/cache sync | 进入下一章才被 hygiene H19/H19a 抓到，中间可能已污染上下文 |
+| P0-4 | 严重 | **SKILL 充分性闸门 vs hygiene H* 不对齐** | 文档演进与代码演进脱钩，无单一事实来源 | 人读规则 AI 以为有，机读却没检 |
+| P1-5 | 中 | polish_log schema 没被 hygiene 验证 | 新增 schema 没加 H 项 | schema 违规让 context-agent 解析上章经验失败 |
+| P1-7 | 中 | polish_cycle.py 幂等性缺失 | 没检测"同版本已存在" | 误跑/重跑会累计重复 polish_log 条目 |
+| P1-8 | 低 | 末世重生 Ch1 checker_scores 只有 10/13（缺 flow/naturalness/reader-critic） | 历史遗留（Round 12/13 v2 之前数据） | 下章 trend 失真 |
+
+### 根治方案（Round 14.5.2）
+
+#### 修复 P0-1：context-agent 跨章传递 polish 经验
+
+**改动**：`agents/context-agent.md` 新增"Post-Commit Polish 传递"章节（~40 行）
+
+实装逻辑：
+1. context-agent 读 `chapter_meta[N-1]` 时，额外读 `narrative_version` / `polish_log` / `checker_scores`
+2. 若 `narrative_version ∈ {v2, v3, ...}`（上章 polish 过）：
+   - polish_log[-1].notes 作为"上章修正经验"注入**第 6 板块「风格指导」**
+   - 若 notes 含 "ASCII 引号"/"word_count 漂移"/"AI 腔"/"语病"关键词，标记为血教训
+   - Step 2A `writing_guidance.constraints` 新增 "避免 {问题类型}"
+3. 若 `narrative_version == v1`：输出"上章为首稿（未 polish），无修订经验"
+
+**设计原理**：Polish 的根本价值是"发现 → 修正 → 学习"闭环。Round 14.5 只做了"发现 + 修正"，Round 14.5.2 补齐"学习"环节。
+
+#### 修复 P0-2：可选 git pre-commit hook 拦截裸跑
+
+**改动**：新建 `scripts/install_git_hooks.py`（232 行）
+
+功能：
+- `python scripts/install_git_hooks.py --project-root <path>` 一次性安装
+- `--uninstall` 恢复备份
+- Hook 内容：检测 staged 章节文件 + commit msg 不符合 `第N章 v{X}: ... [polish:...]`（polish_cycle）或 `第N章: {title}`（Step 7）格式 → 阻断并打印修复提示
+- 可绕过：`git commit --no-verify`（但会被 preflight polish_drift 检查到）
+- 幂等：重复跑无副作用；自动备份已存在的 hook
+
+**非强制**：只是"锦上添花"的第三层防御，用户可选。
+
+#### 修复 P0-3：preflight 新增 polish_drift 检测
+
+**改动**：`scripts/data_modules/webnovel.py` 新增 `_check_polish_drift` 函数（75 行）
+
+逻辑：
+1. 扫描 `正文/第{NNNN}章*.md` 所有正文文件
+2. `git show HEAD:<file>` vs 工作区
+3. 若内容不同：
+   - `narrative_version in (None, '', 'v1')` → P0 drift（阻断 preflight）
+   - 否则 → P1 warn（polish_cycle 可能在流程中）
+
+**与 hygiene H19/H19a 对比**：
+- H19/H19a 在 Step 7 commit 前跑（事前）
+- 新 polish_drift 在**每次 preflight** 跑（更早、更频繁）
+- 两者形成双保险，互相补齐
+
+#### 修复 P0-4：闸门一致性对照表 + 同步维护规则
+
+**改动**：新建 `skills/webnovel-write/references/gate-matrix.md`（100+ 行）
+
+内容：
+- **闸门对照表**：17 条 SKILL 充分性闸门 × 对应的机读 H* 检查项 × 阻断级
+- **裸跑 polish commit 的四层防御**：git hook → preflight → hygiene H19/H19a → context-agent 下章检测
+- **同步维护规则**：新增/删除闸门时必须做的步骤
+- **争议裁决**：代码实现 > gate-matrix 表 > SKILL 文字（因为代码才真正执行）
+
+**SKILL.md 同步**：
+- 充分性闸门从 15 条扩到 17 条（新增 polish_log schema + polish_drift 零 P0）
+- "硬规则"把 `ERROR polish_drift` 加入必须清零列表
+- 新增"可选：安装 git pre-commit hook"段落
+
+#### 修复 P1-5：hygiene H20 polish_log schema 验证
+
+**改动**：`scripts/hygiene_check.py` 新增 `check_polish_log_schema`（55 行）
+
+检查：
+- polish_log 每条必须含 `version` / `timestamp` / `notes`
+- `version` 匹配 `vN` 或 `vN.M.K`
+- `timestamp` 为 ISO-8601
+
+#### 修复 P1-7：polish_cycle.py 幂等警告
+
+**改动**：`scripts/polish_cycle.py` 在 Step [3/7] 前增加幂等检查（13 行）
+
+逻辑：若 `new_version` 已存在于 `polish_log` 且 `changed=False`，输出警告 + 3 秒窗口允许 Ctrl+C 取消。
+
+### 修改文件清单
+
+| 文件 | 变更 | 行数 |
+|------|------|------|
+| `agents/context-agent.md` | 新增 "Post-Commit Polish 传递" 章节 | +42 |
+| `scripts/install_git_hooks.py` | **新建** pre-commit hook 安装脚本 | +232 |
+| `scripts/data_modules/webnovel.py` | 新增 `_check_polish_drift` + 接入 preflight | +116 |
+| `scripts/hygiene_check.py` | 新增 `check_polish_log_schema`（H20）+ 挂载 | +58 |
+| `scripts/polish_cycle.py` | 新增幂等警告逻辑 | +13 |
+| `skills/webnovel-write/SKILL.md` | 充分性闸门 15→17 + 硬规则更新 + git hook 段落 | +15 |
+| `skills/webnovel-write/references/gate-matrix.md` | **新建** 闸门一致性对照表 | +118 |
+| `skills/webnovel-write/references/post-commit-polish.md` | 更新 "跨章影响" 章节反映 Round 14.5.2 实装 | ~10 |
+| `scripts/data_modules/tests/test_polish_cycle.py` | 新增 9 个回归测试 | +110 |
+
+### 验证
+
+全量回归：
+```
+pytest scripts/data_modules/tests/ --no-cov -q
+→ 380 passed, 0 failed (含 37 个 polish_cycle 相关测试)
+```
+
+关键测试锁死：
+- `test_context_agent_reads_polish_log` — 防止 context-agent 回退到不读 polish_log
+- `test_hygiene_h20_validates_required_fields` — 防止 H20 schema 检查被移除
+- `test_preflight_check_polish_drift_exists` — 防止 _check_polish_drift 被误删
+- `test_install_git_hooks_script_exists` — 防止 hook 安装脚本丢失
+- `test_gate_matrix_reference_exists` — 防止 SKILL.md 与 gate-matrix.md 解绑
+- `test_polish_cycle_has_idempotent_warning` — 防止幂等检查被回退
+
+preflight 实战验证（末世重生项目）：
+```
+OK polish_drift: i:\...\末世重生\正文
+```
+（正文与 HEAD 一致，drift 检查生效）
+
+### 与 Round 14.5 / Round 14.5.1 的关系
+
+| Round | 解决的问题 |
+|-------|-----------|
+| Round 14.5 | 发现问题：裸跑 polish commit 导致 58 引号 + 字数漂移。引入 Step 8 + polish_cycle.py，但 v1 顺序错误（commit 不是最后一步） |
+| Round 14.5.1 | 修正顺序：commit 成为最后一步原子落盘，与 Step 7 对称 |
+| Round 14.5.2 | **本轮** · 补齐 Step 8 的 7 类隐性漏洞，让 polish 从"单点补丁"升级为"完整闭环"（发现 → 修正 → 学习）；加技术闸门防止将来再次裸跑 |
+
+三轮合起来才形成**真正根治**：
+- 技术闸门：preflight polish_drift + 可选 git hook + hygiene H19/H19a/H20
+- 流程闭环：polish_cycle.py 7 步 + context-agent 跨章传递
+- 文档同步：SKILL.md + gate-matrix.md + post-commit-polish.md + CUSTOMIZATIONS.md
+- 测试锁死：37 个回归测试 + 全量 380 测试通过
+
+---
+
 ## [2026-04-20 · Round 14.5.1] Step 8 顺序修正 · commit 成为真正的最后一步
 
 **触发**：用户质疑"提交不是应该在最后一步吗？"，要求 deep research v1 设计的逻辑严谨性。

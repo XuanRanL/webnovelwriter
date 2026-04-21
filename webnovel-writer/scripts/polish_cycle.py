@@ -492,6 +492,22 @@ def main() -> int:
     else:
         new_version = cur_version or "v1"
 
+    # 幂等检查（Round 14.5.3）：若 new_version 已存在于 polish_log 里，且 changed=False（--allow-no-change 场景），
+    # 通常是误跑/重跑。给出警告但不阻断（允许作者有意重登记）。
+    polish_log_existing = meta.get("polish_log", []) or []
+    if polish_log_existing and isinstance(polish_log_existing, list):
+        existing_versions = [e.get("version") for e in polish_log_existing if isinstance(e, dict)]
+        if new_version in existing_versions and not changed:
+            print(f"\n  ⚠ 幂等警告：polish_log 里已有 version={new_version}（且正文未改动）。")
+            print("     这通常意味着误跑或重复登记。继续会追加一条新的 polish_log 条目。")
+            print("     若非预期，Ctrl+C 取消；否则等 3 秒后继续...")
+            import time
+            try:
+                time.sleep(3)
+            except KeyboardInterrupt:
+                print("  ❌ 用户取消")
+                return 2
+
     checker_scores = None
     if args.checker_scores:
         try:

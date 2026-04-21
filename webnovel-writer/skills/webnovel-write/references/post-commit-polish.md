@@ -208,12 +208,21 @@ Step 8 第3轮:   第1章 v5: 修 audit Layer C     (commit 3)
 
 ## 7. 跨章影响
 
-### 7.1 下章 context-agent 行为
+### 7.1 下章 context-agent 行为（Round 14.5.2 实装）
 
-context-agent 读 `state.json.chapter_meta.{NNNN}` 时：
-- 优先读 `narrative_version` 最新值
-- 读 `polish_log[]` 最后一条的 `notes`，作为"本章近期修订摘要"注入下章 Contract
-- 读 `checker_scores` 最新合并值，做"前章弱项"提示
+context-agent 读 `state.json.chapter_meta.{N-1}`（上一章）时，**实际执行**下列逻辑（见 `agents/context-agent.md` 的"Post-Commit Polish 传递"章节）：
+
+1. 读 `narrative_version`：判断上章是否 polish 过
+2. 若 `narrative_version ∈ {v2, v3, ...}`（polish 过）：
+   - 读 `polish_log[]` 最后一条的 `notes` 作为"作者/AI 最近修正的问题类型"
+   - 在本章任务书**第 6 板块「风格指导」**追加"上章 polish 经验传递（v{X}）"子段落
+   - 若 notes 含 "ASCII 引号"/"word_count 漂移"/"AI 腔"/"语病" 等关键词，标记为"上章血教训，本章起草必须绕开"
+   - Step 2A 的 `writing_guidance.constraints` 新增 "避免 {问题类型}"
+3. 若 `narrative_version == v1`（从未 polish）：输出 "上章为首稿（未 polish），无修订经验"
+4. 读 `checker_scores` 最新合并值，做"前章弱项"提示
+
+**Round 14.5（仅"发现 + 修正"）vs Round 14.5.2（补齐"学习"）**：
+Round 14.5 只让 Step 8 把修订落到 state.json，但下章 context-agent 根本不读 polish_log，导致 polish 经验无法跨章传递——同一类问题（如反派一刀切）每章都要重新 polish。Round 14.5.2 补齐了这个学习环节，让 polish 经验在下章起草阶段就被主 agent 看到。
 
 ### 7.2 跨章 trend / Step 6 Layer G
 

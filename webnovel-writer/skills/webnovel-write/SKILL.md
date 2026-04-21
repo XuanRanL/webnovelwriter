@@ -130,6 +130,9 @@ git log --oneline -1 | grep "第${chapter_num}章"
 - `references/post-commit-polish.md`
   - 用途：Step 8（Post-Commit Polish）完整规范：触发场景、polish_cycle.py 用法、多轮 polish、跨章影响、审计兼容性、恢复策略。
   - 触发：Step 7 commit 之后任何修改正文前必读。
+- `references/gate-matrix.md`
+  - 用途：充分性闸门 vs hygiene_check H* 项的一一对应表 + 多层防御设计 + 同步维护规则（Round 14.5.2 新增）。
+  - 触发：新增/修改/删除任一闸门前必读；调试闸门打架时必读。
 
 ### writing（问题定向加读）
 
@@ -225,9 +228,10 @@ python -X utf8 scripts/webnovel.py sync-cache
 
 ### 硬规则
 
-**任何 `ERROR agents_sync` 或 `ERROR cache_sync` 必须在 Step 1 前清零**。不得"跳过 warning 开始写章"，因为：
+**任何 `ERROR agents_sync` / `ERROR cache_sync` / `ERROR polish_drift` 必须在 Step 1 前清零**。不得"跳过 warning 开始写章"，因为：
 - agents_sync 漂移 → Task checker 空跑（你看不见 fallback，章节走完了才发现审查报告维度少了）
 - cache_sync 漂移 → 所有 fix / 新功能不生效（你 commit 了但 AI 跑的是老代码）
+- **polish_drift P0 漂移**（Round 14.5.2）→ 上一章正文已手动改但未走 polish_cycle，直接进入下章会污染上下文。修法：对每个 drifted 章节运行 `polish_cycle.py <N> --reason '补录裸跑 commit' --narrative-version-bump`；若是 WIP（未完成）改动则 `git stash` 暂存
 
 **触发 sync-cache 的时机**（硬约束）：
 1. 每次 `git pull` 或 `git checkout` 切换 fork 分支后
@@ -248,6 +252,20 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" syn
 # 然后重跑 preflight 确认全 OK
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" preflight
 ```
+
+**可选：安装 git pre-commit hook**（Round 14.5.2 · 硬技术拦截裸跑 polish commit）：
+
+```bash
+# 一次性安装（幂等，重跑无副作用）
+python -X utf8 "${SCRIPTS_DIR}/install_git_hooks.py" --project-root "${PROJECT_ROOT}"
+
+# 或卸载（仅恢复到 webnovel hook 安装前的状态）
+python -X utf8 "${SCRIPTS_DIR}/install_git_hooks.py" --project-root "${PROJECT_ROOT}" --uninstall
+```
+
+安装后效果：任何 `git commit` 带 staged 章节文件但 message 不符合 `第N章 v{X}: ... [polish:...]`（polish_cycle 产出）或 `第N章: {title}`（Step 7 产出）格式时，pre-commit 会阻断并打印修复提示。可用 `git commit --no-verify` 主动绕过（但会被下次 preflight 的 polish_drift 检查到）。
+
+**非强制安装**：preflight + hygiene_check 已是主要防线；此 hook 是锦上添花的第三层。若你只用 Claude Code 的 webnovel skill 流程，可以不装；若你担心 AI 偶尔手滑裸跑 commit，推荐装上。
 
 典故引用库检查（非阻断，仅提示）：
 ```bash
@@ -941,6 +959,8 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 13. **Step 7 commit 前 `pre_commit_step_k.py` exit=0**（2026-04-15 新增 · 设定集 Markdown 追加已完成）
 14. Step 7 Git 已提交
 15. 若开启性能观测，已读取最新 timing 记录并输出结论
+16. **polish_log schema 合规**（2026-04-20 Round 14.5.2 新增 · hygiene `H20`）：若 `chapter_meta.{NNNN}.polish_log` 存在，每条必须含 `version` / `timestamp` / `notes` 三字段，`version` 匹配 `vN` 或 `vN.M.K`，`timestamp` 为 ISO-8601。schema 违规会让下章 context-agent 解析 polish 经验失败（跨章传递断层）
+17. **polish_drift 零 P0**（2026-04-20 Round 14.5.2 新增 · preflight `polish_drift`）：Step 0 preflight 必须报告 `polish_drift: ok=True`；若 P0 drift（正文已改 + `narrative_version=v1`）则 preflight 失败，必须先走 `polish_cycle.py` 提交或 `git stash` 暂存
 
 ## 验证与交付
 
