@@ -549,16 +549,48 @@ def complete_step(step_id, artifacts_json=None):
     if target_step is None:
         active_ids = [current_step.get("id")] if current_step else []
         active_ids += [ps.get("id") for ps in parallel_steps]
-        print(f"⚠️ 未找到待完成 Step {step_id}（当前活跃: {active_ids}）")
-        safe_append_call_trace(
-            "step_complete_rejected",
-            {
-                "requested_step_id": step_id,
-                "active_step_ids": active_ids,
-                "command": task.get("command"),
-            },
-        )
-        return
+
+        # Round 15.2 (2026-04-23)：AI 友好回退 · 实现"隐式 start"
+        # 根因：Ch5 Step 7 AI 忘 start-step → git commit → complete-step 拒绝 → task failed
+        # 修复：如果 step_id 是 pending_steps 里的有效步骤且还没 completed，自动 synthesize 一个
+        # "implicit-start + complete" 操作，只在 call_trace 中标记 implicit_start=True，
+        # 保留可追溯性，但不再 block。
+        pending_steps = task.get("pending_steps", []) or []
+        completed_ids = {row.get("id") for row in task.get("completed_steps", [])}
+        if step_id in pending_steps and step_id not in completed_ids:
+            implicit_start_iso = now_iso()
+            target_step = {
+                "id": step_id,
+                "name": step_id,
+                "status": STEP_STATUS_RUNNING,
+                "started_at": implicit_start_iso,
+                "running_at": implicit_start_iso,
+                "implicit_start": True,
+                "attempt": 1,
+                "progress_note": "implicit_start_fallback",
+            }
+            is_current = False
+            safe_append_call_trace(
+                "step_implicit_start",
+                {
+                    "requested_step_id": step_id,
+                    "command": task.get("command"),
+                    "reason": "complete_step_fired_without_start_step_call",
+                    "fallback": "round15.2_implicit_start",
+                },
+            )
+            print(f"⚠️ {step_id} 没有预先 start-step（本次自动 synthesize 隐式起点）· call_trace.step_implicit_start 已记录")
+        else:
+            print(f"⚠️ 未找到待完成 Step {step_id}（当前活跃: {active_ids}）")
+            safe_append_call_trace(
+                "step_complete_rejected",
+                {
+                    "requested_step_id": step_id,
+                    "active_step_ids": active_ids,
+                    "command": task.get("command"),
+                },
+            )
+            return
 
     # Guard: avoid double completion
     existing_ids = [row.get("id") for row in task.get("completed_steps", [])]
@@ -680,8 +712,14 @@ def fail_step(step_id, reason="step_marked_failed", artifacts_json=None):
     print(f"⚠️ {step_id} 已标记失败: {reason}")
 
 
-def complete_task(final_artifacts_json=None):
-    """Mark task completed."""
+def complete_task(final_artifacts_json=None, force=False):
+    """Mark task completed.
+
+    Round 15.3 · 2026-04-23 · Ch6 血教训：
+    complete-step JSON escape 失败 → 紧接 complete-task 遇 active-step 把 task 标 failed
+    → complete-step 重跑成功但 task 已 failed 永久被拒。新增 --force：
+    只要 required steps 全部 completed 且当前无 active step running 就允许解除 failed。
+    """
     state = load_state()
     task = state.get("current_task")
     if not task:
@@ -689,16 +727,42 @@ def complete_task(final_artifacts_json=None):
         return
 
     if task.get("status") == TASK_STATUS_FAILED:
-        safe_append_call_trace(
-            "task_complete_rejected",
-            {
-                "command": task.get("command"),
-                "chapter": task.get("args", {}).get("chapter_num"),
-                "reason": "task_already_failed",
-            },
-        )
-        print("⚠️ 任务已处于失败状态，拒绝标记完成")
-        return
+        completed_ids = {step.get("id") for step in task.get("completed_steps", [])}
+        missing_after_completed = [s for s in _pending_required_steps(task) if s not in completed_ids]
+        active_step = task.get("current_step")
+        active_running = bool(active_step and active_step.get("status") in {STEP_STATUS_STARTED, STEP_STATUS_RUNNING})
+        if force and not missing_after_completed and not active_running:
+            original_reason = task.pop("failure_reason", None)
+            task.pop("failed_at", None)
+            # Status is flipped here; the rest of the function performs the regular completion flow.
+            task["status"] = TASK_STATUS_COMPLETED
+            safe_append_call_trace(
+                "task_unfail_forced",
+                {
+                    "command": task.get("command"),
+                    "chapter": task.get("args", {}).get("chapter_num"),
+                    "original_failure_reason": original_reason,
+                    "completed_steps": list(completed_ids),
+                },
+            )
+            print(f"🔧 --force 已解除 failed 状态（原因：{original_reason}）")
+        else:
+            safe_append_call_trace(
+                "task_complete_rejected",
+                {
+                    "command": task.get("command"),
+                    "chapter": task.get("args", {}).get("chapter_num"),
+                    "reason": "task_already_failed",
+                    "force_requested": force,
+                    "missing_after_completed": missing_after_completed,
+                    "active_running": active_running,
+                },
+            )
+            if force:
+                print(f"⚠️ --force 被拒绝：missing_steps={missing_after_completed} active_running={active_running}")
+            else:
+                print("⚠️ 任务已处于失败状态，拒绝标记完成（如所有 required step 已 completed 可加 --force）")
+            return
 
     current_step = task.get("current_step")
     if current_step and current_step.get("status") in {STEP_STATUS_STARTED, STEP_STATUS_RUNNING}:
@@ -905,7 +969,7 @@ def analyze_recovery_options(interrupt_info):
                 "option": "A",
                 "label": "重新执行外部审查",
                 "risk": "medium",
-                "description": "重新调用 9 模型外部审查（核心模型按 fallback 链重试）",
+                "description": "重新调用外部审查（14 模型 · 核心模型按 fallback 链重试）",
                 "actions": ["重新执行外部模型审查", "合并内外部分数", "继续 Step 4 润色"],
             },
             {
@@ -1235,6 +1299,7 @@ if __name__ == "__main__":
     p_complete_task = subparsers.add_parser("complete-task", help="完成任务")
     add_project_root_arg(p_complete_task)
     p_complete_task.add_argument("--artifacts", help="Final artifacts JSON")
+    p_complete_task.add_argument("--force", action="store_true", help="若 task 已被误标 failed 但所有 required step 已 completed，强制完成（Round 15.3 Ch6 RCA）")
 
     p_fail_task = subparsers.add_parser("fail-task", help="标记任务失败")
     add_project_root_arg(p_fail_task)
@@ -1268,7 +1333,7 @@ if __name__ == "__main__":
         else:
             complete_step(args.step_id, args.artifacts)
     elif args.action == "complete-task":
-        complete_task(args.artifacts)
+        complete_task(args.artifacts, force=getattr(args, "force", False))
     elif args.action == "fail-task":
         fail_current_task(args.reason)
     elif args.action == "detect":

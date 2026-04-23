@@ -154,26 +154,109 @@ class HygieneReport:
 
 
 def check_rogue_empty_files(root: Path, rep: HygieneReport):
-    """H1: 项目根下无 0 字节空文件"""
+    """H1: 项目根下无 0 字节空文件
+
+    Round 15.3 · 2026-04-23 · Ch6 RCA Bug #2 根治：
+    - audit-agent 或主流程 bash 命令偶尔会把变量展开成中文字符串或 markdown 内容，
+      被 shell redirect parser 误解析成文件名（例：`echo "..." > 上章决议：**approve**` 会创建 0 字节文件）
+    - 这类文件特征：名字含 `=` / `**` / markdown 符号 / 单汉字 / 可执行符（`<` `>` `|`）
+    - H1 检测到且文件名匹配 accident pattern 时自动清除，记 observability/bash_accident_cleanup.jsonl
+    - 其他 0 字节文件仍按 P0 fail 处理（可能是用户真实创建）
+    """
+    # 可允许的 0 字节文件白名单
+    allowlist = {".env.example", ".gitignore"}
+    # bash redirect accident 特征
+    accident_patterns = [
+        re.compile(r"^=$"),  # 单个 =
+        re.compile(r"\*\*"),  # 含 markdown bold
+        re.compile(r"^[一-鿿]{1,3}$"),  # 纯 1-3 个汉字（如 "供" "由" "上章决议"）
+        re.compile(r"[<>|]"),  # 含 shell redirect 符
+        re.compile(r"^[:：]"),  # 以冒号开头（markdown 引用残片）
+        re.compile(r"^-{2,}$"),  # --- 分隔线被当文件名
+    ]
+    def _is_accident(name: str) -> bool:
+        return any(p.search(name) for p in accident_patterns)
+
     rogue = []
+    cleaned = []
     for entry in root.iterdir():
         if entry.is_file() and entry.stat().st_size == 0:
-            if entry.name in {".env.example", ".gitignore"}:
+            if entry.name in allowlist:
                 continue
-            rogue.append(entry.name)
+            if _is_accident(entry.name):
+                # 自动清除 + observability 记录
+                try:
+                    entry.unlink()
+                    cleaned.append(entry.name)
+                except Exception:
+                    # unlink 失败仍记为 rogue
+                    rogue.append(entry.name)
+            else:
+                rogue.append(entry.name)
+
+    # 记 observability（best-effort · 不阻断 H1）
+    if cleaned:
+        try:
+            import json as _j
+            from datetime import datetime, timezone
+            obs_dir = root / ".webnovel" / "observability"
+            obs_dir.mkdir(parents=True, exist_ok=True)
+            log_f = obs_dir / "bash_accident_cleanup.jsonl"
+            entry_record = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "cleaned": cleaned,
+                "source": "hygiene_check_H1_auto_cleanup",
+                "note": "Round 15.3 · Ch6 RCA · 自动识别 bash redirection accident 0 字节文件并清除",
+            }
+            with log_f.open("a", encoding="utf-8") as _fh:
+                _fh.write(_j.dumps(entry_record, ensure_ascii=False) + "\n")
+            print(f"  🔧 [H1 auto-clean] 清除 {len(cleaned)} 个 bash accident 0 字节文件: {cleaned[:5]}")
+        except Exception:
+            pass
+
     ok = not rogue
-    rep.record("P0", "H1", f"项目根有 {len(rogue)} 个 0 字节空文件: {rogue[:5]}", ok)
+    rep.record("P0", "H1", f"项目根有 {len(rogue)} 个未识别 0 字节空文件: {rogue[:5]}", ok)
 
 
 def check_root_layout(root: Path, rep: HygieneReport):
-    """H10: 项目根只含预期目录"""
+    """H10: 项目根只含预期目录
+
+    白名单 = plugin 默认（dirs + hidden + files）
+            + 项目可选 .webnovel/hygiene_config.json 的 extra_allowed_root_items
+    """
     expected_dirs = {"大纲", "审查报告", "正文", "设定集", "调研笔记"}
-    expected_hidden = {".webnovel", ".git"}
-    expected_files = {".env.example", ".gitignore", "KNOWN_ISSUES.md"}
+    expected_hidden = {".webnovel", ".git", ".gitattributes"}
+    expected_files = {
+        ".env.example",
+        ".gitignore",
+        "KNOWN_ISSUES.md",
+        "README.md",
+        "ROOT_CAUSE_GUARD_RAILS.md",
+        "CHANGELOG.md",
+        "LICENSE",
+    }
+    # 项目特化扩展白名单（Round 15.1 · 2026-04-22）
+    cfg_path = root / ".webnovel" / "hygiene_config.json"
+    extra = set()
+    if cfg_path.exists():
+        try:
+            import json as _j
+
+            extra = set(
+                _j.loads(cfg_path.read_text(encoding="utf-8")).get(
+                    "extra_allowed_root_items", []
+                )
+            )
+        except Exception:
+            pass
     actual = set(os.listdir(root))
-    unexpected = actual - expected_dirs - expected_hidden - expected_files
+    unexpected = (
+        actual - expected_dirs - expected_hidden - expected_files - extra
+    )
     ok = not unexpected
-    rep.record("P1", "H10", f"项目根有 {len(unexpected)} 个意外项: {sorted(unexpected)[:5]}", ok)
+    rep.record(
+        "P1", "H10", f"项目根有 {len(unexpected)} 个意外项: {sorted(unexpected)[:5]}", ok
+    )
 
 
 def check_chapter_meta_core(root: Path, chapter: int, rep: HygieneReport):
@@ -404,14 +487,26 @@ def check_foreshadowing_dedup(root: Path, chapter: int, rep: HygieneReport):
 
 
 def check_report_overall_score_count(root: Path, chapter: int, rep: HygieneReport):
-    """H11: 审查报告 overall_score 出现次数 <= 1"""
+    """H11: 审查报告 overall_score **key-value 形式** 出现次数 <= 1
+
+    Round 15.3 · 2026-04-23 · Ch6 RCA Bug #6 根治：
+    - 旧实现用 `t.count("overall_score")` 会把表头列名 / 描述性文字 / 命令示例全算上
+    - Ch6 报告里表格列名 `| 模型 | provider | routing | overall_score |` + 正文 `overall_score = 85`
+      误报 "2 次 > 1" P1 fail
+    - 新实现：只匹配真正的 key-value 形式（`overall_score: N` / `overall_score = N` / `"overall_score": N`）
+    - 这类形式才代表"作者真在声明一个分数值"，列名/描述文字不算
+    """
     matches = list(root.glob(f"审查报告/第{chapter:04d}章审查报告.md"))
     if not matches:
         return
     t = matches[0].read_text(encoding="utf-8")
-    cnt = t.count("overall_score")
+    # key-value 形式：overall_score 后紧跟 `:` 或 `=`（忽略引号/反引号/星号等 markdown 修饰）
+    # 覆盖：`overall_score: 85` / `overall_score = round(...) = 85` / `"overall_score": 85` / `**overall_score**: 85`
+    # 不覆盖（正确 reject）：表头列名 `| overall_score |` / 描述性 `overall_score 通过加权计算`
+    kv_pattern = re.compile(r'overall_score\s*["\*`]*\s*[:=]', re.IGNORECASE)
+    cnt = len(kv_pattern.findall(t))
     ok = cnt <= 1
-    rep.record("P1", "H11", f"overall_score 在报告中出现 {cnt} 次", ok)
+    rep.record("P1", "H11", f"overall_score key-value 在报告中出现 {cnt} 次", ok)
 
 
 def check_context_snapshot(root: Path, chapter: int, rep: HygieneReport):

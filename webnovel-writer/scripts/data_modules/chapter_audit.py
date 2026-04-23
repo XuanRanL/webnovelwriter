@@ -158,15 +158,26 @@ def normalize_checker_scores_keys(
             renamed.append(f"{src_key}→{canonical}")
     return normalized, renamed, invalid
 
-# 2026-04-16 Round 11 · openclawroot 9 新模型
-# Core 3 = 异构性覆盖（国产旗舰 + 西方快审 + 谷歌视角），必须成功
-# Supp 6 = 国产补充 + 推理深度，失败不阻塞
-EXTERNAL_MODELS_CORE3 = ["qwen3.6-plus", "gpt-5.4", "gemini-3.1-pro"]
-EXTERNAL_MODELS_ALL9 = [
-    "qwen3.6-plus", "gpt-5.4", "gemini-3.1-pro",
-    "doubao-pro", "glm-5", "glm-4.7",
-    "mimo-v2-pro", "minimax-m2.7-hs", "deepseek-v3.2-thinking",
+# 2026-04-23 Round 15.3 · Ch6 RCA · 核心 3 名单调整（根治 Bug #4 openclawroot DEV-4）
+# 问题：旧 core 3（qwen/gpt-5.4/gemini）全挂 openclawroot · Ch3-6 连续 4 章 outage
+# 根治：新 core 3 = 异构 provider（ark-coding + openclawroot + siliconflow），消除单 provider 依赖
+#   - qwen3.6-plus → openclawroot（Ch3-6 稳定率 100%）
+#   - doubao-pro → ark-coding（火山稳定 · 覆盖"国产旗舰"）
+#   - glm-5 → siliconflow（硅基流动稳定 · 覆盖"推理优秀"）
+# gpt-5.4 / gemini-3.1-pro 降为 supplemental · 仍跑 · 失败不阻塞
+EXTERNAL_MODELS_CORE3 = ["qwen3.6-plus", "doubao-pro", "glm-5"]
+EXTERNAL_MODELS_SUPPLEMENTAL = [
+    "gpt-5.4", "gemini-3.1-pro",  # Round 15.3 降级 · openclawroot 单 provider 脆弱
+    "doubao-seed-2.0-lite",
+    "glm-5.1", "glm-4.7",
+    "mimo-v2-pro",
+    "minimax-m2.7-hs", "minimax-m2.5",
+    "deepseek-v3.2-thinking",
+    "kimi-k2.5", "kimi-k2.6",
 ]
+EXTERNAL_MODELS_ALL = EXTERNAL_MODELS_CORE3 + EXTERNAL_MODELS_SUPPLEMENTAL
+# 向后兼容 alias（历史代码/外部引用）—— 指向同一 list，不复制
+EXTERNAL_MODELS_ALL9 = EXTERNAL_MODELS_ALL
 
 DATA_AGENT_STEPS_REQUIRED = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]  # K 为 best-effort
 EXTERNAL_REVIEW_EXPECTED_DIMENSIONS = 13  # Round 13 v2: 11 工艺维度 + naturalness + reader_critic
@@ -624,7 +635,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
     external_results = _load_external_review_results(project_root, chapter)
     if report is None and not external_results:
         return CheckResult(
-            id="A3", name="9 外部模型覆盖", layer="A",
+            id="A3", name="外部模型覆盖", layer="A",
             status="fail", severity="high",
             evidence="review report and external review JSON are both missing",
             remediation=["rerun Step 3.5 for all external models"],
@@ -686,7 +697,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
         if missing_core or invalid_core:
             details = {key: invalid_core[key] for key in sorted(invalid_core)}
             return CheckResult(
-                id="A3", name="9 外部模型覆盖", layer="A",
+                id="A3", name="外部模型覆盖", layer="A",
                 status="fail", severity="critical",
                 evidence=f"core external models missing or invalid: missing={missing_core}, invalid={details}",
                 measured=measured,
@@ -719,15 +730,15 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
             measured["lowest_model"] = min(model_scores, key=model_scores.get)
             measured["highest_model"] = max(model_scores, key=model_scores.get)
 
-        if len(valid_models) < len(EXTERNAL_MODELS_ALL9):
-            missing_models = [m for m in EXTERNAL_MODELS_ALL9 if m not in valid_models]
+        if len(valid_models) < len(EXTERNAL_MODELS_ALL):
+            missing_models = [m for m in EXTERNAL_MODELS_ALL if m not in valid_models]
             extra_issues = []
             if invalid_supplemental:
                 extra_issues.append(f"invalid_supplemental={sorted(invalid_supplemental)}")
             if spread_alert_note:
                 extra_issues.append(f"spread_alert={spread_alert_note}")
             return CheckResult(
-                id="A3", name="9 外部模型覆盖", layer="A",
+                id="A3", name="外部模型覆盖", layer="A",
                 status="warn", severity="high",
                 evidence="external review model coverage is incomplete: "
                 f"missing={missing_models}" + (f", {'; '.join(extra_issues)}" if extra_issues else ""),
@@ -737,25 +748,26 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
             )
         if spread_alert_note:
             return CheckResult(
-                id="A3", name="9 外部模型覆盖", layer="A",
+                id="A3", name="外部模型覆盖", layer="A",
                 status="warn", severity="medium",
                 evidence=f"{len(valid_models)} external review JSON files are valid; {spread_alert_note}",
                 measured=measured,
                 remediation=["人工复核最低分模型的 high/medium issues，确认是共识低还是观察视角差异"],
             )
         return CheckResult(
-            id="A3", name="9 外部模型覆盖", layer="A",
+            id="A3", name="外部模型覆盖", layer="A",
             status="pass", severity="high",
             evidence=f"{len(valid_models)} external review JSON files are valid",
             measured=measured,
         )
 
     text = _read_text(report) or ""
-    present = [m for m in EXTERNAL_MODELS_ALL9 if m in text.lower() or m in text]
+    present = [m for m in EXTERNAL_MODELS_ALL if m in text.lower() or m in text]
     core_present = [m for m in EXTERNAL_MODELS_CORE3 if m in text.lower() or m in text]
     phantom_hits = 0
+    # Round 14 · phantom-zero 零分模式匹配扩展（老 alias + 新 Round 14 模型）
     zero_pattern = re.compile(
-        r"(?:kimi|glm|qwen-plus|minimax|minimax-m2\.7|doubao|qwen|glm4|deepseek)[^\n]{0,40}[:：]\s*0(?:\.0+)?(?:\b|$)",
+        r"(?:kimi|kimi-k2\.[56]|glm|glm-5\.1|qwen-plus|qwen3\.6-plus|minimax|minimax-m2\.[57]|minimax-m2\.7-hs|doubao|doubao-seed-2\.0-(?:pro|lite)|doubao-pro|qwen|glm4|glm-4\.7|deepseek|deepseek-v3\.2(?:-thinking)?|gpt-5\.4|gemini-3\.1-pro|mimo-v2-pro)[^\n]{0,40}[:：]\s*0(?:\.0+)?(?:\b|$)",
         re.IGNORECASE,
     )
     for match in zero_pattern.finditer(text):
@@ -768,7 +780,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
     measured = {"core_present": core_present, "all_present": present, "phantom_zeros": phantom_hits}
     if len(core_present) < len(EXTERNAL_MODELS_CORE3):
         return CheckResult(
-            id="A3", name="9 外部模型覆盖", layer="A",
+            id="A3", name="外部模型覆盖", layer="A",
             status="fail", severity="critical",
             evidence="review report does not prove all core external models ran",
             measured=measured,
@@ -776,7 +788,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
         )
     if phantom_hits > 0:
         return CheckResult(
-            id="A3", name="9 外部模型覆盖", layer="A",
+            id="A3", name="外部模型覆盖", layer="A",
             status="fail", severity="critical",
             evidence="review report contains likely phantom zero scores",
             measured=measured,
@@ -784,14 +796,14 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
         )
     if len(present) < 3:
         return CheckResult(
-            id="A3", name="9 外部模型覆盖", layer="A",
+            id="A3", name="外部模型覆盖", layer="A",
             status="warn", severity="high",
             evidence="review report implies too few external model reviews",
             measured=measured,
             remediation=["persist external review JSON instead of relying on markdown only"],
         )
     return CheckResult(
-        id="A3", name="9 外部模型覆盖", layer="A",
+        id="A3", name="外部模型覆盖", layer="A",
         status="pass", severity="high",
         evidence="review report shows external review coverage, but JSON evidence is preferred",
         measured=measured,
