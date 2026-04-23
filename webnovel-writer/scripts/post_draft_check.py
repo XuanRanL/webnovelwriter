@@ -88,16 +88,135 @@ def find_chapter_file(project_root: Path, chapter: int) -> Path | None:
 
 
 def load_word_bounds(project_root: Path) -> tuple[int, int]:
+    """读 SSOT 字数区间 · 优先 word_count_policy.hard_min/max（Round 15.1）"""
     state_path = project_root / ".webnovel" / "state.json"
     try:
         d = json.loads(state_path.read_text(encoding="utf-8"))
         pi = d.get("project_info", {})
+        wcp = pi.get("word_count_policy") or {}
+        if wcp:
+            return (
+                int(wcp.get("hard_min", pi.get("average_words_per_chapter_min", 2200))),
+                int(wcp.get("hard_max", pi.get("average_words_per_chapter_max", 3500))),
+            )
         return (
             int(pi.get("average_words_per_chapter_min", 2200)),
             int(pi.get("average_words_per_chapter_max", 3500)),
         )
     except Exception:
         return (2200, 3500)
+
+
+# ---------------------------------------------------------------------------
+# Round 15.1 · 2026-04-22 · editor_notes 字数漂移检测
+# ---------------------------------------------------------------------------
+# 背景：2026-04-13 / 04-15 / 04-22 三次复现同一根因——audit-agent 在写
+# editor_notes/ch{N+1}_prep.md 时凭印象写字数区间（如 2800-3500），下章
+# context-agent 读 editor_notes 后直接把错误区间灌进执行包，writer
+# 基于错误区间 over-draft。SSOT 应唯一来源于 state.project_info.word_count_policy。
+#
+# 本检查扫描以下三个产物中的 "X-Y" 字数模式，任一与 SSOT 不一致 → warn：
+#   1. .webnovel/editor_notes/ch{NNNN}_prep.md
+#   2. .webnovel/context/ch{NNNN}_context.json  (context_contract.word_count_target)
+#   3. .webnovel/context/ch{NNNN}_context.md
+# ---------------------------------------------------------------------------
+WORD_COUNT_RANGE_RE = re.compile(
+    r"(?P<lo>\b[23]\d{3})\s*[-—–]\s*(?P<hi>\b[23]\d{3})\b"
+)
+
+
+def load_word_policy_subranges(project_root: Path) -> list[tuple[int, int]]:
+    """读 state.word_count_policy.chapter_type_guide 的合法子区间白名单"""
+    state_path = project_root / ".webnovel" / "state.json"
+    default = [(2200, 2800), (2600, 3200), (2800, 3400), (3000, 3500)]
+    try:
+        d = json.loads(state_path.read_text(encoding="utf-8"))
+        wcp = d.get("project_info", {}).get("word_count_policy", {})
+        guide = wcp.get("chapter_type_guide", {})
+        ranges: list[tuple[int, int]] = []
+        for v in guide.values():
+            m = WORD_COUNT_RANGE_RE.search(str(v))
+            if m:
+                ranges.append((int(m.group("lo")), int(m.group("hi"))))
+        return ranges or default
+    except Exception:
+        return default
+
+
+def check_editor_notes_word_drift(
+    project_root: Path, chapter: int, ssot_lo: int, ssot_hi: int
+) -> list[str]:
+    """扫描 editor_notes 和 context JSON/MD，检测字数区间漂移
+
+    判定规则（Round 15.1）：
+      a. 完整 SSOT 区间（2200-3500）：OK
+      b. chapter_type_guide 白名单子区间（过渡/推进/情感/战斗四档）：OK
+      c. 外溢 SSOT（如 2100-3500 / 2200-3600）：DRIFT · 外溢
+      d. 任意其他收紧（如 2800-3500 / 2400-3200 / 2700-3200）：DRIFT · 伪窄
+    """
+    warnings: list[str] = []
+    padded = f"{chapter:04d}"
+
+    candidates = [
+        project_root / ".webnovel" / "editor_notes" / f"ch{padded}_prep.md",
+        project_root / ".webnovel" / "context" / f"ch{padded}_context.json",
+        project_root / ".webnovel" / "context" / f"ch{padded}_context.md",
+    ]
+
+    whitelist = set(load_word_policy_subranges(project_root))
+    full_ssot = {(ssot_lo, ssot_hi)}
+    allowed = whitelist | full_ssot
+
+    for cand in candidates:
+        if not cand.exists():
+            continue
+        try:
+            text = cand.read_text(encoding="utf-8")
+        except Exception:
+            continue
+
+        for m in WORD_COUNT_RANGE_RE.finditer(text):
+            lo, hi = int(m.group("lo")), int(m.group("hi"))
+            ctx_start = max(0, m.start() - 30)
+            ctx_end = min(len(text), m.end() + 10)
+            ctx = text[ctx_start:ctx_end]
+            if not any(
+                k in ctx for k in ("字数", "word_count", "字符")
+            ):
+                continue
+            # 负样本豁免（Round 15.2 · 2026-04-23 修复）：
+            # 若区间出现在 forbidden / 禁止 / 不得 / 不能 / 不得自造 / forbidden_items
+            # / word_count_narrowing / disallowed / 负样本 等上下文内（前后 120 字节内），
+            # 说明是声明"禁区"而非"实际采用"——必须豁免，否则 context-agent 无法在
+            # forbidden 列表里反讽式列举伪窄区间（Ch5 ch0005_context.json L40/L655 案例）
+            neg_start = max(0, m.start() - 120)
+            neg_end = min(len(text), m.end() + 120)
+            neg_ctx = text[neg_start:neg_end]
+            _neg_markers = (
+                "forbidden", "禁止", "不得", "不能", "不得自造",
+                "word_count_narrowing", "disallowed", "负样本",
+                "自造字数区间", "伪窄", "forbidden_items",
+            )
+            if any(k in neg_ctx for k in _neg_markers):
+                continue
+            # a/b: 完整 SSOT 或白名单子区间
+            if (lo, hi) in allowed:
+                continue
+            # c: 外溢
+            if lo < ssot_lo or hi > ssot_hi:
+                warnings.append(
+                    f"[EDITOR_NOTES_WORD_DRIFT] {cand.name} 字数区间 "
+                    f"{lo}-{hi} 外溢 SSOT {ssot_lo}-{ssot_hi}（state.word_count_policy）"
+                )
+            # d: 伪收紧（在 SSOT 内但不在白名单）
+            else:
+                warnings.append(
+                    f"[EDITOR_NOTES_WORD_DRIFT] {cand.name} 字数区间 "
+                    f"{lo}-{hi} 是伪窄区间（SSOT={ssot_lo}-{ssot_hi}，合法子区间="
+                    f"{sorted(allowed)}）· context-agent 应以 SSOT 或正确 "
+                    f"chapter_type_guide 子区间覆盖"
+                )
+    return warnings
 
 
 def count_chinese_chars(text: str) -> int:
@@ -191,7 +310,7 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         if not re.search(pattern, text):
             errors.append(f"[REQUIRED_SEED] 缺失 /{pattern}/ — {note}")
 
-    # 7. 字数区间（从 state.json 读）
+    # 7. 字数区间（从 state.json 读 · Round 15.1 优先 word_count_policy.hard_min/max）
     lo, hi = load_word_bounds(project_root)
     wc = count_chinese_chars(text)
     if wc < lo:
@@ -200,6 +319,9 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         errors.append(f"[WORD_COUNT] {wc} > {hi}（state.json 设置 {lo}-{hi}）")
     else:
         warnings.append(f"[INFO] 字数 {wc} ∈ [{lo}, {hi}]")
+
+    # 8. Round 15.1 · editor_notes / context JSON 字数漂移检测（非阻断 · warn）
+    warnings.extend(check_editor_notes_word_drift(project_root, chapter, lo, hi))
 
     return errors, warnings
 
@@ -218,6 +340,11 @@ def main() -> int:
         help="项目根目录（默认从脚本位置推导，或当前目录）",
     )
     ap.add_argument("--strict", action="store_true", help="任何 warning 也 fail")
+    ap.add_argument(
+        "--no-auto-fix",
+        action="store_true",
+        help="禁用 ASCII 引号自动修复（默认启用 · Round 15.3 · 根治 Claude Code Write/Edit 转 ASCII 的 Bug #3）",
+    )
     args = ap.parse_args()
 
     # 项目根推导
@@ -240,6 +367,38 @@ def main() -> int:
     print(f" 起草后硬闸门 · post_draft_check · Ch{args.chapter}")
     print(f" 项目：{project_root.name}")
     print("=" * 60)
+
+    # Round 15.3 · 2026-04-23 · Ch6 RCA Bug #3 根治：
+    # Claude Code Write/Edit 工具把 U+201C/201D 转 ASCII，导致每章起草后都有 ASCII 引号。
+    # 这里在第一次 check 前自动跑 quote_pair_fix.py --ascii-to-curly，自动根治。
+    # 用户可用 --no-auto-fix 禁用。
+    if not args.no_auto_fix:
+        try:
+            import glob as _glob
+
+            chapter_padded = f"{args.chapter:04d}"
+            candidates = _glob.glob(str(project_root / "正文" / f"第{chapter_padded}章*.md"))
+            if candidates:
+                chapter_file = candidates[0]
+                text_before = Path(chapter_file).read_text(encoding="utf-8")
+                if chr(34) in text_before:
+                    # 调 quote_pair_fix 模块（内联 import）
+                    import importlib.util as _iu
+
+                    qp_path = Path(__file__).parent / "quote_pair_fix.py"
+                    if qp_path.exists():
+                        _spec = _iu.spec_from_file_location("quote_pair_fix", qp_path)
+                        _mod = _iu.module_from_spec(_spec)
+                        _spec.loader.exec_module(_mod)
+                        new_text, total, fixed = _mod.fix_text(text_before, ascii_to_curly=True)
+                        if new_text != text_before:
+                            Path(chapter_file).write_text(new_text, encoding="utf-8", newline="\n")
+                            print(
+                                f"  🔧 [auto-fix] ASCII 引号 → 弯引号："
+                                f"段 {total}, 修 {fixed}（写回 {Path(chapter_file).name}）"
+                            )
+        except Exception as _ex:
+            print(f"  ⚠️ auto-fix 内部异常（继续跑硬闸门）: {_ex}")
 
     errors, warnings = check(project_root, args.chapter)
 

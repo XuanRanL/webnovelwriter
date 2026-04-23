@@ -4,10 +4,15 @@ Supports two modes:
   - legacy: single prompt, 4-dimension combined review (backward compatible)
   - dimensions: 11 separate dimension prompts (incl. reader_flow), concurrent API calls
 
-Architecture (2026-04-16 Round 11):
-  - 2 providers: openclawroot (primary, all 9 models) + siliconflow (fallback, partial)
-  - 9 models × 13 dimensions = 117 independent rater scores (consensus mechanism · Round 13 v2)
+Architecture (2026-04-22 Round 14):
+  - 3 providers: openclawroot + ark-coding (火山方舟 Coding Plan) + siliconflow (fallback)
+  - 14 models × 13 dimensions = 182 independent rater scores (consensus mechanism · Round 14)
   - 每个模型都跑全 13 维度（无分工）；role 字段已删除以消除"分工"误解
+  - Round 14 相比 Round 11 的变化：
+    * 并入火山方舟 Coding Plan（OpenAI 兼容 endpoint），新增 ark-coding provider
+    * 新增 5 模型：doubao-seed-2.0-lite / glm-5.1 / minimax-m2.5 / kimi-k2.5 / kimi-k2.6
+    * 有重复的改用火山：doubao-pro 和 deepseek-v3.2-thinking 主 provider 切至 ark-coding
+    * 火山所有模型用原生 thinking={"type":"enabled"}；max_tokens 按上限（32768 / 65536）
   - 13 维度 = 11 工艺维度 + naturalness（汉语母语自然度）+ reader_critic（读者锐评）
   - tier 字段仅用于早停机制（core 必须成功，supplemental 失败不阻塞）
   - Heterogeneous coverage: 国产 (Doubao/GLM×2/Qwen/MiMo/MiniMax/DeepSeek) × 异构 (GPT/Gemini)
@@ -37,7 +42,14 @@ PROVIDERS = {
     "openclawroot": {
         "base_url": "https://openclawroot.com/v1/chat/completions",
         "env_key_names": ["OPENCLAWROOT_API_KEY"],
-        "rpm": 30,  # 实测 9 模型并发稳定；保守起步，观察后可调高
+        "rpm": 30,  # 实测 9+ 模型并发稳定；保守起步，观察后可调高
+    },
+    # Round 14 · 火山方舟 Coding Plan (OpenAI 兼容 · 7 模型原生 thinking)
+    # 实测并发 7 路稳定，speedup≈4.5x；payload 用火山原生 thinking={"type":"enabled"}
+    "ark-coding": {
+        "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+        "env_key_names": ["ARK_CODING_API_KEY", "ARK_API_KEY"],
+        "rpm": 30,
     },
     "siliconflow": {
         "base_url": "https://api.siliconflow.cn/v1/chat/completions",
@@ -104,14 +116,28 @@ class ProviderRateLimiter:
 
 # Reasoning models: 需要更大 max_tokens 容纳 reasoning_content
 # 且解析时若 content 为空，fallback 读 reasoning_content 的最后段作为 answer
-REASONING_MODELS = {"mimo-v2-pro", "minimax-m2.7-hs", "deepseek-v3.2-thinking"}
+REASONING_MODELS = {
+    "mimo-v2-pro", "minimax-m2.7-hs", "deepseek-v3.2-thinking",
+    # Round 14 · 火山方舟 coding 家族（全 thinking）
+    "doubao-seed-2.0-lite", "minimax-m2.5", "glm-5.1",
+    "kimi-k2.5", "kimi-k2.6",
+}
 
-# 9 模型 × 2 供应商（openclawroot 首位 + siliconflow 备用）
-# 每个模型跑全 13 维度（共识机制：9×13 = 117 份独立评分 · Round 13 v2）
+# Round 14 · 14 模型 × 3 供应商（openclawroot + ark-coding + siliconflow）
+# 用户方针：有重复则优先用火山方舟 Coding Plan，所有模型 thinking 全开，max_tokens 拉满上限
+# 每个模型跑全 13 维度（共识机制：14×13 = 182 份独立评分）
 # tier 仅用于早停机制（core 必须成功；supplemental 失败不阻塞）
-# role 字段已删除（2026-04-16 Round 11）—— 每个模型都是全维度 rater，没有分工
+#
+# provider entry 字段说明：
+#   provider: provider key（PROVIDERS 字典）
+#   id:       请求时的 model 名（发到 API 的 model 字段）
+#   name:     人类可读的模型标签（日志/报告用）
+#   max_tokens: 该 provider 下的 max_tokens 上限（可选，默认继承 model.max_tokens_default
+#               或全局 65536）。火山 coding 的 deepseek-v3.2 / kimi-k2.5 上限是 32768。
 MODELS = {
-    # Core 3：异构性覆盖（国产旗舰 + 西方快审 + 谷歌视角）
+    # ─── Core 3：异构性覆盖（国产旗舰 + 西方快审 + 谷歌视角） ───
+    # Round 15.3 · 2026-04-23 · Ch6 RCA 根治 Bug #4 openclawroot DEV-4：
+    # 新 core 3 异构 provider（ark-coding + openclawroot + siliconflow），彻底消除单 provider 依赖
     "qwen3.6-plus": {
         "tier": "core",
         "providers": [
@@ -119,33 +145,55 @@ MODELS = {
         ],
         "timeout": 300,
     },
+    "doubao-pro": {
+        "tier": "core",  # Round 15.3 · 提升为 core（覆盖国产旗舰 + ark-coding provider）
+        "providers": [
+            {"provider": "ark-coding", "id": "doubao-seed-2.0-pro", "name": "Doubao-Seed-2.0-pro-Ark", "max_tokens": 65536},
+            {"provider": "openclawroot", "id": "Doubao-Seed-2.0-pro", "name": "Doubao-Seed-2.0-pro"},
+        ],
+        "timeout": 300,
+    },
+    # glm-5 也提升为 core 3（覆盖 siliconflow provider · Ch3-6 稳定率 100%）· 见下面 glm-5 条目
+    # ─── 降级为 supplemental（2026-04-23 Round 15.3 · Ch6 RCA · openclawroot DEV-4 根治）：
+    # gpt-5.4 / gemini-3.1-pro 只挂 openclawroot · Ch3-6 连 4 章 outage · 从 core 降 supp · 仍跑但不 block
     "gpt-5.4": {
-        "tier": "core",
+        "tier": "supplemental",
         "providers": [
             {"provider": "openclawroot", "id": "gpt-5.4", "name": "GPT-5.4"},
         ],
         "timeout": 180,
     },
     "gemini-3.1-pro": {
-        "tier": "core",
+        "tier": "supplemental",
         "providers": [
             {"provider": "openclawroot", "id": "gemini-3.1-pro-high", "name": "Gemini-3.1-Pro-High"},
         ],
         "timeout": 300,
     },
-    # Supplemental 6：国产补充 + 推理深度
-    "doubao-pro": {
+    # ─── Supplemental 11：国产补充 + 推理深度（火山 coding 优先） ───
+    # Round 14 新增：豆包 seed 2.0 lite（火山独家、低价位、thinking 开）
+    "doubao-seed-2.0-lite": {
         "tier": "supplemental",
         "providers": [
-            {"provider": "openclawroot", "id": "Doubao-Seed-2.0-pro", "name": "Doubao-Seed-2.0-pro"},
+            {"provider": "ark-coding", "id": "doubao-seed-2.0-lite", "name": "Doubao-Seed-2.0-lite", "max_tokens": 65536},
         ],
         "timeout": 300,
     },
     "glm-5": {
+        # Round 15.3 · 2026-04-23 · 提升为 core（覆盖 siliconflow provider · Ch3-6 稳定率 100%）
+        # 把 siliconflow 放 primary（更稳），openclawroot 作为 fallback
+        "tier": "core",
+        "providers": [
+            {"provider": "siliconflow", "id": "Pro/zai-org/GLM-5", "name": "GLM-5-SF"},
+            {"provider": "openclawroot", "id": "GLM-5", "name": "GLM-5"},
+        ],
+        "timeout": 300,
+    },
+    # Round 14 新增：glm-5.1（火山独家，v5.1 增量版本）
+    "glm-5.1": {
         "tier": "supplemental",
         "providers": [
-            {"provider": "openclawroot", "id": "GLM-5", "name": "GLM-5"},
-            {"provider": "siliconflow", "id": "Pro/zai-org/GLM-5", "name": "GLM-5-SF"},
+            {"provider": "ark-coding", "id": "glm-5.1", "name": "GLM-5.1-Ark", "max_tokens": 65536},
         ],
         "timeout": 300,
     },
@@ -171,11 +219,37 @@ MODELS = {
         ],
         "timeout": 300,
     },
+    # Round 14 新增：minimax m2.5（火山独家，M2.5 原生 thinking，并发最快 3s）
+    "minimax-m2.5": {
+        "tier": "supplemental",
+        "providers": [
+            {"provider": "ark-coding", "id": "minimax-m2.5", "name": "MiniMax-M2.5-Ark", "max_tokens": 65536},
+        ],
+        "timeout": 300,
+    },
+    # Round 14：deepseek 主 provider 切到 ark-coding（火山 max_tokens 上限 32768）
     "deepseek-v3.2-thinking": {
         "tier": "supplemental",
         "providers": [
+            {"provider": "ark-coding", "id": "deepseek-v3.2", "name": "DeepSeek-V3.2-Ark", "max_tokens": 32768},
             {"provider": "openclawroot", "id": "DeepSeek-V3.2-Thinking", "name": "DeepSeek-V3.2-Thinking"},
             {"provider": "siliconflow", "id": "Pro/deepseek-ai/DeepSeek-V3.2", "name": "DeepSeek-V3.2-SF"},
+        ],
+        "timeout": 300,
+    },
+    # Round 14 新增：kimi k2.5（火山独家，Moonshot thinking 默认开，max_tokens 32768）
+    "kimi-k2.5": {
+        "tier": "supplemental",
+        "providers": [
+            {"provider": "ark-coding", "id": "kimi-k2.5", "name": "Kimi-K2.5-Ark", "max_tokens": 32768},
+        ],
+        "timeout": 300,
+    },
+    # Round 14 新增：kimi k2.6（火山独家，Moonshot 旗舰 thinking，max_tokens 65536）
+    "kimi-k2.6": {
+        "tier": "supplemental",
+        "providers": [
+            {"provider": "ark-coding", "id": "kimi-k2.6", "name": "Kimi-K2.6-Ark", "max_tokens": 65536},
         ],
         "timeout": 300,
     },
@@ -184,16 +258,21 @@ MODELS = {
 # Backward-compatible aliases for legacy --model-key usage
 # 老代码/老 state.json 可能用老名字，映射到新名字
 MODEL_ALIASES = {
-    # Round 10- 老名字 → Round 11+ 新名字
-    "qwen-plus": "qwen3.6-plus",   # qwen-plus (Qwen3.5) → qwen3.6-plus (Qwen3.6)
-    "qwen": "qwen3.6-plus",         # 合并同家族
-    "kimi": "gpt-5.4",               # kimi 退役（openclawroot 无稳定 kimi），用 gpt-5.4 占位为"快审 core"
-    "glm": "glm-5",                  # glm 泛指 → glm-5
+    # Round 10- 老名字 → Round 11+/14+ 新名字
+    "qwen-plus": "qwen3.6-plus",
+    "qwen": "qwen3.6-plus",
+    # Round 14：kimi 重新启用（火山 coding 接入），别名指向 k2.6（旗舰）
+    "kimi": "kimi-k2.6",
+    "kimi-k2": "kimi-k2.6",
+    "glm": "glm-5",
     "glm4": "glm-4.7",
+    "glm5": "glm-5",
     "minimax": "minimax-m2.7-hs",
     "minimax-m2.7": "minimax-m2.7-hs",
     "deepseek": "deepseek-v3.2-thinking",
+    "deepseek-v3.2": "deepseek-v3.2-thinking",  # 短名映射到带 -thinking 的 key
     "doubao": "doubao-pro",
+    "doubao-lite": "doubao-seed-2.0-lite",
 }
 
 DIMENSIONS = {
@@ -572,10 +651,13 @@ def verify_routing(model_key, provider_name, response_model, requested_model_id=
     return True, "blacklist_only"
 
 
-def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max_retries=2, provider_name=None):
+def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max_retries=2,
+             provider_name=None, max_tokens=65536):
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    # 2026-04-16 Round 11：所有模型 max_tokens=65536（模型最大）+ 全面 high thinking
-    # openclawroot 统一 endpoint 会按模型厂家转发，未知参数被 ignore 不会 400
+    # Round 14：thinking / max_tokens 由 provider 决定
+    # - ark-coding（火山方舟 Coding Plan）使用火山原生 thinking={"type":"enabled"}，
+    #   max_tokens 由 provider entry 指定（deepseek-v3.2 & kimi-k2.5 上限 32768，其他 65536）
+    # - openclawroot/siliconflow 沿用原策略：按模型厂家家族设置 thinking 开关
     payload = {
         "model": model_id,
         "messages": [
@@ -583,24 +665,29 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
             {"role": "user", "content": user_msg},
         ],
         "temperature": 0.3,
-        "max_tokens": 65536,
+        "max_tokens": int(max_tokens),
     }
     model_lower = model_id.lower()
-    # OpenAI 系（gpt-5.4）用 reasoning_effort
-    if "gpt-" in model_lower:
-        payload["reasoning_effort"] = "high"
-    # Gemini 系 · thinking budget
-    if "gemini" in model_lower:
-        payload["thinking_budget"] = 16384
-    # Qwen/DeepSeek/Doubao/GLM 系 · enable_thinking 激活推理
-    if any(t in model_lower for t in ("qwen", "deepseek", "doubao", "glm", "mimo")):
-        payload["enable_thinking"] = True
-    # MiniMax / MiMo 推理类 · 明确开 thinking
-    if any(t in model_lower for t in ("minimax", "mimo")):
-        payload["enable_thinking"] = True
-    # Anthropic 风格（claude-opus 等）· thinking budget_tokens
-    if "claude" in model_lower:
-        payload["thinking"] = {"type": "enabled", "budget_tokens": 16384}
+
+    if provider_name == "ark-coding":
+        # 火山方舟 coding 原生 thinking 参数（实测 7 模型全部识别；未知参数会 400）
+        payload["thinking"] = {"type": "enabled"}
+    else:
+        # OpenAI 系（gpt-5.4）用 reasoning_effort
+        if "gpt-" in model_lower:
+            payload["reasoning_effort"] = "high"
+        # Gemini 系 · thinking budget
+        if "gemini" in model_lower:
+            payload["thinking_budget"] = 16384
+        # Qwen/DeepSeek/Doubao/GLM 系 · enable_thinking 激活推理
+        if any(t in model_lower for t in ("qwen", "deepseek", "doubao", "glm", "mimo")):
+            payload["enable_thinking"] = True
+        # MiniMax / MiMo 推理类 · 明确开 thinking
+        if any(t in model_lower for t in ("minimax", "mimo")):
+            payload["enable_thinking"] = True
+        # Anthropic 风格（claude-opus 等）· thinking budget_tokens
+        if "claude" in model_lower:
+            payload["thinking"] = {"type": "enabled", "budget_tokens": 16384}
     # 整个重试链只占一个 limiter slot（acquire 一次，return/fail 后 release 一次）
     limiter = ProviderRateLimiter.get(provider_name) if provider_name else None
     provider_chain = []
@@ -752,13 +839,23 @@ def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, 
             continue
 
         base_url = PROVIDERS[provider_name]["base_url"]
-        # healwrap: 2 retries (3 total attempts); codexcc/siliconflow: 0 retries (1 attempt, fail-fast)
-        max_retries = 2 if provider_name in ("healwrap", "nextapi") else 0
+        # Round 14 · 重试策略：ark-coding/healwrap/nextapi 给 2 次重试（含首跑偶发 400），
+        # openclawroot/siliconflow 保持原有行为（0 次，fail-fast 后切下一 provider）
+        # Round 15.2 (2026-04-23) · DEV-3 根治：core tier 模型（gpt-5.4/gemini-3.1-pro/
+        # qwen3.6-plus）若 provider=openclawroot 单路径，给 2 次重试以对抗 503/524 偶发
+        # 故障。连续 3 章 (Ch3-5) openclawroot outage 全部是一次性 503/524，第一次请求
+        # 就扔 http_5xx，fail-fast=0 重试意味着 1 次失败=整个维度挂。Round 15.2 给它们
+        # 重试机会，预期能把 core 3 失败率从 67%（Ch5 case）显著降低。
+        max_retries = 2 if provider_name in ("healwrap", "nextapi", "ark-coding") else 0
+        if provider_name == "openclawroot" and model_config.get("tier") == "core":
+            max_retries = 2
+        # Round 14 · max_tokens 优先从 provider 读（火山 coding 的 deepseek/kimi-k2.5 限 32768）
+        provider_max_tokens = provider_cfg.get("max_tokens", 65536)
 
         raw, error, model_actual, usage, attempts = call_api(
             base_url, api_keys[provider_name], provider_cfg["id"],
             system_msg, user_msg, timeout, max_retries=max_retries,
-            provider_name=provider_name
+            provider_name=provider_name, max_tokens=provider_max_tokens,
         )
 
         for a in attempts:
@@ -1531,12 +1628,58 @@ def _run_single_model(args, api_keys):
         "summary": f"{resolved_key} {len(DIMENSIONS)}维度审查完成，{len(valid_scores)}/{len(DIMENSIONS)}成功，综合{overall}分，{len(all_issues)}个问题",
     }
 
-    # Save
+    # Save · Round 15.3 · 2026-04-23 · Ch6 RCA Bug #5 根治：merge-partial
+    # 问题：rerun 某个模型会覆盖 tmp/external_review_{model}_ch{NNNN}.json · 把之前 1/13 ok
+    #       的维度数据覆盖为本次 0/13 失败。丢失已有成功数据。
+    # 修复：写入前先读已有文件 · 如果已有 ok dimension 且本次相同 dimension 失败 · 保留已有
     out_path = project_root / ".webnovel" / "tmp" / f"external_review_{resolved_key}_ch{chapter_num:04d}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+    merged_output = output
+    if out_path.exists() and not getattr(args, "no_merge_partial", False):
+        try:
+            existing = json.loads(out_path.read_text(encoding="utf-8"))
+            existing_dims = {d.get("dimension"): d for d in existing.get("dimension_reports", []) if isinstance(d, dict)}
+            merged_dims = []
+            for new_dim in output.get("dimension_reports", []):
+                dname = new_dim.get("dimension")
+                existing_dim = existing_dims.get(dname)
+                new_ok = new_dim.get("status") == "ok"
+                existing_ok = existing_dim and existing_dim.get("status") == "ok"
+                if not new_ok and existing_ok:
+                    # 本次失败但旧数据成功 · 保留旧数据 + 标记 merge
+                    merged = dict(existing_dim)
+                    merged["_merged_from"] = "previous_run"
+                    merged_dims.append(merged)
+                else:
+                    merged_dims.append(new_dim)
+            merged_output = dict(output)
+            merged_output["dimension_reports"] = merged_dims
+            # 重算 metrics 和 overall
+            ok_dims = [d for d in merged_dims if d.get("status") == "ok"]
+            merged_scores = [d["score"] for d in ok_dims if isinstance(d.get("score"), (int, float))]
+            if merged_scores:
+                merged_output["overall_score"] = round(sum(merged_scores) / len(merged_scores), 1)
+                merged_output["pass"] = merged_output["overall_score"] >= 75
+            merged_output["metrics"] = {
+                "dimensions_ok": len(ok_dims),
+                "dimensions_failed": sum(1 for d in merged_dims if d.get("status") == "failed"),
+                "dimensions_skipped": sum(1 for d in merged_dims if d.get("status") == "skipped"),
+                "total_issues": merged_output["metrics"].get("total_issues", 0),
+                "merged_partial": True,
+                "preserved_from_previous": sum(1 for d in merged_dims if d.get("_merged_from") == "previous_run"),
+            }
+            if merged_output["metrics"]["preserved_from_previous"] > 0:
+                print(
+                    f"[merge-partial] 保留上次成功的 {merged_output['metrics']['preserved_from_previous']} 个维度数据",
+                    file=sys.stderr,
+                )
+        except Exception as _ex:
+            print(f"[merge-partial] 合并失败退化为覆盖: {_ex}", file=sys.stderr)
+            merged_output = output
 
-    print(json.dumps(output, ensure_ascii=False))
+    out_path.write_text(json.dumps(merged_output, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    print(json.dumps(merged_output, ensure_ascii=False))
 
 
 def run_legacy_mode(args, api_keys):
@@ -1584,17 +1727,34 @@ def main():
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--chapter", required=True, type=int)
     parser.add_argument("--mode", default="legacy", choices=["legacy", "dimensions"])
-    parser.add_argument("--model-key", default="qwen-plus", help="For dimensions mode: qwen-plus/kimi/glm/qwen/deepseek/minimax/doubao/glm4/minimax-m2.7 or 'all' for all 9 models")
-    parser.add_argument("--models", default="qwen-plus,kimi,glm", help="For legacy mode: comma-separated")
+    parser.add_argument(
+        "--model-key", default="qwen3.6-plus",
+        help=(
+            "For dimensions mode: any of the 14 model keys (qwen3.6-plus/gpt-5.4/"
+            "gemini-3.1-pro/doubao-pro/doubao-seed-2.0-lite/glm-5/glm-5.1/glm-4.7/"
+            "mimo-v2-pro/minimax-m2.7-hs/minimax-m2.5/deepseek-v3.2-thinking/"
+            "kimi-k2.5/kimi-k2.6) or legacy aliases (qwen-plus/kimi/glm/...) or "
+            "'all' to run all 14 models"
+        ),
+    )
+    parser.add_argument("--models", default="qwen3.6-plus,kimi-k2.6,glm-5", help="For legacy mode: comma-separated")
     parser.add_argument("--max-concurrent", type=int, default=DEFAULT_MAX_CONCURRENT,
                         help=f"Max parallel dimension calls per model (default: {DEFAULT_MAX_CONCURRENT})")
     parser.add_argument("--rpm-override", type=int, default=None,
-                        help="Override healwrap RPM limit (default: use provider config)")
+                        help="Override provider RPM limit (default: use provider config)")
+    parser.add_argument("--rpm-override-provider", default="ark-coding",
+                        choices=list(PROVIDERS.keys()) + ["healwrap", "nextapi"],
+                        help="Which provider --rpm-override applies to (default: ark-coding)")
+    parser.add_argument(
+        "--no-merge-partial",
+        action="store_true",
+        help="禁用 Round 15.3 的 rerun merge-partial 合并（默认启用 · 根治 Bug #5 rerun 覆盖 ok 维度）",
+    )
     args = parser.parse_args()
 
     # Apply RPM override if specified
     if args.rpm_override:
-        ProviderRateLimiter.get("healwrap", rpm=args.rpm_override)
+        ProviderRateLimiter.get(args.rpm_override_provider, rpm=args.rpm_override)
 
     api_keys = load_api_keys()
     if not api_keys:

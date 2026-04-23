@@ -9,7 +9,19 @@ allowed-tools: Read Write Edit Grep Bash Task
 ## 目标
 
 - 以稳定流程产出可发布章节：优先使用 `正文/第{NNNN}章-{title_safe}.md`，无标题时回退 `正文/第{NNNN}章.md`。
-- 默认章节字数目标：2200-3500（用户或大纲明确覆盖时从其约定）。
+- 默认章节字数目标：**弹性区间 2200-3500**（SSOT = `state.project_info.word_count_policy` · 根据章节类型在 chapter_type_guide 里选）。
+
+  **字数弹性模型（Round 15.1 · 2026-04-22 根治三次漂移复现）**：
+  - **SSOT 字段**：`state.project_info.word_count_policy.hard_min` / `hard_max`（默认 2200/3500）
+  - **弹性准则**：根据章节类型在硬区间内自由浮动（约 ±400）· `average_words_per_chapter_target=3000` 只是项目级软目标**参考**，**不是**单章硬下限
+  - **chapter_type_guide 推荐区间**：
+    - 过渡章/铺垫章：2200-2800
+    - 推进章/日常章：2600-3200（默认）
+    - 情感章/揭秘章：2800-3400
+    - 战斗章/高潮章/卷末章：3000-3500（大纲/用户明确可破上限）
+  - **禁止伪造区间**：禁止在 editor_notes / context JSON / 审查报告写 2800-3500 / 2700-3200 / 2400-3200 等自造区间（硬 min/max 之外的数字）· 禁止引用不存在的 state 字段名（如 `target_words_per_chapter_target`）
+  - **冲突解决**：editor_notes（audit-agent 写）与 state.json SSOT 冲突时**以 state.json 为准**，context-agent 静默覆盖并在执行包 `warnings[]` 追加 `EDITOR_NOTES_WORD_COUNT_DRIFT`
+  - **硬闸门**：post_draft_check.py 第 8 项 warn 扫描 editor_notes/context 字数漂移；audit-agent.md §8 block 凭印象自造区间
 - 保证审查、润色、数据回写完整闭环，避免“写完即丢上下文”。
 - 输出直接可被后续章节消费的结构化数据：`review_metrics`、`summaries`、`chapter_meta`。
 
@@ -53,7 +65,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 1. Step 3 的内部 checker 全部返回并汇总出 overall_score。**术语固定**（见 `feedback_checker_count_13`）：`checker` = 跑的 subagent 数量 = 评分维度数量（**Round 13 v2 取消 veto 架构**，全部 checker 平等参与评分）。标准/`--fast` = **13 checker / 13 评分维度**（2 读者视角维度：naturalness + reader-critic，11 工艺维度含 flow-checker）。`--minimal` = **5 checker**（naturalness + reader-critic + consistency + continuity + ooc）。`overall_score = avg(所有评分维度)`。**两个读者视角 checker 不 block 流程**，其 problems 和其他 checker 同等进入 Step 4 定向修复。极端情况（Step 4 修复后 critical 仍未消除）才回 Step 2A 重写。
 2. Step 3.5 的 9 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充6模型失败不阻塞），每模型审查 **13 个维度**（11 工艺维度 + naturalness_dim + reader_critic_dim，Round 13 v2 新增后 2 个，让外部模型也做读者视角评估）（`--minimal` 模式跳过此条件）
 3. 所有 critical 问题已修复，high 问题已修复或有 deviation 记录
-4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 9 模型×13 维度评分矩阵；`--minimal` 模式仅含内部 5 评分维度分数）
+4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 14 模型×13 维度评分矩阵（Round 14+）；`--minimal` 模式仅含内部 5 评分维度分数）
 5. Step 4 的 `anti_ai_force_check=pass`
 6. Step 5 Data Agent 已完成
 7. Step 6 Audit Gate 决议 ∈ {approve, approve_with_warnings}（block 禁止进入 Step 7）
@@ -92,7 +104,7 @@ git log --oneline -1 | grep "第${chapter_num}章"
   - 用途：Step 3 审查调用模板、汇总格式、落库 JSON 规范。
   - 触发：Step 3 必读。
 - `references/step-3.5-external-review.md`
-  - 用途：Step 3.5 外部模型审查完整规范（9模型架构/供应商fallback链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
+  - 用途：Step 3.5 外部模型审查完整规范（14模型架构/供应商 fallback 链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
   - 触发：Step 3.5 必读。
 - `references/step-5-debt-switch.md`
   - 用途：Step 5 债务利息开关规则（默认关闭）。
@@ -173,9 +185,29 @@ git log --oneline -1 | grep "第${chapter_num}章"
 
 环境设置（bash 命令执行前）：
 ```bash
+# Round 15.2 (2026-04-23)：CLAUDE_PLUGIN_ROOT 在某些 shell（如 Git Bash）不会被自动 export。
+# AI 应先用下面这段自动推导 fallback 代替 `:?CLAUDE_PLUGIN_ROOT is required` 硬失败。
+# 根因：Ch5 Step 0 preflight 在 bash 里直接报 "CLAUDE_PLUGIN_ROOT: CLAUDE_PLUGIN_ROOT is required"，
+#      AI 需要手工 export 才能继续。Round 15.2 加入这套 fallback 解析后，Ch6+ 可免手工导出。
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  # 从 PATH 里的 plugin bin 目录反推（claude-code 启动时会把 {PLUGIN_ROOT}/bin 加到 PATH）
+  _pg=$(echo "$PATH" | tr ':' '\n' | grep -i "plugins/cache/webnovel-writer.*/bin$" | head -1)
+  if [ -n "$_pg" ]; then export CLAUDE_PLUGIN_ROOT="${_pg%/bin}"; fi
+  # 如果上面没找到，再用常见位置兜底（按优先级）
+  for _cand in \
+    "$HOME/.claude/plugins/cache/webnovel-writer-marketplace/webnovel-writer/5.6.0" \
+    "C:/Users/$USERNAME/.claude/plugins/cache/webnovel-writer-marketplace/webnovel-writer/5.6.0"; do
+    [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "$_cand/scripts" ] && export CLAUDE_PLUGIN_ROOT="$_cand"
+  done
+fi
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  echo "ERROR: CLAUDE_PLUGIN_ROOT 未能自动推导，请手动 export 后重试" >&2
+  exit 1
+fi
+
 export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts"
-export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/skills/webnovel-write"
+export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
+export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write"
 
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" preflight
 export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
@@ -305,7 +337,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 | Step 2A | `word_count` | 正文字数（整数，>0） |
 | Step 2B | `style_applied` / `deviation_notes` | 正常执行填 `style_applied: true`；跳过则填 `deviation_notes: "..."` |
 | Step 3 | `overall_score` / `checker_count` / `internal_avg` / `review_score` / `naturalness_verdict` / `naturalness_score` / `reader_critic_verdict` / `reader_critic_score` | 内部 13 checker = 13 评分维度（Batch 0 的 2 个读者视角维度：naturalness + reader-critic；Batch 1 的 6 含 flow-checker；Batch 2 的 5）；`overall_score = avg(13 维度)`。**Round 13 v2 取消 veto 架构**：两个读者视角 checker 输出 score + problems 与其他 checker 同等进入 Step 4 修复，不 block 流程。`naturalness_verdict ∈ {PASS, POLISH_NEEDED, REWRITE_RECOMMENDED, REJECT_HIGH, REJECT_CRITICAL}` / `reader_critic_verdict ∈ {yes, hesitant, no}` 作为严重度信号记录（不 block） |
-| Step 3.5 | `external_avg` / `models_ok` / `external_models_ok` | 外部 9 模型均分 + 成功模型列表 |
+| Step 3.5 | `external_avg` / `models_ok` / `external_models_ok` | 外部多模型均分（Round 14 = 14 模型） + 成功模型列表 |
 | Step 4 | `anti_ai_force_check` / `polish_report` / `fixes` | `pass`/`fail`, 润色报告路径, 修复项列表 |
 | Step 5 | `state_modified` / `entities` / `foreshadowing` / `scene_count` / `chapter_meta_fields` | data-agent 写库确认 + 实体/伏笔/场景计数 |
 | Step 6 | `decision` / `audit_report` / `audit_decision` | `approve` / `approve_with_warnings` / `block` |
@@ -486,7 +518,7 @@ python -X utf8 "${SCRIPTS_DIR}/post_draft_check.py" ${chapter_num} --project-roo
 6. 必须伏笔种子（如 Ch1 系统首发必含"你不是第一个"/"#4732"等精确短语）
 7. 字数在 state.json 的 `average_words_per_chapter_min/max` 区间内
 
-exit=0 才能进入 Step 2B。**禁止带任何 hard fail 进入 Step 3**——审查子代理的 10 内部 + 9 外部算力不应被机械问题浪费。
+exit=0 才能进入 Step 2B。**禁止带任何 hard fail 进入 Step 3**——审查子代理的 13 内部 + 14 外部算力不应被机械问题浪费。
 
 输出：
 - 章节草稿（可进入 Step 2B 或 Step 3）。
@@ -585,13 +617,13 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 ```
 
 硬要求：
-- **必须使用 `--model-key all` 一次性执行全部 9 模型**，禁止手动逐个调用（防止遗漏模型）。
+- **必须使用 `--model-key all` 一次性执行全部 14 模型（Round 14+）**，禁止手动逐个调用（防止遗漏模型）。
 - 核心3模型必须全部成功，补充6模型失败不阻塞。
 - 按 reference 文件中的 Prompt 模板构建 system 消息。
 - 每次 API 调用后验证路由（检查 response.model 字段）。
-- 核心模型四级 fallback 链：nextapi(2次) → healwrap(2次) → codexcc(1次) → 硅基流动(兜底)。
+- Round 14+ 3-tier fallback 链：ark-coding（火山，主 · 重试 2 次）/ openclawroot（主 · fail-fast）→ siliconflow（兜底，仅 glm-5/glm-4.7/deepseek 备用）。
 - 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
-- 生成审查报告必须包含 9 模型 × 13 维度（含 reader_flow + naturalness + reader_critic · Round 13 v2）评分矩阵 + 共识问题 + Step 4 修复清单。
+- 生成审查报告必须包含 14 模型 × 13 维度（Round 14+）（含 reader_flow + naturalness + reader_critic · Round 13 v2）评分矩阵 + 共识问题 + Step 4 修复清单。
 
 **上下文文件准备（调用脚本前必须完成）**：
 
@@ -611,7 +643,7 @@ python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
 - 状态：protagonist_state（来自 state.json）
 - 前章：前 N-1 章正文（最多 15000 字）
 
-若脚本失败，手动从设定集文件读取并用 `Write` 工具写入 JSON。**禁止跳过此步骤直接调用 external_review.py**。**禁止回退到旧的 9 字段内联脚本，否则外部 9 个模型将盲评无法看到作者要求的克制风格、情感蓝图、典故伏笔等关键信息。**
+若脚本失败，手动从设定集文件读取并用 `Write` 工具写入 JSON。**禁止跳过此步骤直接调用 external_review.py**。**禁止回退到旧的 9 字段内联脚本，否则外部 14 个模型将盲评无法看到作者要求的克制风格、情感蓝图、典故伏笔等关键信息。**
 
 调用命令：
 ```bash
@@ -625,7 +657,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 
 输出：
 - 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共9个文件）
-- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 9 模型 × 13 维度矩阵，包括 reader_flow + naturalness + reader_critic · Round 13 v2）
+- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 14 模型 × 13 维度矩阵（Round 14+），包括 reader_flow + naturalness + reader_critic · Round 13 v2）
 
 ### Step 3+3.5 完成闸门（进入 Step 4 前必须通过）
 
@@ -635,7 +667,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 1. 逐一检查所有 Step 3 内部 checker 的 Task 状态（`TaskOutput` 或等价轮询），确认每个 checker 都已返回结果（非空输出）。
 2. 确认 Step 3.5 外部审查脚本已退出且 9 个 `external_review_{model_key}_ch{NNNN}.json` 文件已生成。
 3. 按 `step-3-review-gate.md` 的"内外部分数合并规则"计算 `overall_score`（需要内部 + 外部都有分数）。
-4. 生成审查报告（含内部 13 评分维度 + 外部 9 模型×13 维度矩阵，内外均含 reader_flow + naturalness + reader_critic · Round 13 v2 读者视角双维度进入外部模型评分体系）。
+4. 生成审查报告（含内部 13 评分维度 + 外部 14 模型×13 维度矩阵（Round 14+），内外均含 reader_flow + naturalness + reader_critic · Round 13 v2 读者视角双维度进入外部模型评分体系）。
 5. 落库 `review_metrics`。
 
 **以上 5 步全部完成后，方可进入 Step 4。等待是流程的一部分。**
@@ -871,6 +903,31 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 
 **JSON 转义说明**：bash 的 `"..."` 字符串内需要 `\"` 转义内部双引号。`${var}` 替换仍生效。**避免**用单引号 `'...'` 包 artifact，因为单引号内 `${var}` 不会替换。
 
+**PowerShell 专属转义**（Round 15.3 · 2026-04-23 · Ch6 血教训）：
+PowerShell 下 `--artifacts '{"commit": "..."}'` 会导致 Python argparse 看到 `{commit: ...}` 缺双引号解析失败。必须用反斜杠转义：
+```powershell
+$j = '{\"commit\": \"abc\", \"branch\": \"master\"}'
+python -X utf8 ... workflow complete-step --step-id "Step 7" --artifacts $j
+```
+或用 here-string + 双引号：
+```powershell
+$j = @"
+{"commit": "$COMMIT_SHA", "branch": "master"}
+"@
+```
+
+**工作流 unfail 恢复路径**（Round 15.3 新增 · Ch6 血教训）：
+若 complete-step 因 JSON escape 错误失败 → 紧接 complete-task 会把 task 标 failed → 此时用 `--force` 恢复：
+```bash
+# 确认 Step 1-7 全部 completed + 无 active step running 时：
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-task --force --artifacts "${final_artifacts_json}"
+# 输出：🔧 --force 已解除 failed 状态 · 🎀 任务完成
+```
+`--force` 的硬约束：
+- 所有 `REQUIRED_STEPS`（Step 1/2A/3/3.5/4/5/6/7）的 id 必须在 `completed_steps` 列表里
+- `current_step` 必须已 None 或 status ∈ {completed}
+- 否则拒绝并打印 diag 信息
+
 规则：
 - 提交时机：Step 6 审计通过 + hygiene_check 通过 + pre_commit_step_k 通过后最后执行。
 - 提交信息默认中文，格式：`第{chapter_num}章: {title}`；若 Step 6 决议为 `approve_with_warnings`，追加 `[audit:warn:layerX]` 后缀。
@@ -949,7 +1006,7 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 3. **Step 2A/2B 后 `post_draft_check.py` exit=0**（2026-04-15 新增 · 7 类硬检查通过）
 4. Step 3 已产出 `overall_score`（聚合 **13 评分维度** · Round 13 v2）且 `review_metrics` 成功落库；`naturalness_verdict` / `reader_critic_verdict` 作为报告字段记录，不 block 流程；其 problems 与其他 checker 的 issues 合并进入 Step 4 修复
 5. Step 3.5 外部审查已完成（核心3模型必须成功）（`--minimal` 模式跳过此条件）
-6. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 9 模型×13 维度评分矩阵，内外均含 reader_flow + naturalness + reader_critic · Round 13 v2；`--minimal` 模式含内部 5 评分维度分数）
+6. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 14 模型×13 维度评分矩阵（Round 14+），内外均含 reader_flow + naturalness + reader_critic · Round 13 v2；`--minimal` 模式含内部 5 评分维度分数）
 7. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
 8. **Step 4 润色报告已落盘**：`.webnovel/polish_reports/ch{chapter_padded}.md` 存在且非空，含 `anti_ai_force_check` 字段
 9. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）

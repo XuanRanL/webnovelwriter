@@ -1,19 +1,22 @@
 #!/usr/bin/env python3
-"""段内独立中文弯引号配对修复器
+"""段内独立中文弯引号配对修复器 · Round 15.3 增强
 
 应对场景：
-- ASCII 双引号 `"..."` 批量替换为弯引号时，单次 flip-pair 会跨段翻转奇偶，
+- Claude Code Write/Edit 工具把 U+201C/U+201D 中文弯引号转成 ASCII " (U+0022)。
+  → --ascii-to-curly 模式（默认）：先把 ASCII 双引号按段奇偶配对转成 U+201C/U+201D。
+- ASCII 双引号 "..." 批量替换为弯引号时，单次 flip-pair 会跨段翻转奇偶，
   在段内嵌套对话（对话中再启引用）时造成第二层开引号错写为右引号。
-- 这个脚本按「段」独立配对，每段内奇数次出现=U+201C（开），偶数次=U+201D（闭）。
-- 段分隔符：空行 (`\n\n+`)。
+  → 这个脚本按「段」独立配对，每段内奇数次出现=U+201C（开），偶数次=U+201D（闭）。
+- 段分隔符：空行 (\\n\\n+)。
 - 不会更改已经合法配对的段；只重写段内配对数量不匹配或方向错乱的段。
 
 用法：
-    python quote_pair_fix.py <chapter_file.md>                    # 原地修
+    python quote_pair_fix.py <chapter_file.md>                    # 原地修 · 含 ASCII→弯
+    python quote_pair_fix.py <chapter_file.md> --strict-curly     # 仅修弯引号配对错乱
     python quote_pair_fix.py <chapter_file.md> --dry-run          # 只报告
     python quote_pair_fix.py <chapter_file.md> --output fixed.md  # 另存
 
-退出码：0=无需修或修成功 / 1=语法错误 / 2=IO
+退出码：0=无需修或修成功 / 1=语法错误（段仍不配对） / 2=IO
 """
 from __future__ import annotations
 
@@ -22,16 +25,16 @@ import re
 import sys
 from pathlib import Path
 
-OPEN = "\u201c"
-CLOSE = "\u201d"
+OPEN = "“"
+CLOSE = "”"
+ASCII_DQ = chr(34)
 
 
-def fix_paragraph(para: str) -> tuple[str, bool]:
-    """段内独立配对。返回 (修后内容, 是否修改过)。"""
+def fix_paragraph_curly(para: str) -> tuple[str, bool]:
+    """段内独立配对（仅处理 U+201C/U+201D）。返回 (修后内容, 是否修改过)。"""
     opens = para.count(OPEN)
     closes = para.count(CLOSE)
     if opens == closes:
-        # 配对数量匹配，但仍可能顺序错（右引号先于左引号）。检查状态机：
         flip = False
         ok = True
         for ch in para:
@@ -47,7 +50,6 @@ def fix_paragraph(para: str) -> tuple[str, bool]:
                 flip = False
         if ok:
             return para, False
-    # 不匹配或顺序错：按段内独立奇偶配对重写
     buf = []
     flip = False
     for ch in para:
@@ -59,10 +61,38 @@ def fix_paragraph(para: str) -> tuple[str, bool]:
     return "".join(buf), True
 
 
-def fix_text(text: str) -> tuple[str, int, int]:
+def fix_paragraph_ascii_to_curly(para: str) -> tuple[str, bool]:
+    """段内把 ASCII " 和已有弯引号统一重新配对。
+
+    Round 15.3 · 2026-04-23 · Ch6 血教训：
+    - Claude Code Write/Edit 工具把 U+201C/201D 规范化成 ASCII "
+    - 统一 3 种引号（ASCII " / U+201C / U+201D）视为"引号"，按段内奇偶决定 open/close
+    """
+    if ASCII_DQ not in para and OPEN not in para and CLOSE not in para:
+        return para, False
+    unified = para.replace(OPEN, ASCII_DQ).replace(CLOSE, ASCII_DQ)
+    buf = []
+    flip = False
+    for ch in unified:
+        if ch == ASCII_DQ:
+            buf.append(OPEN if not flip else CLOSE)
+            flip = not flip
+        else:
+            buf.append(ch)
+    out = "".join(buf)
+    return out, out != para
+
+
+def fix_paragraph(para: str, ascii_to_curly: bool = True) -> tuple[str, bool]:
+    """段内独立配对（默认含 ASCII→弯引号转换）。"""
+    if ascii_to_curly:
+        return fix_paragraph_ascii_to_curly(para)
+    return fix_paragraph_curly(para)
+
+
+def fix_text(text: str, ascii_to_curly: bool = True) -> tuple[str, int, int]:
     """返回 (修后文本, 总段数, 修复段数)。"""
-    # 保留分隔符，使用 finditer
-    segs = re.split(r"(\n{2,})", text)  # keep separators
+    segs = re.split(r"(\n{2,})", text)
     total = 0
     fixed = 0
     out = []
@@ -74,7 +104,7 @@ def fix_text(text: str) -> tuple[str, int, int]:
             out.append(seg)
             continue
         total += 1
-        new, changed = fix_paragraph(seg)
+        new, changed = fix_paragraph(seg, ascii_to_curly=ascii_to_curly)
         if changed:
             fixed += 1
         out.append(new)
@@ -85,6 +115,11 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("path", type=str)
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument(
+        "--strict-curly",
+        action="store_true",
+        help="仅修弯引号配对错乱，不做 ASCII→弯 转换（Round 15.3 前的旧行为）",
+    )
     p.add_argument("--output", type=str, default=None)
     args = p.parse_args()
 
@@ -93,10 +128,13 @@ def main():
         print(f"[FAIL] not found: {pth}", file=sys.stderr)
         sys.exit(2)
     text = pth.read_text(encoding="utf-8")
-    new, total, fixed = fix_text(text)
-    print(f"paragraphs total={total}, fixed={fixed}")
+    ascii_to_curly = not args.strict_curly
+    new, total, fixed = fix_text(text, ascii_to_curly=ascii_to_curly)
+    mode = "ascii-to-curly" if ascii_to_curly else "strict-curly"
+    print(f"[mode={mode}] paragraphs total={total}, fixed={fixed}")
     if new == text:
         print("no change needed")
+        # 仍做最终配对校验（因为可能完全 ASCII 但数量全偶的情况已经处理）
         sys.exit(0)
     if args.dry_run:
         print("--dry-run: not writing")
@@ -104,16 +142,18 @@ def main():
     out = Path(args.output) if args.output else pth
     out.write_text(new, encoding="utf-8", newline="\n")
     print(f"written: {out}")
-    # post-check
     check = out.read_text(encoding="utf-8")
     bad = 0
+    remaining_ascii = check.count(ASCII_DQ)
     for para in re.split(r"\n{2,}", check):
         if para.count(OPEN) != para.count(CLOSE):
             bad += 1
     if bad:
         print(f"[FAIL] {bad} paragraphs still mismatched", file=sys.stderr)
         sys.exit(1)
-    print("post-check: all paragraphs balanced")
+    if remaining_ascii and ascii_to_curly:
+        print(f"[WARN] 仍有 {remaining_ascii} 个 ASCII 双引号（可能在代码块/属性标记里）", file=sys.stderr)
+    print("post-check: all paragraphs balanced, ascii_dq={}".format(remaining_ascii))
     sys.exit(0)
 
 
