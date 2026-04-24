@@ -512,8 +512,12 @@ def cmd_sync_agents(args: argparse.Namespace) -> int:
 def _walk_plugin_files(src_root: Path):
     """Yield (relative_path, absolute_path) for every file in fork plugin directory.
 
-    Skips __pycache__, .pyc, test coverage / fixture artifacts that shouldn't
-    propagate to plugin cache (where AI actually runs).
+    Skips __pycache__, .pyc, test coverage / fixture artifacts and .bak_* snapshots
+    that shouldn't propagate to plugin cache (where AI actually runs).
+
+    2026-04-23 Ch7 扩展：加上 `.bak_*` glob 跳过（诸如 `flow-checker.md.bak_20260421`
+    是 Round 14 对 checker 抽薄前的备份，在 fork 已经删除；若未来人工备份又把
+    `*.md.bak_YYYYMMDD` 留在 fork 里，不应再进 cache 让 AI 误读）。
     """
     skip_dirs = {"__pycache__", ".git", ".pytest_cache", ".ruff_cache", ".mypy_cache", "htmlcov"}
     skip_ext = {".pyc", ".pyo"}
@@ -530,6 +534,10 @@ def _walk_plugin_files(src_root: Path):
             continue
         # 匹配 .coverage.HOSTNAME.12345 这种 pattern 但放行 .coveragerc
         if path.name.startswith(".coverage.") and not path.name == ".coveragerc":
+            continue
+        # 2026-04-23 新增：匹配 `<anything>.bak_<YYYYMMDD>` 类备份文件
+        # 包括 flow-checker.md.bak_20260421 / external_review.py.bak_20260421
+        if ".bak_" in path.name or path.name.endswith(".bak"):
             continue
         yield path.relative_to(src_root), path
 
@@ -815,6 +823,47 @@ def cmd_sync_cache(args: argparse.Namespace) -> int:
             except Exception:
                 pass
 
+    # 2026-04-23 Ch7 新增：--prune 模式删除 cache 里 fork 不存在的残留（严格 mirror 同步）
+    # 典型残留来源：
+    #   - 老版 sync-cache 带过来的 .bak_YYYYMMDD 文件（Round 14 checker 抽薄前备份）
+    #   - .pytest_cache/ 目录（旧版 skip_dirs 没覆盖时被 copy 进 cache）
+    #   - 实验性/临时文件在 fork 删了但 cache 留着
+    # prune 的安全性：plugin cache 本来就是 plugin source 的 mirror，里头不应有
+    # "只在 cache 存在"的状态数据。跑 --prune 等于要求 cache 跟 fork 严格一致。
+    removed_stale: list[str] = []
+    if getattr(args, "prune", False):
+        # 从 fork 建 allow-set（同一套 walker 保证一致）
+        fork_allowed = {
+            str(rel).replace("\\", "/")
+            for rel, _ in _walk_plugin_files(plugin_root)
+        }
+        # 扫描 cache 里所有文件，不在 fork_allowed 的删掉（dry-run 只列表不删）
+        skip_dirs = {"__pycache__", ".git"}  # cache 里 .git 不可能有，但稳妥跳过
+        for path in cache_root.rglob("*"):
+            if not path.is_file():
+                continue
+            if any(part in skip_dirs for part in path.parts):
+                continue
+            if path.suffix == ".pyc":
+                continue  # 已经清了
+            rel = str(path.relative_to(cache_root)).replace("\\", "/")
+            if rel not in fork_allowed:
+                removed_stale.append(rel)
+                if not args.dry_run:
+                    try:
+                        path.unlink()
+                    except Exception:
+                        pass
+        # 清理空目录（bottom-up）— dry-run 不动，只有实跑才清理
+        if not args.dry_run:
+            for dir_path in sorted(cache_root.rglob("*"), key=lambda p: -len(p.parts)):
+                if dir_path.is_dir():
+                    try:
+                        if not any(dir_path.iterdir()):
+                            dir_path.rmdir()
+                    except Exception:
+                        pass
+
     result = {
         "fork": str(plugin_root),
         "cache": str(cache_root),
@@ -825,11 +874,16 @@ def cmd_sync_cache(args: argparse.Namespace) -> int:
         "updated_count": len(updated),
         "unchanged_count": len(unchanged),
         "removed_pyc_count": len(removed_pyc),
+        "removed_stale": removed_stale[:20],
+        "removed_stale_count": len(removed_stale),
+        "prune": bool(getattr(args, "prune", False)),
         "dry_run": bool(args.dry_run),
     }
+    prune_segment = f", -{len(removed_stale)} 残留清理" if removed_stale else ""
     msg = (
         f"cache 同步 v{version}: +{len(added)} 新增, ~{len(updated)} 更新, "
         f"={len(unchanged)} 未变, -{len(removed_pyc)} .pyc 清理"
+        + prune_segment
         + (" (dry-run)" if args.dry_run else "")
     )
     print_success(result, message=msg)
@@ -990,6 +1044,7 @@ def main() -> None:
     p_sync_cache.add_argument("--dry-run", action="store_true", help="打印待同步清单，不写入")
     p_sync_cache.add_argument("--check-only", action="store_true", help="只检测漂移不同步（退出码 2=有漂移，供 CI/preflight 使用）")
     p_sync_cache.add_argument("--cache-dir", help="手动指定 cache 目录（调试用）")
+    p_sync_cache.add_argument("--prune", action="store_true", help="清理 cache 里 fork 不存在的残留（.bak_*, 旧 .pytest_cache/, 历史实验文件）· 建议季度跑一次")
     p_sync_cache.set_defaults(func=cmd_sync_cache)
 
     p_normalize_cs = sub.add_parser(
