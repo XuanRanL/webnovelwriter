@@ -563,7 +563,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 |---|---|---|
 | `chapter_title` | str | title 的别名；只在迁移期保留，二选一即可 |
 | `overall_score` | int/float | 合并后加权分（int(internal*0.6 + external*0.4)）；与 review_score 互补 |
-| `external_avg` | float | Step 3.5 九模型平均分（排除 failed 模型） |
+| `external_avg` | float | Step 3.5 外部多模型平均分（Round 14：14 模型共识，排除 failed 模型） |
 | `anti_ai_force_check` | str | Step 4 终检结果：pass / fail |
 | `mode` | str | 写作模式：standard / fast / minimal |
 | `narrative_version` | str | 当前叙事版本（v1/v2/v3） |

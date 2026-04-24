@@ -25,7 +25,7 @@ model: inherit
 }
 ```
 
-`mode` 取值：`standard` / `fast` / `minimal`。`fast` 模式下跳过 Layer E 的 AI 腔重度扫描；`minimal` 模式下跳过 Layer A3（9 外部模型真实性）、Layer G（趋势）、editor_notes 写入。
+`mode` 取值：`standard` / `fast` / `minimal`。`fast` 模式下跳过 Layer E 的 AI 腔重度扫描；`minimal` 模式下跳过 Layer A3（外部模型真实性 · Round 16 扁平 14 模型共识 · ≥ 10/14 有效即 pass）、Layer G（趋势）、editor_notes 写入。
 
 ## 执行前必读
 
@@ -237,6 +237,18 @@ overall_decision =
 5. **block 决议必须列出可执行修复命令**，不允许"需要调查"之类的模糊话术
 6. **time_exhausted=true 时必须记录未完成的 layer**，不得假装通过
 7. **JSON schema 不符 = 自动视为 fail**，主流程应拒绝该审计结果
+7.5. **Bash redirection 安全规则（2026-04-23 Ch6 RCA Bug #2 根治）**：
+   - **严禁**在 bash 命令的 stdout redirect (`>`、`>>`) 里出现包含中文/markdown 变量的字符串
+   - **严禁** `echo "$var" > $filename` 模式（$filename 可能被展开成包含特殊字符的路径）
+   - 所有写文件必须用**绝对路径**或 python/write tool，不得用 shell redirect 写 markdown 内容
+   - 例：禁 `echo "$report" > 上章决议：**approve**`；应改为 python 或 Write tool
+   - hygiene_check.py H1 会在项目根自动检测并清除 `= / ** / 单汉字 / <>| / :: / ---` 开头的 0 字节文件，但仍应在源头防止
+8. **字数字段 SSOT 硬约束（2026-04-22 Round 15.1 新增 · 根治 3 次复现的字数漂移）**：
+   - editor_notes / editor_notes_for_next_chapter / 审计报告 / blocking_issues / warnings 中**任何**涉及字数的表述，只允许引用 `state.project_info.word_count_policy` 的 `hard_min` / `hard_max` / `chapter_type_guide`
+   - **禁止自造区间**（如 2800-3500 / 2700-3200 / 2400-3200 / 2600-3400）· 必须用 `word_count_policy.hard_min`-`word_count_policy.hard_max`（默认 2200-3500）或 `chapter_type_guide` 里的某一类型区间
+   - **禁止引用不存在的 state 字段**（如 `target_words_per_chapter_target` / `word_target` 等）· 输出前必须用 `jq`/Python 校验字段存在
+   - **推荐表述格式**：`本章字数建议 {chapter_type}类型 {min}-{max}（SSOT: word_count_policy.chapter_type_guide.{type} · 弹性模型允许剧情驱动在 {hard_min}-{hard_max} 内任意定位）`
+   - 违反此条款 → Layer B 加 1 个 B-WC check 为 warn（medium）· 若 editor_notes 被下章 context-agent 读取后污染 writer，下章 Layer A 追加一个 critical 归因本条款
 
 ## 失败隔离
 

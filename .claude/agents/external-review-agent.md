@@ -20,27 +20,38 @@ model: inherit
   "chapter": 11,
   "chapter_file": "正文/第0011章-猎人公会.md",
   "project_root": "{PROJECT_ROOT}",
-  "model_key": "qwen3.6-plus|gpt-5.4|gemini-3.1-pro|doubao-pro|glm-5|glm-4.7|mimo-v2-pro|minimax-m2.7-hs|deepseek-v3.2-thinking|all",
+  "model_key": "qwen3.6-plus|gpt-5.4|gemini-3.1-pro|doubao-pro|doubao-seed-2.0-lite|glm-5|glm-5.1|glm-4.7|mimo-v2-pro|minimax-m2.7-hs|minimax-m2.5|deepseek-v3.2-thinking|kimi-k2.5|kimi-k2.6|all",
   "scripts_dir": "{SCRIPTS_DIR}"
 }
 ```
 
-**model_key 说明（九模型共识架构 · Round 11+ openclawroot 首位）**:
-- **架构**：2 供应商（openclawroot 主 + siliconflow 备）× 9 模型 × 13 维度 = 117 份独立评分
+**model_key 说明（十四模型共识架构 · Round 14+ ark-coding 并入）**:
+- **架构**：3 供应商（openclawroot + **ark-coding** + siliconflow）× 14 模型 × 13 维度 = 182 份独立评分
 - **共识机制**：每个模型都跑**全 13 维度**（无分工），多模型共识 → 真 bug；单模型孤例 → 模型偏见
-- **所有模型开 high thinking + max_tokens=65536**
+- **所有模型 thinking 全开**
+  - ark-coding：`thinking={"type":"enabled"}`（火山原生）
+  - openclawroot：按家族 `reasoning_effort/thinking_budget/enable_thinking`
+- **max_tokens 拉满**：火山上的 `deepseek-v3.2` / `kimi-k2.5` 限 32768；其他全部 65536
 - **核心层**（tier=core · 必须成功，异构覆盖）：
   - `qwen3.6-plus`（国产旗舰，文学细致度最高）
   - `gpt-5.4`（OpenAI 系，西方叙事视角，最快 2s）
   - `gemini-3.1-pro`（谷歌系，画面感审视）
 - **补充层**（tier=supplemental · 失败不阻塞，累计 3 维度失败早停）：
-  - `doubao-pro`（结构审查严苛）
-  - `glm-5` / `glm-4.7`（中文编辑/文学质感）
-  - `mimo-v2-pro`（小米推理）
-  - `minimax-m2.7-hs`（对话情感推理）
-  - `deepseek-v3.2-thinking`（技术考据 + 深度推理）
-- **推荐**：使用 `--model-key all` 自动遍历全部 9 模型
-- **老模型兼容别名**：`qwen-plus/kimi/glm/qwen/deepseek/minimax/doubao/glm4/minimax-m2.7` 自动映射到新模型（见 MODEL_ALIASES）
+  - `doubao-pro`（主 = ark-coding doubao-seed-2.0-pro，备 = openclawroot；结构审查严苛）
+  - `doubao-seed-2.0-lite` ⭐（ark-coding；豆包轻量 thinking）
+  - `glm-5` / `glm-4.7`（openclawroot；中文编辑 / 文学质感）
+  - `glm-5.1` ⭐（ark-coding；GLM 5.1 增量）
+  - `mimo-v2-pro`（openclawroot；小米推理）
+  - `minimax-m2.7-hs`（openclawroot；2.7 高速对话情感推理）
+  - `minimax-m2.5` ⭐（ark-coding；交错 thinking）
+  - `deepseek-v3.2-thinking`（主 = ark-coding deepseek-v3.2 mt=32768，备 = openclawroot/siliconflow；技术考据）
+  - `kimi-k2.5` ⭐（ark-coding mt=32768；Moonshot K2.5 thinking）
+  - `kimi-k2.6` ⭐（ark-coding mt=65536；Moonshot K2.6 旗舰）
+
+⭐ = Round 14 新增
+
+- **推荐**：使用 `--model-key all` 自动遍历全部 14 模型
+- **老模型兼容别名**：`qwen-plus/kimi/glm/qwen/deepseek/minimax/doubao/glm4/minimax-m2.7/doubao-lite` 自动映射到新 key（见 MODEL_ALIASES）；`kimi` 现在指向 `kimi-k2.6`
 
 ## 执行流程
 
@@ -85,7 +96,7 @@ EOF
 
 > **注意**：脚本对每个字段有磁盘 fallback——如果 JSON 中某字段缺失或为空，会自动从 `设定集/`、`正文/`、`.webnovel/` 目录读取。但 agent 应尽量填充完整以减少磁盘 I/O。
 
-脚本会对 13 个维度（11 工艺维度 + naturalness + reader_critic · Round 13 v2 · 含 reader_flow）并发调用外部模型API，返回 13 份维度报告合并为每模型一个 JSON。
+脚本会对 13 个维度（11 工艺维度 + naturalness + reader_critic · Round 13 v2 · 含 reader_flow）并发调用外部模型API，返回 13 份维度报告合并为每模型一个 JSON。Round 14+ 下 ark-coding 和 openclawroot 两个主 provider 并行工作，ProviderRateLimiter 自动控制 RPM。
 
 ### 第三步: 交叉验证（不可省略）
 
@@ -133,7 +144,7 @@ EOF
   "cross_validation": { "verified": 3, "unverified": 1, "dismissed": 2 },
   "provider_chain": [ ... ],
   "api_meta": {
-    "final_provider": "healwrap",
+    "final_provider": "ark-coding",
     "elapsed_ms": 25000,
     "prompt_tokens": 5000,
     "completion_tokens": 3000,
@@ -165,7 +176,7 @@ EOF
 
 ## 失败处理
 
-- 单个维度API调用失败：按 provider fallback 链自动重试（openclawroot 重试2次，siliconflow 重试1次），仍失败则标记该维度为 `"status": "failed"`
+- 单个维度API调用失败：按 provider fallback 链自动重试（ark-coding/healwrap/nextapi 重试2次，openclawroot/siliconflow fail-fast 切下一 provider），仍失败则标记该维度为 `"status": "failed"`
 - 幽灵零分（score=0 + 空摘要）：provider 层自动切下一供应商重试；所有供应商都返回 phantom 则标记 `"status": "failed", "error": "phantom_success_score0_empty"`
 - 补充层早停：累计 3 个维度失败后触发 `threading.Event`，跳过剩余排队维度（`"status": "skipped", "error": "early_stop_skipped"`）
 - 全部 13 个维度失败：输出 `"pass": false, "error": "all_dimensions_failed"`
