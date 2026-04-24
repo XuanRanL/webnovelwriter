@@ -864,8 +864,12 @@ def check_cross_chapter_style_drift(root: Path, chapter: int, rep: HygieneReport
 
     # 可配置参数
     dialogue_min = float(cfg.get("dialogue_ratio_min", 0.20))
-    no_x_warn = int(cfg.get("no_x_warn_threshold", 25))
-    no_x_fail = int(cfg.get("no_x_fail_threshold", 30))
+    # Round 17.2 · Ch8 P0-R5 根治（2026-04-24）：阈值收紧
+    # Ch8 polish 后"没X" 34 次漏抓（旧阈值 warn 25/fail 30 太宽），
+    # editor_notes 一直建议 ≤15，代码闸门未对齐。现在 warn 15 / fail 20。
+    # post_draft_check section 11 同步 SIGNATURE_DENSITY 签名密度硬线。
+    no_x_warn = int(cfg.get("no_x_warn_threshold", 15))
+    no_x_fail = int(cfg.get("no_x_fail_threshold", 20))
     signature_actions = cfg.get("signature_actions", {
         # 项目默认 · 可被 .webnovel/style_drift_config.json 覆盖
         "印记跳": 5,

@@ -1405,6 +1405,15 @@ def main():
     #        同时 data-agent 通过 SQL 权威源更新了 hourglass 和 location，但 state.json 的
     #        冗余显示字段无 CLI 路径同步，只能违规手改。本补丁根治该 gap。
     update_parser.add_argument("--set-chapter-meta-field", help='JSON: {"chapter":N,"field":"overall_score","value":89}（field 支持白名单：overall_score/narrative_version/naturalness_verdict/naturalness_score/reader_critic_verdict/reader_critic_score/strand_dominant/word_count/chapter_type/review_score）')
+    # Round 17.2 · Ch8 P0-R3 根治（2026-04-24）：SKILL.md Step 4.5 CLI 幻觉补实
+    update_parser.add_argument(
+        "--set-checker-score",
+        help='JSON: {"chapter":N,"checker":"pacing-checker","score":90}（canonical key；同步更新 checker_scores.overall 为 13 checker 平均）',
+    )
+    update_parser.add_argument(
+        "--append-recheck",
+        help='JSON: {"chapter":N,"checker":"pacing-checker","before":58,"after":90,"reason":"..."}（追加到 chapter_meta.post_polish_recheck；Step 4.5 选择性复测产物）',
+    )
     update_parser.add_argument("--sync-protagonist-display", help='JSON: {"hourglass_remaining":28,"location_current":"堂屋·雨夜·D-25","vital_force_current":80}（protagonist_state 冗余显示字段同步 · SQL 权威源改过后手工 sync）')
 
     argv = normalize_global_project_root(sys.argv[1:])
@@ -1500,12 +1509,17 @@ def main():
         emit_success({"chapter": args.chapter, "warnings": warnings}, message="chapter_processed", chapter=args.chapter)
 
     elif args.command == "update":
-        # At least one of the three mutation flags must be provided
+        # At least one of the mutation flags must be provided
         if not (args.strand_dominant or args.add_foreshadowing or args.resolve_foreshadowing):
-            if not (args.set_chapter_meta_field or args.sync_protagonist_display):
+            if not (
+                args.set_chapter_meta_field
+                or args.sync_protagonist_display
+                or args.set_checker_score
+                or args.append_recheck
+            ):
                 emit_error(
                     "MISSING_ARG",
-                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display）",
+                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck）",
                 )
                 return
         changes: list[str] = []
@@ -1599,8 +1613,87 @@ def main():
             key = f"{ch:04d}"
             entry = cm.setdefault(key, {})
             entry[field] = value
+            # Round 17.2 · Ch8 P1-R6 根治：overall_score 与 checker_scores.overall 双字段同步
+            # 写其一必同步另一（hygiene H9 强制两者相等的对偶实现）
+            if field == "overall_score":
+                cs = entry.setdefault("checker_scores", {})
+                if cs.get("overall") != value:
+                    cs["overall"] = value
+                    changes.append(f"chapter_meta.{key}.checker_scores.overall={value} (auto-sync)")
             manager._pending_raw_state_mutations.add("chapter_meta")
             changes.append(f"chapter_meta.{key}.{field}={value}")
+            if applied_chapter is None:
+                applied_chapter = ch
+
+        # Round 17.2 · Ch8 P0-R3 根治：SKILL.md Step 4.5 CLI 实现
+        # --set-checker-score 更新单个 checker 分数 + 自动重算 overall
+        if args.set_checker_score:
+            payload = load_json_arg(args.set_checker_score)
+            ch = int(payload.get("chapter", 0))
+            checker = str(payload.get("checker", "")).strip()
+            score = payload.get("score")
+            CANONICAL_CHECKERS = {
+                "consistency-checker", "continuity-checker", "ooc-checker",
+                "reader-pull-checker", "high-point-checker", "pacing-checker",
+                "dialogue-checker", "density-checker", "prose-quality-checker",
+                "emotion-checker", "flow-checker",
+                "reader-naturalness-checker", "reader-critic-checker",
+            }
+            if not ch or not checker or score is None:
+                emit_error("INVALID_ARG", "--set-checker-score 需要 chapter + checker + score 字段")
+                return
+            if checker not in CANONICAL_CHECKERS:
+                emit_error(
+                    "CHECKER_NOT_CANONICAL",
+                    f"checker={checker} 非 canonical，允许集: {sorted(CANONICAL_CHECKERS)}",
+                )
+                return
+            cm = manager._state.setdefault("chapter_meta", {})
+            key = f"{ch:04d}"
+            entry = cm.setdefault(key, {})
+            cs = entry.setdefault("checker_scores", {})
+            cs[checker] = score
+            # 重算 overall 为 13 canonical 平均（存在多少算多少）
+            present = [v for k, v in cs.items() if k in CANONICAL_CHECKERS]
+            if present:
+                new_overall = round(sum(present) / len(present))
+                cs["overall"] = new_overall
+                entry["overall_score"] = new_overall
+                changes.append(
+                    f"chapter_meta.{key}.checker_scores.{checker}={score} (overall 重算={new_overall})"
+                )
+            manager._pending_raw_state_mutations.add("chapter_meta")
+            if applied_chapter is None:
+                applied_chapter = ch
+
+        # --append-recheck 追加到 post_polish_recheck
+        if args.append_recheck:
+            payload = load_json_arg(args.append_recheck)
+            ch = int(payload.get("chapter", 0))
+            checker = str(payload.get("checker", "")).strip()
+            before = payload.get("before")
+            after = payload.get("after")
+            reason = str(payload.get("reason", "")).strip()
+            if not ch or not checker or before is None or after is None:
+                emit_error(
+                    "INVALID_ARG",
+                    "--append-recheck 需要 chapter + checker + before + after 字段",
+                )
+                return
+            cm = manager._state.setdefault("chapter_meta", {})
+            key = f"{ch:04d}"
+            entry = cm.setdefault(key, {})
+            ppr = entry.setdefault("post_polish_recheck", {})
+            ppr[checker] = {
+                "before": before,
+                "after": after,
+                "delta": after - before,
+                "reason": reason or None,
+            }
+            manager._pending_raw_state_mutations.add("chapter_meta")
+            changes.append(
+                f"chapter_meta.{key}.post_polish_recheck.{checker}={before}->{after} ({after-before:+d})"
+            )
             if applied_chapter is None:
                 applied_chapter = ch
 

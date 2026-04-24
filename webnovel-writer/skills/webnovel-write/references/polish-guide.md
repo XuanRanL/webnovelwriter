@@ -68,6 +68,34 @@ purpose: 章节生成后的润色阶段加载，基于审查报告修复问题 +
 | 学术词 | 而言 / 某种程度上 / 本质上 |
 | 因果连词 | 因为 / 所以 / 由于 / 因此 |
 
+### 签名句式密度硬线（Round 17.2 · Ch8 P0-R5 根治 · 2026-04-24）
+
+**引入背景**：Ch8 polish 后"没X" 34 次漏抓（editor_notes 目标 ≤15 · 旧 hygiene H21 阈值 30 太宽），用户手动 12 处改写才降到 10。polish-guide 只管 anti-AI 禁语，未管密度签名——必须补齐。
+
+**硬线表**（Step 4 anti_ai_force_check 前必扫；超 block → polish 继续，不得进 Step 5；超 warn → 记 deviation）：
+
+| 签名句式 | 目标 | warn | block |
+|---|---|---|---|
+| 没X（没+任意汉字）| ≤ 15 | 15-19 | ≥ 20 |
+| 未X（未+任意汉字）| ≤ 2 | 3-4 | ≥ 5 |
+| 扶眼镜 | ≤ 3 | 4-5 | ≥ 6 |
+| 笑了一下 | ≤ 4 | 5-7 | ≥ 8 |
+| 停了半秒 | ≤ 4 | 5-7 | ≥ 8 |
+| 印记跳 | ≤ 4 | 5 | ≥ 6 |
+| 后颈凉 | ≤ 2 | 3 | ≥ 4 |
+
+**项目级覆盖**：`.webnovel/signature_density_config.json` 可自定义阈值（字段名如 "没X"/"扶眼镜"）。
+
+**实现层**：
+- `scripts/post_draft_check.py` section 11 SIGNATURE_DENSITY 扫描（起草后闸门 · 超 block 阻断 Step 3）
+- `scripts/hygiene_check.py` H21_no_x（提交前 · warn/fail 双级）
+- `scripts/polish_cycle.py` scan_signature_density（polish 复盘）
+
+**Step 4 执行规则**：
+1. 起草后 post_draft_check 若有 SIGNATURE_DENSITY warn 或 block：polish 阶段**必须**降到 warn 以下
+2. polish 完成后再跑一次 post_draft_check；任一签名仍 ≥ block → anti_ai_force_check=fail
+3. 若某签名因剧情必要超 warn（如连续对峙章印记跳必须 5 次），必须在 polish_reports.md 写 deviation（位置 + 原因 + 代价）
+
 ---
 
 ## 自然化程度标准（建议）

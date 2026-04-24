@@ -559,10 +559,23 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 ### 第二层 · Extended 26 扩展字段（允许但不强制；B9 不检查；为长线质量积累服务）
 
+> **Round 17.2 · Ch8 P1-R6 根治（2026-04-24）**：`overall_score` 虽然放在 Extended 层，但**与 Core 层的 `checker_scores.overall` 必须强制相等**（hygiene H9 阻断不一致）。data-agent 写 `checker_scores.overall=88` 时**必须**同步写 `overall_score=88`。`state_manager.py --set-chapter-meta-field overall_score` 会自动反向同步 `checker_scores.overall`。
+
+> **Round 17.2 · Ch8 P0-R2 根治（2026-04-24）**：`post_polish_recheck` 字段的 `before` 值**硬禁止编造**：
+> - `before` 必须来自 `.webnovel/tmp/{checker}_check_ch{NNNN}.json` 的 `overall_score`
+> - `after` 必须来自 `.webnovel/tmp/{checker}_recheck_ch{NNNN}.json` 的 `overall_score`
+> - 缺 check JSON 且无结构化入参 → 该 checker 的 post_polish_recheck 条目**不得写入**，并在 Layer A 记 warn
+> - 主 agent 调用 data-agent 时**必须**传入 `polish_rechecks` 结构化参数（见 SKILL.md Step 5 入参）
+> - hygiene H24 溯源验证：`post_polish_recheck[*].before` 必能在 tmp JSON 找到匹配（±0.5 容差）
+> - 推荐写入路径：用 CLI `state update --append-recheck '{"chapter":N,"checker":"pacing-checker","before":58,"after":90,"reason":"..."}'`（R3.1 实现）
+
+> **Round 17.2 · Ch8 P1-R7 根治**：`naturalness_verdict` / `reader_critic_verdict` 字段**必须**从 `.webnovel/tmp/{checker}_recheck_ch{NNNN}.json`（优先）或 `_check_ch{NNNN}.json` 读 `verdict` 字段（∈ {PASS, POLISH_NEEDED, FAIL, UNKNOWN} 或对应 yes/hesitant/no）写入。缺 JSON → 写 UNKNOWN + Layer A warn。
+
 | 字段 | 类型 | 用途 |
 |---|---|---|
 | `chapter_title` | str | title 的别名；只在迁移期保留，二选一即可 |
-| `overall_score` | int/float | 合并后加权分（int(internal*0.6 + external*0.4)）；与 review_score 互补 |
+| `overall_score` | int/float | 合并后加权分（int(internal*0.6 + external*0.4)）；**与 `checker_scores.overall` 强制相等**（R17.2 P1-R6） |
+| `post_polish_recheck` | dict | Step 4.5 选择性复测记录：`{checker: {before, after, delta, reason}}` · **before/after 必须来自 tmp JSON 不得编造**（R17.2 P0-R2） |
 | `external_avg` | float | Step 3.5 外部多模型平均分（Round 14：14 模型共识，排除 failed 模型） |
 | `anti_ai_force_check` | str | Step 4 终检结果：pass / fail |
 | `mode` | str | 写作模式：standard / fast / minimal |
