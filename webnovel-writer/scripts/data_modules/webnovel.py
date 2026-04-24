@@ -108,16 +108,21 @@ def cmd_where(args: argparse.Namespace) -> int:
 
 
 def _check_agents_sync(plugin_root: Path, workspace_root: Optional[Path]) -> Optional[dict]:
-    """Verify plugin agents/ fully covered by workspace .claude/agents/ (fallback copy).
+    """Verify plugin agents/ fully covered AND content-consistent with workspace .claude/agents/.
 
     Rationale: Workspace .claude/agents/ is the fallback when plugin cache is stale or
-    when plugin cache version lags behind fork. If a checker exists in plugin agents/
-    but NOT in workspace .claude/agents/, Task(checker) may silently fallback to
-    general-purpose, causing phantom "skipped" steps. This has happened (Ch6 with
-    flow-checker, 2026-04-13). Gate catches drift at Step 0 preflight.
+    when plugin cache version lags behind fork. Two failure modes:
+      1. Filename missing (Ch6 · 2026-04-13): new flow-checker.md added to plugin/agents
+         but workspace .claude/agents/ not synced → Task(flow-checker) silently
+         fallback to general-purpose. Phantom "checker ran" when it didn't.
+      2. Content drift (Ch7 · 2026-04-23): audit-agent.md / external-review-agent.md
+         updated in plugin but workspace copy stale → AI 读到旧规则（如旧 Round 14 没
+         Round 16 扁平化共识规则）→ 审计结果不准但看不出差错。
+
+    Ch7 之前只查 (1)，不查 (2)。本次扩展到 bytes 对比，两种漂移都能抓。
 
     Returns None if workspace_root is None or agents/ does not exist (non-applicable).
-    Returns dict with ok/missing when drift is detected or verified.
+    Returns dict with ok/missing/content_drift when drift is detected or verified.
     """
     plugin_agents_dir = plugin_root / "agents"
     if not plugin_agents_dir.is_dir():
@@ -128,22 +133,43 @@ def _check_agents_sync(plugin_root: Path, workspace_root: Optional[Path]) -> Opt
     if not ws_agents_dir.is_dir():
         return None  # workspace 未启用 .claude/agents 覆盖，不检查
 
-    plugin_set = {p.name for p in plugin_agents_dir.glob("*.md")}
-    ws_set = {p.name for p in ws_agents_dir.glob("*.md")}
+    plugin_map = {p.name: p for p in plugin_agents_dir.glob("*.md")}
+    ws_map = {p.name: p for p in ws_agents_dir.glob("*.md")}
+    plugin_set = set(plugin_map.keys())
+    ws_set = set(ws_map.keys())
+
     missing_in_ws = sorted(plugin_set - ws_set)
     extra_in_ws = sorted(ws_set - plugin_set)
+
+    # Ch7 新增：内容漂移检测（bytes 对比，捕捉"文件都在但内容不同"）
+    content_drift: list[str] = []
+    for name in sorted(plugin_set & ws_set):
+        try:
+            if plugin_map[name].read_bytes() != ws_map[name].read_bytes():
+                content_drift.append(name)
+        except Exception:
+            content_drift.append(name)  # 读取失败视为漂移，谨慎偏严
+
+    has_any_drift = bool(missing_in_ws or content_drift)
+    err_parts: list[str] = []
+    if missing_in_ws:
+        err_parts.append(f"workspace 缺 {len(missing_in_ws)} 个 agent: {missing_in_ws[:5]}")
+    if content_drift:
+        err_parts.append(
+            f"内容漂移 {len(content_drift)} 个 agent: {content_drift[:5]}; "
+            "跑 `webnovel.py sync-agents` 修复"
+        )
+
     return {
         "name": "agents_sync",
-        "ok": not missing_in_ws,
+        "ok": not has_any_drift,
         "path": str(ws_agents_dir),
         "plugin_agents_count": len(plugin_set),
         "workspace_agents_count": len(ws_set),
         "missing_in_workspace": missing_in_ws,
         "extra_in_workspace": extra_in_ws,
-        **(
-            {"error": f"workspace .claude/agents/ 缺少 {len(missing_in_ws)} 个 agent: {missing_in_ws[:5]}"}
-            if missing_in_ws else {}
-        ),
+        "content_drift": content_drift,
+        **({"error": "; ".join(err_parts)} if err_parts else {}),
     }
 
 
@@ -807,6 +833,23 @@ def cmd_sync_cache(args: argparse.Namespace) -> int:
         + (" (dry-run)" if args.dry_run else "")
     )
     print_success(result, message=msg)
+
+    # 2026-04-23 Ch7 P1b 根治：cache 里如果改动了 agents/*.md 或有 agents/ 文件增删，
+    # worktree .claude/agents/ 不会自动跟进（sync-agents 是独立命令）。这里明确提示，
+    # 避免"sync-cache 跑了但 .claude/agents 还是旧版"的静默漂移。
+    if not args.dry_run and (added or updated):
+        agents_touched = [
+            p for p in added + updated
+            if p.replace("\\", "/").startswith("agents/")
+        ]
+        if agents_touched:
+            print("")
+            print("=" * 70)
+            print("  ⚠ cache 里的 agents/ 有 {} 个文件变化".format(len(agents_touched)))
+            print("  下一步：在**每个**使用本插件的 novel 项目目录下跑：")
+            print("    python -X utf8 <PLUGIN_SCRIPTS>/webnovel.py --project-root . sync-agents")
+            print("  否则 Task(subagent) 可能 fallback 到旧版本（Ch7 RCA P1）")
+            print("=" * 70)
     return 0
 
 
