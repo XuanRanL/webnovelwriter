@@ -323,6 +323,49 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
     # 8. Round 15.1 · editor_notes / context JSON 字数漂移检测（非阻断 · warn）
     warnings.extend(check_editor_notes_word_drift(project_root, chapter, lo, hi))
 
+    # 9. Round 17.1 · 对话占比下限（2026-04-24 · Ch7 RCA F2 根治）
+    # 引入背景：Round 16 约束 VII 要求对话占比 ≥ 0.20（连 3 章 < 0.2 触发 H21 fail），
+    # 但 post_draft_check 不检查，polish 阶段才挣扎。本闸门在起草后即提示。
+    # 配置可在 post_draft_config.json 自定义 dialogue_ratio_min（默认 0.20）。
+    # 豁免：chapter_type_guide 允许"空间视觉化章/高密度纯动作章"声明 override。
+    dr_min = cfg.get("dialogue_ratio_min", 0.20)
+    dr_override_chapters = set(cfg.get("dialogue_ratio_override_chapters", []))
+    if chapter not in dr_override_chapters:
+        dialogue_parts = re.findall(r"[“]([^”]*)[”]", text)
+        total_cc = len(re.findall(r"[一-鿿]", text))
+        dialogue_cc = sum(
+            len(re.findall(r"[一-鿿]", d)) for d in dialogue_parts
+        )
+        if total_cc > 0:
+            ratio = dialogue_cc / total_cc
+            if ratio < dr_min - 0.005:  # 2.5% 浮点容差
+                errors.append(
+                    f"[DIALOGUE_RATIO] 对话占比 {ratio:.3f} < {dr_min:.2f}"
+                    f"（约束 VII · 连 3 章 < 0.2 触发 H21 fail）"
+                )
+            elif ratio < dr_min:
+                warnings.append(
+                    f"[DIALOGUE_RATIO_BORDER] 对话占比 {ratio:.3f}"
+                    f"（贴近下限 {dr_min:.2f}，建议 Step 4 扩对话）"
+                )
+
+    # 10. Round 17.1 · 元标识符扫描（2026-04-24 · Ch7 RCA F6 根治）
+    # 引入背景：Ch7 首稿 L183 "一次是 Ch1 那个清晨，一次是 Ch4 守夜人系统的第一次登录"
+    # 元标识符 Ch{N} 不应出现在正文（小说人物不知道章号）。
+    # 根因：context-agent 的 immutable_facts 用"Ch1/Ch4"简写，主 agent 照搬入正文。
+    metaref_patterns = [
+        (r"\bCh\d+\b", "Ch{N} 元标识符"),
+        (r"\[Ch\d+\]", "[Ch{N}] 章号标注"),
+        (r"第\s*\d+\s*章", "第N章元标识符"),
+    ]
+    for pat, name in metaref_patterns:
+        hits = re.findall(pat, text)
+        if hits:
+            errors.append(
+                f"[METAREF] 正文含 {len(hits)} 处 {name}（样本：{hits[:3]}）· "
+                f"人物不知道章号 · 必须自然化表述"
+            )
+
     return errors, warnings
 
 
