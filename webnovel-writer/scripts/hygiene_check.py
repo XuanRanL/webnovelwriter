@@ -785,6 +785,89 @@ def check_post_commit_polish_drift(root: Path, chapter: int, rep: HygieneReport)
     )
 
 
+def check_audit_post_polish_drift(root: Path, chapter: int, rep: HygieneReport):
+    """H24: Step 6 audit 后到 Step 7 commit 前的正文漂移检测（Round 17.3 · 2026-04-24）
+
+    背景（Ch8 血教训）：
+    Step 6 audit-agent 写完 audit_reports/ch{N}.json 后，audit 结论基于那个时间点的正文。
+    如果作者/AI 在 Step 7 commit 前对正文做了 hygiene 修复（如为过 H21 把"没X"批量改）
+    或手动微调，audit 结论就与 commit 的正文脱节。Ch8 Round 17.2 就遇到：
+      - audit_reports/ch0008.json mtime: 2026-04-24T07:33:00Z
+      - 正文 mtime: 2026-04-24T08:04:20Z
+      - 漂移 1869s，正文比 audit 晚 31 分钟
+    Step 5 的 checker_scores 反映 2750 字稿，但 commit 的是 hygiene 后 2791 字稿。
+
+    检测策略（commit 前触发，非破坏性）：
+      - P2 info: 正文 mtime > audit mtime + 5s → audit 后有修改
+      - P1 warn: 正文 mtime > audit mtime + 300s → 建议 polish_cycle 补录或重跑 Step 6
+      - 不 block，只记 warn（polish_cycle 是根治路径）
+
+    免单场景：
+      - audit_reports 不存在 → skip（Step 6 未跑 · 由其他检查覆盖）
+      - 正文 mtime < audit mtime → OK
+    """
+    chapter_padded = f"{chapter:04d}"
+    audit_p = root / ".webnovel" / "audit_reports" / f"ch{chapter_padded}.json"
+    if not audit_p.exists():
+        return
+    chapter_files = sorted((root / "正文").glob(f"第{chapter_padded}章*.md"))
+    if not chapter_files:
+        return
+    chapter_file = chapter_files[0]
+    try:
+        file_m = chapter_file.stat().st_mtime
+        audit_m = audit_p.stat().st_mtime
+    except Exception:
+        return
+    drift_s = file_m - audit_m
+    if drift_s <= 5:
+        rep.record("P2", "H24", f"audit-后 drift OK（正文 mtime 比 audit 早/近 {drift_s:.0f}s）", True)
+        return
+
+    # Round 17.3 · Ch8 P1 根治：polish_cycle 合法路径豁免
+    # 查该章节文件的最新 git log commit（不是全仓 HEAD · 避免被其他章 polish 覆盖误判）
+    # 若那个 commit message 含 `[polish:]` 或 `第N章 v` → 说明是 polish_cycle 合法重提
+    # 这种情况 drift 是设计预期（polish_cycle 已经跑过 post_draft_check + hygiene），
+    # 不应报 P1 干扰 commit 流程，降级为 P2 info。
+    import subprocess
+    rel = str(chapter_file.relative_to(root)).replace("\\", "/")
+    try:
+        last_msg = subprocess.run(
+            ["git", "log", "-1", "--pretty=%s", "--", rel],
+            cwd=root, capture_output=True, timeout=5,
+        ).stdout.decode("utf-8", errors="replace").strip()
+    except Exception:
+        last_msg = ""
+    is_polish_cycle_commit = (
+        "[polish:" in last_msg
+        or f"第{chapter}章 v" in last_msg  # polish_cycle message 格式: 第N章 v{X}: ...
+        or f"第{chapter:04d}章 v" in last_msg
+    )
+    if is_polish_cycle_commit:
+        rep.record(
+            "P2", "H24",
+            f"audit-后 drift {drift_s:.0f}s · HEAD 是 polish_cycle 合法重提（{last_msg[:60]}）· 豁免",
+            True,
+        )
+        return
+
+    if drift_s <= 300:
+        rep.record(
+            "P2", "H24",
+            f"audit-后 drift 小（正文比 audit 晚 {drift_s:.0f}s · 可能是 hygiene 阶段同步修改）",
+            True,
+        )
+        return
+    # drift > 300s 且非 polish_cycle commit：正文在 audit 后显著修改未合法提交
+    rep.record(
+        "P1", "H24",
+        f"audit-后 drift 显著（正文 mtime 晚于 audit {drift_s:.0f}s ≈ {drift_s/60:.1f}min）· "
+        f"Step 5 checker_scores 与 audit 结论可能反映旧稿 · "
+        f"建议：若仅措辞替换→polish_cycle 补录；若新增内容→重跑 Step 5/6",
+        False,
+    )
+
+
 def check_polish_log_schema(root: Path, chapter: int, rep: HygieneReport):
     """H20: chapter_meta[{NNNN}].polish_log schema 合规（Round 14.5.2）。
 
@@ -1280,6 +1363,7 @@ def main():
     check_allusions_schema(root, args.chapter, rep)
     check_checker_scores_canonical(root, args.chapter, rep)
     check_post_commit_polish_drift(root, args.chapter, rep)
+    check_audit_post_polish_drift(root, args.chapter, rep)  # H24 · Round 17.3 · Ch8 RCA
     check_polish_log_schema(root, args.chapter, rep)
     check_cross_chapter_style_drift(root, args.chapter, rep)  # H21 · Round 16
     check_reality_red_flags(root, args.chapter, rep)  # H22 · Round 17

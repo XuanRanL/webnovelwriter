@@ -1684,12 +1684,28 @@ def main():
             key = f"{ch:04d}"
             entry = cm.setdefault(key, {})
             ppr = entry.setdefault("post_polish_recheck", {})
-            ppr[checker] = {
+            # Round 17.3 · Ch6-8 RCA 根治：兼容 dict 与 list 两种历史格式
+            # Ch6/Ch8 是 dict {checker: {...}}；Ch7 是 list [{checker, before, after, ...}]
+            # 本 CLI 优先保持原格式，减少破坏性迁移
+            recheck_entry = {
                 "before": before,
                 "after": after,
                 "delta": after - before,
                 "reason": reason or None,
             }
+            if isinstance(ppr, list):
+                # list 格式：找到同 checker 则替换，否则 append
+                replaced = False
+                for i, item in enumerate(ppr):
+                    if isinstance(item, dict) and item.get("checker") == checker:
+                        ppr[i] = {"checker": checker, **recheck_entry}
+                        replaced = True
+                        break
+                if not replaced:
+                    ppr.append({"checker": checker, **recheck_entry})
+            else:
+                # dict 格式（新章节默认）
+                ppr[checker] = recheck_entry
             manager._pending_raw_state_mutations.add("chapter_meta")
             changes.append(
                 f"chapter_meta.{key}.post_polish_recheck.{checker}={before}->{after} ({after-before:+d})"
