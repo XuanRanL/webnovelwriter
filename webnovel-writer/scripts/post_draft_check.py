@@ -328,8 +328,38 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
     # 但 post_draft_check 不检查，polish 阶段才挣扎。本闸门在起草后即提示。
     # 配置可在 post_draft_config.json 自定义 dialogue_ratio_min（默认 0.20）。
     # 豁免：chapter_type_guide 允许"空间视觉化章/高密度纯动作章"声明 override。
+    # Round 17.5 · 2026-04-24 · Ch9 RCA P1-1 根治：读 context_contract.structural_exemptions
     dr_min = cfg.get("dialogue_ratio_min", 0.20)
     dr_override_chapters = set(cfg.get("dialogue_ratio_override_chapters", []))
+
+    # Round 17.5 · 读取 context_contract.structural_exemptions.dialogue_ratio_override
+    # 情感章/视觉章/纯动作章可声明 override 区间（如 "0.20-0.28"），但底线仍为绝对 0.20
+    contract_path = (
+        project_root / ".webnovel" / "context" / f"ch{chapter:04d}_context.json"
+    )
+    if contract_path.exists():
+        try:
+            ctx_data = json.loads(contract_path.read_text(encoding="utf-8"))
+            structural_ex = (
+                ctx_data.get("context_contract", {})
+                .get("structural_exemptions", {})
+            )
+            override_str = structural_ex.get("dialogue_ratio_override")
+            # override 格式如 "0.20-0.28" 或 {"min": 0.20, "max": 0.28}
+            if isinstance(override_str, str):
+                m = re.match(r"\s*(\d*\.?\d+)\s*-\s*(\d*\.?\d+)\s*", override_str)
+                if m:
+                    override_min = float(m.group(1))
+                    # 不让 override 低于绝对 0.20 底线
+                    if 0.18 <= override_min <= 0.30:
+                        dr_min = max(0.20, override_min)
+            elif isinstance(override_str, dict) and "min" in override_str:
+                override_min = float(override_str["min"])
+                if 0.18 <= override_min <= 0.30:
+                    dr_min = max(0.20, override_min)
+        except Exception:
+            pass
+
     if chapter not in dr_override_chapters:
         dialogue_parts = re.findall(r"[“]([^”]*)[”]", text)
         total_cc = len(re.findall(r"[一-鿿]", text))
@@ -338,15 +368,19 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         )
         if total_cc > 0:
             ratio = dialogue_cc / total_cc
+            # Round 17.5 · Ch9 RCA P1-3 根治：actionable diff
+            target_dialogue_cc = int(total_cc * dr_min)
+            short_by = target_dialogue_cc - dialogue_cc
             if ratio < dr_min - 0.005:  # 2.5% 浮点容差
                 errors.append(
                     f"[DIALOGUE_RATIO] 对话占比 {ratio:.3f} < {dr_min:.2f}"
-                    f"（约束 VII · 连 3 章 < 0.2 触发 H21 fail）"
+                    f"（约束 VII · 连 3 章 < 0.2 触发 H21 fail · "
+                    f"差额：缺 ~{short_by} 字对话 或 减 ~{int(short_by/dr_min)} 字叙述）"
                 )
             elif ratio < dr_min:
                 warnings.append(
                     f"[DIALOGUE_RATIO_BORDER] 对话占比 {ratio:.3f}"
-                    f"（贴近下限 {dr_min:.2f}，建议 Step 4 扩对话）"
+                    f"（贴近下限 {dr_min:.2f}，建议 Step 4 扩 ~{short_by+5} 字对话）"
                 )
 
     # 11. Round 17.2 · 签名句式密度扫描（2026-04-24 · Ch8 RCA P0-R5 根治）
@@ -406,6 +440,23 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
                 f"[METAREF] 正文含 {len(hits)} 处 {name}（样本：{hits[:3]}）· "
                 f"人物不知道章号 · 必须自然化表述"
             )
+
+    # 12. Round 17.5 · 中文章数元叙事扫描（2026-04-24 · Ch9 RCA P0-3 根治）
+    # 引入背景：Ch9 L233 主角心里"二十章之前，不问这种事"——
+    # 主角不应该用"章"做时间单位（这是元叙事破壁）。
+    # reader-critic critical + ooc low + flow high 三层 checker 同时发现。
+    # 现有 Ch[0-9]+/第N章 regex 漏掉中文数词章号。
+    # 根治：扫描"X 章之前/之后/内/前/后" 模式（X = 中文数词或阿拉伯数字）。
+    cn_chapter_meta_pattern = (
+        r"(几|十|百|千|两|三|四|五|六|七|八|九|二十|三十|四十|五十|"
+        r"\d+)\s*章\s*(之前|之后|内|后|前|以前|以后)"
+    )
+    cn_chapter_hits = re.findall(cn_chapter_meta_pattern, text)
+    if cn_chapter_hits:
+        errors.append(
+            f"[METAREF_CN_CHAPTER] 正文含 {len(cn_chapter_hits)} 处中文章数元叙事（样本：{cn_chapter_hits[:3]}）· "
+            f"小说人物不能用「章」做时间单位 · 改为「等几天/几个月/到时候」等自然时间表述"
+        )
 
     return errors, warnings
 
