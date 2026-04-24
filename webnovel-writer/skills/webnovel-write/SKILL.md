@@ -773,16 +773,25 @@ hard_max 超限会直接 fail，回 Step 4 继续压缩。
 **触发规则（硬约束）**：
 如果 Step 3 任一 checker 首次分数 `< 75`，Step 4 polish 后**必须**重跑该 checker。
 
-**执行模板**：
+**执行模板**（Round 17.2 · Ch8 P0-R3 根治后实装 · 2026-04-24）：
 ```bash
 # 在 Step 4 complete-step 前
 # 对每个首次分数 <75 的 checker 做 Task 复测
 Task(pacing-checker, chapter=N, chapter_file=..., post_polish=true, prev_score=58)
-# 更新 chapter_meta.checker_scores 与 post_polish_recheck 审计字段
+
+# 更新 checker_scores（自动重算 overall 为 13 canonical 平均 + 同步 overall_score）
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
-  state update-chapter-meta --chapter N --set-checker-score "pacing-checker=90" \
-  --append-recheck "pacing-checker:58->90:Beat2 拆段+B3 差异化+B4 扩写"
+  state update --set-checker-score '{"chapter":N,"checker":"pacing-checker","score":90}'
+
+# 追加 post_polish_recheck（before/after/delta/reason）
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  state update --append-recheck '{"chapter":N,"checker":"pacing-checker","before":58,"after":90,"reason":"Beat2 拆段+B3 差异化+B4 扩写"}'
 ```
+
+**CLI 参数契约**（R3.1 实现 · 2026-04-24）：
+- `--set-checker-score` 参数：`{chapter, checker (canonical 13 之一), score}` · 自动重算 `checker_scores.overall` 与 `overall_score`
+- `--append-recheck` 参数：`{chapter, checker, before, after, reason?}` · `delta = after - before` 自动计算
+- **两个 CLI 是 Step 4.5 的唯一正确接口**，禁止用 `state update --set-chapter-meta-field` 写 `checker_scores` 子键（白名单不含），也禁止走 data-agent `process-chapter` 全量回写（容易 hallucinate `before` 值 · 见 R2）
 
 **硬规则**：
 - 复测 checker ≥ 75：更新 checker_scores · 重算 overall · 记入 post_polish_recheck
@@ -792,6 +801,15 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
 **审计兼容性**：
 - audit-agent 读 `chapter_meta.post_polish_recheck` 判断修前/修后数据
 - 如无该字段且 Step 4 fixes 列表含 checker id 的 PACE_/FLOW_/etc，audit C6 自动 warn
+
+**字数预算硬约束**（Round 17.1 Ch7 RCA + **Round 17.2 Ch8 P0-R8 根治 · 2026-04-24**）：
+
+Ch8 血教训：writer 首稿 1930 字（-33% 预算 2900）· 对话占比 0.124（<0.20 硬线）· 用户 3 次手动扩写才达标。根治在 Step 2A 执行包（`context-agent` 与 `build_execution_package.py`）硬写入：
+
+- **首稿总字数 ≥ hard_min**（默认 2200）：低于 hard_min 自动 post_draft_check fail
+- **每 Beat 字数 ≥ 目标 85%**：如规划 700 字，首稿该 Beat < 595 字 → post_draft_check warn `BEAT_UNDERRUN`
+- **对话占比 ≥ 0.20**（饭局/对峙/情感章 ≥ 0.25）：低于阈值 post_draft_check fail `DIALOGUE_RATIO`
+- **chapter_type 特例**：空间视觉章/纯动作章可将 dialogue_min 降到 0.10，必须在 `context_contract.structural_exemptions.dialogue_ratio_override` 声明
 
 ### Step 5：Data Agent（状态与索引回写）
 

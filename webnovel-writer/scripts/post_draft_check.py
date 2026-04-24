@@ -349,6 +349,47 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
                     f"（贴近下限 {dr_min:.2f}，建议 Step 4 扩对话）"
                 )
 
+    # 11. Round 17.2 · 签名句式密度扫描（2026-04-24 · Ch8 RCA P0-R5 根治）
+    # 引入背景：Ch8 polish 后"没X" 34 次（editor_notes ≤15·hygiene H21 ≥30 fail），
+    # polish-guide 只管 anti-AI 禁语，不管密度签名；Step 4 漏抓导致上线后用户手动 12 处改写。
+    # 根治：post_draft_check 直接 block 明显过密的签名模式。
+    #
+    # 配置：`.webnovel/signature_density_config.json`（项目级 · 可覆盖默认阈值）
+    # 默认 block 阈值：
+    #   没X ≥ 20  · 未X ≥ 3  · 扶眼镜 ≥ 6  · 笑了一下 ≥ 8  · 停了半秒 ≥ 8
+    signature_patterns_default = {
+        "没X": {"pattern": r"没[一-鿿]", "warn": 15, "block": 20},
+        "未X": {"pattern": r"未[一-鿿]", "warn": 3, "block": 5},
+        "扶眼镜": {"pattern": r"扶眼镜", "warn": 4, "block": 6},
+        "笑了一下": {"pattern": r"笑了一下", "warn": 5, "block": 8},
+        "停了半秒": {"pattern": r"停了半秒", "warn": 5, "block": 8},
+    }
+    # 项目级 override
+    sig_cfg_path = project_root / ".webnovel" / "signature_density_config.json"
+    if sig_cfg_path.exists():
+        try:
+            sig_cfg = json.loads(sig_cfg_path.read_text(encoding="utf-8"))
+            for k, v in (sig_cfg or {}).items():
+                if k in signature_patterns_default and isinstance(v, dict):
+                    signature_patterns_default[k].update(
+                        {kk: vv for kk, vv in v.items() if kk in ("warn", "block")}
+                    )
+        except Exception:
+            pass
+    for sig_name, sig_cfg in signature_patterns_default.items():
+        count = len(re.findall(sig_cfg["pattern"], text))
+        if count >= sig_cfg["block"]:
+            errors.append(
+                f"[SIGNATURE_DENSITY] 签名句式'{sig_name}' {count} 次 ≥ block {sig_cfg['block']} · "
+                f"AI 签名外溢硬线（Round 17.2 Ch8 P0-R5）· "
+                f"必须 polish 降到 < {sig_cfg['warn']}"
+            )
+        elif count >= sig_cfg["warn"]:
+            warnings.append(
+                f"[SIGNATURE_DENSITY_WARN] 签名句式'{sig_name}' {count} 次 ≥ warn {sig_cfg['warn']} · "
+                f"建议 polish 降到 < {sig_cfg['warn']}"
+            )
+
     # 10. Round 17.1 · 元标识符扫描（2026-04-24 · Ch7 RCA F6 根治）
     # 引入背景：Ch7 首稿 L183 "一次是 Ch1 那个清晨，一次是 Ch4 守夜人系统的第一次登录"
     # 元标识符 Ch{N} 不应出现在正文（小说人物不知道章号）。
@@ -388,6 +429,11 @@ def main() -> int:
         action="store_true",
         help="禁用 ASCII 引号自动修复（默认启用 · Round 15.3 · 根治 Claude Code Write/Edit 转 ASCII 的 Bug #3）",
     )
+    ap.add_argument(
+        "--editor-notes-only",
+        action="store_true",
+        help="Round 17.2 · Ch8 P0-R4 根治：只跑 editor_notes 字数漂移扫描（audit-agent 写完 editor_notes 后 self-check 用）",
+    )
     args = ap.parse_args()
 
     # 项目根推导
@@ -405,6 +451,38 @@ def main() -> int:
                 "或在项目根下运行。"
             )
             return 2
+
+    # Round 17.2 · Ch8 P0-R4 根治：editor-notes-only 模式（audit-agent self-check）
+    if args.editor_notes_only:
+        print("=" * 60)
+        print(f" editor_notes 字数漂移扫描 · Ch{args.chapter}")
+        print(f" 项目：{project_root.name}")
+        print("=" * 60)
+        state_path = project_root / ".webnovel" / "state.json"
+        try:
+            policy = (
+                json.loads(state_path.read_text(encoding="utf-8"))
+                .get("project_info", {})
+                .get("word_count_policy", {})
+            )
+            ssot_lo = int(policy.get("hard_min", 2200))
+            ssot_hi = int(policy.get("hard_max", 3500))
+        except Exception:
+            ssot_lo, ssot_hi = 2200, 3500
+        drifts = check_editor_notes_word_drift(project_root, args.chapter, ssot_lo, ssot_hi)
+        if drifts:
+            print(f"\n ❌ 发现 {len(drifts)} 项字数漂移：")
+            for d in drifts:
+                print(f"  ⚠️  {d}")
+            print(
+                "\n  修复方式：把 editor_notes 里伪窄区间替换为合法子区间：\n"
+                "    过渡/铺垫：2200-2800  推进/日常：2600-3200\n"
+                "    情感/揭秘：2800-3400  战斗/高潮：3000-3500\n"
+                "    hard 兜底：2200-3500"
+            )
+            return 1
+        print("\n ✅ editor_notes 无字数漂移")
+        return 0
 
     print("=" * 60)
     print(f" 起草后硬闸门 · post_draft_check · Ch{args.chapter}")

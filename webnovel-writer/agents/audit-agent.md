@@ -251,10 +251,21 @@ overall_decision =
    - hygiene_check.py H1 会在项目根自动检测并清除 `= / ** / 单汉字 / <>| / :: / ---` 开头的 0 字节文件，但仍应在源头防止
 8. **字数字段 SSOT 硬约束（2026-04-22 Round 15.1 新增 · 根治 3 次复现的字数漂移）**：
    - editor_notes / editor_notes_for_next_chapter / 审计报告 / blocking_issues / warnings 中**任何**涉及字数的表述，只允许引用 `state.project_info.word_count_policy` 的 `hard_min` / `hard_max` / `chapter_type_guide`
-   - **禁止自造区间**（如 2800-3500 / 2700-3200 / 2400-3200 / 2600-3400）· 必须用 `word_count_policy.hard_min`-`word_count_policy.hard_max`（默认 2200-3500）或 `chapter_type_guide` 里的某一类型区间
+   - **禁止自造区间**（如 2800-3500 / 2700-3200 / 2400-3200 / 2600-3400 / 2800-3100 / 2900-3100）· 必须用 `word_count_policy.hard_min`-`word_count_policy.hard_max`（默认 2200-3500）或 `chapter_type_guide` 里的**原生某一类型区间**
+   - **合法子区间白名单**（SSOT 派生 · 不可增减）：`(2200,2800)` 过渡章/铺垫章 · `(2600,3200)` 推进章/日常章 · `(2800,3400)` 情感章/揭秘章 · `(3000,3500)` 战斗章/高潮章/卷末章 · `(2200,3500)` hard 兜底
    - **禁止引用不存在的 state 字段**（如 `target_words_per_chapter_target` / `word_target` 等）· 输出前必须用 `jq`/Python 校验字段存在
    - **推荐表述格式**：`本章字数建议 {chapter_type}类型 {min}-{max}（SSOT: word_count_policy.chapter_type_guide.{type} · 弹性模型允许剧情驱动在 {hard_min}-{hard_max} 内任意定位）`
    - 违反此条款 → Layer B 加 1 个 B-WC check 为 warn（medium）· 若 editor_notes 被下章 context-agent 读取后污染 writer，下章 Layer A 追加一个 critical 归因本条款
+
+9. **editor_notes 写完 self-check（Round 17.2 · Ch8 P0-R4 根治 · 2026-04-24）**：
+   - 写完 `editor_notes_for_next_chapter/ch{N+1}_prep.md` 后，audit-agent **必须**立即 Bash 调用：
+     ```
+     python -X utf8 {SCRIPTS_DIR}/post_draft_check.py {N+1} --project-root {PROJECT_ROOT} --editor-notes-only
+     ```
+   - 若有 `EDITOR_NOTES_WORD_DRIFT` warn：**必须**改写 editor_notes 把伪区间替换为合法子区间白名单内的值，直到 self-check 0 warn
+   - 若 editor_notes 的 `trend_hints` / `step_specific_hints` 段落里有自由文本形式的"推荐落点 X-Y" / "常态区间 X-Y"，X-Y **必须**对齐合法子区间白名单
+   - 连 3 章同源 EDITOR_NOTES_WORD_DRIFT → post_draft_check 升级为 error 阻断下章 Step 2（根治"warn 从来不升级 block"问题）
+   - 背景：Ch7 audit 写了 "2800-3100" 到 Ch8 editor_notes，Ch8 post_draft_check 两次 warn 都被忽略。Round 15.1 硬约束只覆盖字段描述，未覆盖自由文本。
 
 ## 失败隔离
 
