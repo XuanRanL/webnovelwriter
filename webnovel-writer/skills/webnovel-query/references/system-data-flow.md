@@ -103,10 +103,10 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
    → Batch 2（5 工艺）: 节奏/对话/信息密度/文笔质感/情感表现
    → 输出内部审查分数（13 维度平均）
 
-4. Step 3.5 外部模型审查（9 模型双层架构 · 13 维度）
-   → 核心3（kimi/glm/qwen-plus）+ 补充6
+4. Step 3.5 外部模型审查（14 模型双层架构 · 13 维度 · Round 14+）
+   → 核心 3（qwen3.6-plus / gpt-5.4 / gemini-3.1-pro）+ 补充 11（含 5 个火山 coding 新模型）
    → 每模型 13 维度评分（含 reader_flow + naturalness + reader_critic · Round 13 v2）
-   → 输出 9 模型 × 13 维度评分矩阵
+   → 输出 14 模型 × 13 维度评分矩阵（182 份独立评分）
 
 5. Step 4 网文化润色
    → 基于内外审查报告修复问题
