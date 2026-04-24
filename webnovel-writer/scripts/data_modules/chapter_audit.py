@@ -2033,15 +2033,30 @@ def _cmd_check_decision(args) -> int:
         print_error("audit_report_missing", f"{report_path} 不存在",
                     suggestion="先运行 Step 6 audit-agent 生成 audit_reports/ch{NNNN}.json")
         return 1
-    decision = data.get("overall_decision")
+    # Round 17.1 · 2026-04-24 · Ch7 RCA P1.3 根治
+    # 同时读 decision 和 overall_decision，任一非空即通过；两者皆空则 fail
+    # 若两者都存在但不一致 → schema 违规，fail
+    decision = data.get("decision")
+    overall_decision = data.get("overall_decision")
+    if decision is None and overall_decision is None:
+        print_error("audit_decision_missing",
+                    "both decision and overall_decision are null/missing",
+                    suggestion="audit-agent 必须写 decision 和 overall_decision（两字段同值）")
+        return 1
+    if decision is not None and overall_decision is not None and decision != overall_decision:
+        print_error("audit_decision_inconsistent",
+                    f"decision={decision} vs overall_decision={overall_decision} 不一致",
+                    suggestion="audit-agent 必须写两字段同值")
+        return 1
+    effective = decision if decision is not None else overall_decision
     allowed = [x.strip() for x in args.require.split(",") if x.strip()]
-    if decision not in allowed:
+    if effective not in allowed:
         print_error("audit_decision_not_allowed",
-                    f"overall_decision={decision} 不在允许列表 {allowed}",
+                    f"decision={effective} 不在允许列表 {allowed}",
                     suggestion="修复 blocking_issues 或重跑 audit")
         return 1
-    print_success({"chapter": args.chapter, "decision": decision, "allowed": allowed},
-                  message=f"audit decision={decision} 符合要求")
+    print_success({"chapter": args.chapter, "decision": effective, "allowed": allowed},
+                  message=f"audit decision={effective} 符合要求")
     return 0
 
 
