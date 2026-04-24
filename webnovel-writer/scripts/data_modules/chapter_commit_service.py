@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Dict
 
@@ -11,6 +10,7 @@ from chapter_outline_loader import volume_num_for_chapter_from_state
 from .config import DataModulesConfig
 from .event_log_store import EventLogStore
 from .event_projection_router import EventProjectionRouter
+from .story_contracts import write_json
 from .index_manager import IndexManager
 from .override_ledger_service import (
     AmendProposalTrigger,
@@ -79,7 +79,7 @@ class ChapterCommitService:
         target = self.project_root / ".story-system" / "commits"
         target.mkdir(parents=True, exist_ok=True)
         path = target / f"chapter_{int(payload['meta']['chapter']):03d}.commit.json"
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_json(path, payload)
         return path
 
     def apply_projections(self, payload: Dict[str, Any]) -> Dict[str, Any]:

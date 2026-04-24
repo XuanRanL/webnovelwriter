@@ -9,6 +9,11 @@ from typing import Any, Dict, Iterable, List
 
 from chapter_outline_loader import volume_num_for_chapter_from_state
 
+try:
+    from security_utils import atomic_write_json
+except ImportError:  # pragma: no cover
+    from scripts.security_utils import atomic_write_json
+
 
 MARKER_BEGIN = "<!-- STORY-SYSTEM:BEGIN -->"
 MARKER_END = "<!-- STORY-SYSTEM:END -->"
@@ -120,8 +125,7 @@ def read_json_if_exists(path: Path) -> Any | None:
 
 
 def write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(path, payload, backup=True)
 
 
 def write_marked_markdown(path: Path, generated_block: str) -> None:
