@@ -738,6 +738,41 @@ cat "${SKILL_ROOT}/references/writing/typesetting.md"
 2. **作者自我反思**：某章为什么质感突然好/差，看润色报告就知道
 3. **Step 6 Layer F/G 依赖**：审计要读 anti_ai_force_check 和 fixes 列表，没有文件就只能假设 pass
 
+### Step 4.5：选择性复测（Round 17.1 · 2026-04-24 · Ch7 RCA F1 根治）
+
+**定位**：Step 4 polish 后，对被 polish 集中修复的低分 checker 做**选择性复测**，确保 `chapter_meta.checker_scores` 反映的是修后真实分数，而不是修前数据。
+
+**为什么需要**（Ch7 血教训）：
+- Step 3 pacing-checker=58（Beat 2 超限 + B2/B3 结构同构 + B4 过短）
+- Step 4 针对性全部修复（拆段 + 差异化 + 扩写）
+- Step 4 直接进入 Step 5，`checker_scores.pacing-checker` 仍是 58
+- Step 6 审计 C6 警告 "pacing 58 FAIL polish-only no retest"
+- 本次 Ch7 后追加复测：pacing 58→90（+32），真实 overall 应为 88 而非 85
+- **后果**：chapter_meta 存的是修前数据，下章 trend 监控误判"Ch7 pacing 突降"
+
+**触发规则（硬约束）**：
+如果 Step 3 任一 checker 首次分数 `< 75`，Step 4 polish 后**必须**重跑该 checker。
+
+**执行模板**：
+```bash
+# 在 Step 4 complete-step 前
+# 对每个首次分数 <75 的 checker 做 Task 复测
+Task(pacing-checker, chapter=N, chapter_file=..., post_polish=true, prev_score=58)
+# 更新 chapter_meta.checker_scores 与 post_polish_recheck 审计字段
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  state update-chapter-meta --chapter N --set-checker-score "pacing-checker=90" \
+  --append-recheck "pacing-checker:58->90:Beat2 拆段+B3 差异化+B4 扩写"
+```
+
+**硬规则**：
+- 复测 checker ≥ 75：更新 checker_scores · 重算 overall · 记入 post_polish_recheck
+- 复测 checker 仍 < 75：Step 4 未完成，继续 polish 直到 ≥ 75（或回到 Step 2A 重写该 beat）
+- **不许**因为"不想再跑"而跳过复测；Step 6 审计 C6 会 block
+
+**审计兼容性**：
+- audit-agent 读 `chapter_meta.post_polish_recheck` 判断修前/修后数据
+- 如无该字段且 Step 4 fixes 列表含 checker id 的 PACE_/FLOW_/etc，audit C6 自动 warn
+
 ### Step 5：Data Agent（状态与索引回写）
 
 使用 Task 调用 `data-agent`，参数：
