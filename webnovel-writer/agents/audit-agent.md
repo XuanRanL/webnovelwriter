@@ -64,6 +64,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
 3. `.webnovel/context_snapshots/ch{NNNN}.json` — Step 1 Context Contract 快照
 4. `审查报告/第{NNNN}章审查报告.md` — Step 3+3.5 审查报告
 5. `大纲/总纲.md` + `大纲/第N卷-章纲.md` + `大纲/第N卷-节拍表.md` — 对照承诺
+5b. **`大纲/第N卷-v[X]-前YY章覆盖大纲.md`（Round 17.5 · 2026-04-24 · Ch9 RCA P0-1 根治 · 必读最新版本）** — 若存在 v2/v3/v4 等覆盖大纲，audit-agent 必读对应章节段。生成 `editor_notes_for_next_chapter` 时必须把 v[N] 大纲中的"功能验证 / 关键事件 / 承诺兑现项"完整列入"必兑现"清单。Ch9 血教训：v4 大纲明确 Ch9 要兑现"切伤手指+南瓜汁 5 秒愈合"，但 audit-agent 生成 ch0009_prep.md 时未读 v4，导致 context-agent 默认信任 editor_notes 也遗漏，首稿完全缺失关键 v4 承诺。
 6. `设定集/` 全部文件 — 设定验证 + 人设基线
 7. `state.json.project_info.core_selling_points` — 题材卖点（驱动 Layer F）
 8. 前 5 章的 `.webnovel/summaries/ch{prev}.md` + `正文/第{prev}章*.md`（若存在）— 跨章基线

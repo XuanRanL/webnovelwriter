@@ -93,7 +93,11 @@ model: inherit
 - `.webnovel/context_snapshots/`: 上下文快照（优先复用）
 - `.webnovel/editor_notes/ch{NNNN}_prep.md`：**上章 Step 6 审计闸门写入的下章准备单**（必读，若存在）。包含上章未兑现承诺、carry_forward_warnings、跨章趋势建议、Step-specific 改进建议。context-agent 必须把这些内容转化为本章任务书的"接住上章"与"禁止事项"。
   - **字数 SSOT 冲突时以 state.json 为准（2026-04-22 Round 15.1 新增）**：editor_notes 里任何字数建议（如"2800-3500"/"avg 3000 硬目标"）若与 `state.project_info.word_count_policy` 不一致，context-agent 必须**静默覆盖为 SSOT 值**，并在执行包的 `warnings[]` 追加 `{"type": "EDITOR_NOTES_WORD_COUNT_DRIFT", "from": "editor_notes_x-y", "replaced_with": "ssot_hard_min-hard_max", "severity": "medium"}`。下章审计会把此 warning 回溯归因到上章 audit-agent
+  - **任何字数区间字面 MUST 来自 SSOT 子区间白名单（Round 17.5 · 2026-04-24 · Ch9 RCA P0-2 根治）**：合法子区间 = `{(hard_min, hard_max), 以及 chapter_type_guide 中所有显式给出的子区间}`。禁止自由编造（如"2800-3200"不在白名单 → 必须用情感章对应的"2800-3400"或 SSOT "2200-3500"覆盖）。post_draft_check 会扫描执行包的字面区间漂移并 warn。
 - `大纲/` 与 `设定集/`
+- **`大纲/第{volume_id}卷-v[N]-前NN章覆盖大纲.md`（Round 17.5 · 2026-04-24 · Ch9 RCA P0-1 根治）**：若存在 v[N] 覆盖大纲（v2/v3/v4 等），**必读最新版本** 对应章节段（如 Ch9 行）。
+  - **强制 cross-check**：与 editor_notes 字段级对比，确保 v4 大纲中的"功能验证 / 关键事件 / 承诺兑现项"未被遗漏（Ch9 血教训：editor_notes 来自 Ch8 v3 audit，未提"南瓜汁 5 秒愈合"，context-agent 默认信任，导致首稿完全缺失关键 v4 承诺，reader-pull 62 + continuity 74 双 high block）。
+  - **遗漏检测**：若 v4 大纲列出的事件/兑现项未出现在 editor_notes 的"必兑现"列表，context-agent 必须把它注入 immutable_facts，并在 warnings[] 追加 `{"type": "OUTLINE_PAYOFF_MISSING_FROM_EDITOR_NOTES", "outline_version": "v4", "missing": "...", "severity": "high"}`
 - `设定集/叙事声音.md`: 全书风格基准（语气/密度/感官/对话比例/风格禁忌）
 - `设定集/情感蓝图.md`: 全书情感基调与关键情感节点
 - `设定集/开篇策略.md`: 前3章策略（仅 Ch1-3 读取）
