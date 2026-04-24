@@ -79,6 +79,91 @@ model: inherit
 4. 如果执行包的 immutable_facts 含 mechanism_step fact，那是强约束：正文必须全部按序呈现该 fact 的 `required_sequence`；缺任一步或出现 `forbidden_shortcut` 即违规
 5. 若 immutable_facts 里 `mechanism_facts_count==0` 但本章涉及能力使用 → 输出 warn「上游 context-agent 可能漏注入 mechanism_facts，请核对设定」
 
+#### 第一层半: 金手指三项专项（Round 17.1 · 2026-04-24 · Ch7 RCA P1.4 根治）
+
+**为什么新增**（Ch7 血教训）：
+- Ch7 本地 consistency-checker 给 **100 分**
+- Gemini-3.1-pro 却抓到 **4 个 critical 设定崩塌**：沙漏物理实体化（违反脑内设定）/ 桃源空间石板入口（违反随身维度）/ A 级诗经麦（违反 D 级 lock-in）/ 金手指首秀浪费
+- 这三类是**读者最敏感的设定漂移**——规则型读者（占 30%+）一旦发现"沙漏脑内变抽屉拿"、"空间走地下通道"、"作物一夜三级跳"，立刻弃书
+- 之前 consistency-checker 只做"战力越级""位置瞬移"等表层校验，对"物理形态 / 入口机制 / 等级 lock-in"三项有系统性盲区
+
+**必读源**：`设定集/金手指设计.md` 完整读取，重点记住以下三类规则的**唯一真源形态**：
+
+**Check A · 金手指物理形态**（意识层 vs 物理实体）
+
+对每个金手指扫描设定集，标记它是：
+- `MIND_LAYER`（意识/脑内/心念层）· 典型词："脑海里""脑子里""心念触发""意识深处""在心里"
+- `PHYSICAL`（物理实体层）· 典型词："放在抽屉""掏出""拿起""握住""戴在腕上"
+- `HYBRID`（混合/双层）· 如"脑内沙漏+实体计数器"
+
+然后在正文中对每次该金手指使用搜索**形态关键词**：
+- 若设定为 MIND_LAYER 而正文出现 PHYSICAL 动作 → `GOLDEN_FINGER_FORM_MISMATCH` · severity=**critical**
+- 反之亦然
+
+**示例**（Ch7 应抓到的漂移）：
+```
+❌ 设定：设定集/金手指设计.md §1.5 "脑海里浮出沙漏·脑子里那座沙漏"
+   → 正文：L269 "他从抽屉里掏出沙漏·三十格的格线还稳稳嵌在玻璃壁里"
+   → VIOLATION: MIND_LAYER 金手指被物理实体化
+   → severity=critical · 修法：改"他把念头对准了...脑子里那座沙漏动了一下"
+```
+
+**Check B · 金手指入口/激活机制**（随身 vs 固定入口 / 默念 vs 按印记）
+
+对空间类/召唤类/查询类金手指扫描设定集的**激活机制**关键词：
+- 入口类型：`RANDOM_ACCESS`（随身维度 · 任意时地激活）/ `FIXED_ENTRY`（固定物理入口 · 如阵法/通道）
+- 激活方式：`PALM_MARK`（掌心印记触发）/ `MENTAL_COMMAND`（默念/心念）/ `PHYSICAL_DOOR`（物理门）/ `ITEM`（道具触发）
+
+在正文中扫描每次入场/激活的**动作序列**，与设定对比：
+- 设定 RANDOM_ACCESS + PALM_MARK 但正文写"从车库后门穿进地下通道·按石板" → `ENTRY_MECHANISM_MISMATCH` · severity=**critical**
+- 两次入场使用不同机制（第一次默念、第二次按印记）且无设定支撑 → severity=**high**
+
+**示例**（Ch7 应抓到的漂移）：
+```
+❌ 设定：设定集/金手指设计.md §2 桃源空间=随身维度+掌心印记激活
+   → 正文：L247 "车库后门穿进地下通道·磨过的石板·沉下一寸"
+   → VIOLATION: RANDOM_ACCESS 空间被写成 FIXED_ENTRY
+   → severity=critical · 修法：改"按了一下掌心印记·桃源那头的晨雾接住了他"
+```
+
+**Check C · 催化/升级 lock-in**（倍率特例 vs 日常规则）
+
+对催化/升级类金手指扫描设定集中的**规则 lock-in 条款**：
+- 关键词："lock-in""一次性特例""仅生效 1 次""回归标准 X 倍""×N 加速"
+- 记录每条特例的"已用章节"和"每日/每阶最大倍率"
+
+在正文中对每次催化/升级计算**实际倍率**：
+- 新等级与旧等级对比（如 D → A 需要跨 D→C→B→A 三阶）
+- 时间跨度（设定"每 3 天 1 阶"，Ch7 距上次催化 < 3 天就 +1 阶即违规）
+- 若 lock-in 特例已用过但正文再次触发 → `CATALYST_RULE_VIOLATION` · severity=**critical**
+
+**示例**（Ch7 应抓到的漂移）：
+```
+❌ 设定：设定集/金手指设计.md §2.首次觉醒跃升 "×144 特例·全书仅生效 1 次·Ch4 起回归每 3 天 1 阶"
+   → 正文：L253 "A 级的那一株已经长到小腿高"（Ch3 首次觉醒 D 级 + Ch7 距 Ch3 < 30 天）
+   → VIOLATION: D 级经过 4 章跳到 A 级（应为 D→D1→D2 最多）· 且命名"诗经麦"无设定支撑
+   → severity=critical · 修法：改"那一株已经长到小腿高·按每三天一阶的进度它还在 D 级那一档上走"
+```
+
+**综合检查算法**：
+1. 读 `设定集/金手指设计.md` 全文，提取每个金手指的 form/entry/lock-in 字段
+2. 缓存到内存 `GOLDEN_FINGER_RULES` dict
+3. 扫描正文每个能力使用段，对三项分别做 grep+对比
+4. 任一 critical 直接进 issues · overall_score 扣 10+ 分
+
+**输出扩展字段**：
+```json
+{
+  "golden_finger_checks": {
+    "form_matched": [{"name": "沙漏", "form": "MIND_LAYER", "正文引用": "脑子里那座沙漏"}],
+    "form_mismatched": [],
+    "entry_matched": [...],
+    "entry_mismatched": [],
+    "catalyst_violations": []
+  }
+}
+```
+
 #### 第二层: 地点/角色一致性（地点/角色检查）
 
 **校验项**:

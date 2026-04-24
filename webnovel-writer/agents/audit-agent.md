@@ -155,11 +155,17 @@ overall_decision =
 
 ## 输出 Schema（严格）
 
+**强制字段**（Round 17.1 · 2026-04-24 · Ch7 RCA P1.3 根治）：
+- `decision` 和 `overall_decision` 必须**同时存在**且**取值一致**，用于向后兼容历史消费者
+- 不得只写 `overall_decision` 而让 `decision=null`（Ch7 血教训：`audit check-decision` CLI 因 `decision=None` 回退到其他判定路径，未来 schema 校验会 fail）
+- 允许值：`approve` / `approve_with_warnings` / `block`
+
 ```json
 {
   "chapter": 1,
   "audit_version": "1.0",
   "mode": "standard",
+  "decision": "approve | approve_with_warnings | block",
   "overall_decision": "approve | approve_with_warnings | block",
   "time_budget_seconds": 300,
   "time_elapsed_seconds": 182,

@@ -693,6 +693,26 @@ cat "${SKILL_ROOT}/references/writing/typesetting.md"
 3. 处理 `medium/low`（按收益择优）
 4. 执行 Anti-AI 与 No-Poison 全文终检（必须输出 `anti_ai_force_check: pass/fail`）
 
+**字数预算硬约束**（Round 17.1 · 2026-04-24 · Ch7 RCA Task #10 根治）：
+
+**为什么需要**（Ch7 血教训）：
+- Step 2B 后字数 3453（在 2600-3200 推进章区间偏上）
+- Step 4 polish 加 4 critical + 9 high 新内容 → 字数涨到 3638（超 3500 硬上限 +138 字）
+- 手动压缩 5 次才回到 3493（浪费 10+ 分钟）
+- 根因：polish 没有"字数预算"意识，加内容前不算账
+
+**硬规则**：
+1. **净增上限 +200**：polish 导致字数净增超过 200，必须自检是否冗余
+2. **硬上限**：polish 后总字数 ≤ state.json `word_count_policy.hard_max`（默认 3500），否则触发强制压缩
+3. **推荐顺序**：先删冗余段（reader-critic/pacing 标记的"非必要对话/描写"）再扩 critical 修复，而不是"先加后砍"
+4. **边界豁免**：若项目有 `word_count_policy.hard_max_polish_allowance`（如 +5%），polish 期可临时用，但 Step 5 前必须压回 hard_max 内
+
+**检查点**（Step 4 complete 前必跑）：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/post_draft_check.py" ${chapter_num} --project-root "${PROJECT_ROOT}"
+```
+hard_max 超限会直接 fail，回 Step 4 继续压缩。
+
 输出（两个必须同时产出，缺一视为 Step 4 未完成）：
 1. **润色后正文**（覆盖 `正文/第{chapter_padded}章-{title_safe}.md`）
 2. **润色报告**（必须落盘到 `.webnovel/polish_reports/ch{chapter_padded}.md`，结构规范如下）

@@ -364,6 +364,35 @@ test -f "{project_root}/设定集/金手指设计.md" && cat "{project_root}/设
 
 **缺失降级**：若 `力量体系.md` 或 `金手指设计.md` 不存在，在执行包顶层标注 `power_system_missing=true` 并输出 warn。不得降级为无约束。
 
+**immutable_facts.fact 字段元标识符禁用硬约束**（Round 17.1 · 2026-04-24 · Ch7 RCA F5 根治）：
+
+**为什么需要**（Ch7 血教训）：
+- Ch7 首稿 L183 写了 "一次是 Ch1 那个清晨，一次是 Ch4 守夜人系统的第一次登录"
+- 元标识符 "Ch1"/"Ch4" 污染正文——小说人物**不知道章号**
+- 根因：context-agent 的 immutable_facts 用了 "Ch1 消耗第一格 · Ch4 消耗第二格" 简写，主 agent 照搬进正文
+- post_draft_check 已加 METAREF 扫描兜底，但**源头治理更彻底**
+
+**硬约束**：
+- `immutable_facts[*].fact` 字段**禁止**出现以下元标识符：
+  - `Ch\d+` / `CH\d+` / `ch\d+`（裸章号）
+  - `[Ch\d+]` / `【Ch\d+】`（方括号章号标注）
+  - `第\d+章` / `第 \d+ 章`（第N章）
+- 必须**自然化表述**：
+  - ❌ 错：`"Ch1 消耗第一格沙漏 · Ch4 消耗第二格"`
+  - ✅ 对：`"第一次醒来那个清晨消耗第一格 · 后院脚印查不清那次消耗第二格"`
+  - ❌ 错：`"Ch6 末钩：大狗异吠"`
+  - ✅ 对：`"昨夜大狗异吠节律直的末钩"`
+- 允许使用的章号引用位置：`source` 字段（如 `"source": "正文/第0006章-邻居的狗叫.md"`）和 `used_in_chapters` 数组（如 `[3, 4, 5]`）· **但 fact 主文本不许**
+
+**自检**：context-agent 生成执行包前，对每条 immutable_facts[*].fact 做一次正则扫描：
+```python
+import re
+_META = re.compile(r'Ch\d+|CH\d+|ch\d+|\[Ch\d+\]|第\s*\d+\s*章')
+for f in immutable_facts:
+    assert not _META.search(f['fact']), f"META_REF_IN_FACT: {f['fact'][:50]}"
+```
+失败即阻断生成，必须改写后重试。
+
 **为什么必做**：
 - 单纯依赖 consistency-checker 事后审查是不够的——checker 只能检查"能力权限"（有没有资格用），不能检查"操作步骤"（用得对不对）
 - 源头约束（immutable_facts）对 drafting agent 是强约束；drafting agent 如果违反会触发 Step 6 A1 审计 fail

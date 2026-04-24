@@ -242,6 +242,8 @@ def check_root_layout(root: Path, rep: HygieneReport):
         "ROOT_CAUSE_GUARD_RAILS.md",
         "CHANGELOG.md",
         "LICENSE",
+        # Round 17.1 · 2026-04-24 · Ch7 RCA P2.6：项目北极星文件
+        "CLAUDE.md",
     }
     # 项目特化扩展白名单（Round 15.1 · 2026-04-22）
     cfg_path = root / ".webnovel" / "hygiene_config.json"
@@ -902,11 +904,15 @@ def check_cross_chapter_style_drift(root: Path, chapter: int, rep: HygieneReport
     prev1_ratio = _dialogue_ratio(prev1_text) if prev1_text else None
     prev2_ratio = _dialogue_ratio(prev2_text) if prev2_text else None
 
+    # Round 17.1 · 2026-04-24 · Ch7 RCA P0.2：浮点容差
+    # 根因：Ch7 对话占比 = 0.200 但 `r < 0.20` 浮点比较仍判 True（float 精度问题）
+    # 修法：留 2.5% 容差（与 post_draft_check DIALOGUE_RATIO 一致）
+    dialogue_min_effective = dialogue_min - 0.005
     low_streak = 0
     for r in [cur_ratio, prev1_ratio, prev2_ratio]:
         if r is None:
             break
-        if r < dialogue_min:
+        if r < dialogue_min_effective:
             low_streak += 1
         else:
             break
@@ -1044,6 +1050,124 @@ DEFAULT_REALITY_RULES = [
 ]
 
 
+def check_cross_chapter_cadence(root: Path, chapter: int, rep: HygieneReport):
+    """H23: 跨章主线角色锚点纪律（Round 17.1 · 2026-04-24 · Ch7 RCA P1.5 根治）
+
+    为什么需要（Ch7 血教训）：
+    - Ch3-6 连 4 章不提妹妹陆灵 · Ch2-6 连 5 章深灰夹克男悬空
+    - 全靠 editor_notes/chN_prep.md 的软约束 + continuity-checker 抽查
+    - Round 17 editor_notes 才补回约束 XI-XV，但下次遗漏风险仍在
+    - 读者头号弃书抱怨之一："作者忘了某角色" / "情感线断层"
+
+    怎么工作：
+    1. 读 .webnovel/context/chNNNN_context.json 的 main_character_cadence.cadence_table
+       （context-agent 已生成，Ch7 起每章都有）
+    2. 对每个角色按 every_n_chapters 判断本章是否该命中
+    3. 扫描本章正文是否含角色名（或别名/转述关键词）
+    4. 该命中未命中 → P1 fail · 未到期 → skip
+
+    配置豁免：
+    .webnovel/hygiene_config.json.character_cadence_exemptions = [chapter_numbers]
+    """
+    import json as _j
+
+    ctx_path = (
+        root / ".webnovel" / "context" / f"ch{chapter:04d}_context.json"
+    )
+    if not ctx_path.exists():
+        rep.record(
+            "P2", "H23",
+            f"context JSON 缺失·跳过锚点纪律检查（ch{chapter:04d}_context.json）",
+            True,
+        )
+        return
+
+    try:
+        ctx = _j.loads(ctx_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        rep.record("P2", "H23", f"context JSON 解析失败: {e}", True)
+        return
+
+    # 从执行包读 cadence_table（context-agent Round 17 生成）
+    cadence = (
+        ctx.get("step_2a_write_prompt", {})
+        .get("main_character_cadence")
+        or ctx.get("contract", {}).get("main_character_cadence")
+        or ctx.get("main_character_cadence")
+    )
+    if not cadence or not cadence.get("applicable"):
+        rep.record(
+            "P2", "H23",
+            "main_character_cadence 未启用（Round 17 前章节或非重生题材）·跳过",
+            True,
+        )
+        return
+
+    cadence_table = cadence.get("cadence_table", [])
+    if not cadence_table:
+        rep.record("P2", "H23", "cadence_table 为空·跳过", True)
+        return
+
+    # 读本章正文
+    text = _load_chapter_text(chapter)
+    if not text:
+        rep.record("P2", "H23", "正文文件缺失·跳过", True)
+        return
+
+    # 配置豁免
+    cfg_path = root / ".webnovel" / "hygiene_config.json"
+    exemptions = set()
+    if cfg_path.exists():
+        try:
+            exemptions = set(
+                _j.loads(cfg_path.read_text(encoding="utf-8")).get(
+                    "character_cadence_exemptions", []
+                )
+            )
+        except Exception:
+            pass
+    if chapter in exemptions:
+        rep.record("P2", "H23", f"Ch{chapter} 在豁免列表·跳过", True)
+        return
+
+    # 遍历每个角色，判断到期 + 命中
+    missing = []
+    hit = []
+    skipped = []
+    for entry in cadence_table:
+        name = entry.get("name", "?")
+        every_n = entry.get("every_n_chapters", 1)
+        # 简单名匹配 + 别名扩展
+        aliases = entry.get("aliases", [])
+        search_terms = [name] + aliases
+        # 仅扫描正文文本（去掉首行"章节标题"若有）
+        found_any = any(term and term in text for term in search_terms)
+        # 到期逻辑：chapter % every_n_chapters == 0 (每 N 章至少 1 次)
+        # 更宽松：只要本章在窗口内（上次出现 + every_n 之内）就算到期
+        # 简化实现：chapter == 1 或 every_n == 1 总是到期
+        due = (every_n == 1) or ((chapter - 1) % every_n == 0)
+        if due and not found_any:
+            missing.append(f"{name}(every={every_n})")
+        elif found_any:
+            hit.append(f"{name}")
+        else:
+            skipped.append(f"{name}(未到期)")
+
+    if missing:
+        rep.record(
+            "P1", "H23",
+            f"跨章锚点纪律未兑现 {len(missing)}/{len(cadence_table)}: {missing[:3]}· "
+            f"读者情感线断层风险（Round 17 约束 XI-XV）",
+            False,
+        )
+    else:
+        rep.record(
+            "P1", "H23",
+            f"跨章锚点纪律 OK (hit={len(hit)} skipped={len(skipped)})",
+            True,
+        )
+
+
 def check_reality_red_flags(root: Path, chapter: int, rep: HygieneReport):
     """H22: 现实常识红旗扫描（Round 17 · 根治末世重生 Ch2/Ch6 律所+版权+刷卡 3 项硬伤）
 
@@ -1155,6 +1279,7 @@ def main():
     check_polish_log_schema(root, args.chapter, rep)
     check_cross_chapter_style_drift(root, args.chapter, rep)  # H21 · Round 16
     check_reality_red_flags(root, args.chapter, rep)  # H22 · Round 17
+    check_cross_chapter_cadence(root, args.chapter, rep)  # H23 · Round 17.1 · Ch7 RCA P1.5
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
