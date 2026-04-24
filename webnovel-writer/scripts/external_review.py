@@ -4,17 +4,18 @@ Supports two modes:
   - legacy: single prompt, 4-dimension combined review (backward compatible)
   - dimensions: 11 separate dimension prompts (incl. reader_flow), concurrent API calls
 
-Architecture (2026-04-22 Round 14):
+Architecture (2026-04-23 Round 16 · 扁平化共识机制):
   - 3 providers: openclawroot + ark-coding (火山方舟 Coding Plan) + siliconflow (fallback)
-  - 14 models × 13 dimensions = 182 independent rater scores (consensus mechanism · Round 14)
+  - 14 models × 13 dimensions = 182 independent rater scores (共识机制 · 扁平化)
   - 每个模型都跑全 13 维度（无分工）；role 字段已删除以消除"分工"误解
-  - Round 14 相比 Round 11 的变化：
-    * 并入火山方舟 Coding Plan（OpenAI 兼容 endpoint），新增 ark-coding provider
-    * 新增 5 模型：doubao-seed-2.0-lite / glm-5.1 / minimax-m2.5 / kimi-k2.5 / kimi-k2.6
-    * 有重复的改用火山：doubao-pro 和 deepseek-v3.2-thinking 主 provider 切至 ark-coding
-    * 火山所有模型用原生 thinking={"type":"enabled"}；max_tokens 按上限（32768 / 65536）
+  - **Round 16 架构变更**（2026-04-23 · Ch6 RCA 最终根治 · 见 ROOT_CAUSE_GUARD_RAILS.md）：
+    * **去除 core/supplemental 层级**：14 模型集体投票，任一失败不阻塞，以成功模型均分共识
+    * 统一重试策略：所有 provider 最多 2 次重试（对抗 openclawroot 偶发 503/524/rate_limited）
+    * 统一早停阈值：任一模型累计 4 个维度失败 → 跳过该模型剩余维度
+    * 健康判定基于成功模型数：≥10/14 pass · 8-9/14 medium warn · <8/14 high warn（不阻塞）
+    * tier 字段保留但仅作历史 observability 字段 · 不再参与任何判定
+  - Round 14 延续：ark-coding 火山方舟 Coding Plan 作为主力 provider 之一
   - 13 维度 = 11 工艺维度 + naturalness（汉语母语自然度）+ reader_critic（读者锐评）
-  - tier 字段仅用于早停机制（core 必须成功，supplemental 失败不阻塞）
   - Heterogeneous coverage: 国产 (Doubao/GLM×2/Qwen/MiMo/MiniMax/DeepSeek) × 异构 (GPT/Gemini)
 
 13 dimensions: consistency/continuity/ooc/reader_pull/high_point/pacing/dialogue_quality/
@@ -23,9 +24,11 @@ information_density/prose_quality/emotion_expression/reader_flow/naturalness/rea
 让外部模型也参与读者视角评估，与内部 13 checker 对齐)
 
 History:
-  Round 10-: 4-tier (nextapi/healwrap/codexcc/siliconflow) × 9 老模型，实测 6-7/9 成功，
-             nextapi 无 key 48% 失败 / minimax-m2.7 全面 0% / doubao 28.6%
+  Round 10-: 4-tier (nextapi/healwrap/codexcc/siliconflow) × 9 老模型，实测 6-7/9 成功
   Round 11+: 2-tier × 9 新模型（openclawroot 实测 9/9 路由正确），供应商精简 2x
+  Round 14:  并入火山方舟 · 14 模型架构 · 维持 core 3 / supplemental 11
+  Round 15.3: core 3 异构 provider（qwen+doubao+glm）· 仍有单 provider 脆弱
+  Round 16:  **去 core/supp 层级 · 14 模型扁平投票 · 本次根治**
 """
 import json
 import time
@@ -123,10 +126,16 @@ REASONING_MODELS = {
     "kimi-k2.5", "kimi-k2.6",
 }
 
-# Round 14 · 14 模型 × 3 供应商（openclawroot + ark-coding + siliconflow）
+# Round 16 · 14 模型扁平架构 · 2026-04-23 最终根治
+# 架构决策：14 模型无层级（去 core/supplemental） · 任一失败不阻塞下一模型 · 以成功模型均分作共识
+# 3 供应商：openclawroot + ark-coding + siliconflow
 # 用户方针：有重复则优先用火山方舟 Coding Plan，所有模型 thinking 全开，max_tokens 拉满上限
 # 每个模型跑全 13 维度（共识机制：14×13 = 182 份独立评分）
-# tier 仅用于早停机制（core 必须成功；supplemental 失败不阻塞）
+#
+# tier 字段保留但**仅作 observability 标签**（历史兼容），不再参与任何判定：
+#   - 路由成功时 routing_verified=True 计入成功
+#   - 累计 4 个维度失败 → 该模型早停 · 不影响其他 13 模型
+#   - Step 6 A3 完整度阈值：成功 ≥ 10/14 pass · 8-9 medium warn · <8 high warn（不阻塞）
 #
 # provider entry 字段说明：
 #   provider: provider key（PROVIDERS 字典）
@@ -135,70 +144,62 @@ REASONING_MODELS = {
 #   max_tokens: 该 provider 下的 max_tokens 上限（可选，默认继承 model.max_tokens_default
 #               或全局 65536）。火山 coding 的 deepseek-v3.2 / kimi-k2.5 上限是 32768。
 MODELS = {
-    # ─── Core 3：异构性覆盖（国产旗舰 + 西方快审 + 谷歌视角） ───
-    # Round 15.3 · 2026-04-23 · Ch6 RCA 根治 Bug #4 openclawroot DEV-4：
-    # 新 core 3 异构 provider（ark-coding + openclawroot + siliconflow），彻底消除单 provider 依赖
+    # ─── 国产旗舰 ───
     "qwen3.6-plus": {
-        "tier": "core",
+        "tier": "standard",
         "providers": [
             {"provider": "openclawroot", "id": "qwen3.6-plus", "name": "Qwen3.6-Plus"},
         ],
         "timeout": 300,
     },
     "doubao-pro": {
-        "tier": "core",  # Round 15.3 · 提升为 core（覆盖国产旗舰 + ark-coding provider）
+        "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "doubao-seed-2.0-pro", "name": "Doubao-Seed-2.0-pro-Ark", "max_tokens": 65536},
             {"provider": "openclawroot", "id": "Doubao-Seed-2.0-pro", "name": "Doubao-Seed-2.0-pro"},
         ],
         "timeout": 300,
     },
-    # glm-5 也提升为 core 3（覆盖 siliconflow provider · Ch3-6 稳定率 100%）· 见下面 glm-5 条目
-    # ─── 降级为 supplemental（2026-04-23 Round 15.3 · Ch6 RCA · openclawroot DEV-4 根治）：
-    # gpt-5.4 / gemini-3.1-pro 只挂 openclawroot · Ch3-6 连 4 章 outage · 从 core 降 supp · 仍跑但不 block
+    # ─── 西方异构视角 · 仅 openclawroot · 失败 fallback 到其他模型成功共识 ───
     "gpt-5.4": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "openclawroot", "id": "gpt-5.4", "name": "GPT-5.4"},
         ],
         "timeout": 180,
     },
     "gemini-3.1-pro": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "openclawroot", "id": "gemini-3.1-pro-high", "name": "Gemini-3.1-Pro-High"},
         ],
         "timeout": 300,
     },
-    # ─── Supplemental 11：国产补充 + 推理深度（火山 coding 优先） ───
-    # Round 14 新增：豆包 seed 2.0 lite（火山独家、低价位、thinking 开）
+    # ─── 国产补充 + 推理深度（火山 coding 优先） ───
     "doubao-seed-2.0-lite": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "doubao-seed-2.0-lite", "name": "Doubao-Seed-2.0-lite", "max_tokens": 65536},
         ],
         "timeout": 300,
     },
     "glm-5": {
-        # Round 15.3 · 2026-04-23 · 提升为 core（覆盖 siliconflow provider · Ch3-6 稳定率 100%）
-        # 把 siliconflow 放 primary（更稳），openclawroot 作为 fallback
-        "tier": "core",
+        "tier": "standard",
         "providers": [
             {"provider": "siliconflow", "id": "Pro/zai-org/GLM-5", "name": "GLM-5-SF"},
             {"provider": "openclawroot", "id": "GLM-5", "name": "GLM-5"},
         ],
         "timeout": 300,
     },
-    # Round 14 新增：glm-5.1（火山独家，v5.1 增量版本）
     "glm-5.1": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "glm-5.1", "name": "GLM-5.1-Ark", "max_tokens": 65536},
         ],
         "timeout": 300,
     },
     "glm-4.7": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "openclawroot", "id": "GLM-4.7", "name": "GLM-4.7"},
             {"provider": "siliconflow", "id": "Pro/zai-org/GLM-4.7", "name": "GLM-4.7-SF"},
@@ -206,30 +207,28 @@ MODELS = {
         "timeout": 300,
     },
     "mimo-v2-pro": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "openclawroot", "id": "mimo-v2-pro", "name": "MiMo-V2-Pro"},
         ],
         "timeout": 300,
     },
     "minimax-m2.7-hs": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "openclawroot", "id": "MiniMax-M2.7-highspeed", "name": "MiniMax-M2.7-HS"},
         ],
         "timeout": 300,
     },
-    # Round 14 新增：minimax m2.5（火山独家，M2.5 原生 thinking，并发最快 3s）
     "minimax-m2.5": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "minimax-m2.5", "name": "MiniMax-M2.5-Ark", "max_tokens": 65536},
         ],
         "timeout": 300,
     },
-    # Round 14：deepseek 主 provider 切到 ark-coding（火山 max_tokens 上限 32768）
     "deepseek-v3.2-thinking": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "deepseek-v3.2", "name": "DeepSeek-V3.2-Ark", "max_tokens": 32768},
             {"provider": "openclawroot", "id": "DeepSeek-V3.2-Thinking", "name": "DeepSeek-V3.2-Thinking"},
@@ -237,17 +236,15 @@ MODELS = {
         ],
         "timeout": 300,
     },
-    # Round 14 新增：kimi k2.5（火山独家，Moonshot thinking 默认开，max_tokens 32768）
     "kimi-k2.5": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "kimi-k2.5", "name": "Kimi-K2.5-Ark", "max_tokens": 32768},
         ],
         "timeout": 300,
     },
-    # Round 14 新增：kimi k2.6（火山独家，Moonshot 旗舰 thinking，max_tokens 65536）
     "kimi-k2.6": {
-        "tier": "supplemental",
+        "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "kimi-k2.6", "name": "Kimi-K2.6-Ark", "max_tokens": 65536},
         ],
@@ -839,16 +836,13 @@ def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, 
             continue
 
         base_url = PROVIDERS[provider_name]["base_url"]
-        # Round 14 · 重试策略：ark-coding/healwrap/nextapi 给 2 次重试（含首跑偶发 400），
-        # openclawroot/siliconflow 保持原有行为（0 次，fail-fast 后切下一 provider）
-        # Round 15.2 (2026-04-23) · DEV-3 根治：core tier 模型（gpt-5.4/gemini-3.1-pro/
-        # qwen3.6-plus）若 provider=openclawroot 单路径，给 2 次重试以对抗 503/524 偶发
-        # 故障。连续 3 章 (Ch3-5) openclawroot outage 全部是一次性 503/524，第一次请求
-        # 就扔 http_5xx，fail-fast=0 重试意味着 1 次失败=整个维度挂。Round 15.2 给它们
-        # 重试机会，预期能把 core 3 失败率从 67%（Ch5 case）显著降低。
-        max_retries = 2 if provider_name in ("healwrap", "nextapi", "ark-coding") else 0
-        if provider_name == "openclawroot" and model_config.get("tier") == "core":
-            max_retries = 2
+        # Round 16 · 2026-04-23 · 统一重试策略（去 core/supp 层级）：
+        # 所有 provider 都给 2 次重试（含首跑偶发 400/偶发 503/524/rate_limited）
+        # - openclawroot：Ch3-6 连续 4 章 outage 证明 rate_limited/503/524 偶发性强，2 次重试显著降失败率
+        # - ark-coding：首跑偶发 400（历史观察），2 次重试能恢复
+        # - siliconflow：兜底稳定，2 次重试作为保险
+        # 失败仍然切下一个 provider 链，直到全部尝试完毕。
+        max_retries = 2
         # Round 14 · max_tokens 优先从 provider 读（火山 coding 的 deepseek/kimi-k2.5 限 32768）
         provider_max_tokens = provider_cfg.get("max_tokens", 65536)
 
@@ -1398,7 +1392,7 @@ def run_dimensions_mode(args, api_keys):
             args_copy._preloaded_context = _shared_context
             args_copy._preloaded_chapter_text = _shared_chapter_text
             try:
-                print(f"[all-models] 开始: {mk} ({MODELS[mk]['tier']})", file=sys.stderr)
+                print(f"[all-models] 开始: {mk}", file=sys.stderr)
                 _run_single_model(args_copy, api_keys)
                 print(f"[all-models] 完成: {mk}", file=sys.stderr)
                 return mk, "success"
@@ -1416,12 +1410,36 @@ def run_dimensions_mode(args, api_keys):
                 mk, result = f.result()
                 all_results[mk] = result
 
+        success_count = sum(1 for v in all_results.values() if v == "success")
+        failed_count = sum(1 for v in all_results.values() if v != "success")
+        total_count = len(all_model_keys)
+        # Round 16 · 2026-04-23 · 14 模型扁平健康判定：
+        #   ≥ 10/14 成功 → healthy（绿线通过）
+        #   8-9/14      → degraded_ok（warn medium · 仍可继续）
+        #   5-7/14      → degraded_warn（warn high · 但不阻塞 · 14 模型共识足够）
+        #   < 5/14      → critical（多家 provider 同时挂 · 实际基本不会发生）
+        if success_count >= 10:
+            coverage_status = "healthy"
+        elif success_count >= 8:
+            coverage_status = "degraded_ok"
+        elif success_count >= 5:
+            coverage_status = "degraded_warn"
+        else:
+            coverage_status = "critical"
+
         summary = {
             "mode": "all-models",
             "chapter": chapter_num,
-            "total": len(all_model_keys),
-            "success": sum(1 for v in all_results.values() if v == "success"),
-            "failed": sum(1 for v in all_results.values() if v != "success"),
+            "total": total_count,
+            "success": success_count,
+            "failed": failed_count,
+            "coverage_status": coverage_status,
+            "coverage_thresholds": {
+                "healthy": ">= 10/14",
+                "degraded_ok": "8-9/14",
+                "degraded_warn": "5-7/14",
+                "critical": "< 5/14",
+            },
             "details": all_results,
         }
         print(json.dumps(summary, ensure_ascii=False))
@@ -1483,16 +1501,14 @@ def _run_single_model(args, api_keys):
     total_prompt_tokens = 0
     total_completion_tokens = 0
 
-    # 补充层早停：累计失败后跳过排队中的剩余维度
-    # 补充层阈值=2（快速放弃，节省 healwrap/siliconflow 配额给其他模型）
-    # 核心层阈值=5（容忍更多失败，确保核心模型尽力返回）
-    is_supplemental = model_config.get("tier") == "supplemental"
-    early_stop_event = threading.Event() if is_supplemental else None
+    # Round 16 · 2026-04-23 · 统一早停阈值（14 模型扁平化）：
+    # 任一模型累计 4 个维度失败 → 该模型早停（节省 API 配额给其他 13 模型）
+    # 不再按 core/supplemental 区分 · 14 模型一视同仁
+    # 维度并发降至 3 使排队维度可被 early_stop_event 拦截
+    early_stop_event = threading.Event()
     total_dim_failures = 0
-    EARLY_STOP_THRESHOLD = 2 if is_supplemental else 5
-    # 补充层降低维度并发（3），使排队中的 task 能被 early_stop_event 拦截
-    # 核心层保持全并发
-    dim_concurrent = min(max_concurrent, 3) if is_supplemental else max_concurrent
+    EARLY_STOP_THRESHOLD = 4  # Round 16 统一值（老 core=5 / 老 supp=2 的折中）
+    dim_concurrent = min(max_concurrent, 3)
 
     with ThreadPoolExecutor(max_workers=dim_concurrent) as executor:
         futures = {}
@@ -1513,9 +1529,9 @@ def _run_single_model(args, api_keys):
                 if dim_score == 0 and not dim_summary.strip():
                     total_dim_failures += 1
                     results[dim_key] = {"status": "failed", "error": "phantom_success_score0_empty"}
-                    if is_supplemental and total_dim_failures >= EARLY_STOP_THRESHOLD and early_stop_event and not early_stop_event.is_set():
+                    if total_dim_failures >= EARLY_STOP_THRESHOLD and early_stop_event and not early_stop_event.is_set():
                         early_stop_event.set()
-                        print(f"[early-stop] {resolved_key}（补充层）累计{total_dim_failures}次失败，触发早停", file=sys.stderr)
+                        print(f"[early-stop] {resolved_key} 累计{total_dim_failures}次失败（阈值{EARLY_STOP_THRESHOLD}），触发早停", file=sys.stderr)
                     continue
                 dim_issues = parsed.get("issues", [])
                 scores[dim_key] = dim_score
@@ -1571,10 +1587,10 @@ def _run_single_model(args, api_keys):
                     total_dim_failures += 1
                     results[dim_key] = {"status": "failed", "error": error}
 
-                    # 补充层累计失败达阈值 → 设置 event，排队中的维度启动时立即跳过
-                    if is_supplemental and total_dim_failures >= EARLY_STOP_THRESHOLD and early_stop_event and not early_stop_event.is_set():
+                    # Round 16 · 2026-04-23 · 统一早停（14 模型扁平化）：累计达阈值 → 设置 event，排队中的维度立即跳过
+                    if total_dim_failures >= EARLY_STOP_THRESHOLD and early_stop_event and not early_stop_event.is_set():
                         early_stop_event.set()
-                        print(f"[early-stop] {resolved_key}（补充层）累计{total_dim_failures}次失败，触发早停", file=sys.stderr)
+                        print(f"[early-stop] {resolved_key} 累计{total_dim_failures}次失败（阈值{EARLY_STOP_THRESHOLD}），触发早停", file=sys.stderr)
 
     # Calculate overall
     valid_scores = [s for s in scores.values() if isinstance(s, (int, float))]

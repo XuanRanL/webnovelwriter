@@ -158,25 +158,23 @@ def normalize_checker_scores_keys(
             renamed.append(f"{src_key}→{canonical}")
     return normalized, renamed, invalid
 
-# 2026-04-23 Round 15.3 · Ch6 RCA · 核心 3 名单调整（根治 Bug #4 openclawroot DEV-4）
-# 问题：旧 core 3（qwen/gpt-5.4/gemini）全挂 openclawroot · Ch3-6 连续 4 章 outage
-# 根治：新 core 3 = 异构 provider（ark-coding + openclawroot + siliconflow），消除单 provider 依赖
-#   - qwen3.6-plus → openclawroot（Ch3-6 稳定率 100%）
-#   - doubao-pro → ark-coding（火山稳定 · 覆盖"国产旗舰"）
-#   - glm-5 → siliconflow（硅基流动稳定 · 覆盖"推理优秀"）
-# gpt-5.4 / gemini-3.1-pro 降为 supplemental · 仍跑 · 失败不阻塞
-EXTERNAL_MODELS_CORE3 = ["qwen3.6-plus", "doubao-pro", "glm-5"]
-EXTERNAL_MODELS_SUPPLEMENTAL = [
-    "gpt-5.4", "gemini-3.1-pro",  # Round 15.3 降级 · openclawroot 单 provider 脆弱
-    "doubao-seed-2.0-lite",
-    "glm-5.1", "glm-4.7",
-    "mimo-v2-pro",
-    "minimax-m2.7-hs", "minimax-m2.5",
-    "deepseek-v3.2-thinking",
-    "kimi-k2.5", "kimi-k2.6",
+# 2026-04-23 Round 16 · 14 模型扁平化（根治 Ch6 RCA Bug #4 + core 概念过度耦合）
+# 根因：core 3 模型硬要求 + openclawroot 单 provider 脆弱 → Ch3-6 连续 4 章 DEV 事故
+# 根治：去 core/supplemental 层级 · 14 模型集体投票 · 任一失败不阻塞
+# 判定改为：成功模型数 ≥ 10/14 pass · 8-9/14 medium warn · <8/14 high warn（不 critical block）
+EXTERNAL_MODELS_ALL = [
+    "qwen3.6-plus", "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+    "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
+    "mimo-v2-pro", "minimax-m2.7-hs", "minimax-m2.5",
+    "deepseek-v3.2-thinking", "kimi-k2.5", "kimi-k2.6",
 ]
-EXTERNAL_MODELS_ALL = EXTERNAL_MODELS_CORE3 + EXTERNAL_MODELS_SUPPLEMENTAL
-# 向后兼容 alias（历史代码/外部引用）—— 指向同一 list，不复制
+# Round 16 完整度阈值（A3 判定核心参数）
+EXTERNAL_MODELS_HEALTHY_MIN = 10    # ≥ 10/14 → pass
+EXTERNAL_MODELS_DEGRADED_MIN = 8    # 8-9/14 → warn medium
+EXTERNAL_MODELS_HIGH_WARN_MIN = 5   # 5-7/14 → warn high（仍不 critical block）
+# 向后兼容 aliases（历史代码/外部引用 · 保留避免其他模块 ImportError）
+EXTERNAL_MODELS_CORE3 = []  # Round 16 置空 · 不再有 core 概念
+EXTERNAL_MODELS_SUPPLEMENTAL = list(EXTERNAL_MODELS_ALL)
 EXTERNAL_MODELS_ALL9 = EXTERNAL_MODELS_ALL
 
 DATA_AGENT_STEPS_REQUIRED = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]  # K 为 best-effort
@@ -630,7 +628,16 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
     )
 
 def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
-    """A3: external review must have durable JSON evidence, not just markdown mentions."""
+    """A3: external review must have durable JSON evidence, not just markdown mentions.
+
+    Round 16 · 2026-04-23 · 扁平化共识机制（去 core 硬要求）：
+        判定逻辑基于"有效模型数"而非"是否齐全 core 3"：
+          - ≥ 10/14 有效 → pass（healthy · 14 模型共识充分）
+          - 8-9/14 有效 → warn medium（degraded_ok · 不阻塞）
+          - 5-7/14 有效 → warn high（degraded_warn · 仍不 critical block · 因为 5+ 模型已够共识）
+          - < 5/14 有效 → fail critical（实际几乎不会发生 · 多家 provider 同时挂）
+        保留：routing_verified 校验 · phantom_zero 检测 · score_spread alert
+    """
     report = _find_review_report(project_root, chapter)
     external_results = _load_external_review_results(project_root, chapter)
     if report is None and not external_results:
@@ -638,17 +645,15 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
             id="A3", name="外部模型覆盖", layer="A",
             status="fail", severity="high",
             evidence="review report and external review JSON are both missing",
-            remediation=["rerun Step 3.5 for all external models"],
+            remediation=["rerun Step 3.5: python external_review.py --mode dimensions --model-key all"],
         )
 
     if external_results:
         valid_models: List[str] = []
-        core_present: List[str] = []
         partial_models: List[str] = []
         unrouted_models: List[str] = []
         phantom_models: List[str] = []
-        invalid_core: Dict[str, List[str]] = {}
-        invalid_supplemental: Dict[str, List[str]] = {}
+        invalid_models: Dict[str, List[str]] = {}
         for model_key, payload in external_results.items():
             data = payload.get("data") or {}
             dimension_reports = data.get("dimension_reports") or []
@@ -677,36 +682,15 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
 
             if not model_issues:
                 valid_models.append(model_key)
-                if model_key in EXTERNAL_MODELS_CORE3:
-                    core_present.append(model_key)
-            elif model_key in EXTERNAL_MODELS_CORE3:
-                invalid_core[model_key] = model_issues
             else:
-                invalid_supplemental[model_key] = model_issues
+                invalid_models[model_key] = model_issues
 
-        measured = {
-            "core_present": sorted(core_present),
-            "all_present": sorted(valid_models),
-            "partial_models": sorted(partial_models),
-            "unrouted_models": sorted(unrouted_models),
-            "phantom_models": sorted(phantom_models),
-            "invalid_core": invalid_core,
-            "invalid_supplemental": invalid_supplemental,
-        }
-        missing_core = [m for m in EXTERNAL_MODELS_CORE3 if m not in core_present]
-        if missing_core or invalid_core:
-            details = {key: invalid_core[key] for key in sorted(invalid_core)}
-            return CheckResult(
-                id="A3", name="外部模型覆盖", layer="A",
-                status="fail", severity="critical",
-                evidence=f"core external models missing or invalid: missing={missing_core}, invalid={details}",
-                measured=measured,
-                remediation=["rerun Step 3.5 for all core external models"],
-            )
+        total_expected = len(EXTERNAL_MODELS_ALL)
+        valid_count = len(valid_models)
+
         # Round 12: external score spread alert.
         # Ch1《末世重生》血教训——Gemini 75.3 与其他模型 87-91 分差 ≥ 10，
         # 平均化稀释后主审查员未读 Gemini 低分 issue，漏掉时间线矛盾。
-        # 分差 ≥ 10 分视为"模型共识低"，强制 warn 要求人工复核最低分模型。
         model_scores: Dict[str, float] = {}
         for model_key, payload in external_results.items():
             data = payload.get("data") or {}
@@ -726,46 +710,110 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
                     f"(lowest={lowest_model}:{min_score:.1f}, highest={highest_model}:{max_score:.1f}). "
                     f"人工强制复核 {lowest_model} 的 all high/medium issues."
                 )
-            measured["score_spread"] = round(score_spread, 1)
+
+        measured = {
+            "valid_count": valid_count,
+            "total_expected": total_expected,
+            "valid_models": sorted(valid_models),
+            "partial_models": sorted(partial_models),
+            "unrouted_models": sorted(unrouted_models),
+            "phantom_models": sorted(phantom_models),
+            "invalid_models": invalid_models,
+            "coverage_status": (
+                "healthy" if valid_count >= EXTERNAL_MODELS_HEALTHY_MIN
+                else "degraded_ok" if valid_count >= EXTERNAL_MODELS_DEGRADED_MIN
+                else "degraded_warn" if valid_count >= EXTERNAL_MODELS_HIGH_WARN_MIN
+                else "critical"
+            ),
+            "thresholds": {
+                "healthy_min": EXTERNAL_MODELS_HEALTHY_MIN,
+                "degraded_ok_min": EXTERNAL_MODELS_DEGRADED_MIN,
+                "high_warn_min": EXTERNAL_MODELS_HIGH_WARN_MIN,
+            },
+        }
+        if len(model_scores) >= 2:
+            measured["score_spread"] = round(max(model_scores.values()) - min(model_scores.values()), 1)
             measured["lowest_model"] = min(model_scores, key=model_scores.get)
             measured["highest_model"] = max(model_scores, key=model_scores.get)
 
-        if len(valid_models) < len(EXTERNAL_MODELS_ALL):
+        # Round 16 扁平判定：
+        if valid_count < EXTERNAL_MODELS_HIGH_WARN_MIN:
+            # < 5/14 有效：多家 provider 同时挂 · 真正的 critical
             missing_models = [m for m in EXTERNAL_MODELS_ALL if m not in valid_models]
-            extra_issues = []
-            if invalid_supplemental:
-                extra_issues.append(f"invalid_supplemental={sorted(invalid_supplemental)}")
+            return CheckResult(
+                id="A3", name="外部模型覆盖", layer="A",
+                status="fail", severity="critical",
+                evidence=(
+                    f"external review coverage critical: only {valid_count}/{total_expected} models valid "
+                    f"(< {EXTERNAL_MODELS_HIGH_WARN_MIN}). Consensus may be unreliable. "
+                    f"missing/invalid={sorted(missing_models)}"
+                ),
+                measured=measured,
+                remediation=[
+                    "Check provider health (openclawroot/ark-coding/siliconflow)",
+                    "rerun Step 3.5 for all models: python external_review.py --mode dimensions --model-key all",
+                ],
+            )
+        if valid_count < EXTERNAL_MODELS_DEGRADED_MIN:
+            # 5-7/14：warn high · 不 block（共识仍足够）
+            missing_models = [m for m in EXTERNAL_MODELS_ALL if m not in valid_models]
+            extra = []
             if spread_alert_note:
-                extra_issues.append(f"spread_alert={spread_alert_note}")
+                extra.append(spread_alert_note)
             return CheckResult(
                 id="A3", name="外部模型覆盖", layer="A",
                 status="warn", severity="high",
-                evidence="external review model coverage is incomplete: "
-                f"missing={missing_models}" + (f", {'; '.join(extra_issues)}" if extra_issues else ""),
+                evidence=(
+                    f"external review coverage degraded: {valid_count}/{total_expected} models valid "
+                    f"(Round 16 扁平阈值：5-7 为 warn high · 不阻塞). "
+                    f"missing/invalid={sorted(missing_models)}"
+                    + (f". {' | '.join(extra)}" if extra else "")
+                ),
                 measured=measured,
-                remediation=["backfill the missing external model reviews"] +
-                    (["人工复核最低分模型的 high/medium issues"] if spread_alert_note else []),
+                remediation=[
+                    "可重跑失败模型 · 若 provider outage 本章可接受（共识仍够）",
+                    "下章 Step 3.5 前验证 provider 健康度",
+                ] + (["人工复核最低分模型的 high/medium issues"] if spread_alert_note else []),
             )
+        if valid_count < EXTERNAL_MODELS_HEALTHY_MIN:
+            # 8-9/14：warn medium
+            missing_models = [m for m in EXTERNAL_MODELS_ALL if m not in valid_models]
+            extra = []
+            if spread_alert_note:
+                extra.append(spread_alert_note)
+            return CheckResult(
+                id="A3", name="外部模型覆盖", layer="A",
+                status="warn", severity="medium",
+                evidence=(
+                    f"external review coverage ok (degraded_ok): {valid_count}/{total_expected} models valid. "
+                    f"missing/invalid={sorted(missing_models)}"
+                    + (f". {' | '.join(extra)}" if extra else "")
+                ),
+                measured=measured,
+                remediation=(
+                    ["人工复核最低分模型的 high/medium issues"] if spread_alert_note else []
+                ),
+            )
+        # ≥ 10/14 有效：healthy pass
         if spread_alert_note:
             return CheckResult(
                 id="A3", name="外部模型覆盖", layer="A",
                 status="warn", severity="medium",
-                evidence=f"{len(valid_models)} external review JSON files are valid; {spread_alert_note}",
+                evidence=f"{valid_count}/{total_expected} external review JSON files are valid (healthy); {spread_alert_note}",
                 measured=measured,
                 remediation=["人工复核最低分模型的 high/medium issues，确认是共识低还是观察视角差异"],
             )
         return CheckResult(
             id="A3", name="外部模型覆盖", layer="A",
             status="pass", severity="high",
-            evidence=f"{len(valid_models)} external review JSON files are valid",
+            evidence=f"{valid_count}/{total_expected} external review JSON files are valid (healthy · Round 16 扁平共识)",
             measured=measured,
         )
 
+    # Fallback 路径：无 JSON 产物 · 只有 markdown 报告
     text = _read_text(report) or ""
     present = [m for m in EXTERNAL_MODELS_ALL if m in text.lower() or m in text]
-    core_present = [m for m in EXTERNAL_MODELS_CORE3 if m in text.lower() or m in text]
     phantom_hits = 0
-    # Round 14 · phantom-zero 零分模式匹配扩展（老 alias + 新 Round 14 模型）
     zero_pattern = re.compile(
         r"(?:kimi|kimi-k2\.[56]|glm|glm-5\.1|qwen-plus|qwen3\.6-plus|minimax|minimax-m2\.[57]|minimax-m2\.7-hs|doubao|doubao-seed-2\.0-(?:pro|lite)|doubao-pro|qwen|glm4|glm-4\.7|deepseek|deepseek-v3\.2(?:-thinking)?|gpt-5\.4|gemini-3\.1-pro|mimo-v2-pro)[^\n]{0,40}[:：]\s*0(?:\.0+)?(?:\b|$)",
         re.IGNORECASE,
@@ -777,35 +825,27 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
         if len(snippet.replace(" ", "").replace("\n", "")) < 150:
             phantom_hits += 1
 
-    measured = {"core_present": core_present, "all_present": present, "phantom_zeros": phantom_hits}
-    if len(core_present) < len(EXTERNAL_MODELS_CORE3):
-        return CheckResult(
-            id="A3", name="外部模型覆盖", layer="A",
-            status="fail", severity="critical",
-            evidence="review report does not prove all core external models ran",
-            measured=measured,
-            remediation=["persist external review JSON instead of relying on markdown only"],
-        )
+    measured = {"all_present": present, "phantom_zeros": phantom_hits}
     if phantom_hits > 0:
         return CheckResult(
             id="A3", name="外部模型覆盖", layer="A",
-            status="fail", severity="critical",
+            status="fail", severity="high",
             evidence="review report contains likely phantom zero scores",
             measured=measured,
             remediation=["rerun Step 3.5 for the failed external models"],
         )
-    if len(present) < 3:
+    if len(present) < EXTERNAL_MODELS_HIGH_WARN_MIN:
         return CheckResult(
             id="A3", name="外部模型覆盖", layer="A",
             status="warn", severity="high",
-            evidence="review report implies too few external model reviews",
+            evidence=f"review report implies too few external model reviews (<{EXTERNAL_MODELS_HIGH_WARN_MIN}/14)",
             measured=measured,
             remediation=["persist external review JSON instead of relying on markdown only"],
         )
     return CheckResult(
         id="A3", name="外部模型覆盖", layer="A",
-        status="pass", severity="high",
-        evidence="review report shows external review coverage, but JSON evidence is preferred",
+        status="pass", severity="medium",
+        evidence=f"review report shows external review coverage ({len(present)}/14 mentioned), but JSON evidence is preferred",
         measured=measured,
     )
 

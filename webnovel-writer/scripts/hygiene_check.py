@@ -37,6 +37,14 @@
     H19 polish_log 末尾时间早于 git 最新 commit（可能历史裸跑 polish）
     H20 chapter_meta[{NNNN}].polish_log schema 合规：每条含
         {version=vN/vN.M.K, timestamp=ISO-8601, notes=非空}（Round 14.5.2）
+    H22 现实常识红旗扫描（Round 17 · 2026-04-23 · 根治末世重生 Ch1-6 deep research P0）：
+        7 类红旗（律所时间 / 单笔大额刷卡 / 反洗钱 / 职务作品 / 期货极值 / 学校医院 / 陈年种子）
+        项目通过 .webnovel/reality_check_config.json 覆盖/扩展/exemption
+    H21 跨章风格漂移监控（Round 16 · Ch6 RCA RC-1 根治）：
+        - 对话占比连 2-3 章 < 0.20（低 reader-critic 风险）
+        - 章末形式同型 ≥ 3 章（纯主角内心独白收尾）
+        - "没 X" 句式单章 ≥ 25-30 次（签名句式过载）
+        - 签名动作（印记跳/后颈凉等）单章超载
   P2 建议（exit 2）：
     H12 context_snapshot 存在
     H13 项目特定检查（通过 .webnovel/hygiene_check_local.py 扩展）
@@ -828,6 +836,143 @@ def check_polish_log_schema(root: Path, chapter: int, rep: HygieneReport):
         rep.record("P1", "H20", f"polish_log {len(polish_log)} 条全部合规", True)
 
 
+def check_cross_chapter_style_drift(root: Path, chapter: int, rep: HygieneReport):
+    """H21: 跨章风格漂移监控（2026-04-23 Round 16 · Ch6 RCA 根治 RC-1 作者风格克制漂移）
+
+    监控 4 条红线（Ch6 血教训：reader-critic 连 4 章 58-71 低位的根因）：
+      1. 对话占比：连续 2 章 < 0.20 → warn；连续 3 章 → P1 fail
+      2. 章末形式同型 ≥ 3 章（如连续"心里默念 N 字"）→ P1 fail
+      3. "没 X" 句式单章 > 25 次 → warn；> 30 次 → P1 fail
+      4. 印记跳/后颈凉等签名动作单章超载（印记跳 > 5 / 后颈凉 > 3 · 项目可配）→ warn
+
+    数据源：
+      - 正文/第{NNNN}章*.md（当前章 + 上 2 章）
+      - state.chapter_meta[NNNN].checker_scores（对话占比可能在 dialogue score 里）
+      - 可选项目配置：.webnovel/style_drift_config.json 覆盖默认阈值 / 签名动作清单
+
+    设计目标：此检查只 P1 warn · 不 P0 阻断 commit · 作为"章末决策前的跨章信号"
+    """
+    cfg_path = root / ".webnovel" / "style_drift_config.json"
+    cfg = {}
+    if cfg_path.exists():
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    # 可配置参数
+    dialogue_min = float(cfg.get("dialogue_ratio_min", 0.20))
+    no_x_warn = int(cfg.get("no_x_warn_threshold", 25))
+    no_x_fail = int(cfg.get("no_x_fail_threshold", 30))
+    signature_actions = cfg.get("signature_actions", {
+        # 项目默认 · 可被 .webnovel/style_drift_config.json 覆盖
+        "印记跳": 5,
+        "后颈凉": 3,
+    })
+    chapter_end_dedup_min = int(cfg.get("chapter_end_dedup_min", 3))
+
+    # 加载当前 + 上 2 章正文
+    def _load_chapter_text(ch):
+        files = list((root / "正文").glob(f"第{ch:04d}章*.md")) if (root / "正文").exists() else []
+        if not files:
+            return None
+        try:
+            return files[0].read_text(encoding="utf-8")
+        except Exception:
+            return None
+
+    cur_text = _load_chapter_text(chapter)
+    if cur_text is None:
+        rep.record("P2", "H21", "正文文件缺失，跳过风格漂移检测", True)
+        return
+
+    # 1. 对话占比（粗估：U+201C/U+201D 对包裹的字数 / 总字数）
+    def _dialogue_ratio(text: str) -> float:
+        if not text:
+            return 0.0
+        # 匹配弯引号配对（允许跨行）
+        pairs = re.findall(r"\u201c([^\u201c\u201d]*)\u201d", text, flags=re.DOTALL)
+        dialogue_chars = sum(len(re.findall(r"[\u4e00-\u9fff]", p)) for p in pairs)
+        total_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
+        return dialogue_chars / total_chars if total_chars > 0 else 0.0
+
+    cur_ratio = _dialogue_ratio(cur_text)
+    prev1_text = _load_chapter_text(chapter - 1) if chapter >= 2 else None
+    prev2_text = _load_chapter_text(chapter - 2) if chapter >= 3 else None
+    prev1_ratio = _dialogue_ratio(prev1_text) if prev1_text else None
+    prev2_ratio = _dialogue_ratio(prev2_text) if prev2_text else None
+
+    low_streak = 0
+    for r in [cur_ratio, prev1_ratio, prev2_ratio]:
+        if r is None:
+            break
+        if r < dialogue_min:
+            low_streak += 1
+        else:
+            break
+
+    if low_streak >= 3:
+        rep.record("P1", "H21",
+                   f"对话占比连 3 章 < {dialogue_min}（Ch{chapter}={cur_ratio:.3f} / "
+                   f"Ch{chapter-1}={prev1_ratio:.3f} / Ch{chapter-2}={prev2_ratio:.3f}）· "
+                   f"读者 reader-critic 低位风险", False)
+    elif low_streak == 2:
+        rep.record("P2", "H21",
+                   f"对话占比连 2 章 < {dialogue_min}（Ch{chapter}={cur_ratio:.3f} / "
+                   f"Ch{chapter-1}={prev1_ratio:.3f}）· warn", True)
+    else:
+        rep.record("P1", "H21_dialogue", f"对话占比 {cur_ratio:.3f} OK（≥ {dialogue_min} 或非连续低）", True)
+
+    # 2. 章末形式同型检测（粗启发式：末段 150 字内是否纯主角内心独白）
+    def _is_inner_monologue_end(text: str) -> bool:
+        if not text:
+            return False
+        # 取最后 200 中文字符
+        cjk = re.findall(r"[\u4e00-\u9fff]", text)
+        if len(cjk) < 50:
+            return False
+        tail = text[-1500:] if len(text) >= 1500 else text
+        # 启发：末尾无弯引号 + 出现"心里/默念/在心里/想/他想"等内省标记
+        has_dialogue = "\u201c" in tail
+        inner_markers = any(m in tail for m in ["心里", "默念", "他想", "在心底", "脑子里"])
+        return (not has_dialogue) and inner_markers
+
+    ends_inner = [
+        _is_inner_monologue_end(t) for t in [cur_text, prev1_text, prev2_text] if t is not None
+    ]
+    if len(ends_inner) >= chapter_end_dedup_min and all(ends_inner[:chapter_end_dedup_min]):
+        rep.record("P1", "H21_chapter_end",
+                   f"章末形式同型连 {chapter_end_dedup_min} 章（纯主角内心独白收尾）· "
+                   f"reader-pull SOFT_PATTERN_REPEAT 风险 · 建议 Ch{chapter+1} 换"
+                   "四选一形式（行动定格/外部对话/外部景象/伏笔物件特写）", False)
+    else:
+        rep.record("P1", "H21_chapter_end", "章末形式无同型累积", True)
+
+    # 3. "没 X" 句式密度
+    no_x_matches = re.findall(r"没[一-鿿]{1,3}", cur_text or "")
+    no_x_count = len(no_x_matches)
+    if no_x_count >= no_x_fail:
+        rep.record("P1", "H21_no_x",
+                   f"'没X' 句式 {no_x_count} 次（≥ {no_x_fail} 硬线）· 签名句式过载 · 建议降到 15-20 区间", False)
+    elif no_x_count >= no_x_warn:
+        rep.record("P2", "H21_no_x",
+                   f"'没X' 句式 {no_x_count} 次（>= {no_x_warn} warn 阈值）· 建议降到 15-20", True)
+    else:
+        rep.record("P1", "H21_no_x", f"'没X' 句式 {no_x_count} 次 OK", True)
+
+    # 4. 签名动作超载（可配置）
+    overload = []
+    for action, max_n in signature_actions.items():
+        n = (cur_text or "").count(action)
+        if n > max_n:
+            overload.append(f"{action}×{n}>{max_n}")
+    if overload:
+        rep.record("P2", "H21_signature",
+                   f"签名动作超载: {', '.join(overload)}（载体差异化不足）", True)
+    else:
+        rep.record("P1", "H21_signature", "签名动作密度 OK", True)
+
+
 def run_project_local_checks(root: Path, chapter: int, rep: HygieneReport):
     """H13: 调用 .webnovel/hygiene_check_local.py（若存在）"""
     local_p = root / ".webnovel" / "hygiene_check_local.py"
@@ -841,6 +986,144 @@ def run_project_local_checks(root: Path, chapter: int, rep: HygieneReport):
             mod.run(root=root, chapter=chapter, report=rep)
     except Exception as exc:
         rep.record("P2", "H13", f"项目本地检查失败: {exc}", False)
+
+
+# H22 现实常识红旗扫描（2026-04-23 Round 17 · 根治末世重生 Ch1-6 deep research P0 常识硬伤）
+# 默认规则包：律所时间 / 大额刷卡 / 职务作品 / 反洗钱 / 期货收益极值
+# 项目可通过 .webnovel/reality_check_config.json 覆盖/扩展
+DEFAULT_REALITY_RULES = [
+    {
+        "id": "law_firm_hours",
+        "domain": "律所/法院",
+        "pattern": r"(早上|上午|凌晨)?\s*(六点|七点|6:\d{2}|7:\d{2}|6点\d{0,2}|7点\d{0,2})[^。]{0,20}(律所|律师事务所|法院)",
+        "severity": "P1",
+        "message": "律所/法院 ≤ 7:30 营业不合理（国内律所标准 9:00，个别 8:30）。合理化：改为 9:00+/'昨晚预约今早上门'，或加一行说明（'合伙人本人 7 点到所'）",
+    },
+    {
+        "id": "single_swipe_large",
+        "domain": "银行/刷卡",
+        "pattern": r"(单笔|一笔|一次)?[^。]{0,10}(刷卡|划卡|划卡|POS|pos)[^。]{0,15}(五十万|50 ?万|一百万|100 ?万|八十万|80 ?万)",
+        "severity": "P1",
+        "message": "国内单笔刷卡限额一般 ≤ 5 万（少数银行 5-20 万）。合理化：改'分 N 笔转账' / 网银大额转账 / 柜面支票，并加一行合规性说明",
+    },
+    {
+        "id": "anti_money_laundering",
+        "domain": "反洗钱",
+        "pattern": r"(刷卡|转账|支付|打卡|现金).{0,20}(五十万|50 ?万|一百万|100 ?万|二百万|200 ?万|三百万|300 ?万)",
+        "severity": "P2",
+        "message": "单日现金/转账 ≥ 5 万现金或 ≥ 20 万对公/10 万对私会触发央行反洗钱监测。合理化：'分 N 天打' / '提前跟银行经理托过关系' / 走对公账户",
+    },
+    {
+        "id": "work_product_copyright",
+        "domain": "职务作品",
+        "pattern": r"(职务|公司项目|公司内部).{0,30}(版权|著作权)[^。]{0,15}(归个人|归我|权利人是(我|本人|个人)|登记.{0,5}(我|本人))",
+        "severity": "P1",
+        "message": "著作权法第 18 条：职务作品著作权归公司。合理化：'入职时特批私活协议' / '独立于工作时间开发'（必须写进正文情节）",
+    },
+    {
+        "id": "futures_extreme_yield",
+        "domain": "期货/股市",
+        "pattern": r"(期货|股市|股票)[^。]{0,30}(十倍|百倍|十四倍|100%|1000%|三百四十七|347 ?万|五百万|500 ?万).{0,30}(一天|当日|单日|一夜)",
+        "severity": "P2",
+        "message": "单日 10 倍以上收益仅在极端锁板/杠杆+涨停连击下可能。合理化：'他知道这是史上极少几次的连续涨停锁板' / 改小倍数（3-8 倍更稳）",
+    },
+    {
+        "id": "hospital_school_hours",
+        "domain": "学校/医院",
+        "pattern": r"(周六|周日|周末|法定节假日)[^。]{0,15}(教务处|财务处|学生处|助学金|教务|工商局|社保局).{0,10}办",
+        "severity": "P2",
+        "message": "行政机关/学校周末一般不办公。合理化：改到周一至周五，或加一行说明",
+    },
+    {
+        "id": "fresh_germination_ancient_seed",
+        "domain": "种子存活",
+        "pattern": r"(十五年|20 ?年|二十年|30 ?年|三十年)[^。]{0,15}(种子|麦种|谷种).{0,15}(发芽|出苗|长出)",
+        "severity": "P2",
+        "message": "普通麦种保存 15+ 年后发芽率极低。合理化：'生石灰封装 / 低温干燥 / 灵泉激活' 必须在正文情节出现",
+    },
+]
+
+
+def check_reality_red_flags(root: Path, chapter: int, rep: HygieneReport):
+    """H22: 现实常识红旗扫描（Round 17 · 根治末世重生 Ch2/Ch6 律所+版权+刷卡 3 项硬伤）
+
+    支持项目级覆盖：.webnovel/reality_check_config.json
+    格式：
+        {
+          "rules": [...],  // 替换默认规则（同 DEFAULT_REALITY_RULES 格式）
+          "extra_rules": [...],  // 追加到默认规则
+          "disabled_rule_ids": ["law_firm_hours"],  // 禁用默认规则
+          "exemptions": {  // 本章白名单：正则命中但明确由情节合理化
+            "0006": ["single_swipe_large"],  // Ch6 50 万刷卡已合理化为分笔
+            "0002": ["work_product_copyright"]  // Ch2 职务作品已加特批私活
+          }
+        }
+    """
+    text_p = None
+    for pat in [f"第{chapter:04d}章-*.md", f"第{chapter:04d}章*.md"]:
+        cands = list((root / "正文").glob(pat)) if (root / "正文").exists() else []
+        if cands:
+            text_p = cands[0]
+            break
+    if not text_p or not text_p.exists():
+        rep.record("P2", "H22", "正文文件缺失，跳过现实常识红旗扫描", True)
+        return
+
+    rules = list(DEFAULT_REALITY_RULES)
+    exemptions = {}
+    cfg_p = root / ".webnovel" / "reality_check_config.json"
+    if cfg_p.exists():
+        try:
+            cfg = json.loads(cfg_p.read_text(encoding="utf-8"))
+            if cfg.get("rules"):
+                rules = list(cfg["rules"])
+            if cfg.get("extra_rules"):
+                rules.extend(cfg["extra_rules"])
+            disabled = set(cfg.get("disabled_rule_ids", []))
+            rules = [r for r in rules if r.get("id") not in disabled]
+            exemptions = cfg.get("exemptions", {}) or {}
+        except Exception as exc:
+            rep.record("P2", "H22", f"reality_check_config.json 解析失败: {exc}（使用默认规则）", True)
+
+    chapter_key = f"{chapter:04d}"
+    exempted_ids = set(exemptions.get(chapter_key, []))
+
+    text = text_p.read_text(encoding="utf-8", errors="ignore")
+    findings = []
+    for rule in rules:
+        rid = rule.get("id", "unnamed")
+        if rid in exempted_ids:
+            continue
+        pattern = rule.get("pattern", "")
+        if not pattern:
+            continue
+        try:
+            matches = list(re.finditer(pattern, text))
+        except re.error:
+            continue
+        if matches:
+            severity = rule.get("severity", "P2")
+            sample = matches[0].group(0)[:40].replace("\n", " ")
+            findings.append({
+                "id": rid,
+                "domain": rule.get("domain", ""),
+                "severity": severity,
+                "count": len(matches),
+                "sample": sample,
+                "message": rule.get("message", ""),
+            })
+
+    if not findings:
+        rep.record("P1", "H22", "现实常识红旗 0 处（律所/刷卡/版权/反洗钱等 7 类）", True)
+        return
+
+    for f in findings:
+        rep.record(
+            f["severity"],
+            f"H22_{f['id']}",
+            f"[{f['domain']}] {f['count']} 处命中 · 样例: {f['sample']} · {f['message']} · 合理化后请在 reality_check_config.json 设 exemptions.{chapter_key}",
+            False,
+        )
 
 
 def main():
@@ -870,6 +1153,8 @@ def main():
     check_checker_scores_canonical(root, args.chapter, rep)
     check_post_commit_polish_drift(root, args.chapter, rep)
     check_polish_log_schema(root, args.chapter, rep)
+    check_cross_chapter_style_drift(root, args.chapter, rep)  # H21 · Round 16
+    check_reality_red_flags(root, args.chapter, rep)  # H22 · Round 17
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)

@@ -1396,10 +1396,16 @@ def main():
 
     # update subcommand: let data-agent cleanly mutate strand_tracker / plot_threads
     # instead of manually atomic-writing state.json (which bypasses locks)
-    update_parser = subparsers.add_parser("update", help="细粒度更新 state.json（strand_tracker/伏笔）")
+    update_parser = subparsers.add_parser("update", help="细粒度更新 state.json（strand_tracker/伏笔/chapter_meta 字段/protagonist_state 冗余显示字段）")
     update_parser.add_argument("--strand-dominant", help='JSON: {"chapter":N,"dominant":"quest","sub":"fire"}')
     update_parser.add_argument("--add-foreshadowing", help='JSON: {"id":"F01","description":"...","planted_chapter":N,"urgency":30,"level":"主线"}')
     update_parser.add_argument("--resolve-foreshadowing", help='JSON: {"id":"F01","resolution":"...","resolved_chapter":N}')
+    # Round 15.2 (2026-04-23)：补全 chapter_meta 字段级 CLI + protagonist_state 冗余字段同步 CLI
+    # 根因：Ch5 Step 5 后 hygiene_check H9 报 P1 warn "chapter_meta.0005.overall_score=None"；
+    #        同时 data-agent 通过 SQL 权威源更新了 hourglass 和 location，但 state.json 的
+    #        冗余显示字段无 CLI 路径同步，只能违规手改。本补丁根治该 gap。
+    update_parser.add_argument("--set-chapter-meta-field", help='JSON: {"chapter":N,"field":"overall_score","value":89}（field 支持白名单：overall_score/narrative_version/naturalness_verdict/naturalness_score/reader_critic_verdict/reader_critic_score/strand_dominant/word_count/chapter_type/review_score）')
+    update_parser.add_argument("--sync-protagonist-display", help='JSON: {"hourglass_remaining":28,"location_current":"堂屋·雨夜·D-25","vital_force_current":80}（protagonist_state 冗余显示字段同步 · SQL 权威源改过后手工 sync）')
 
     argv = normalize_global_project_root(sys.argv[1:])
     args = parser.parse_args(argv)
@@ -1496,11 +1502,12 @@ def main():
     elif args.command == "update":
         # At least one of the three mutation flags must be provided
         if not (args.strand_dominant or args.add_foreshadowing or args.resolve_foreshadowing):
-            emit_error(
-                "MISSING_ARG",
-                "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing）",
-            )
-            return
+            if not (args.set_chapter_meta_field or args.sync_protagonist_display):
+                emit_error(
+                    "MISSING_ARG",
+                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display）",
+                )
+                return
         changes: list[str] = []
         applied_chapter: int | None = None
         if args.strand_dominant:
@@ -1566,6 +1573,64 @@ def main():
             changes.append(f"resolve_foreshadowing:{fid}")
             if applied_chapter is None and payload.get("resolved_chapter"):
                 applied_chapter = int(payload["resolved_chapter"])
+        # Round 15.2：chapter_meta 字段级更新（白名单限定 · 禁止任意字段）
+        if args.set_chapter_meta_field:
+            payload = load_json_arg(args.set_chapter_meta_field)
+            ch = int(payload.get("chapter", 0))
+            field = str(payload.get("field", "")).strip()
+            value = payload.get("value")
+            CHAPTER_META_FIELD_WHITELIST = {
+                "overall_score", "narrative_version",
+                "naturalness_verdict", "naturalness_score",
+                "reader_critic_verdict", "reader_critic_score",
+                "strand_dominant", "word_count",
+                "chapter_type", "review_score",
+            }
+            if not ch or not field:
+                emit_error("INVALID_ARG", "--set-chapter-meta-field 需要 chapter + field 字段")
+                return
+            if field not in CHAPTER_META_FIELD_WHITELIST:
+                emit_error(
+                    "FIELD_NOT_ALLOWED",
+                    f"field={field} 不在白名单内，允许集: {sorted(CHAPTER_META_FIELD_WHITELIST)}",
+                )
+                return
+            cm = manager._state.setdefault("chapter_meta", {})
+            key = f"{ch:04d}"
+            entry = cm.setdefault(key, {})
+            entry[field] = value
+            manager._pending_raw_state_mutations.add("chapter_meta")
+            changes.append(f"chapter_meta.{key}.{field}={value}")
+            if applied_chapter is None:
+                applied_chapter = ch
+
+        # Round 15.2：protagonist_state 冗余显示字段同步（SQL 改过后手工触发）
+        if args.sync_protagonist_display:
+            payload = load_json_arg(args.sync_protagonist_display)
+            ps = manager._state.setdefault("protagonist_state", {})
+            if "hourglass_remaining" in payload:
+                gf = ps.setdefault("golden_finger", {})
+                hg = gf.setdefault("hourglass", {})
+                hg["remaining"] = int(payload["hourglass_remaining"])
+                changes.append(f"hourglass.remaining={payload['hourglass_remaining']}")
+            if "location_current" in payload:
+                loc = ps.setdefault("location", {})
+                loc["current"] = str(payload["location_current"])
+                changes.append(f"location.current={payload['location_current']}")
+            if "vital_force_current" in payload:
+                vf = ps.setdefault("vital_force", {})
+                vf["current"] = int(payload["vital_force_current"])
+                changes.append(f"vital_force.current={payload['vital_force_current']}")
+            if "seal_jump_count" in payload:
+                seal = ps.setdefault("seal_state", {})
+                seal["jump_count"] = int(payload["seal_jump_count"])
+                changes.append(f"seal.jump_count={payload['seal_jump_count']}")
+            if "countdown_current" in payload:
+                cd = ps.setdefault("countdown", {})
+                cd["current"] = str(payload["countdown_current"])
+                changes.append(f"countdown.current={payload['countdown_current']}")
+            manager._pending_raw_state_mutations.add("protagonist_state")
+
         manager.save_state()
         emit_success(
             {"changes": changes, "chapter": applied_chapter},
