@@ -64,7 +64,7 @@
 
 - 允许：人工逐条编辑、人工复制后再整理、人工补摘要与同义词
 - 禁止：脚本批量转换、正则批量生成内容、程序自动抽取 md 到 CSV
-- 历史脚本 `scripts/update_reference_batch.py` 已降级为 legacy dry-run/test helper，不允许写入真实 `references/csv`
+- 历史批量迁移脚本已移除；如需补条目，请人工编辑后运行 `scripts/validate_csv.py`
 - 原因：CSV 条目质量优先于迁移速度
 
 ## 编号前缀
