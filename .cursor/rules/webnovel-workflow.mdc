@@ -45,46 +45,50 @@ alwaysApply: true
 - 个别维度因章节类型/情节因素评分偏低属于正常，不必强行拉分
 - 存在可修复的 medium/high 问题时，Step 4 修复后重新进入 Step 3 做第二轮审查
 
-## Step 3.5 外部模型审查配置
+## Step 3.5 外部模型审查配置（Round 14+ · 14 模型 × 13 维度）
 
-**九模型双层架构：**
+> 权威版本在 `webnovel-writer/skills/webnovel-write/references/step-3.5-external-review.md`。此处给运行时摘要。
 
-核心层（必须成功，四级 fallback 保障）：
-- kimi-k2.5（严审/逻辑设定）— nextapi → healwrap → codexcc → 硅基流动
-- glm-5（编辑/读者感受）— nextapi → healwrap → codexcc → 硅基流动
-- qwen3.5-plus（网文/爽点结构）— healwrap → codexcc → 硅基流动
+**架构：3 供应商 × 14 模型 × 13 维度 = 182 份独立评分（共识机制）**
 
-补充层（失败不阻塞，累计3维度失败早停）：
-- qwen-3.5（宽松锚点）— healwrap → 硅基流动
-- deepseek-v3.2（技术考据）— healwrap → 硅基流动
-- minimax-m2.5（快速参考）— nextapi → healwrap → codexcc → 硅基流动
-- doubao-seed-2.0（结构审查/逻辑一致性）— healwrap only
-- glm-4.7（文学质感/角色声音）— healwrap → 硅基流动
-- minimax-m2.7（对话/情感深度）— nextapi → healwrap → codexcc
+**核心层（3，必须成功，异构性覆盖）：**
+- `qwen3.6-plus` — openclawroot
+- `gpt-5.4` — openclawroot
+- `gemini-3.1-pro` — openclawroot
 
-**供应商（四级 fallback）：**
-- 主力：nextapi (`https://api.nextapi.store/v1`)，key: NEXTAPI_API_KEY，RPM=999（无限制）
-- 次级：healwrap (`https://llm-api.healwrap.cn/v1`)，key: HEALWRAP_API_KEY，RPM=8
-- 备用1：codexcc (`https://api.codexcc.top/v1`)，key: CODEXCC_API_KEY
-- 备用2/兜底：硅基流动 (`https://api.siliconflow.cn/v1`)，key: EMBED_API_KEY
+**补充层（11，失败不阻塞，累计 3 维度失败早停）：**
+- `doubao-pro` — ark-coding（主） → openclawroot（备）
+- `doubao-seed-2.0-lite` — ark-coding
+- `glm-5` — openclawroot → siliconflow
+- `glm-5.1` — ark-coding
+- `glm-4.7` — openclawroot → siliconflow
+- `mimo-v2-pro` — openclawroot
+- `minimax-m2.7-hs` — openclawroot
+- `minimax-m2.5` — ark-coding
+- `deepseek-v3.2-thinking` — ark-coding（主 · max_tokens=32768） → openclawroot → siliconflow
+- `kimi-k2.5` — ark-coding（max_tokens=32768）
+- `kimi-k2.6` — ark-coding
 
-硅基流动模型名映射：kimi→`Pro/moonshotai/Kimi-K2.5`，glm→`Pro/zai-org/GLM-5`，qwen-plus→`Qwen/Qwen3.5-397B-A17B`
+**供应商：**
+- **openclawroot** (`https://openclawroot.com/v1`)，key=`OPENCLAWROOT_API_KEY`，RPM=30
+- **ark-coding** 火山方舟 Coding Plan (`https://ark.cn-beijing.volces.com/api/coding/v3`)，key=`ARK_CODING_API_KEY`（fallback `ARK_API_KEY`），RPM=30；所有 7 个模型用原生 `thinking={"type":"enabled"}`
+- **siliconflow** (`https://api.siliconflow.cn/v1`)，key=`EMBED_API_KEY`，RPM=30（仅 glm-5/glm-4.7/deepseek-v3.2 兜底）
 
-**重试与 fallback 规则：**
-- 核心层 kimi/glm：nextapi(2次) → healwrap(2次) → codexcc(不重试) → 硅基流动(兜底)
-- 核心层 qwen-plus：healwrap(2次) → codexcc(不重试) → 硅基流动(兜底)
-- 补充层 minimax/minimax-m2.7：nextapi(2次) → healwrap(2次) → codexcc(不重试)
-- 补充层 qwen/deepseek/glm4：healwrap(2次) → 硅基流动(兜底)
-- 补充层 doubao：healwrap(2次) only
-- 幽灵零分（score=0+空摘要）：provider 层自动检测并切下一供应商重试
-- 每次 API 调用后**必须验证路由**：检查 response.model 字段是否匹配请求模型，路由错误视为该供应商不可用，不重试直接切下一个
-- 429限流：等6秒后重试；超时：计入重试次数
-- 连接错误(10054)：关闭旧连接重建 Session，等8秒后重试
+**thinking / max_tokens 策略：**
+- ark-coding：`thinking={"type":"enabled"}`，max_tokens 按上限（32768 或 65536）
+- openclawroot：按家族分派 `reasoning_effort`（gpt）/`thinking_budget`（gemini）/`enable_thinking`（qwen/deepseek/doubao/glm/mimo/minimax）
+
+**重试与 fallback：**
+- ark-coding/healwrap/nextapi：重试 2 次
+- openclawroot/siliconflow：fail-fast 切下一 provider
+- 路由验证：每次调用后检查 `response.model` 与请求匹配
+- 幽灵零分（score=0 + 空摘要）：provider 层自动切下一供应商
 
 **调用方式（硬规则）：**
-- **必须**使用 `--model-key all` 一次性跑全部9个模型，禁止手动逐个调用（防遗漏）
-- 脚本仅支持：`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--max-concurrent`, `--rpm-override`
-- 不要传 `--chapter-file`、`--outline-file` 等不存在的参数
+- **必须**用 `--model-key all` 一次性跑全部 14 个模型，禁止手动逐个调用（防遗漏）
+- 脚本仅支持：`--project-root` / `--chapter` / `--mode` / `--model-key` / `--models` / `--max-concurrent` / `--rpm-override`
+- 不要传 `--chapter-file` / `--outline-file` 等不存在的参数
+
 ```bash
 python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --project-root "${PROJECT_ROOT}" \
@@ -93,19 +97,18 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --model-key all
 ```
 
-**外审 Prompt 要求（升级版）：**
-10个审查维度：设定一致性/连贯性/人物塑造/追读力/爽点密度/节奏控制/对话质量/信息密度/文笔质感/情感表现。
-每个 issue 必须包含 type（SETTING_CONFLICT/CONTINUITY/OOC/PACING/READER_PULL/STYLE/DIALOGUE_FLAT/DIALOGUE_INFODUMP/DIALOGUE_MONOLOGUE/PADDING/REPETITION/PROSE_FLAT/EMOTION_SHALLOW）、severity、location（定位到段落）、description、suggestion（修改建议）、quote（引用原句）。每个维度返回 score + comment + 该维度下的 issues 列表。
+**外审 Prompt：**
+13 个审查维度 = 11 工艺维度（设定一致性 / 连贯性 / 人物塑造 / 追读力 / 爽点密度 / 节奏控制 / 对话质量 / 信息密度 / 文笔质感 / 情感表现 / 读者视角流畅度 `reader_flow`）+ `naturalness`（汉语母语自然度）+ `reader_critic`（读者锐评）。每个 issue 必含 type / severity / location / description / suggestion / quote。
 
 **外审输出 JSON 必须包含：**
-model_actual（响应中实际模型）、routing_verified（bool）、provider_chain（尝试链路记录）、api_meta（elapsed_ms/tokens/attempts/final_provider）
+`model_actual` / `routing_verified` / `provider_chain` / `api_meta`（elapsed_ms / tokens / attempts / final_provider）。
 
 **审查报告格式：**
-- 9模型评分矩阵（可用模型 × 10维度）
-- 共识问题（>=3模型指出的同类问题 = 真问题）
-- Step 4 修复清单（从共识问题筛选 severity >= medium）
+- 14 模型 × 13 维度评分矩阵（含"供应商"列）
+- 共识问题（≥3 个模型指出的同类问题 = 真问题；14 模型下可将阈值调至 ≥4）
+- Step 4 修复清单（共识 + severity ≥ medium + verified 筛选）
 
-**执行要求：** 每章 Step 3（10个内部checker）+ Step 3.5（9个外部模型×10维度）通过后，核心3模型全部返回后才进入 Step 4
+**执行要求：** 每章 Step 3（13 个内部 checker）+ Step 3.5（14 个外部模型 × 13 维度）通过后，核心 3 模型全部返回后才进入 Step 4。
 
 ## 开篇黄金协议（Ch1-3 专用，叠加在标准流程之上）
 
@@ -180,4 +183,4 @@ model_actual（响应中实际模型）、routing_verified（bool）、provider_
 1. 工作区根目录：`I:\AI-extention\webnovel-writer\.env`（优先）
 2. 全局：`C:\Users\Windows\.claude\webnovel-writer\.env`（兜底）
 
-包含：Embedding API / Rerank API / External Review API（HEALWRAP_API_KEY + CODEXCC_API_KEY + EMBED_API_KEY）的密钥和端点。
+包含：Embedding / Rerank / 外部审查 API 的密钥和端点（Round 14+ 当前用到：`OPENCLAWROOT_API_KEY` + `ARK_CODING_API_KEY` + `EMBED_API_KEY`/`SILICONFLOW_API_KEY`；历史遗留：HEALWRAP/CODEXCC/NEXTAPI，已废弃但 key 仍保留在 .env 里以备后用）。

@@ -1,10 +1,16 @@
 ---
-description: Step 3.5 外部模型审查的 Prompt 模板、输出 Schema 和审查报告格式
-globs: 星际拆解师/**
+description: Step 3.5 外部模型审查的 Prompt 模板、输出 Schema 和审查报告格式（Round 16 · 14 模型扁平共识）
+globs: "**/审查报告/**,**/.webnovel/tmp/external_review_*.json,末世重生*/**,星际拆解师*/**"
 alwaysApply: true
 ---
 
 # Step 3.5 外部模型审查规范
+
+> **Round 16 架构（2026-04-23 · Ch6 RCA 最终根治）**：
+> - 14 模型扁平共识 · 无 core / supplemental 层级
+> - 统一重试 2 次 · 统一早停阈值 4
+> - Step 6 A3 判定：≥ 10/14 有效 pass · 8-9 medium warn · 5-7 high warn（仍不阻塞） · <5 critical
+> - 详见 `webnovel-writer/skills/webnovel-write/references/step-3.5-external-review.md`
 
 ## 一、外审 Prompt 模板
 
@@ -123,7 +129,7 @@ issue 的 type 分类说明：
   "model_key": "kimi",
   "model_requested": "kimi-k2.5",
   "model_actual": "<response.model字段的值>",
-  "provider": "healwrap",
+  "provider": "ark-coding",
   "routing_verified": true,
   "overall_score": 87,
   "pass": true,
@@ -153,11 +159,11 @@ issue 的 type 分类说明：
     "dismissed": 1
   },
   "provider_chain": [
-    {"provider": "healwrap", "attempt": 1, "result": "timeout"},
-    {"provider": "healwrap", "attempt": 2, "result": "success", "routing_ok": true}
+    {"provider": "ark-coding", "attempt": 1, "result": "timeout"},
+    {"provider": "ark-coding", "attempt": 2, "result": "success", "routing_ok": true}
   ],
   "api_meta": {
-    "final_provider": "healwrap",
+    "final_provider": "ark-coding",
     "elapsed_ms": 8500,
     "prompt_tokens": 2300,
     "completion_tokens": 1800,
@@ -183,10 +189,9 @@ issue 的 type 分类说明：
 ### 路由验证规则
 
 判定 routing_verified 的逻辑：
-1. `response.model == model_requested` → true
-2. `response.model` 含 "MiniMax" 但请求的是 glm → false（codexcc 已知问题）
-3. `response.model` 含 "qianfan" 但请求的是 kimi → false（codexcc 已知问题）
-4. 硅基流动的 model 名格式为 `Pro/xxx/Model`，与请求匹配时也算 true
+1. `response.model == model_requested` → true（ark-coding / openclawroot 当前均返回短名，直接相等或 substring 匹配）
+2. 硅基流动的 model 名格式为 `Pro/xxx/Model`，与请求匹配时也算 true（`_normalized_match`）
+3. `verify_routing` 的 `ROUTING_BUGS` 常量维护历史 provider 路由 bug blacklist（历史：codexcc 请求 glm 返回 MiniMax / 请求 kimi 返回 qianfan）；Round 14+ ark-coding & openclawroot 尚无已知 routing bug
 
 ### 交叉验证规则
 
@@ -219,19 +224,26 @@ issue 的 type 分类说明：
 | 文笔质感 | {score} |
 | 情感表现 | {score} |
 
-## 外部审查（9 模型 × 10 维度评分矩阵）
+## 外部审查（14 模型 × 13 维度评分矩阵 · Round 14+）
 
-| 模型 | 设定 | 连贯 | 人物 | 追读 | 爽点 | 节奏 | 对话 | 密度 | 文笔 | 情感 | 总分 | 路由 |
-|------|------|------|------|------|------|------|------|------|------|------|------|------|
-| kimi-k2.5 | | | | | | | | | | | | ✅/❌ |
-| glm-5 | | | | | | | | | | | | ✅/❌ |
-| qwen3.5-plus | | | | | | | | | | | | ✅/❌ |
-| qwen-3.5 | | | | | | | | | | | | ✅/❌ |
-| deepseek-v3.2 | | | | | | | | | | | | ✅/❌ |
-| minimax-m2.5 | | | | | | | | | | | | ✅/❌ |
-| doubao-seed-2.0 | | | | | | | | | | | | ✅/❌ |
-| glm-4.7 | | | | | | | | | | | | ✅/❌ |
-| minimax-m2.7 | | | | | | | | | | | | ✅/❌ |
+> 13 维度 = 10 工艺维度 + reader_flow + naturalness + reader_critic
+
+| 模型 | 供应商 | 设定 | 连贯 | 人物 | 追读 | 爽点 | 节奏 | 对话 | 密度 | 文笔 | 情感 | 流畅 | 母语 | 锐评 | 总分 | 路由 |
+|------|--------|------|------|------|------|------|------|------|------|------|------|------|------|------|------|------|
+| qwen3.6-plus | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
+| gpt-5.4 | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
+| gemini-3.1-pro | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
+| doubao-pro | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
+| doubao-seed-2.0-lite | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
+| glm-5 | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
+| glm-5.1 | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
+| glm-4.7 | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
+| mimo-v2-pro | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
+| minimax-m2.7-hs | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
+| minimax-m2.5 | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
+| deepseek-v3.2-thinking | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
+| kimi-k2.5 | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
+| kimi-k2.6 | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
 
 外部均值: {score}
 
@@ -248,7 +260,7 @@ issue 的 type 分类说明：
 ## 模型路由验证
 | 模型 | 供应商 | 请求 | 实际 | 路由 |
 |------|--------|------|------|------|
-| kimi | healwrap | kimi-k2.5 | kimi-k2.5 | ✅ |
+| kimi-k2.5 | ark-coding | kimi-k2.5 | kimi-k2.5 | ✅ |
 | ... | | | | |
 
 ## 润色记录（Step 4 后填写）

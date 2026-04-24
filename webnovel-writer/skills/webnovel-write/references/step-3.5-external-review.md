@@ -1,70 +1,90 @@
-# Step 3.5 外部模型审查规范（Round 11+ openclawroot 架构）
+# Step 3.5 外部模型审查规范（Round 16 · 14 模型扁平共识架构）
 
-## 九模型共识架构 · 2 供应商
+## 十四模型扁平共识架构 · 3 供应商
 
-### 核心层（必须成功，异构性覆盖）
+**Round 16 架构决策（2026-04-23 · Ch6 RCA 最终根治）**：
+- **去 core / supplemental 层级**：14 模型集体投票 · 任一失败不阻塞 · 以成功模型均分作共识
+- **统一重试策略**：所有 provider 最多 2 次重试（对抗 openclawroot 偶发 503/524/rate_limited）
+- **统一早停阈值**：任一模型累计 4 个维度失败 → 跳过该模型剩余维度（节省 API 配额给其他 13 模型）
+- **Step 6 A3 完整度阈值**：
+  - ≥ 10/14 有效 → pass（healthy · 绿线通过）
+  - 8-9/14       → warn medium（degraded_ok · 不阻塞）
+  - 5-7/14       → warn high（degraded_warn · 仍不 critical · 共识已足够）
+  - < 5/14       → fail critical（多家 provider 同时挂 · 真正需要介入）
 
-| 模型 key | openclawroot id | siliconflow 备用 | 特点 |
-|---|---|---|---|
-| `qwen3.6-plus` | `qwen3.6-plus` | — | 国产旗舰，识别语义重复最细致 |
-| `gpt-5.4` | `gpt-5.4` | — | OpenAI 系，西方叙事视角，最快 2-7s |
-| `gemini-3.1-pro` | `gemini-3.1-pro-high` | — | 谷歌系，画面感审视 |
+**历史背景**：Round 15.3 将 core 3 改为异构 provider（qwen+doubao+glm）仍有单 provider 脆弱性——Ch3-6 连续 4 章 openclawroot outage（gpt-5.4/gemini-3.1-pro 全挂）。Round 16 彻底去掉 "必须 X 模型成功" 的硬耦合，以 14 模型投票为共识根据，任意 4 家 provider 故障都不影响主流程。
 
-### 补充层（失败不阻塞，累计 3 维度失败早停）
+### 14 模型名单 · 3 供应商统一表
 
-| 模型 key | openclawroot id | siliconflow 备用 | 特点 |
-|---|---|---|---|
-| `doubao-pro` | `Doubao-Seed-2.0-pro` | — | 结构审查严苛 |
-| `glm-5` | `GLM-5` | `Pro/zai-org/GLM-5` | 中文编辑权威 |
-| `glm-4.7` | `GLM-4.7` | `Pro/zai-org/GLM-4.7` | 文学质感 |
-| `mimo-v2-pro` | `mimo-v2-pro` | — | 小米推理 |
-| `minimax-m2.7-hs` | `MiniMax-M2.7-highspeed` | — | 对话情感推理 |
-| `deepseek-v3.2-thinking` | `DeepSeek-V3.2-Thinking` | `Pro/deepseek-ai/DeepSeek-V3.2` | 技术考据 + 深度推理 |
+| 模型 key | 主 provider | 请求 id | max_tokens | 备用 provider | 特点 |
+|---|---|---|---|---|---|
+| `qwen3.6-plus` | openclawroot | `qwen3.6-plus` | 65536 | — | 国产旗舰，识别语义重复最细致 |
+| `gpt-5.4` | openclawroot | `gpt-5.4` | 65536 | — | OpenAI 系，西方叙事视角，最快 2-7s |
+| `gemini-3.1-pro` | openclawroot | `gemini-3.1-pro-high` | 65536 | — | 谷歌系，画面感审视 |
+| `doubao-pro` | ark-coding | `doubao-seed-2.0-pro` | 65536 | openclawroot | 结构审查严苛（火山直连） |
+| `doubao-seed-2.0-lite` | ark-coding | `doubao-seed-2.0-lite` | 65536 | — | 豆包轻量 thinking |
+| `glm-5` | siliconflow | `Pro/zai-org/GLM-5` | 65536 | openclawroot | 中文编辑权威 |
+| `glm-5.1` | ark-coding | `glm-5.1` | 65536 | — | GLM 5.1 增量版 |
+| `glm-4.7` | openclawroot | `GLM-4.7` | 65536 | siliconflow | 文学质感 |
+| `mimo-v2-pro` | openclawroot | `mimo-v2-pro` | 65536 | — | 小米推理 |
+| `minimax-m2.7-hs` | openclawroot | `MiniMax-M2.7-highspeed` | 65536 | — | 对话情感推理 |
+| `minimax-m2.5` | ark-coding | `minimax-m2.5` | 65536 | — | MiniMax 2.5 交错推理 |
+| `deepseek-v3.2-thinking` | ark-coding | `deepseek-v3.2` | 32768 | openclawroot → siliconflow | 技术考据 + 深度推理 |
+| `kimi-k2.5` | ark-coding | `kimi-k2.5` | 32768 | — | Moonshot K2.5 thinking |
+| `kimi-k2.6` | ark-coding | `kimi-k2.6` | 65536 | — | Moonshot K2.6 旗舰 |
 
-## 供应商配置（2-tier）
+## 供应商配置（3-tier）
 
-- **主力**：openclawroot (`https://openclawroot.com/v1`)，key: `OPENCLAWROOT_API_KEY`，RPM=30
-- **兜底**：siliconflow (`https://api.siliconflow.cn/v1`)，key: `EMBED_API_KEY`/`SILICONFLOW_API_KEY`，RPM=30（仅部分模型）
+- **主力 A · openclawroot** (`https://openclawroot.com/v1`)，key: `OPENCLAWROOT_API_KEY`，RPM=30，承载 Core 3 + 部分 Supp（共 9 个模型，其中 doubao-pro/deepseek-v3.2-thinking 为 fallback 角色）
+- **主力 B · ark-coding**（火山方舟 Coding Plan，`https://ark.cn-beijing.volces.com/api/coding/v3`），key: `ARK_CODING_API_KEY`（fallback `ARK_API_KEY`），RPM=30，7 个模型；实测 7 并发 4.5× 加速
+- **兜底 · siliconflow** (`https://api.siliconflow.cn/v1`)，key: `EMBED_API_KEY`/`SILICONFLOW_API_KEY`，RPM=30（仅 glm-5/glm-4.7/deepseek-v3.2 支持）
 
 ## 共识机制（核心设计）
 
-- **9 模型 × 13 维度 = 117 份独立评分**
+- **14 模型 × 13 维度 = 182 份独立评分**（Round 14）
 - 每个模型都跑**全 13 维度**（无分工！role 字段已删除 2026-04-16 Round 11）
 - 多模型命中同一 issue → 真 bug；单模型孤例 → 模型偏见（cross_validation 自动过滤）
-- 异构覆盖：国产（Doubao/GLM×2/Qwen/MiMo/MiniMax/DeepSeek）+ 西方（GPT/Gemini）
+- 异构覆盖：国产（Doubao×2 / GLM×3 / Qwen / MiMo / MiniMax×2 / DeepSeek / Kimi×2）+ 西方（GPT / Gemini）
 
 ## Thinking 全开 + max_tokens 最大
 
-- 所有模型 `max_tokens = 65536`（模型最大）
-- OpenAI 系（gpt-5.4）：`reasoning_effort = "high"`
-- Gemini 系：`thinking_budget = 16384`
-- Qwen/DeepSeek/Doubao/GLM/MiMo 系：`enable_thinking = True`
-- MiniMax 推理：`enable_thinking = True`
-- 推理模型（mimo/minimax-hs/deepseek-thinking）若 `content` 为空，fallback 读 `reasoning_content`
+按 provider 分派（`call_api` 根据 `provider_name` 分支）：
 
-## 重试与 fallback 规则
+- **ark-coding**（7 模型）：`thinking={"type":"enabled"}`（火山原生），`max_tokens` 按模型上限（32768 或 65536）
+- **openclawroot / siliconflow**：按模型厂家家族分别：
+  - OpenAI 系（gpt-5.4）：`reasoning_effort="high"`
+  - Gemini 系：`thinking_budget=16384`
+  - Qwen/DeepSeek/Doubao/GLM/MiMo/MiniMax 系：`enable_thinking=True`
+  - Anthropic 风格：`thinking={"type":"enabled","budget_tokens":16384}`
+- 所有推理模型若 `content` 为空，fallback 读 `reasoning_content`（REASONING_MODELS 集合标注）
 
-- **openclawroot**：重试 2 次，429 等 6s，403 立即切
-- **siliconflow**：兜底，重试 1 次
+## 重试与 fallback 规则（Round 16 统一）
+
+- **所有 provider**：最多 2 次重试（对抗偶发 400/429/503/524/rate_limited）
+  - openclawroot Ch3-6 连续 4 章 outage 实测数据表明 rate_limited/503/524 多为瞬时故障，2 次重试显著降低失败率
+  - ark-coding 首跑偶发 400 可通过重试恢复
+  - siliconflow 兜底，2 次重试作为保险
+- 重试失败后自动切下一 provider（按 MODELS[model].providers 顺序）
+- 全部 provider 失败后视为该模型该维度 failed，不阻塞其他模型或维度
 - 幽灵零分（score=0 + 空摘要）：provider 层自动检测并切下一供应商重试
 - 每次 API 调用后**路由验证**：检查 `response.model` 字段是否匹配请求模型
-- Round 10+ 新增：外部模型 quote 幻觉自动 severity 降级（见 `_verify_quote_exists`）
+- Round 10+ 保留：外部模型 quote 幻觉自动 severity 降级（见 `_verify_quote_exists`）
 
 ## 并发控制
 
-- `--model-key all` 模式：9 模型并发 × 每模型最多 6 维度并发（`DEFAULT_MAX_CONCURRENT=6`）
+- `--model-key all` 模式：14 模型并发 × 每模型最多 6 维度并发（`DEFAULT_MAX_CONCURRENT=6`）
 - 单模型全并发：13 维度同时跑（openclawroot RPM=30 够用）
 - 补充层维度并发自动降至 min(6, 3) = 3（启用早停拦截排队中的维度）
 - CLI 参数：`--max-concurrent N`、`--rpm-override N`
 
 **推荐调用策略：**
-- **首选**：`--model-key all` 一次性跑全部9个模型（9模型并发 × 维度并发，ProviderRateLimiter 自动控制 RPM）
-- 单模型调用：`--model-key kimi`（调试或补跑单个模型时使用）
+- **首选**：`--model-key all` 一次性跑全部 14 个模型（14 模型并发 × 维度并发，ProviderRateLimiter 自动控制 RPM）
+- 单模型调用：`--model-key kimi-k2.6`（调试或补跑单个模型时使用）
 - `--max-concurrent N`：覆盖每模型的维度并发数（默认6；补充层自动降至 min(N, 3)）
 
 **脚本调用命令（Agent 必须使用以下格式）：**
 ```bash
-# 推荐：一次跑全部 9 模型
+# 推荐：一次跑全部 14 模型
 python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter {chapter_num} \
@@ -83,18 +103,21 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 `--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--max-concurrent`, `--rpm-override`
 不支持 `--chapter-file`、`--outline-file` 等参数，传入会导致脚本直接报错退出。
 
-**补充层早停机制：**
-- 补充层维度并发自动降至3（而非核心层的全并发），使排队中的维度可被拦截
-- 累计 3 个维度失败后触发 `threading.Event`，排队中的维度启动时立即跳过
-- 避免 healwrap 连接中断时的无意义重试（如 minimax 21次失败）
+**早停机制（Round 16 统一）：**
+- 14 模型一视同仁 · 每模型维度并发固定 3（使排队维度可被 event 拦截）
+- 任一模型累计 **4** 个维度失败 → 触发 `threading.Event`，排队中的该模型维度立即跳过
+- 只影响该单模型 · 不影响其他 13 模型
+- 设计目标：避免单一 provider 连接中断时的无意义重试，节省 API 配额给其他健康模型
 
 ## 路由验证规则
 
 判定 routing_verified 的逻辑：
-1. `response.model == model_requested` → true
-2. `response.model` 含 "MiniMax" 但请求的是 glm → false（codexcc 已知问题）
-3. `response.model` 含 "qianfan" 但请求的是 kimi → false（codexcc 已知问题）
-4. 硅基流动的 model 名格式为 `Pro/xxx/Model`，与请求匹配时也算 true
+1. `response.model == model_requested` → true（火山 ark-coding / openclawroot 当前均返回短名）
+2. 硅基流动的 model 名格式为 `Pro/xxx/Model`，与请求匹配时也算 true（`_normalized_match`）
+3. 历史已知 provider 路由 bug（现已不用，保留 blacklist 作防御）：
+   - codexcc：`response.model` 含 "MiniMax" 但请求 glm → false
+   - codexcc：`response.model` 含 "qianfan" 但请求 kimi → false
+   - `verify_routing` 的 `ROUTING_BUGS` 常量可扩展新 provider 的 blacklist
 
 ## 外审 Prompt 模板
 
@@ -310,7 +333,7 @@ python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
   "model_key": "kimi",
   "model_requested": "kimi-k2.5",
   "model_actual": "<response.model字段的值>",
-  "provider": "healwrap",
+  "provider": "ark-coding",
   "routing_verified": true,
   "overall_score": 87,
   "pass": true,
@@ -334,7 +357,7 @@ python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
       "summary": "评语...",
       "model": "Kimi-K2.5",
       "model_actual": "kimi-k2.5",
-      "provider": "healwrap",
+      "provider": "ark-coding",
       "routing_verified": true,
       "elapsed_ms": 8500
     }
@@ -347,10 +370,10 @@ python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
     "dismissed": 1
   },
   "provider_chain": [
-    {"provider": "healwrap", "attempt": 1, "result": "success", "routing_ok": true}
+    {"provider": "ark-coding", "attempt": 1, "result": "success", "routing_ok": true}
   ],
   "api_meta": {
-    "final_provider": "healwrap",
+    "final_provider": "ark-coding",
     "elapsed_ms": 8500,
     "prompt_tokens": 2300,
     "completion_tokens": 1800,
@@ -371,8 +394,8 @@ python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
 
 `审查报告/第{NNNN}章审查报告.md` 必须包含：
 
-1. **9模型评分矩阵**（可用模型 × 13维度 + 总分 + 路由状态 + 供应商，Round 13 v2 · 含 reader_flow + naturalness + reader_critic）
-2. **共识问题**（>=3个模型指出的同类问题 = 真问题）
+1. **14模型评分矩阵**（Round 14+ · 可用模型 × 13维度 + 总分 + 路由状态 + 供应商，Round 13 v2 · 含 reader_flow + naturalness + reader_critic）
+2. **共识问题**（>=3个模型指出的同类问题 = 真问题；14 模型下建议阈值可调至 ≥4）
 3. **Step 4 修复清单**（从共识问题 + severity >= medium + verified 中筛选，按优先级排序）
 4. **模型路由验证结果**（每个模型的请求/实际/通过状态）
 5. **润色记录**（Step 4 修复后填写 anti_ai_force_check 和毒点检查结果）
