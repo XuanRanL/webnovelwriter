@@ -368,15 +368,81 @@ def git_status(project_root: Path) -> str:
     return out
 
 
+def _list_worktree_modifications(project_root: Path) -> list[str]:
+    """Return list of modified/added/untracked path strings (POSIX-style) from git status --porcelain."""
+    rc, out = run_subprocess(["git", "status", "--porcelain"], project_root)
+    if rc != 0:
+        return []
+    paths: list[str] = []
+    for line in out.splitlines():
+        if len(line) < 4:
+            continue
+        # porcelain v1 format: XY path  (或 XY "path with spaces")
+        rest = line[3:].strip()
+        if " -> " in rest:  # rename: "A -> B", 取 B
+            rest = rest.split(" -> ", 1)[1].strip()
+        # 去掉 porcelain 给路径加的双引号（有中文/特殊字符时）
+        if rest.startswith('"') and rest.endswith('"'):
+            rest = rest[1:-1]
+            # git 对含 \ 的路径会用 octal escape，简单还原双反斜杠
+            rest = rest.replace("\\\\", "\\")
+        paths.append(rest.replace("\\", "/"))
+    return paths
+
+
+def _build_polish_stage_targets(project_root: Path, chapter: int, chapter_file: Path) -> list[str]:
+    """Return the precise list of git paths allowed into a polish commit.
+
+    设计原则（2026-04-23 Ch7 P0 根治）：
+      - 仅包含「当前章正文 + state.json + workflow_state.json + 该章 polish_report」
+      - 避免跨章污染（Ch1 v7 commit 连带吞 ch2/4/5/6 的血教训）
+    """
+    rel_chapter = str(chapter_file.relative_to(project_root)).replace("\\", "/")
+    targets: list[str] = [
+        rel_chapter,
+        ".webnovel/state.json",
+        ".webnovel/workflow_state.json",
+    ]
+    polish_report = project_root / ".webnovel" / "polish_reports" / f"ch{chapter:04d}.md"
+    if polish_report.exists():
+        targets.append(f".webnovel/polish_reports/ch{chapter:04d}.md")
+    audit_report = project_root / ".webnovel" / "audit_reports" / f"ch{chapter:04d}.json"
+    if audit_report.exists():
+        targets.append(f".webnovel/audit_reports/ch{chapter:04d}.json")
+    return targets
+
+
 def git_commit_polish(
     project_root: Path,
     chapter: int,
     new_version: str,
     reason: str,
     round_tag: Optional[str],
+    chapter_file: Path,
 ) -> tuple[int, str, Optional[str]]:
-    """Stage all changes and commit. Returns (rc, output, sha)."""
-    rc, out_add = run_subprocess(["git", "add", "."], project_root)
+    """Stage precise polish targets and commit. Returns (rc, output, sha).
+
+    不再用 `git add .` 宽口（2026-04-23 Ch7 RCA P0 根治：Ch1 v7 commit 吞掉
+    ch2/4/5/6 drift 正文，造成四章 polish_log/narrative_version 未更新）。
+    改为只 stage 目标章 + state + workflow + 该章 polish_report，其他 drift
+    会被列在警告里让作者知晓，但不会被本次 polish commit 吞入。
+    """
+    targets = _build_polish_stage_targets(project_root, chapter, chapter_file)
+
+    # 扫描其他 drift 并警告（不阻断）
+    all_dirty = _list_worktree_modifications(project_root)
+    target_set = {t for t in targets}
+    # state.json 会被写入，也应忽略（已在 targets 里）
+    others = [p for p in all_dirty if p not in target_set]
+    if others:
+        print("  ⚠ 工作区还有其他未 commit 改动（不会被本次 polish commit 吞入）:")
+        for f in others[:15]:
+            print(f"    - {f}")
+        if len(others) > 15:
+            print(f"    … 还有 {len(others) - 15} 个文件未列出")
+        print("  建议：若是其他章 drift → 分章跑 polish_cycle；若是插件/大纲改动 → 另起 commit。")
+
+    rc, out_add = run_subprocess(["git", "add", "--"] + targets, project_root)
     if rc != 0:
         return rc, out_add, None
 
@@ -573,7 +639,8 @@ def main() -> int:
     if not pending.strip():
         print("  ⚠ git 工作区无待提交修改")
     rc, out, sha = git_commit_polish(
-        project_root, args.chapter, new_version, args.reason, args.round_tag
+        project_root, args.chapter, new_version, args.reason, args.round_tag,
+        chapter_file,
     )
     if rc != 0:
         print("  ❌ git commit 失败：")
