@@ -505,6 +505,20 @@ def main() -> int:
         "--allow-no-change", action="store_true",
         help="即使章节文件未变化也继续（用于纯 state 修复场景）",
     )
+    # Round 17.4 · 2026-04-24 · Ch6-8 修复后复核暴露的归档层 drift 根治
+    # 背景：polish_cycle 只更新 正文+state+workflow，不触发 Step 5 summary 重建
+    # 也不触发 Step 6 audit 重跑。summary/audit_reports/chapter_audit.jsonl 一直停在 v1 快照。
+    # 实务结果：跨章 trend 失真 · 下章 context-agent 读到 v1 实体/状态 · 误用旧建议。
+    ap.add_argument(
+        "--stale-summary-warn", action="store_true",
+        default=True,
+        help="Round 17.4：polish 后提示 summary 已变 stale（建议手动重建或跑 data-agent Step E）",
+    )
+    ap.add_argument(
+        "--stale-audit-warn", action="store_true",
+        default=True,
+        help="Round 17.4：polish 后提示 audit_reports 已变 stale（建议重跑 Step 6 audit-agent）",
+    )
     args = ap.parse_args()
 
     if args.narrative_version and args.narrative_version_bump:
@@ -665,6 +679,27 @@ def main() -> int:
     print("\n" + "=" * 70)
     print(" ✅ Step 8 完成。修订版本：" + new_version)
     print(" ℹ workflow_state.json 的 sha 回填未 commit（与 Step 7 尾巴一致，下次 git add 带走）")
+
+    # Round 17.4 · 2026-04-24 · Ch6-8 修复后复核暴露的归档层 drift 根治
+    # polish_cycle 按设计只更新 正文+state+workflow，归档层（summary / audit_reports / chapter_audit.jsonl）
+    # 会变成 stale 快照。hygiene_check H24 会在下次检查时捕捉，但"提示用户主动修"更早触发 = 更好。
+    if args.stale_summary_warn or args.stale_audit_warn:
+        chapter_padded = f"{args.chapter:04d}"
+        print("")
+        print(" ⚠ Round 17.4 归档层 drift 提示：")
+        if args.stale_summary_warn:
+            summary_path = project_root / ".webnovel" / "summaries" / f"ch{chapter_padded}.md"
+            if summary_path.exists():
+                print(f"   · summaries/ch{chapter_padded}.md 仍是 v 前版本 · 下章 context-agent 会读旧实体")
+                print(f"     根治：手动 Edit 更新 frontmatter word_count/narrative_version + 剧情摘要差异段")
+                print(f"     或跑 data-agent Step E 重建（会重提取实体，成本较高）")
+        if args.stale_audit_warn:
+            audit_path = project_root / ".webnovel" / "audit_reports" / f"ch{chapter_padded}.json"
+            if audit_path.exists():
+                print(f"   · audit_reports/ch{chapter_padded}.json 仍是 v 前版本 · 跨章 trend 图会失真")
+                print(f"     根治：CLI `audit chapter --chapter {args.chapter}` + Task(audit-agent) 重跑")
+                print(f"     下章写作前，ch{args.chapter+1:04d}_prep.md 会被 audit-agent 基于 v{new_version} 重写")
+        print("   （hygiene_check H24 会在下次 commit 前再次提醒）")
     print("=" * 70)
     return 0
 
