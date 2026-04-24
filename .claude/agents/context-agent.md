@@ -91,7 +91,8 @@ model: inherit
 - `index.db`: 实体/别名/关系/状态变化/override_contracts/chase_debt/chapter_reading_power
 - `.webnovel/summaries/ch{NNNN}.md`: 章节摘要（含钩子/结束状态）
 - `.webnovel/context_snapshots/`: 上下文快照（优先复用）
-- `.webnovel/editor_notes/ch{NNNN}_prep.md`：**上章 Step 6 审计闸门写入的下章准备单**（必读，若存在）。包含上章未兑现承诺、carry_forward_warnings、跨章趋势建议、Step-specific 改进建议。context-agent 必须把这些内容转化为本章任务书的"接住上章"与"禁止事项"
+- `.webnovel/editor_notes/ch{NNNN}_prep.md`：**上章 Step 6 审计闸门写入的下章准备单**（必读，若存在）。包含上章未兑现承诺、carry_forward_warnings、跨章趋势建议、Step-specific 改进建议。context-agent 必须把这些内容转化为本章任务书的"接住上章"与"禁止事项"。
+  - **字数 SSOT 冲突时以 state.json 为准（2026-04-22 Round 15.1 新增）**：editor_notes 里任何字数建议（如"2800-3500"/"avg 3000 硬目标"）若与 `state.project_info.word_count_policy` 不一致，context-agent 必须**静默覆盖为 SSOT 值**，并在执行包的 `warnings[]` 追加 `{"type": "EDITOR_NOTES_WORD_COUNT_DRIFT", "from": "editor_notes_x-y", "replaced_with": "ssot_hard_min-hard_max", "severity": "medium"}`。下章审计会把此 warning 回溯归因到上章 audit-agent
 - `大纲/` 与 `设定集/`
 - `设定集/叙事声音.md`: 全书风格基准（语气/密度/感官/对话比例/风格禁忌）
 - `设定集/情感蓝图.md`: 全书情感基调与关键情感节点
@@ -562,7 +563,40 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
     "reader_pull_design": {},
     "cool_points_plan": [],
     "emotional_anchors_plan": {},
-    "time_constraints": {}
+    "time_constraints": {},
+    "prev_life_memory_timeline": {
+      "_comment_round17": "2026-04-23 Round 17 新增 · 根治末世重生 Ch4/Ch6 前世记忆时间边界违规。重生/穿越类项目必填。",
+      "applicable": true,
+      "death_timestamp": "2026-04-14 23:47",
+      "death_event_description": "合肥地铁2号线大东门站月台",
+      "memory_cutoff_rule": "所有 C 类前世亲历记忆必须 ≤ death_timestamp，主角前世未接触的事件必须改为 C' 类二手信息（旧帖/新闻/传说）或 B 类私账档案调用",
+      "forbidden_phrase_patterns": [
+        "前世.*(末世.*前夜|末世前夜|末世爆发前.*某一|末世爆发后)",
+        "前世我见过.*(末世|议会|守夜人情报网)"
+      ],
+      "allowed_second_hand_phrase_patterns": [
+        "前世.*(刷到过|看过旧帖|听说过|新闻边角扫过)",
+        "前世.*档案.*(扫过|翻过|边角)"
+      ],
+      "writer_checklist": [
+        "事件发生时间 ≤ death_timestamp？",
+        "事件发生地点/对象在主角前世接触范围？",
+        "引用时是否明确信息来源通道（亲历/二手/档案）？",
+        "若涉末世相关，必须走 C' 类（二手）或 B 类（档案），禁止 C 类亲历"
+      ],
+      "setting_source": "设定集/金手指设计.md §1.5.1"
+    },
+    "main_character_cadence": {
+      "_comment_round17": "2026-04-23 Round 17 新增 · 根治末世重生 Ch3-6 主线角色跨章断层。多主角/重要 NPC 项目必填。",
+      "applicable": true,
+      "cadence_table": [
+        {"name": "...", "type": "blood_family", "every_n_chapters": 1, "acceptable_forms": ["短信", "电话", "共居场景", "主角内心提及", "旁人转述"]},
+        {"name": "...", "type": "elder", "every_n_chapters": 3, "acceptable_forms": ["电话", "探访", "物件回忆", "旁人转述"]},
+        {"name": "...", "type": "ex_lover", "every_n_chapters": 5, "acceptable_forms": ["侧写", "共同敌人携带", "旁人转述", "新闻推送"]},
+        {"name": "...", "type": "cold_foreshadowing", "every_n_chapters": 3, "acceptable_forms": ["路过", "影子", "消息", "档案调用"]}
+      ],
+      "setting_source": "设定集/伏笔追踪.md 跨章主线角色锚点纪律表"
+    }
   },
   "step_2a_write_prompt": {
     "chapter_beats": [{"beat": 1, "word_count": 500, "location": "...", "emotion": "...", "action": "..."}],
@@ -597,7 +631,13 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
   python -X utf8 "${SCRIPTS_DIR}/countdown_validator.py" --input ".webnovel/context/ch${chapter_padded}_context.json"
   # exit=0 才允许继续；exit=1 表示算术错误必须修 stdin JSON
   ```
-- **字数目标（word_count_target）硬约束**：默认 `2200-3500`。除非用户或大纲明确指定（战斗/高潮/卷末章等），**禁止擅自收紧**（如写成 `2700-3200` / `2400-3200`）。擅自收紧会导致下游 Step 2A 基于错误基线 over-draft 或被误判"字数不达标"。
+- **字数目标（word_count_target）SSOT 硬约束（2026-04-22 Round 15.1 根治 · 三次复现的漂移）**：
+  - **唯一 SSOT**：`state.project_info.word_count_policy`（若项目无此字段，回退到 `average_words_per_chapter_min/max`）
+  - **读取优先级**：state.json.word_count_policy.chapter_type_guide[type] > state.json.word_count_policy.hard_min/max > state.json.average_words_per_chapter_min/max > 默认 `2200-3500`
+  - **章节类型自动识别**：Step 1 必须根据大纲批注（"过渡章/推进章/战斗章/卷末章等"）选择 chapter_type_guide 的对应区间；写入 `context_contract.word_count_target` 为区间字符串
+  - **禁止**：擅自收紧到 2700-3200 / 2400-3200 / 2800-3500；禁止在执行包里写"avg 3000"/"目标 3000"这类单点数字作为硬目标（3000 只是 project 级 soft_target 参考）
+  - **禁止**：使用 editor_notes 里的字数建议（editor_notes 可能被 audit-agent 污染）覆盖 SSOT · 若 editor_notes 与 state.json SSOT 冲突，**以 state.json 为准并在执行包中记录 warning**：`word_count_conflict_resolved_from_editor_notes`
+  - **擅自收紧会导致下游 Step 2A 基于错误基线 over-draft 或被误判"字数不达标"，reader-critic 进一步扣节奏分**
 - 主 agent 在 Step 1 complete-step 的 artifact 中必须包含 `{"ok": true, "file": ".webnovel/context/ch{NNNN}_context.json", "snapshot": ".webnovel/context_snapshots/ch{NNNN}.json"}`，不可只写 `{"v2": true}` 或 `{"ok": true}`
 - **禁止绕过助手脚本**：不得用 `cat > file <<'EOF'`、`python -c "json.dump(...)"` 等任何方式手写 JSON 到 `.webnovel/context/`。**Write 工具写到 `.webnovel/tmp/execpkg_ch{NNNN}_stdin.json` 是允许的并推荐的**，但最终落盘 `.webnovel/context/ch{NNNN}_context.{json,md}` 必须由 `build_execution_package.py` 完成。
   - 手写会：(a) 字段名漂移（如 `step_2a_write_prompt` 误写为 `step2a_direct_prompt`）(b) 漏 schema section (c) 顶层 metadata 不规范（如多出 `meta` 嵌套层）
