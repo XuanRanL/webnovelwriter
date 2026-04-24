@@ -1,4 +1,4 @@
-.claude/settings.local.json
+.claude/
 
 # Python caches & virtualenv
 __pycache__/
