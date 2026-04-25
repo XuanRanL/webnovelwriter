@@ -1432,6 +1432,14 @@ def main():
         "--add-words",
         help='JSON: {"chapter":N,"words":2443}（追加 progress.total_words；幂等：同章节多次调用以最后一次为准）',
     )
+    # Round 19 · 2026-04-25 · Phase C：reader-naturalness 5 子维度入口
+    # 借鉴 upstream@5339e83 reviewer.md 5 子维度 rubric（不引入 reviewer.md 整体）。
+    # data-agent 读 tmp/naturalness_check_ch{NNNN}.json.subdimensions 后写入 chapter_meta；
+    # polish_cycle 读 _lowest 字段定向修最低子维度。
+    update_parser.add_argument(
+        "--set-checker-subdimensions",
+        help='JSON: {"chapter":N,"checker":"reader-naturalness-checker","subdimensions":{"vocab":92,"syntax":78,"narrative":85,"emotion":90,"dialogue":95}}（写入 chapter_meta.NNNN.checker_subdimensions.{checker}；自动计算 _lowest）',
+    )
 
     argv = normalize_global_project_root(sys.argv[1:])
     args = parser.parse_args(argv)
@@ -1564,10 +1572,11 @@ def main():
                 or args.set_checker_score
                 or args.append_recheck
                 or args.add_words
+                or args.set_checker_subdimensions
             ):
                 emit_error(
                     "MISSING_ARG",
-                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck / --add-words）",
+                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck / --add-words / --set-checker-subdimensions）",
                 )
                 return
         changes: list[str] = []
@@ -1809,6 +1818,43 @@ def main():
             manager._pending_raw_state_mutations.add("chapter_meta")
             changes.append(
                 f"progress.total_words={cur_total}->{new_total} (chapter {ch} word_count={words}; recomputed from chapter_meta)"
+            )
+            if applied_chapter is None:
+                applied_chapter = ch
+
+        # Round 19 · Phase C：reader-naturalness 5 子维度落库
+        # 借鉴 upstream@5339e83 reviewer.md 5 子维度 rubric（不引入 reviewer.md 整体）。
+        # 写入 chapter_meta.{NNNN}.checker_subdimensions.{checker}.{vocab/syntax/narrative/emotion/dialogue}
+        # 自动计算 _lowest 字段（最低子维度名）供 polish_cycle 定向修。
+        if args.set_checker_subdimensions:
+            payload = load_json_arg(args.set_checker_subdimensions)
+            ch = int(payload.get("chapter", 0))
+            checker = str(payload.get("checker", "")).strip()
+            subdims = payload.get("subdimensions") or {}
+            if not ch or not checker or not isinstance(subdims, dict):
+                emit_error(
+                    "INVALID_ARG",
+                    "--set-checker-subdimensions 需要 chapter(int) + checker(str) + subdimensions(dict)",
+                )
+                return
+            cm = manager._state.setdefault("chapter_meta", {})
+            key = f"{ch:04d}"
+            entry = cm.setdefault(key, {})
+            csd = entry.setdefault("checker_subdimensions", {})
+            # 仅保留 numeric 子维度，过滤非数值键防污染
+            checker_subs = {
+                k: v for k, v in subdims.items()
+                if isinstance(v, (int, float)) and not str(k).startswith("_")
+            }
+            if checker_subs:
+                checker_subs["_lowest"] = min(
+                    checker_subs,
+                    key=lambda k: checker_subs[k],
+                )
+            csd[checker] = checker_subs
+            manager._pending_raw_state_mutations.add("chapter_meta")
+            changes.append(
+                f"chapter_meta.{key}.checker_subdimensions.{checker}={checker_subs}"
             )
             if applied_chapter is None:
                 applied_chapter = ch

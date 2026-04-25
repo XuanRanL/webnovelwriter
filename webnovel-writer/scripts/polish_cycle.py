@@ -596,6 +596,29 @@ def main() -> int:
             print(f"ERROR: --checker-scores JSON 解析失败: {exc}")
             return 2
 
+    # Round 19 · Phase C · 2026-04-25：reader-naturalness 5 子维度定向 polish 提示
+    # 借鉴 upstream@5339e83 reviewer.md 5 子维度 rubric（不引入 reviewer.md 整体）。
+    # 读 chapter_meta.checker_subdimensions.reader-naturalness-checker._lowest，
+    # 给作者/AI 明确指令"应该重点修哪个子维度（vocab/syntax/narrative/emotion/dialogue）"。
+    # 老章节无 subdimensions 字段时静默跳过（向下兼容）。
+    nat_score = (meta.get("checker_scores") or {}).get("reader-naturalness-checker")
+    nat_subs = (meta.get("checker_subdimensions") or {}).get(
+        "reader-naturalness-checker", {}
+    ) or {}
+    nat_lowest = nat_subs.get("_lowest")
+    if nat_score is not None and nat_score < 75 and nat_lowest in (
+        "vocab", "syntax", "narrative", "emotion", "dialogue",
+    ):
+        lowest_score = nat_subs.get(nat_lowest)
+        print(
+            f"\n  ⚠ Round 19 Phase C 提示：reader-naturalness={nat_score} < 75，"
+            f"最低子维度 = {nat_lowest}（{lowest_score}）"
+        )
+        print(
+            f"     → polish 应优先修 {nat_lowest}：参 polish-guide K/L/M/N + "
+            f"reader-naturalness-checker.md 子维度 rubric（5 子维度结构化反馈）"
+        )
+
     print(f"\n[3/7] state.json 同步（narrative_version: {cur_version} → {new_version}）...")
     state_diff = update_state_after_polish(
         project_root,
