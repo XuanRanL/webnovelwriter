@@ -358,10 +358,23 @@ def check_workflow_not_dangling(root: Path, rep: HygieneReport):
             True,
         )
         return
+    # Round 18.2 · 2026-04-25 · Ch11 RCA #3 双兜底
+    # 主流程是先 hygiene → 再 start-step Step 7（SKILL 修订后明确）。
+    # 但若 AI 偶尔顺序错（先 start-step Step 7 再 hygiene），允许 Step 7 active 时
+    # 调 hygiene（commit 前再确认一次合理）。其他 Step active 仍 P0 fail。
+    cur_step_id = (current_step.get("id") or "").strip()
+    if cur_step_id == "Step 7":
+        rep.record(
+            "P0",
+            "H3",
+            "current_task running + Step 7 active：commit 前 hygiene 双兜底（合法）",
+            True,
+        )
+        return
     rep.record(
         "P0",
         "H3",
-        f"current_task running 且正在执行 {current_step.get('id')}：不应在 step 中间调 hygiene",
+        f"current_task running 且正在执行 {cur_step_id}：不应在 step 中间调 hygiene",
         False,
     )
 

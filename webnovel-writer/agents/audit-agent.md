@@ -258,15 +258,19 @@ overall_decision =
    - **推荐表述格式**：`本章字数建议 {chapter_type}类型 {min}-{max}（SSOT: word_count_policy.chapter_type_guide.{type} · 弹性模型允许剧情驱动在 {hard_min}-{hard_max} 内任意定位）`
    - 违反此条款 → Layer B 加 1 个 B-WC check 为 warn（medium）· 若 editor_notes 被下章 context-agent 读取后污染 writer，下章 Layer A 追加一个 critical 归因本条款
 
-9. **editor_notes 写完 self-check（Round 17.2 · Ch8 P0-R4 根治 · 2026-04-24）**：
+9. **editor_notes 写完 self-check（Round 17.2 · Ch8 P0-R4 + Round 18.2 · Ch11 RCA #1 加固 · 2026-04-25）**：
    - 写完 `editor_notes_for_next_chapter/ch{N+1}_prep.md` 后，audit-agent **必须**立即 Bash 调用：
      ```
      python -X utf8 {SCRIPTS_DIR}/post_draft_check.py {N+1} --project-root {PROJECT_ROOT} --editor-notes-only
      ```
-   - 若有 `EDITOR_NOTES_WORD_DRIFT` warn：**必须**改写 editor_notes 把伪区间替换为合法子区间白名单内的值，直到 self-check 0 warn
-   - 若 editor_notes 的 `trend_hints` / `step_specific_hints` 段落里有自由文本形式的"推荐落点 X-Y" / "常态区间 X-Y"，X-Y **必须**对齐合法子区间白名单
-   - 连 3 章同源 EDITOR_NOTES_WORD_DRIFT → post_draft_check 升级为 error 阻断下章 Step 2（根治"warn 从来不升级 block"问题）
-   - 背景：Ch7 audit 写了 "2800-3100" 到 Ch8 editor_notes，Ch8 post_draft_check 两次 warn 都被忽略。Round 15.1 硬约束只覆盖字段描述，未覆盖自由文本。
+   - 若有任何 `EDITOR_NOTES_WORD_DRIFT` warn：**必须**改写 editor_notes 把伪区间替换为合法子区间白名单内的值，直到 self-check **0 warn**（不是 ≤ 几条）
+   - 若 editor_notes 的 `trend_hints` / `step_specific_hints` 段落里有自由文本形式的"推荐落点 X-Y" / "常态区间 X-Y" / "建议回 X-Y" / "本章建议 X-Y"，X-Y **必须**对齐合法子区间白名单
+   - **Round 18.2 加固**：自由文本中"X-Y" 形式（任何前后包含"字数 / word / 字符 / 落点"语义的数字范围）也**必须**对齐白名单，不能因为不在 JSON 字段里就豁免
+   - 连 3 章同源 EDITOR_NOTES_WORD_DRIFT → post_draft_check 升级为 ERROR 阻断下章 Step 2（已在 post_draft_check.py `_count_recent_word_drift_chapters` 实装）
+   - 背景：
+     - Ch7 audit 写了 "2800-3100" 到 Ch8 editor_notes，Ch8 post_draft_check 两次 warn 都被忽略。Round 15.1 硬约束只覆盖字段描述，未覆盖自由文本。
+     - Ch10 audit 又写了"建议回 2800-3100 避免累积疲劳"到 Ch11 editor_notes（自由文本，self-check 没抓到），导致 Ch11 context-agent 继承到 word_count_target，post_draft_check 7 处 EDITOR_NOTES_WORD_DRIFT。
+   - **operational rule**：写 editor_notes 之前先在 prompt 里列出本章所有"字数推荐"位置，每条对照白名单 [(2200,2800)/(2200,3500)/(2600,3200)/(2800,3400)/(3000,3500)] 校验后再写入 markdown。
 
 ## 失败隔离
 

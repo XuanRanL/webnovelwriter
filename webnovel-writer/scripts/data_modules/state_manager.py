@@ -1415,6 +1415,13 @@ def main():
         help='JSON: {"chapter":N,"checker":"pacing-checker","before":58,"after":90,"reason":"..."}（追加到 chapter_meta.post_polish_recheck；Step 4.5 选择性复测产物）',
     )
     update_parser.add_argument("--sync-protagonist-display", help='JSON: {"hourglass_remaining":28,"location_current":"堂屋·雨夜·D-25","vital_force_current":80}（protagonist_state 冗余显示字段同步 · SQL 权威源改过后手工 sync）')
+    # Round 18.2 · 2026-04-25 · Ch11 RCA #4 根治：progress.total_words 自动累加 CLI
+    # 根因：data-agent Step J 后 progress.total_words 未自动累加（state_manager 缺入口）。
+    # 用户需手动加，违反 feedback_no_manual_state_edits。本补丁加 --add-words 入口。
+    update_parser.add_argument(
+        "--add-words",
+        help='JSON: {"chapter":N,"words":2443}（追加 progress.total_words；幂等：同章节多次调用以最后一次为准）',
+    )
 
     argv = normalize_global_project_root(sys.argv[1:])
     args = parser.parse_args(argv)
@@ -1516,10 +1523,11 @@ def main():
                 or args.sync_protagonist_display
                 or args.set_checker_score
                 or args.append_recheck
+                or args.add_words
             ):
                 emit_error(
                     "MISSING_ARG",
-                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck）",
+                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck / --add-words）",
                 )
                 return
         changes: list[str] = []
@@ -1732,6 +1740,35 @@ def main():
             manager._pending_raw_state_mutations.add("chapter_meta")
             changes.append(
                 f"chapter_meta.{key}.post_polish_recheck.{checker}={before}->{after} ({after-before:+d})"
+            )
+            if applied_chapter is None:
+                applied_chapter = ch
+
+        # Round 18.2 · Ch11 RCA #4：progress.total_words 从 chapter_meta 重算（幂等且鲁棒）
+        if args.add_words:
+            payload = load_json_arg(args.add_words)
+            ch = int(payload.get("chapter", 0))
+            words = int(payload.get("words", 0))
+            if not ch or words <= 0:
+                emit_error("INVALID_ARG", "--add-words 需要 {chapter,words} 且 words>0")
+                return
+            cm = manager._state.setdefault("chapter_meta", {})
+            key = f"{ch:04d}"
+            entry = cm.setdefault(key, {})
+            entry["word_count"] = words
+            # 从 chapter_meta 全表重算 progress.total_words（幂等，不依赖增量正确）
+            new_total = sum(
+                int(v.get("word_count", 0) or 0)
+                for v in cm.values()
+                if isinstance(v, dict)
+            )
+            progress = manager._state.setdefault("progress", {})
+            cur_total = int(progress.get("total_words", 0))
+            progress["total_words"] = max(0, new_total)
+            manager._pending_raw_state_mutations.add("progress")
+            manager._pending_raw_state_mutations.add("chapter_meta")
+            changes.append(
+                f"progress.total_words={cur_total}->{new_total} (chapter {ch} word_count={words}; recomputed from chapter_meta)"
             )
             if applied_chapter is None:
                 applied_chapter = ch
