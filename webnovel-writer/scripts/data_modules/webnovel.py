@@ -1109,6 +1109,21 @@ def main() -> None:
     p_extract_context.add_argument("--chapter", type=int, required=True, help="目标章节号")
     p_extract_context.add_argument("--format", choices=["text", "json"], default="text", help="输出格式")
 
+    # Round 19 Phase F · 私库 CSV 提取转发
+    p_pcsv = sub.add_parser("private-csv", help="转发到 scripts/private_csv_extractor.py（4 张私库 CSV 提取）")
+    p_pcsv.add_argument(
+        "--table",
+        required=True,
+        choices=[
+            "ai-replacement-vocab",
+            "strong-chapter-end-hooks",
+            "emotion-earned-vs-forced",
+            "canon-violation-traps",
+        ],
+    )
+    p_pcsv.add_argument("--chapters", required=True, help="e.g. 1-11 or 5")
+    p_pcsv.add_argument("--output-dir", default=None)
+
     # 兼容：允许 `--project-root` 出现在任意位置（减少 agents/skills 拼命令的出错率）
     from .cli_args import normalize_global_project_root
 
@@ -1165,6 +1180,17 @@ def main() -> None:
     if tool == "extract-context":
         return_args = [*forward_args, "--chapter", str(args.chapter), "--format", str(args.format)]
         raise SystemExit(_run_script("extract_chapter_context.py", return_args))
+
+    # Round 19 Phase F · 私库 CSV 提取转发
+    if tool == "private-csv":
+        pcsv_args = [
+            "--project", str(project_root),
+            "--table", args.table,
+            "--chapters", args.chapters,
+        ]
+        if args.output_dir:
+            pcsv_args += ["--output-dir", args.output_dir]
+        raise SystemExit(_run_script("private_csv_extractor.py", pcsv_args))
 
     raise SystemExit(2)
 

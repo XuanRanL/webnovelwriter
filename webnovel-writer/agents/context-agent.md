@@ -39,7 +39,7 @@ model: inherit
 - 出场角色（状态、动机、情绪底色、说话风格、红线）
 - 场景与力量约束（地点、可用能力、禁用能力）
 - **时间约束（新增）**（上章时间锚点、本章时间锚点、允许推进跨度、时间过渡要求、倒计时状态）
-- 风格指导（本章类型、参考样本、最近模式、本章建议、**叙事声音基准摘要**、**典故引用推荐**（若引用库存在：0-2 条引用 + 载体 + 融入方式 + 伏笔说明；不存在或本章不引用时输出"本章不引用"））
+- 风格指导（本章类型、参考样本、最近模式、本章建议、**叙事声音基准摘要**、**典故引用推荐**（若引用库存在：0-2 条引用 + 载体 + 融入方式 + 伏笔说明；不存在或本章不引用时输出“本章不引用”））
 - 连续性与伏笔（时间/位置/情绪连贯；必须处理/可选伏笔）
 - 追读力策略（未闭合问题 + 钩子类型/强度、微兑现建议、差异化提示、**情感蓝图对标**）
 
@@ -52,7 +52,7 @@ model: inherit
 - 情感锚点规划（有情感场景时必填）：情感场景识别（类型+所在beat）、锚点分配（每场景≥1种锚点类型；高潮≥2种）、梯度路径（高强度情感标注递进信号）、跨章惯性（上章情绪→本章延续方式）、Show:Tell目标（全章≥2:1，重要场景≥3:1）
 
 3. **Step 2A 直写提示词**
-- 章节节拍：每个 beat 必须包含——字数分配、场景描述（地点+氛围）、情绪曲线位置、感官锚点（至少1个画面）、情感锚点（情感beat：锚点类型+梯度位置，如"生理反应：心跳加速→手指收紧"）、关键对话方向+语音规则（若有对话）、本 beat 禁止事项
+- 章节节拍：每个 beat 必须包含——字数分配、场景描述（地点+氛围）、情绪曲线位置、感官锚点（至少1个画面）、情感锚点（情感beat：锚点类型+梯度位置，如“生理反应：心跳加速→手指收紧”）、关键对话方向+语音规则（若有对话）、本 beat 禁止事项
 - 不可变事实清单（大纲事实/设定事实/承接事实）
 - 禁止事项（越级能力、无因果跳转、设定冲突、剧情硬拐）
 - 终检清单（本章必须满足项 + fail 条件）
@@ -69,11 +69,11 @@ model: inherit
 |------|---------|-------------|
 | 上章钩子 | `chapter_meta[NNNN].hook` 或 `chapter_reading_power` | `{type: "无", content: "上章无明确钩子", strength: "weak"}` |
 | 最近3章模式 | `chapter_meta` 或 `chapter_reading_power` | 空数组，不做重复检查 |
-| 上章结束情绪 | `chapter_meta[NNNN].ending.emotion` | "未知"（提示自行判断） |
+| 上章结束情绪 | `chapter_meta[NNNN].ending.emotion` | “未知”（提示自行判断） |
 | 角色动机 | 从大纲+角色状态推断 | **必须推断，无默认值** |
-| 题材Profile | `state.json → project.genre` | 默认 "shuangwen" |
+| 题材Profile | `state.json → project.genre` | 默认 “shuangwen” |
 | 当前债务 | `index.db → chase_debt` | 0 |
-| 上章审计遗产 | `.webnovel/editor_notes/ch{NNNN}_prep.md`（Step 6 写入） | 无文件时视为"首章"或审计未执行；第 2 章起必读，缺失时输出 warn |
+| 上章审计遗产 | `.webnovel/editor_notes/ch{NNNN}_prep.md`（Step 6 写入） | 无文件时视为“首章”或审计未执行；第 2 章起必读，缺失时输出 warn |
 
 **缺失处理**:
 - 若 `chapter_meta` 不存在（如第1章），跳过“接住上章”
@@ -92,13 +92,13 @@ model: inherit
 - `index.db`: 实体/别名/关系/状态变化/override_contracts/chase_debt/chapter_reading_power
 - `.webnovel/summaries/ch{NNNN}.md`: 章节摘要（含钩子/结束状态）
 - `.webnovel/context_snapshots/`: 上下文快照（优先复用）
-- `.webnovel/editor_notes/ch{NNNN}_prep.md`：**上章 Step 6 审计闸门写入的下章准备单**（必读，若存在）。包含上章未兑现承诺、carry_forward_warnings、跨章趋势建议、Step-specific 改进建议。context-agent 必须把这些内容转化为本章任务书的"接住上章"与"禁止事项"。
-  - **字数 SSOT 冲突时以 state.json 为准（2026-04-22 Round 15.1 新增）**：editor_notes 里任何字数建议（如"2800-3500"/"avg 3000 硬目标"）若与 `state.project_info.word_count_policy` 不一致，context-agent 必须**静默覆盖为 SSOT 值**，并在执行包的 `warnings[]` 追加 `{"type": "EDITOR_NOTES_WORD_COUNT_DRIFT", "from": "editor_notes_x-y", "replaced_with": "ssot_hard_min-hard_max", "severity": "medium"}`。下章审计会把此 warning 回溯归因到上章 audit-agent
-  - **任何字数区间字面 MUST 来自 SSOT 子区间白名单（Round 17.5 · 2026-04-24 · Ch9 RCA P0-2 根治）**：合法子区间 = `{(hard_min, hard_max), 以及 chapter_type_guide 中所有显式给出的子区间}`。禁止自由编造（如"2800-3200"不在白名单 → 必须用情感章对应的"2800-3400"或 SSOT "2200-3500"覆盖）。post_draft_check 会扫描执行包的字面区间漂移并 warn。
+- `.webnovel/editor_notes/ch{NNNN}_prep.md`：**上章 Step 6 审计闸门写入的下章准备单**（必读，若存在）。包含上章未兑现承诺、carry_forward_warnings、跨章趋势建议、Step-specific 改进建议。context-agent 必须把这些内容转化为本章任务书的“接住上章”与“禁止事项”。
+  - **字数 SSOT 冲突时以 state.json 为准（2026-04-22 Round 15.1 新增）**：editor_notes 里任何字数建议（如“2800-3500”/“avg 3000 硬目标”）若与 `state.project_info.word_count_policy` 不一致，context-agent 必须**静默覆盖为 SSOT 值**，并在执行包的 `warnings[]` 追加 `{"type": "EDITOR_NOTES_WORD_COUNT_DRIFT", "from": "editor_notes_x-y", "replaced_with": "ssot_hard_min-hard_max", "severity": "medium"}`。下章审计会把此 warning 回溯归因到上章 audit-agent
+  - **任何字数区间字面 MUST 来自 SSOT 子区间白名单（Round 17.5 · 2026-04-24 · Ch9 RCA P0-2 根治）**：合法子区间 = `{(hard_min, hard_max), 以及 chapter_type_guide 中所有显式给出的子区间}`。禁止自由编造（如“2800-3200”不在白名单 → 必须用情感章对应的“2800-3400”或 SSOT “2200-3500”覆盖）。post_draft_check 会扫描执行包的字面区间漂移并 warn。
 - `大纲/` 与 `设定集/`
 - **`大纲/第{volume_id}卷-v[N]-前NN章覆盖大纲.md`（Round 17.5 · 2026-04-24 · Ch9 RCA P0-1 根治）**：若存在 v[N] 覆盖大纲（v2/v3/v4 等），**必读最新版本** 对应章节段（如 Ch9 行）。
-  - **强制 cross-check**：与 editor_notes 字段级对比，确保 v4 大纲中的"功能验证 / 关键事件 / 承诺兑现项"未被遗漏（Ch9 血教训：editor_notes 来自 Ch8 v3 audit，未提"南瓜汁 5 秒愈合"，context-agent 默认信任，导致首稿完全缺失关键 v4 承诺，reader-pull 62 + continuity 74 双 high block）。
-  - **遗漏检测**：若 v4 大纲列出的事件/兑现项未出现在 editor_notes 的"必兑现"列表，context-agent 必须把它注入 immutable_facts，并在 warnings[] 追加 `{"type": "OUTLINE_PAYOFF_MISSING_FROM_EDITOR_NOTES", "outline_version": "v4", "missing": "...", "severity": "high"}`
+  - **强制 cross-check**：与 editor_notes 字段级对比，确保 v4 大纲中的“功能验证 / 关键事件 / 承诺兑现项”未被遗漏（Ch9 血教训：editor_notes 来自 Ch8 v3 audit，未提“南瓜汁 5 秒愈合”，context-agent 默认信任，导致首稿完全缺失关键 v4 承诺，reader-pull 62 + continuity 74 双 high block）。
+  - **遗漏检测**：若 v4 大纲列出的事件/兑现项未出现在 editor_notes 的“必兑现”列表，context-agent 必须把它注入 immutable_facts，并在 warnings[] 追加 `{"type": "OUTLINE_PAYOFF_MISSING_FROM_EDITOR_NOTES", "outline_version": "v4", "missing": "...", "severity": "high"}`
 - `设定集/叙事声音.md`: 全书风格基准（语气/密度/感官/对话比例/风格禁忌）
 - `设定集/情感蓝图.md`: 全书情感基调与关键情感节点
 - `设定集/开篇策略.md`: 前3章策略（仅 Ch1-3 读取）
@@ -106,9 +106,9 @@ model: inherit
 - `设定集/原创诗词口诀.md`（若存在）: 原创口诀优先于外部典故，检查本章是否命中使用规划
 
 **钩子数据来源说明**：
-- **章纲的"钩子"字段**：本章应设置的章末钩子（规划用）
+- **章纲的“钩子”字段**：本章应设置的章末钩子（规划用）
 - **chapter_meta[N].hook**：本章实际设置的钩子（执行结果）
-- **context-agent 读取**：chapter_meta[N-1].hook 作为"上章钩子"
+- **context-agent 读取**：chapter_meta[N-1].hook 作为“上章钩子”
 - **数据流**：章纲规划 → 写作实现 → 写入 chapter_meta → 下章读取
 
 ---
@@ -117,11 +117,11 @@ model: inherit
 
 **背景**：Step 8 `polish_cycle.py` 是 Step 7 commit 之后对正文做修订的唯一入口。每次 polish
 会往 `chapter_meta[NNNN]` 写三项关键信息：`narrative_version` / `polish_log[]` / `updated_at`。
-context-agent 必须在"接住上章"环节读取这些字段，否则上章 polish 的所有工艺经验无法跨章传递。
+context-agent 必须在“接住上章”环节读取这些字段，否则上章 polish 的所有工艺经验无法跨章传递。
 
-**读取规则**（context-agent Step 1.5 "接住上章" 新增子任务）：
+**读取规则**（context-agent Step 1.5 “接住上章” 新增子任务）：
 
-在读取 `chapter_meta[N-1]` 构造"接住上章"板块时，额外读取以下字段（若存在）：
+在读取 `chapter_meta[N-1]` 构造“接住上章”板块时，额外读取以下字段（若存在）：
 
 | 字段 | 路径 | 用途 |
 |------|------|------|
@@ -131,7 +131,7 @@ context-agent 必须在"接住上章"环节读取这些字段，否则上章 pol
 
 **若 `narrative_version` ∈ {`v2`, `v3`, ...}（即上章 polish 过）**，context-agent 必须：
 
-1. 把 `polish_log` 最新一条的 `notes` 视为"作者/AI 在上章发现并修正的问题类型"
+1. 把 `polish_log` 最新一条的 `notes` 视为“作者/AI 在上章发现并修正的问题类型”
 2. 在本章任务书的 **第 6 板块「风格指导」** 追加一条：
    ```markdown
    ## 上章 polish 经验传递（v{X}）
@@ -140,17 +140,17 @@ context-agent 必须在"接住上章"环节读取这些字段，否则上章 pol
    - polish 版本: v1 → v{X}（经历 {len(polish_log)} 轮修订）
    ```
 3. 若最新一条 `notes` 含「ASCII 引号」/「word_count 漂移」/「AI 腔」/「语病」等关键词：
-   - 第 6 板块「风格指导」明确标注本类问题为"上章血教训，本章起草必须绕开"
-   - Step 2A 的 `writing_guidance.constraints` 新增一条 "避免 {问题类型}"
+   - 第 6 板块「风格指导」明确标注本类问题为“上章血教训，本章起草必须绕开”
+   - Step 2A 的 `writing_guidance.constraints` 新增一条 “避免 {问题类型}”
 4. 若 `polish_log` 为空但 `narrative_version != v1`（数据漂移），输出 WARN 并按 `v1` 处理
-5. 若 `narrative_version == v1`（上章从未 polish），本段落输出 "上章为首稿（未 polish），无修订经验"
+5. 若 `narrative_version == v1`（上章从未 polish），本段落输出 “上章为首稿（未 polish），无修订经验”
 
-**设计目的**：Polish 的根本价值是"发现 → 修正 → 学习"闭环。Round 14.5 引入 Step 8 时
-只做了"发现 + 修正"，没做"学习"环节。Round 14.5.2 补齐学习环节——上章 polish 过的问题
+**设计目的**：Polish 的根本价值是“发现 → 修正 → 学习”闭环。Round 14.5 引入 Step 8 时
+只做了“发现 + 修正”，没做“学习”环节。Round 14.5.2 补齐学习环节——上章 polish 过的问题
 类型必须在下章起草前被主 agent 看到，避免同一类问题反复在每章 polish 里修（徒劳重复）。
 
-**Round 14.5.1 对比**：Round 14.5 + Round 14.5.1 解决了"polish 本身的顺序与原子性"，
-Round 14.5.2 解决"polish 经验跨章传递"，三者合起来才形成完整的 Step 8 闭环。
+**Round 14.5.1 对比**：Round 14.5 + Round 14.5.1 解决了“polish 本身的顺序与原子性”，
+Round 14.5.2 解决“polish 经验跨章传递”，三者合起来才形成完整的 Step 8 闭环。
 
 ---
 
@@ -226,7 +226,7 @@ cat "{project_root}/大纲/第{volume_id}卷-时间线.md"
 ```
 
 **时间约束硬规则**：
-- 若 `与上章时间差` 为"跨夜"或"跨日"，必须在任务书中标注"需补写时间过渡"
+- 若 `与上章时间差` 为“跨夜”或“跨日”，必须在任务书中标注“需补写时间过渡”
 - 若存在倒计时事件，必须校验推进是否正确（D-N 只能变为 D-(N-1)，不可跳跃）
 - 时间锚点不得回跳（除非明确标注为闪回章节）
 
@@ -237,7 +237,7 @@ cat "{project_root}/大纲/第{volume_id}卷-时间线.md"
 cat "{project_root}/设定集/叙事声音.md"
 ```
 - 提取：视角、语气基调、描写密度、感官侧重、对话比例、风格禁忌
-- 写入任务书第 6 板块"风格指导"的**叙事声音基准摘要**
+- 写入任务书第 6 板块“风格指导”的**叙事声音基准摘要**
 - 缺失降级：若文件不存在，使用 genre-profiles 默认值并标注 `narrative_voice_missing=true`
 
 **读取情感蓝图**：
@@ -255,7 +255,7 @@ cat "{project_root}/设定集/情感蓝图.md"
 cat "{project_root}/设定集/开篇策略.md"
 ```
 - Ch1-3 时，开篇策略中的设计**覆盖默认的 Golden Opening Protocol**
-- 任务书板块 1 的"必须完成"中追加开篇策略的 chapter1_must_convey
+- 任务书板块 1 的“必须完成”中追加开篇策略的 chapter1_must_convey
 - 任务书板块 8 的钩子设计使用开篇策略的 chapter1_hook
 - 前 3 章的每章重点来自 first3_chapters_plan
 - Ch4+ 不读取此文件
@@ -267,17 +267,17 @@ cat "{project_root}/设定集/开篇策略.md"
 
 **跨章句式去重**（2026-04-11 新增硬规则，防止模板化句式重复）：
 
-context-agent 在生成执行包前，必须扫描**最近 3 章正文**的"关键节拍段落"，识别已被使用过的"触发句式模板"，并在本章执行包的 `forbidden_items` 中列出禁止复用的句式。
+context-agent 在生成执行包前，必须扫描**最近 3 章正文**的“关键节拍段落”，识别已被使用过的“触发句式模板”，并在本章执行包的 `forbidden_items` 中列出禁止复用的句式。
 
 **算法**：
 
 1. 读取 `ch{N-1} / ch{N-2} / ch{N-3}` 三章正文（文件可能在 `正文/第NNNN章-*.md`）
-2. 对每一章，定位"金手指触发"或"情感爆点"段落（从摘要 / 场景切片反推）
+2. 对每一章，定位“金手指触发”或“情感爆点”段落（从摘要 / 场景切片反推）
 3. 提取这些段落的句式特征：
    - 感官入口（触觉/视觉/嗅觉/听觉/温觉）
    - 时间节奏（逐笔慢镜头 / 一次性 / 重复节拍 / 突然定格）
-   - 动作序列（如 "毛巾顺着 → 看见 → 一笔一笔浮出来"）
-4. 若前 3 章中有 2 次或以上使用同一"感官入口 + 时间节奏"组合，本章必须禁用该组合
+   - 动作序列（如 “毛巾顺着 → 看见 → 一笔一笔浮出来”）
+4. 若前 3 章中有 2 次或以上使用同一“感官入口 + 时间节奏”组合，本章必须禁用该组合
 5. 在 `step_2a_write_prompt.forbidden_items` 中追加一条：
    ```json
    {
@@ -300,8 +300,8 @@ context-agent 在生成执行包前，必须扫描**最近 3 章正文**的"关�
 - 固定仪式动作（入殓/净身流程）— 这是题材真实感的一部分
 
 **Ch1-3 历史教训**：
-- Ch1 与 Ch3 都用"触觉入口 + 毛巾顺着手臂下滑 + 逐笔浮现"句式
-- Ch3 在文本里甚至自引 Ch1（"像外婆那只手心里的那道一样"），作者意识到同质化但处理成了"模式确认"
+- Ch1 与 Ch3 都用“触觉入口 + 毛巾顺着手臂下滑 + 逐笔浮现”句式
+- Ch3 在文本里甚至自引 Ch1（“像外婆那只手心里的那道一样”），作者意识到同质化但处理成了“模式确认”
 - Ch5 第二次失忆（大纲规划）若继续复用此句式，将成为三连重复，严重影响读者体验
 - 根治：从 Ch5 起强制 context-agent 扫描前 3 章并禁止复用
 
@@ -313,18 +313,18 @@ context-agent 在生成 context_contract 时必须判断本章是否属于**结�
 
 | 章型 | 识别条件 | 豁免维度 | 推荐豁免值 | 理由 |
 |---|---|---|---|---|
-| 情感爆点章 | 大纲/情感蓝图标注的"情感锚点"章 + 节拍设计以沉默/独坐/回忆为主 | `dialogue_ratio` | min=0.05, max=0.20 | 情感爆点章依赖沉默与动作承担，强制 0.30+ 会破坏情感张力 |
+| 情感爆点章 | 大纲/情感蓝图标注的“情感锚点”章 + 节拍设计以沉默/独坐/回忆为主 | `dialogue_ratio` | min=0.05, max=0.20 | 情感爆点章依赖沉默与动作承担，强制 0.30+ 会破坏情感张力 |
 | 失语枷锁章 | 主角受语言约束（失语/被禁言/独处无对象） | `dialogue_ratio` | min=0.05, max=0.15 | 主角物理无法对话 |
-| 独白/内心戏章 | 章纲标注"内心戏章" / 主角独自行动 | `dialogue_ratio` | min=0.05, max=0.20 | 无对话对象 |
+| 独白/内心戏章 | 章纲标注“内心戏章” / 主角独自行动 | `dialogue_ratio` | min=0.05, max=0.20 | 无对话对象 |
 | 战斗闭环章 | 高强度武打/追逐，纯行动 | `dialogue_ratio` | min=0.10, max=0.25 | 行动比对话更重要 |
 | 纯过渡章 | `is_transition_chapter=true` | `micro_payoff_count` | min=0, max=1 | 过渡章可以零爽点 |
 
 **判断算法**（context-agent Step 3.5 执行）：
 
-1. 读取本章大纲节拍表，统计"无对话"beat 的数量
+1. 读取本章大纲节拍表，统计“无对话”beat 的数量
 2. 若无对话 beat ≥ 总 beat 数的 50% → 判定 `chapter_type="emotional_peak"` 或 `"internal_monologue"`
 3. 读取 `情感蓝图.md`，若本章在情感锚点列表里 → 判定 `chapter_type="emotional_peak"`
-4. 读取主角卡，若本章主角状态是"失语/独处" → 叠加 `silence_constraint=true`
+4. 读取主角卡，若本章主角状态是“失语/独处” → 叠加 `silence_constraint=true`
 5. 根据判定结果填充 `context_contract.chapter_type` 和 `structural_exemptions`
 
 **禁止**：
@@ -338,7 +338,7 @@ context-agent 在生成 context_contract 时必须判断本章是否属于**结�
 - 若豁免后仍不达标（例如豁免 0.05-0.20，实际 0.03）仍判 fail
 - 若本章声明豁免但无合理 `chapter_type`，consistency-checker 判 `EXEMPTION_MISUSE` medium
 
-**Ch3 历史教训**：Ch3 是情感爆点章 + 失语枷锁章双重属性，immutable_facts #10 写死 0.30-0.50，但 6/9 beat 被设计为无对话，实际 0.09。这是 context-agent 未做章型豁免导致的"硬约束自相矛盾"。根治后 Ch3 这类章节 context-agent 会自动在 structural_exemptions 中声明 dialogue_ratio_override，避免反复 deviation。
+**Ch3 历史教训**：Ch3 是情感爆点章 + 失语枷锁章双重属性，immutable_facts #10 写死 0.30-0.50，但 6/9 beat 被设计为无对话，实际 0.09。这是 context-agent 未做章型豁免导致的“硬约束自相矛盾”。根治后 Ch3 这类章节 context-agent 会自动在 structural_exemptions 中声明 dialogue_ratio_override，避免反复 deviation。
 
 **读取力量体系与金手指机制**（必做，2026-04-11 新增硬规则）：
 ```bash
@@ -346,12 +346,12 @@ test -f "{project_root}/设定集/力量体系.md" && cat "{project_root}/设定
 test -f "{project_root}/设定集/金手指设计.md" && cat "{project_root}/设定集/金手指设计.md"
 ```
 
-**目的**：防止 drafting agent 写出"能力使用步骤违反设定"的机制冲突（如 2026-04-11 Ch3 金手指制签事故——正文跳过账册直接在黄纸上写字，与设定"字必须先入账册才能转化为签"冲突，被外部模型 qwen-plus 抓到 HIGH 违规，但内部 consistency-checker 全部漏检）。
+**目的**：防止 drafting agent 写出“能力使用步骤违反设定”的机制冲突（如 2026-04-11 Ch3 金手指制签事故——正文跳过账册直接在黄纸上写字，与设定“字必须先入账册才能转化为签”冲突，被外部模型 qwen-plus 抓到 HIGH 违规，但内部 consistency-checker 全部漏检）。
 
 **提取规则**：
-1. 读取力量体系文件，找到"操作链条" / "使用步骤" / "阶段能力" / "动作序列" 这类描述性段落
+1. 读取力量体系文件，找到“操作链条” / “使用步骤” / “阶段能力” / “动作序列” 这类描述性段落
 2. 对本章涉及的每一种能力使用，提取其**完整操作步骤**（顺序 + 必经环节 + 失败条件）
-3. 读取金手指设计文件，对"金手指使用动作"提取同样的步骤
+3. 读取金手指设计文件，对“金手指使用动作”提取同样的步骤
 4. 在执行包的 `step_2a_write_prompt.immutable_facts` 中**必须**为每个本章使用的能力注入一条 mechanism fact，格式：
 
 ```json
@@ -372,9 +372,9 @@ test -f "{project_root}/设定集/金手指设计.md" && cat "{project_root}/设
 **immutable_facts.fact 字段元标识符禁用硬约束**（Round 17.1 · 2026-04-24 · Ch7 RCA F5 根治）：
 
 **为什么需要**（Ch7 血教训）：
-- Ch7 首稿 L183 写了 "一次是 Ch1 那个清晨，一次是 Ch4 <power-faction>系统的第一次登录"
-- 元标识符 "Ch1"/"Ch4" 污染正文——小说人物**不知道章号**
-- 根因：context-agent 的 immutable_facts 用了 "Ch1 消耗第一格 · Ch4 消耗第二格" 简写，主 agent 照搬进正文
+- Ch7 首稿 L183 写了 “一次是 Ch1 那个清晨，一次是 Ch4 <power-faction>系统的第一次登录”
+- 元标识符 “Ch1”/“Ch4” 污染正文——小说人物**不知道章号**
+- 根因：context-agent 的 immutable_facts 用了 “Ch1 消耗第一格 · Ch4 消耗第二格” 简写，主 agent 照搬进正文
 - post_draft_check 已加 METAREF 扫描兜底，但**源头治理更彻底**
 
 **硬约束**：
@@ -399,7 +399,7 @@ for f in immutable_facts:
 失败即阻断生成，必须改写后重试。
 
 **为什么必做**：
-- 单纯依赖 consistency-checker 事后审查是不够的——checker 只能检查"能力权限"（有没有资格用），不能检查"操作步骤"（用得对不对）
+- 单纯依赖 consistency-checker 事后审查是不够的——checker 只能检查“能力权限”（有没有资格用），不能检查“操作步骤”（用得对不对）
 - 源头约束（immutable_facts）对 drafting agent 是强约束；drafting agent 如果违反会触发 Step 6 A1 审计 fail
 - 比事后发现-重写代价低 10 倍
 
@@ -408,14 +408,14 @@ for f in immutable_facts:
 test -f "{project_root}/设定集/典故引用库.md" && cat "{project_root}/设定集/典故引用库.md"
 test -f "{project_root}/设定集/原创诗词口诀.md" && cat "{project_root}/设定集/原创诗词口诀.md"
 ```
-- 检查本章大纲是否有"引用锚点"字段，若有则推荐对应引用（含载体 + 融入方式）
+- 检查本章大纲是否有“引用锚点”字段，若有则推荐对应引用（含载体 + 融入方式）
 - 无锚点时，根据本章场景/情绪判断是否适合引用，推荐 0-2 条（原创口诀优先于外部典故）
-- 输出到任务书第 6 板块"风格指导"的**典故引用推荐**
-- 文件不存在时：跳过，输出"本章不引用（无引用库）"
+- 输出到任务书第 6 板块“风格指导”的**典故引用推荐**
+- 文件不存在时：跳过，输出“本章不引用（无引用库）”
 
 **🔍 推荐引用的 search 验证分级**（输出给 Step 2A 的建议标签）：
 
-为每条推荐的引用附加"验证建议"标签，供 Step 2A 起草时决定是否调用 Tavily：
+为每条推荐的引用附加“验证建议”标签，供 Step 2A 起草时决定是否调用 Tavily：
 
 | 引用来源 | 验证建议标签 | Step 2A 行为 |
 |---|---|---|
@@ -424,7 +424,7 @@ test -f "{project_root}/设定集/原创诗词口诀.md" && cat "{project_root}/
 | 顶级知名诗词（苏轼/白居易/李白/杜甫/诗经等顶流） | `trust_memory` | AI 记忆足够，可直接使用 |
 | 冷门诗词/民俗典故（无 `verified_at` 或已过期） | `verify_before_use` | **Step 2A 必须先调用 Tavily Search 验证** |
 | 互联网热梗 | `verify_timeliness` | **Step 2A 必须搜索当前时效性** |
-| 本章在大纲中有"引用锚点"但引用库未登记 | `search_to_register` | **Step 2A 先搜索补录到引用库再使用** |
+| 本章在大纲中有“引用锚点”但引用库未登记 | `search_to_register` | **Step 2A 先搜索补录到引用库再使用** |
 
 **输出到任务书第 6 板块的引用推荐格式**：
 ```
@@ -520,7 +520,7 @@ Context Contract 必须字段（不可缺）：
 
 - 红线1：不可变事实冲突（大纲关键事件、设定规则、上章既有结果）
 - 红线2：时空跳跃无承接（地点/时间突变且无过渡）
-- 红线3：能力或信息无因果来源（突然会/突然知道）**或 POV 披露时序倒置**（情报披露点早于其载体出现点——例：主角在档案灌注之前就说出"三十天后末世爆发"；Ch1《<example-project>》Round 12 血教训）
+- 红线3：能力或信息无因果来源（突然会/突然知道）**或 POV 披露时序倒置**（情报披露点早于其载体出现点——例：主角在档案灌注之前就说出“三十天后末世爆发”；Ch1《<example-project>》Round 12 血教训）
 - 红线4：角色动机断裂（行为与近期目标明显冲突且无触发）
 - 红线5：合同与任务书冲突（例如“过渡章=true”却要求高强度高潮兑现）
 - **红线6：时间逻辑错误**（时间回跳、倒计时跳跃、大跨度无过渡）
@@ -660,7 +660,7 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
 
 **硬要求**：
 - 助手脚本必须返回 exit=0，否则 context-agent 必须返回 `ok: false` 给主 agent，并阻断 Step 2A 启动
-- **时间算术校验（必做）**：执行包落盘后，必须运行 `countdown_validator.py` 校验 `timestamp_arithmetic` 块（或 `context_contract.time_constraints`）。校验项包括：prev_chapter_end ≤ current_chapter_start / time_gap_minutes 与实际差值一致（±1min 容差）/ countdown_checkpoint 中的"X小时/X分钟"与实际 gap 一致。校验失败必须修复后重跑 build_execution_package.py。
+- **时间算术校验（必做）**：执行包落盘后，必须运行 `countdown_validator.py` 校验 `timestamp_arithmetic` 块（或 `context_contract.time_constraints`）。校验项包括：prev_chapter_end ≤ current_chapter_start / time_gap_minutes 与实际差值一致（±1min 容差）/ countdown_checkpoint 中的“X小时/X分钟”与实际 gap 一致。校验失败必须修复后重跑 build_execution_package.py。
   ```bash
   python -X utf8 "${SCRIPTS_DIR}/countdown_validator.py" --input ".webnovel/context/ch${chapter_padded}_context.json"
   # exit=0 才允许继续；exit=1 表示算术错误必须修 stdin JSON
@@ -668,10 +668,10 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
 - **字数目标（word_count_target）SSOT 硬约束（2026-04-22 Round 15.1 根治 · 三次复现的漂移）**：
   - **唯一 SSOT**：`state.project_info.word_count_policy`（若项目无此字段，回退到 `average_words_per_chapter_min/max`）
   - **读取优先级**：state.json.word_count_policy.chapter_type_guide[type] > state.json.word_count_policy.hard_min/max > state.json.average_words_per_chapter_min/max > 默认 `2200-3500`
-  - **章节类型自动识别**：Step 1 必须根据大纲批注（"过渡章/推进章/战斗章/卷末章等"）选择 chapter_type_guide 的对应区间；写入 `context_contract.word_count_target` 为区间字符串
-  - **禁止**：擅自收紧到 2700-3200 / 2400-3200 / 2800-3500；禁止在执行包里写"avg 3000"/"目标 3000"这类单点数字作为硬目标（3000 只是 project 级 soft_target 参考）
+  - **章节类型自动识别**：Step 1 必须根据大纲批注（“过渡章/推进章/战斗章/卷末章等”）选择 chapter_type_guide 的对应区间；写入 `context_contract.word_count_target` 为区间字符串
+  - **禁止**：擅自收紧到 2700-3200 / 2400-3200 / 2800-3500；禁止在执行包里写“avg 3000”/“目标 3000”这类单点数字作为硬目标（3000 只是 project 级 soft_target 参考）
   - **禁止**：使用 editor_notes 里的字数建议（editor_notes 可能被 audit-agent 污染）覆盖 SSOT · 若 editor_notes 与 state.json SSOT 冲突，**以 state.json 为准并在执行包中记录 warning**：`word_count_conflict_resolved_from_editor_notes`
-  - **擅自收紧会导致下游 Step 2A 基于错误基线 over-draft 或被误判"字数不达标"，reader-critic 进一步扣节奏分**
+  - **擅自收紧会导致下游 Step 2A 基于错误基线 over-draft 或被误判“字数不达标”，reader-critic 进一步扣节奏分**
 - 主 agent 在 Step 1 complete-step 的 artifact 中必须包含 `{"ok": true, "file": ".webnovel/context/ch{NNNN}_context.json", "snapshot": ".webnovel/context_snapshots/ch{NNNN}.json"}`，不可只写 `{"v2": true}` 或 `{"ok": true}`
 - **禁止绕过助手脚本**：不得用 `cat > file <<'EOF'`、`python -c "json.dump(...)"` 等任何方式手写 JSON 到 `.webnovel/context/`。**Write 工具写到 `.webnovel/tmp/execpkg_ch{NNNN}_stdin.json` 是允许的并推荐的**，但最终落盘 `.webnovel/context/ch{NNNN}_context.{json,md}` 必须由 `build_execution_package.py` 完成。
   - 手写会：(a) 字段名漂移（如 `step_2a_write_prompt` 误写为 `step2a_direct_prompt`）(b) 漏 schema section (c) 顶层 metadata 不规范（如多出 `meta` 嵌套层）
@@ -682,13 +682,13 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
   1. 将 stdin JSON 单独写到 `.webnovel/tmp/execpkg_ch{NNNN}_stdin.json` 作为调试证据
   2. 读取脚本 stderr 全文，定位 schema 错误
   3. 修复 stdin JSON 后重新通过 `--input .webnovel/tmp/execpkg_ch{NNNN}_stdin.json` 参数再跑
-  4. 仍失败则返回 `ok: false` 由主 agent 阻断流程；禁止"改为自己直写文件"的降级
+  4. 仍失败则返回 `ok: false` 由主 agent 阻断流程；禁止“改为自己直写文件”的降级
 
 **为什么必须落盘**：
 1. **跨章可追溯**：Ch3 审查时可以回看 Ch1 的执行包，验证伏笔预约是否按计划落实
 2. **Step 6 审计 A1 依赖**：Layer A1 检查 context_contract 的多来源提取，其中之一就是 `context/chNNNN_context.json`
 3. **断点恢复**：若 Step 2A 被中断，Step 2A 可从本文件重新起草而不需要重跑 context-agent
-4. **editor_notes 比对**：Step 6 写下章 prep 时要比对前章"规划 vs 实现"，没有持久化的执行包就只能 best-effort
+4. **editor_notes 比对**：Step 6 写下章 prep 时要比对前章“规划 vs 实现”，没有持久化的执行包就只能 best-effort
 
 ---
 
@@ -707,6 +707,32 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
 
 ---
 
+### Round 19 Phase F · 私库回灌（writing_guidance.local_blacklist + canon_traps）
+
+每章生成创作执行包时**必须**注入私库前 N 条到 `writing_guidance.local_blacklist` + `writing_guidance.canon_traps`：
+
+1. 读 `${CLAUDE_PLUGIN_ROOT}/references/private-csv/ai-replacement-vocab.csv`
+2. 按“严重度”排序（critical > high > medium > low）取前 10 条
+3. 写 `writing_guidance.local_blacklist`：
+   ```json
+   [
+     {"bad": "缓缓开口", "good_hint": "前置动作 + 引号", "subdimension": "vocab", "ref": "AV-003"},
+     {"bad": "瞳孔微缩", "good_hint": "<protagonist>专属：拧手表/咬笔帽", "subdimension": "vocab", "ref": "AV-005"}
+   ]
+   ```
+4. 同样读 `canon-violation-traps.csv`，取本作（<example-project>）相关前 5 条到 `writing_guidance.canon_traps`：
+   ```json
+   [
+     {"trap": "战力越权", "evidence": "...", "ref": "CV-002"}
+   ]
+   ```
+5. 任意一表读取失败（文件缺失 / 解析错误） → log 警告但不阻断
+6. 同时读 `strong-chapter-end-hooks.csv`，挑选 2-3 条与本章定位匹配的好样本注入 `writing_guidance.hook_close_examples`，writer 写章末时可参考节奏
+
+输入失败处理：CSV 缺表头/编码不正常 → 跳过本表注入并在 `quality_feedback.warnings` 加 1 条 `private_csv_load_failed: <table>`。
+
+---
+
 ## 质量反馈注入（扩展）
 
 > 将近期章节的审查反馈注入上下文，帮助 Step 2A 避免重复犯错。
@@ -720,16 +746,16 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 ### 注入规则
 
 1. **近期高频问题**: 从最近 5 章的 review_metrics 中提取反复出现的 issue type
-   - 如果同一 issue type 连续 3+ 章出现 → 在执行包中增加"重点规避"提示
+   - 如果同一 issue type 连续 3+ 章出现 → 在执行包中增加“重点规避”提示
    - 示例：`"近3章反复出现 PROSE_FLAT（句式单调），本章请特别注意句式变化"`
 
 2. **近期成功模式**: 从最近 5 章中找到最高分章节的特征
    - 提取该章的 chapter_meta（开头类型/情绪节奏/钩子类型）
-   - 在执行包中以"参考模式"注入
+   - 在执行包中以“参考模式”注入
 
 3. **范文锚定**: 若本项目存在风格样本（score ≥ 85 的章节段落）
    - 从 style_samples 中提取 1-2 个与本章类型匹配的段落
-   - 在 Step 2A prompt 中以"参考这段文字的质感"方式注入
+   - 在 Step 2A prompt 中以“参考这段文字的质感”方式注入
    - 不是要求模仿，而是锚定质量标准
 
 ### 输出字段
@@ -768,4 +794,4 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 12. ✅ **时间逻辑红线通过**（无回跳、无倒计时跳跃、大跨度有过渡要求）
 13. ✅ **情感锚点规划完整**（情感场景已识别、锚点类型已分配、高强度情感有梯度路径、跨章惯性有衔接方案、Show:Tell目标已设定）
 14. ✅ **执行包已落盘**：`.webnovel/context/ch{NNNN}_context.json` 与 `.webnovel/context/ch{NNNN}_context.md` 同时存在且非空；JSON 的 task_brief / context_contract / step_2a_write_prompt 三键均非空
-14. ✅ **情感beat有执行指令**（情感场景所在beat包含锚点类型+梯度位置，非仅"情绪上升/下降"）
+14. ✅ **情感beat有执行指令**（情感场景所在beat包含锚点类型+梯度位置，非仅“情绪上升/下降”）
