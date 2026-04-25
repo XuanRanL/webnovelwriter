@@ -1381,6 +1381,59 @@ def check_reality_red_flags(root: Path, chapter: int, rep: HygieneReport):
         )
 
 
+def check_hook_trend(root: Path, chapter: int, rep: HygieneReport):
+    """H25: 章末钩子 4 类跨章趋势（Round 19 Phase G）
+
+    扫描最近 5 章 chapter_meta.{NNNN}.hook_close.primary_type：
+      - 全部相同（且非空）→ P1 warn（节奏疲劳，提醒下章切换钩子类型）
+      - 任意为空（未回填）→ skip（历史章节兼容）
+      - 全 5 章 < 5 章已成稿 → skip
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        rep.record("P2", "H25", "state.json 不存在，跳过 hook 趋势检查", True)
+        return
+    try:
+        state = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        rep.record("P2", "H25", f"state.json 解析失败：{exc}", True)
+        return
+
+    metas = state.get("chapter_meta", {}) or {}
+    chs = sorted([k for k in metas.keys() if str(k).isdigit()])
+    if len(chs) < 5:
+        rep.record("P2", "H25", f"已成稿 {len(chs)} < 5 章，跳过趋势检查", True)
+        return
+
+    recent = chs[-5:]
+    primaries = [
+        ((metas.get(k) or {}).get("hook_close") or {}).get("primary_type") or ""
+        for k in recent
+    ]
+    # 任意为空 → skip（兼容历史未回填章节）
+    if any(not p for p in primaries):
+        rep.record(
+            "P2", "H25",
+            f"最近 5 章 hook_close.primary_type 含未回填，跳过（{[int(k) for k in recent]}）",
+            True,
+        )
+        return
+
+    if all(p == primaries[0] for p in primaries):
+        rep.record(
+            "P1", "H25",
+            f"连续 5 章 hook_close.primary_type 相同：{primaries[0]}（章 {[int(k) for k in recent]}）"
+            f" · 下章 reader-pull-checker 提醒切换钩子类型",
+            False,
+        )
+        return
+    rep.record(
+        "P1", "H25",
+        f"最近 5 章 hook_close.primary_type 多样性 OK: {primaries}",
+        True,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("chapter", type=int, help="章号")
@@ -1412,6 +1465,7 @@ def main():
     check_cross_chapter_style_drift(root, args.chapter, rep)  # H21 · Round 16
     check_reality_red_flags(root, args.chapter, rep)  # H22 · Round 17
     check_cross_chapter_cadence(root, args.chapter, rep)  # H23 · Round 17.1 · Ch7 RCA P1.5
+    check_hook_trend(root, args.chapter, rep)  # H25 · Round 19 Phase G · 章末钩子 4 类跨章趋势
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)

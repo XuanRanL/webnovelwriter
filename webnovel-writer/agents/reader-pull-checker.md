@@ -126,3 +126,42 @@ model: inherit
 - Ch3 末段必须含 Ch1 卖点的第一次小兑现 + 抛出更大悬念 → 缺失 medium warn
 
 证据通过 Read Ch1 末段 + 当前章末段 200 字对比判定。
+
+## Round 19 Phase G · 章末钩子 4 分类 + 跨章趋势（参 chapter-end-hook-taxonomy.md）
+
+### 必输出 hook_close 子对象
+
+每章除给主分数 reader_pull 外**必须**输出：
+
+```json
+"hook_close": {
+  "primary_type": "信息钩 | 情绪钩 | 决策钩 | 动作钩",
+  "secondary_type": "...或 null",
+  "strength": 88,
+  "text_excerpt": "章末最后 200 字原文"
+}
+```
+
+判断方法：
+
+1. Read 章末最后 200 字
+2. 对照 chapter-end-hook-taxonomy.md 4 类强信号定义二选
+3. strength 来自既有 reader_pull 主分数；text_excerpt 是原文片段不超过 200 字
+
+### 跨章趋势检查（必跑）
+
+跑：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  state get-hook-trend --last-n 5
+```
+
+CLI 返回 `recent_primary` 数组 + 自动判定字段。按以下规则把命中规则写入 issues：
+
+- `all_same_primary == true` → issue (severity=medium, category=pacing, id=SOFT_HOOK_TYPE_REPEAT)
+- `combo_repeated_3 == true` → issue (severity=high, id=SOFT_HOOK_COMBO_REPEAT)
+- `no_decision_hook_8 == true` → issue (severity=medium, id=SOFT_HOOK_DECISION_GAP)
+- `no_emotion_hook_8 == true` → issue (severity=medium, id=SOFT_HOOK_EMOTION_GAP)
+
+cross_chapter_trend 子对象作为 reader-pull 输出附加字段。

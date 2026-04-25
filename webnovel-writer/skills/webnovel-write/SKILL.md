@@ -136,6 +136,9 @@ git log --oneline -1 | grep "第${chapter_num}章"
 - `references/visual-concreteness-rubric.md`（Round 19 Phase H · 画面感硬规则 · 视觉锚点 / 5+1 感官色谱 / 抽象动作改写）
   - 用途：Step 2A 起草时即时遵守 + Step 3 prose-quality-checker 评分硬卡
   - 触发：永久加载（与 anti-ai-guide.md 并列）
+- `references/chapter-end-hook-taxonomy.md`（Round 19 Phase G · 章末钩子 4 分类规范 + 跨章趋势规则）
+  - 用途：reader-pull-checker 必读 + data-agent Step K 必读
+  - 触发：永久加载（每章 Step 3 reader-pull-checker 评分 + Step 5 data-agent 落库）
 - `references/style-variants.md`
   - 用途：Step 1（内置 Contract）开头/钩子/节奏变体与重复风险控制。
   - 触发：Step 1 当需要做差异化设计时加载。

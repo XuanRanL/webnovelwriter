@@ -604,6 +604,37 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
 4. 同时 lowest_subdimension 字段也写到 `chapter_meta.checker_subdimensions.reader-naturalness-checker._lowest` 字段供 polish_cycle 读（state_manager 会自动从 subdimensions 算出 _lowest）
 5. 落库后下游消费：polish_cycle.py 读 `_lowest` 选定要修的子维度 → polish-guide 按子维度定向修
 
+### Round 19 Phase G · 章末钩子 4 分类落库 + 跨章趋势
+
+读 `tmp/reader_pull_ch{NNNN}.json` 取 `hook_close` 子对象（Phase G 起 reader-pull-checker 必输出此字段），跑：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  state update --set-hook-close '{"chapter":N,"primary":"信息钩|情绪钩|决策钩|动作钩","secondary":null,"strength":88,"text":"章末 200 字"}'
+```
+
+primary 必须 ∈ {信息钩, 情绪钩, 决策钩, 动作钩} 4 类枚举（CLI 会校验，非法值 INVALID_ARG）。
+
+若 reader_pull JSON 缺 hook_close 子对象（老 checker 版本）→ Step K 提示但不阻断；启发式兜底（基于 hook_type 历史字段映射，参考 `references/chapter-end-hook-taxonomy.md`）。
+
+#### 跨章趋势提示（写库后必跑）
+
+Step K 完成所有写库后，跑 `state get-hook-trend --last-n 5` 取结果：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  state get-hook-trend --last-n 5
+```
+
+按返回字段做提醒（不阻断当前章 commit）：
+
+- `all_same_primary == true` → 在 polish_log[-1].notes 追加：“Ch{N+1} 提醒：连续 5 章 {primary} 钩，下章建议切换”
+- `combo_repeated_3 == true` → 追加：“连续 3 章 primary+secondary 组合相同，下章必须换组合”
+- `no_decision_hook_8 == true` → 追加：“连续 8 章无决策钩，建议安排主角主动抉择场景”
+- `no_emotion_hook_8 == true` → 追加：“连续 8 章无情绪钩，建议补关系线情绪节点”
+
+提醒**不阻断**当前章 commit，但 hygiene_check H25 会在连续 5 章相同时 P1 warn，作为下章 reader-pull-checker 输入。
+
 | 字段 | 类型 | 用途 |
 |---|---|---|
 | `chapter_title` | str | title 的别名；只在迁移期保留，二选一即可 |
