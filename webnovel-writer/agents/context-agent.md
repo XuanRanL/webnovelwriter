@@ -709,25 +709,28 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
 
 ### Round 19 Phase F · 私库回灌（writing_guidance.local_blacklist + canon_traps）
 
-每章生成创作执行包时**必须**注入私库前 N 条到 `writing_guidance.local_blacklist` + `writing_guidance.canon_traps`：
+> **Round 19.1 P0-1 修订**：私库改为**项目本地路径** `${PROJECT_ROOT}/.webnovel/private-csv/`（之前是 fork 共享 `${CLAUDE_PLUGIN_ROOT}/references/private-csv/`，导致跨项目污染）。fork 共享路径仅作 schema seed，不带本作数据。
 
-1. 读 `${CLAUDE_PLUGIN_ROOT}/references/private-csv/ai-replacement-vocab.csv`
-2. 按“严重度”排序（critical > high > medium > low）取前 10 条
-3. 写 `writing_guidance.local_blacklist`：
+每章生成创作执行包时**必须**注入项目本地私库前 N 条到 `writing_guidance.local_blacklist` + `writing_guidance.canon_traps`：
+
+1. 读 `${PROJECT_ROOT}/.webnovel/private-csv/ai-replacement-vocab.csv`（项目本地）
+   - 文件不存在 / 仅表头（新项目）→ 跳过注入，写 `warnings: ["private_csv_uninitialized"]`，**不阻断**
+2. 按"严重度"排序（critical > high > medium > low）取前 10 条
+3. 写 `writing_guidance.local_blacklist`（每条结构）：
    ```json
-   [
-     {"bad": "缓缓开口", "good_hint": "前置动作 + 引号", "subdimension": "vocab", "ref": "AV-003"},
-     {"bad": "瞳孔微缩", "good_hint": "陆沉专属：拧手表/咬笔帽", "subdimension": "vocab", "ref": "AV-005"}
-   ]
+   [{"bad": "<坏样本原文>", "good_hint": "<修复方向>", "subdimension": "vocab", "ref": "AV-003"}]
    ```
-4. 同样读 `canon-violation-traps.csv`，取本作（末世重生）相关前 5 条到 `writing_guidance.canon_traps`：
-   ```json
-   [
-     {"trap": "战力越权", "evidence": "...", "ref": "CV-002"}
-   ]
-   ```
-5. 任意一表读取失败（文件缺失 / 解析错误） → log 警告但不阻断
-6. 同时读 `strong-chapter-end-hooks.csv`，挑选 2-3 条与本章定位匹配的好样本注入 `writing_guidance.hook_close_examples`，writer 写章末时可参考节奏
+4. 同样读 `${PROJECT_ROOT}/.webnovel/private-csv/canon-violation-traps.csv`，取**本项目**前 5 条到 `writing_guidance.canon_traps`
+5. 同时读 `${PROJECT_ROOT}/.webnovel/private-csv/strong-chapter-end-hooks.csv`，挑选 2-3 条与本章定位匹配的好样本注入 `writing_guidance.hook_close_examples`
+6. 任意一表读取失败（文件缺失 / 解析错误） → 写 `warnings`，不阻断
+
+新项目首次写作时如需初始化私库：
+
+```bash
+# 项目至少跑过 1-2 章后再跑（私库提取需要 .webnovel/tmp/*.json checker 数据）
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  private-csv --table ai-replacement-vocab --chapters 1-N
+```
 
 输入失败处理：CSV 缺表头/编码不正常 → 跳过本表注入并在 `quality_feedback.warnings` 加 1 条 `private_csv_load_failed: <table>`。
 

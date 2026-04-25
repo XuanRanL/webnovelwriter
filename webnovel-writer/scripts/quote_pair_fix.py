@@ -150,12 +150,30 @@ def main():
         help="仅修弯引号配对错乱，不做 ASCII→弯 转换（Round 15.3 前的旧行为）",
     )
     p.add_argument("--output", type=str, default=None)
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="Round 19.1 P0-2：强制对非 .md 文件运行（默认对代码/数据文件跳过）",
+    )
     args = p.parse_args()
 
     pth = Path(args.path)
     if not pth.exists():
         print(f"[FAIL] not found: {pth}", file=sys.stderr)
         sys.exit(2)
+
+    # Round 19.1 P0-2 文件类型守卫：仅对 .md 默认运行
+    # 历史教训：对 .py/.json/.yaml/.toml/.csv 跑会按段奇偶配对破坏 Python 字符串/JSON 引号/CSV 字段
+    SKIP_EXTENSIONS = {".py", ".json", ".yaml", ".yml", ".toml", ".csv", ".tsv", ".xml", ".js", ".ts", ".sh", ".bat", ".ps1", ".sql"}
+    suffix = pth.suffix.lower()
+    if suffix in SKIP_EXTENSIONS and not args.force:
+        print(f"[SKIP] {pth} suffix={suffix} 默认跳过（代码/数据文件）。需要强制跑请加 --force")
+        sys.exit(0)
+    if not suffix and not args.force:
+        # 无扩展名也保险跳过
+        print(f"[SKIP] {pth} 无扩展名，默认跳过。需要强制请加 --force")
+        sys.exit(0)
+
     text = pth.read_text(encoding="utf-8")
     ascii_to_curly = not args.strict_curly
     new, total, fixed = fix_text(text, ascii_to_curly=ascii_to_curly)

@@ -1919,6 +1919,61 @@ def check_a_x1_reader_critic_hard_block(project_root: Path, chapter: int) -> Che
     )
 
 
+def check_a_x1b_pre_draft_self_check(project_root: Path, chapter: int) -> CheckResult:
+    """Round 19.1 P0-3 · 前 5 章必须有 pre_draft_self_check JSON（X1 写前自检兑现）。
+
+    根因：anti-ai-guide.md 写"前 5 章必须自检"但 SKILL.md Step 2A 不触发自检 → dead spec。
+    本 check 验证 chapter ≤ 5 时 tmp/pre_draft_self_check_ch{NNNN}.json 存在 + verdict 字段合法。
+    """
+    if chapter > 5:
+        return CheckResult(
+            id="A-RC-X1B", name="前 5 章写前自检兑现", layer="A",
+            status="skipped", severity="low",
+            evidence=f"chapter={chapter} > 5，本检查仅 chapter ≤ 5 强制",
+        )
+    p = project_root / ".webnovel" / "tmp" / f"pre_draft_self_check_ch{_pad(chapter)}.json"
+    if not p.exists():
+        return CheckResult(
+            id="A-RC-X1B", name="前 5 章写前自检兑现", layer="A",
+            status="fail", severity="high",
+            evidence=f"chapter={chapter} ≤ 5 但 {p.name} 缺失",
+            remediation=[
+                "Round 19.1 P0-3 · 起草 Step 2A 前必须输出 pre_draft_self_check JSON",
+                "5 类自检项：金手指时序 / 突兀编号 / 大纲爽点兑现 / 伏笔节奏 / 读者卡点",
+                "verdict=REWRITE_RECOMMENDED → 必须回 Step 1 重做大纲",
+                "verdict=NEEDS_ADJUST → 同时输出 writing_constraints_addendum",
+                "详见 anti-ai-guide.md § Round 19 Phase X1 写前自检清单",
+            ],
+        )
+    data = _read_json(p)
+    if not isinstance(data, dict):
+        return CheckResult(
+            id="A-RC-X1B", name="前 5 章写前自检兑现", layer="A",
+            status="fail", severity="high",
+            evidence=f"{p.name} 存在但 JSON 解析失败",
+        )
+    verdict = data.get("verdict")
+    items = data.get("items") or []
+    if verdict not in ("PASS", "NEEDS_ADJUST", "REWRITE_RECOMMENDED"):
+        return CheckResult(
+            id="A-RC-X1B", name="前 5 章写前自检兑现", layer="A",
+            status="fail", severity="medium",
+            evidence=f"{p.name} verdict={verdict!r} 非合法值（应为 PASS/NEEDS_ADJUST/REWRITE_RECOMMENDED）",
+        )
+    if not isinstance(items, list) or len(items) < 5:
+        return CheckResult(
+            id="A-RC-X1B", name="前 5 章写前自检兑现", layer="A",
+            status="warn", severity="medium",
+            evidence=f"{p.name} items={len(items) if isinstance(items, list) else 'N/A'}（应 ≥ 5 类）",
+        )
+    return CheckResult(
+        id="A-RC-X1B", name="前 5 章写前自检兑现", layer="A",
+        status="pass", severity="medium",
+        evidence=f"chapter={chapter} 写前自检 verdict={verdict} · {len(items)} 类自检通过",
+        measured={"verdict": verdict, "items_count": len(items)},
+    )
+
+
 def _run_layer_a(project_root: Path, chapter: int) -> LayerResult:
     checks = [
         check_A1_contract_completeness(project_root, chapter),
@@ -1930,6 +1985,7 @@ def _run_layer_a(project_root: Path, chapter: int) -> LayerResult:
         check_A7_encoding_clean(project_root, chapter),
         check_A8_anti_ai_force_not_stub(project_root, chapter),
         check_a_x1_reader_critic_hard_block(project_root, chapter),
+        check_a_x1b_pre_draft_self_check(project_root, chapter),  # Round 19.1 P0-3
     ]
     return LayerResult(layer="A", score=_score_from_checks(checks), checks=checks)
 

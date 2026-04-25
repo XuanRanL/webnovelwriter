@@ -478,7 +478,9 @@ python -X utf8 "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts/we
 
 ## Round 19 Phase F · 私库回查 canon-violation-traps
 
-发现 setting/timeline/character/logic 类 issue 时回查 `${CLAUDE_PLUGIN_ROOT}/references/private-csv/canon-violation-traps.csv`：
+> **Round 19.1 P0-1 修订**：私库改为**项目本地** `${PROJECT_ROOT}/.webnovel/private-csv/`（跨项目隔离）。
+
+发现 setting/timeline/character/logic 类 issue 时回查 `${PROJECT_ROOT}/.webnovel/private-csv/canon-violation-traps.csv`：
 
 1. 读 CSV 全部行（容错：文件缺失/解析异常 → 仅在输出 `meta.warnings` 追加 `private_csv_unavailable`，不阻断）
 2. 对当前 issue 的 evidence/quote 做 substring 模糊匹配（长度 ≥ 4 字 token）

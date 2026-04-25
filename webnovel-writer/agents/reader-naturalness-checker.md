@@ -219,9 +219,11 @@ reader_naturalness = round(mean(vocab, syntax, narrative, emotion, dialogue), 2)
 
 ## Round 19 Phase F · 私库回查（输出 issues 时）
 
-完成评分 + issues 列表后，对每条 issue 回查 `${CLAUDE_PLUGIN_ROOT}/references/private-csv/ai-replacement-vocab.csv`：
+> **Round 19.1 P0-1 修订**：私库改为**项目本地** `${PROJECT_ROOT}/.webnovel/private-csv/`（之前是 fork 共享，导致跨项目污染）。
 
-1. 读 CSV 全部行
+完成评分 + issues 列表后，对每条 issue 回查 `${PROJECT_ROOT}/.webnovel/private-csv/ai-replacement-vocab.csv`：
+
+1. 读 CSV 全部行（项目本地路径；新项目首次写章 CSV 仅有表头 → 直接跳过本步）
 2. 对当前 issue 的 evidence（`quote`/`evidence`/`description` 任一字段）做模糊匹配（substring 或核心 token 匹配，长度 ≥ 4 字）
 3. 命中 → severity 升级一级（low→medium, medium→high, high→critical），description 末尾追加 `[recurring_violation: AV-XXX]` 标记
 4. 同时把本次新违例（私库中未有的，severity ≥ medium）写入 `tmp/private_csv_proposal_ch{NNNN}.json`，data-agent Step K 时提示用户是否追加私库

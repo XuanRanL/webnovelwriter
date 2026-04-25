@@ -4,7 +4,11 @@
 私库 CSV 自动提取器（Round 19 Phase F）
 
 输入：项目 .webnovel/tmp/*.json + audit_reports/*.json + polish_reports/*.md
-输出：webnovel-writer/references/private-csv/*.csv 追加新条目（不重复）
+输出：{project}/.webnovel/private-csv/*.csv 追加新条目（不重复）
+
+Round 19.1 P0-1 根治：私库默认写到**项目本地**而不是 fork 共享目录。
+fork 共享 references/private-csv/ 仅留空表头作为 plugin 携带的 schema。
+跨项目隔离：写"画山海" 不会被"末世重生"反例污染。
 
 用法:
     python private_csv_extractor.py --project 末世重生-我在空间里种出了整个基地 \
@@ -404,11 +408,24 @@ def main() -> int:
     if not project.exists():
         print(f"[ERR] project not found: {project}", file=sys.stderr); return 2
 
-    # 默认输出目录：脚本上一层（scripts）的同级 references/private-csv
+    # Round 19.1 P0-1：默认输出到项目本地 .webnovel/private-csv/，跨项目隔离
+    # 老路径（fork 共享 references/private-csv/）仅作 schema 携带，不写本作专属数据
     if args.output_dir:
         out_dir = Path(args.output_dir)
     else:
-        out_dir = Path(__file__).resolve().parent.parent / "references" / "private-csv"
+        out_dir = project / ".webnovel" / "private-csv"
+    # 自动从 fork 共享路径继承 schema（如项目本地未初始化）
+    fork_shared = Path(__file__).resolve().parent.parent / "references" / "private-csv"
+    if not (out_dir / f"{args.table}.csv").exists():
+        seed_csv = fork_shared / f"{args.table}.csv"
+        if seed_csv.exists():
+            out_dir.mkdir(parents=True, exist_ok=True)
+            # 复制 schema 表头（不带数据）
+            with open(seed_csv, "r", encoding="utf-8-sig", newline="") as f:
+                first_line = f.readline()
+            with open(out_dir / f"{args.table}.csv", "w", encoding="utf-8-sig", newline="") as f:
+                f.write(first_line)
+            print(f"[INFO] 项目首次初始化私库：复制 schema 从 {seed_csv} → {out_dir}")
 
     csv_path = out_dir / f"{args.table}.csv"
     headers = CSV_HEADERS[args.table]
