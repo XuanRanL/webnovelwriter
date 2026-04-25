@@ -127,6 +127,9 @@ git log --oneline -1 | grep "第${chapter_num}章"
 - `references/style-adapter.md`
   - 用途：Step 2B 风格转译规则，不改剧情事实。
   - 触发：Step 2B 执行时必读（`--fast`/`--minimal` 跳过）。
+- `references/anti-ai-guide.md`（Round 19 · Step 2 起草前消费 · 8 倾向 + 即时检查 + 替代速查表 + 本作 5 类根因映射 · 与 polish-guide 检测层互补）
+  - 用途：Step 2A 起草前 AI 倾向预防（8 倾向 + 5 即时检查 + 替代速查表 + 本作 N1-N5 根因映射）。
+  - 触发：Step 2A 执行时必读（与 core-constraints.md 并列加载）。
 - `references/style-variants.md`
   - 用途：Step 1（内置 Contract）开头/钩子/节奏变体与重复风险控制。
   - 触发：Step 1 当需要做差异化设计时加载。
@@ -455,6 +458,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" con
 执行前必须加载：
 ```bash
 cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
+cat "${SKILL_ROOT}/references/anti-ai-guide.md"
 ```
 
 硬要求：

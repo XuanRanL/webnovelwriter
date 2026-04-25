@@ -14,6 +14,7 @@ model: inherit
 
 - **Taxonomy**: `${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md`
 - **Genre Profile**: `${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md`
+- **Anti-AI 起草预防**: `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/anti-ai-guide.md`（Round 19 · Step 2 起草前消费 · 8 倾向 + 本作 5 类根因映射）
 - **Context Contract**: `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/context-contract.md`
 - **Shared References**: `${CLAUDE_PLUGIN_ROOT}/references/shared/` 为单一事实源；如需枚举/扫描参考文件，遇到 `<!-- DEPRECATED:` 的文件一律跳过。
 
@@ -688,6 +689,21 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
 2. **Step 6 审计 A1 依赖**：Layer A1 检查 context_contract 的多来源提取，其中之一就是 `context/chNNNN_context.json`
 3. **断点恢复**：若 Step 2A 被中断，Step 2A 可从本文件重新起草而不需要重跑 context-agent
 4. **editor_notes 比对**：Step 6 写下章 prep 时要比对前章"规划 vs 实现"，没有持久化的执行包就只能 best-effort
+
+---
+
+### Round 19 Phase A · Anti-AI 提醒（writing_guidance.constraints 必含至少 6 条）
+
+每章创作执行包的 `writing_guidance.constraints` 字段**必须包含以下 6 条具体提醒**（缺任意 1 条 → context-agent 自检 fail）：
+
+1. 删段末感悟句，留余味（避免起因→经过→结果→感悟四段闭环）
+2. 删万能副词“缓缓/淡淡/微微/轻轻”，换具体动作或前置动作；**本作禁刻度量词外溢（半度/半秒/半指）只留给印记**（N1 根因）
+3. 情绪用生理反应+微动作（如“指节捏得发白”“舌尖尝到铁锈味”），禁止“他感到X”；**本作禁 AI 腔具身模板**（后颈凉/手心汗/喉咙紧/掌心印记跳）（N5 根因）
+4. 角色专属微动作（陆沉咬笔帽=焦虑、拧手表=不耐烦、数手指=思考），禁止全员“瞳孔微缩”
+5. 章末禁止安全着陆（冲突完美解决），留至少 1 个未解决的问题
+6. 展示后不解释（删“他显然很生气”），信任读者；**本作禁“不是X是Y”排比单章 >1 次**（N4 根因）+ **“了一下” ≤3次/千字**（N2 根因）
+
+完整 8 倾向 + 替代速查表 + 5 即时检查 + 本作 5 类根因映射见 `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/anti-ai-guide.md`，writer 在 Step 2 起草前必须 Read 一次。
 
 ---
 
