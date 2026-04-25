@@ -1533,11 +1533,18 @@ def _run_single_model(args, api_keys):
                         early_stop_event.set()
                         print(f"[early-stop] {resolved_key} 累计{total_dim_failures}次失败（阈值{EARLY_STOP_THRESHOLD}），触发早停", file=sys.stderr)
                     continue
-                dim_issues = parsed.get("issues", [])
+                dim_issues = parsed.get("issues") or []
                 scores[dim_key] = dim_score
                 # 2026-04-16 Round 10 · quote 幻觉检测
                 # Ch1 末世重生 qwen 实测报告引用"妹妹那时候在外地读书，他在合肥加班"
                 # 该句根本不在正文里——外部模型幻觉。把所有 quote 做文本存在性验证。
+                #
+                # Round 18 · 2026-04-24 · Ch10 P0-4 根治：
+                # 部分模型（如 minimax-m2.7-hs@openclawroot）返回 issues=[null, null]
+                # 列表里含 None 元素，对 None 做 issue["source_model"]=... 会抛
+                # "'NoneType' object does not support item assignment"，导致整个模型失败。
+                # 根治：过滤 None / 非 dict 元素。
+                dim_issues = [it for it in dim_issues if isinstance(it, dict)]
                 for issue in dim_issues:
                     issue["source_model"] = resolved_key
                     issue["source_dimension"] = dim_key

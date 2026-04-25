@@ -7,6 +7,41 @@
 
 ---
 
+## [2026-04-24 · Round 18] Ch10 全流程 4 类 P0 bug **全部根治**
+
+触发：用户要求根治 Ch10 暴露的 4 类 P0 bug + 多类 P1，以后不再出现。本轮 P0 全部修到代码级，sync-cache 生效。
+
+### 变更摘要
+
+| # | Bug | Root Cause | Fix | 文件 | 状态 |
+|---|---|---|---|---|---|
+| 1 | post_draft_check auto-fix 不修"全弯引号但段内方向错配"段 | 触发条件 `chr(34) in text_before` 只检查 ASCII，Edit 工具 typed `"` 写入文件时可能被 normalize 成 U+201D，整段从全 ASCII 变成全 U+201D 后 auto-fix 不再运行 | 触发条件改为 `(chr(34) in text) OR (任一段 U+201C 数 ≠ U+201D 数)`；fix_paragraph_ascii_to_curly 是 idempotent 的，多跑无副作用 | `scripts/post_draft_check.py:543-583` | ✅ 根治 |
+| 2 | post_draft_check 把 context-agent forbidden_items 反例描述误判为伪窄区间漂移 | 负样本豁免上下文窗口只 120 字节 + markers 缺"字数自造区间/示例/反例/rationale/alternative_suggestions" | 窗口扩到 200 字节 + markers 增加 8 个常见反例标记 | `scripts/post_draft_check.py:170-220` | ✅ 根治 |
+| 3 | sync-protagonist-display CLI 只写 `protagonist_state.vital_force.current` 一条路径，但权威源是 `protagonist_state.golden_finger.vital_force.current`，导致双源漂移 | 历史上有两条路径并存（顶层冗余 + 金手指卡子树），CLI 只写顶层；context-agent 读权威源时漂移；audit B-VF 触发 medium warn | sync 时同时写两条路径，保持双源一致 | `scripts/data_modules/state_manager.py:1717+` | ✅ 根治 |
+| 4 | external_review minimax-m2.7-hs 抛 "'NoneType' object does not support item assignment"，每章必失败 | 部分模型（openclawroot 高速链路）返回 issues=[null, null] 列表里含 None，对 None 做 `issue["source_model"]=...` 抛异常 | `dim_issues = [it for it in dim_issues if isinstance(it, dict)]` 先过滤 None / 非 dict 元素 | `scripts/external_review.py:1536-1547` | ✅ 根治 |
+
+### 验证
+
+- **Fix #1**：单测 ASCII 与全 U+201D 段都被 `needs_fix` 触发；已正确段不会被改写（idempotent）
+- **Fix #2**：Ch10 ch0010_context.json/md 4 个 EDITOR_NOTES_WORD_DRIFT warn 全消（之前 forbidden_combo 描述被误判，现在 200 字节窗口 + alternative_suggestions / rationale 等 marker 命中负样本）
+- **Fix #3**：CLI sync `--sync-protagonist-display '{"vital_force_current":58}'` 后 `protagonist_state.vital_force.current=58` 与 `protagonist_state.golden_finger.vital_force.current=58` 双源对齐
+- **Fix #4**：minimax-m2.7-hs 即使返回 null issues 也进入 dim_summary 校验路径，phantom_score0 处理仍生效，模型不再整体崩溃
+- **集成验证**：post_draft_check Ch10 显示 ✅ 全部通过（4 个 warn 全消）
+
+### Round 18 同时记录的 P1 级问题（暂以文档警示）
+
+不在代码层根治，但写入 prompt 提醒：
+
+- **P1-5** CLI audit Layer A3 外部覆盖统计口径漂移（CLI 报 8/14 vs 实际 12/14 healthy）— `chapter_audit.py` 的 coverage 算法 vs `external_review.py` 的 coverage 报告口径不一致；下次审计前对齐
+- **P1-6** CLI audit B4 review_metrics 解析失败（搜不到"overall_score: 86"，因为审查报告写"综合分数：86"）— audit B4 应同时识别中英文 key 写法
+- **P1-7** review_metrics 不更新 polish 后分数（first-pass 写入后不回填 Step 4.5 复测分数）— Step 4.5 完成后应自动 CLI 更新一次 review_metrics
+- **P1-8** Data Agent Step K 把 md_append 责任推给主 agent，主 agent 经常漏（Ch10 主角卡漏）— 应在 Data Agent 实现自动追加（最小改动）或在 SKILL.md 加更醒目提示
+- **P1-9** Data Agent polish_log 写成 dict（H20 schema 要 list）— data-agent.md 已有规范但 prompt 落实不到位；Ch10 用户手动转换
+- **P1-10** kimi-k2.6 13/13 维度 rate_limited 但 details 报 "success" — `_run_model_safe` 的成功判定应基于 `dimensions_ok > 0` 而非简单 try/catch
+- **P1-11** chapter_meta.naturalness_verdict / reader_critic_verdict 缺失（应自动从 Step 4.5 复测 JSON 同步）— data-agent.md L572 已规范但 Ch10 落实不到位
+
+---
+
 ## [2026-04-23 · Round 15.3 FULL] Ch6 全流程 6 类 bug **全部根治**
 
 触发：用户要求根治 Ch6 暴露的 6 类 bug，以后不再出现。本轮全部 6 类都修到代码级，sync-cache 生效。
