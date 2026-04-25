@@ -7,6 +7,48 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase A] anti-ai-guide.md 起草预防层
+
+upstream@f774f2b 引入 Step 2 起草前 Anti-AI 预防 reference。本地全程缺“起草前预防”层，AI 腔靠 polish_cycle 反复修。基于 Ch1-11 RCA（5 类强信号根因），本文件包含 upstream 8 倾向 + 本作专属 5 类根因映射。
+
+### 变更摘要
+
+| # | 文件 | 改动 | 行数 |
+|---|------|------|------|
+| 1 | `skills/webnovel-write/references/anti-ai-guide.md` | NEW · upstream 1:1（74 行）+ 本地接入说明 + 5 类根因映射（约 60 行） | ~134 |
+| 2 | `skills/webnovel-write/SKILL.md` | Step 2 references 列表加载 anti-ai-guide.md + Step 2A `cat` 加载行 | +4 |
+| 3 | `agents/context-agent.md` | 核心参考引用 + writing_guidance.constraints 6 条硬注入（含本作根因） | +16 |
+
+### 互补关系（重要）
+
+| 时机 | 文件 | 职责 |
+|------|------|------|
+| Step 2 起草前 | `anti-ai-guide.md`（Round 19 NEW） | 预防 · 8 倾向 + 即时检查 + 替代速查表 + 5 类本作根因 |
+| Step 4 polish | `polish-guide.md`（Round 1-18 累计 616 行） | 检测+修复 · 7 层规则、200+ 高频词库、anti_ai_force_check |
+
+### 与 RCA 5 类根因的对账
+
+| 根因 | upstream 倾向 # | 本作映射 |
+|---|---|---|
+| N1 刻度量词外溢 | #2 副词修饰 | 半度/半秒只留给印记 |
+| N2 “了一下” 密度 | #6 信息均匀 | ≤3 次/千字 |
+| N3 “未”字外溢 | #5 情绪贴标签 | 统一“没” |
+| N4 “不是X是Y” | #4 对话辩论 + #6 | 单章 ≤1 次 |
+| N5 AI 腔模板 | #3 全员同款 | 角色专属微动作 |
+
+### 预期效果
+
+- Ch12+ reader-naturalness-checker 首稿从 baseline 87.10 → 90+
+- polish 周期 -1 轮
+- N1-N5 根因写前预防（不依赖 polish 反复修）
+
+### 验证
+
+- preflight + hygiene_check Ch11 + sync-cache 全绿
+- Ch12 写作首稿 5 类根因命中数：**Phase 8 完成后回填**
+
+---
+
 ## [2026-04-24 · Round 18] Ch10 全流程 4 类 P0 bug **全部根治**
 
 触发：用户要求根治 Ch10 暴露的 4 类 P0 bug + 多类 P1，以后不再出现。本轮 P0 全部修到代码级，sync-cache 生效。
