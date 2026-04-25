@@ -888,6 +888,37 @@ def check_polish_log_schema(root: Path, chapter: int, rep: HygieneReport):
         rep.record("P1", "H20", "polish_log 字段缺失（非必需，首稿未 polish 时允许缺）", True)
         return
     if not isinstance(polish_log, list):
+        # Round 18 · 2026-04-24 · Ch10 P1-9 根治：dict→list auto-fix
+        # 旧逻辑：dict 直接 P1 fail，要求人工转
+        # 新逻辑：自动包装成 list[dict]，注入 version/timestamp/notes 兜底字段
+        # 减少跨章传递断层（context-agent 解析失败）
+        if isinstance(polish_log, dict):
+            from datetime import datetime as _dt, timezone as _tz
+            wrapped = {
+                "version": polish_log.get("version", "v1"),
+                "timestamp": polish_log.get(
+                    "timestamp", _dt.now(_tz.utc).isoformat()
+                ),
+                "notes": polish_log.get("notes")
+                    or f"auto-wrapped from dict (H20 fix · Round 18) · "
+                       f"原 dict 字段：{', '.join(polish_log.keys())}",
+                **polish_log,
+            }
+            try:
+                s["chapter_meta"][f"{chapter:04d}"]["polish_log"] = [wrapped]
+                state_p.write_text(
+                    json.dumps(s, ensure_ascii=False, indent=2),
+                    encoding="utf-8", newline="\n",
+                )
+                rep.record(
+                    "P1", "H20",
+                    f"polish_log dict→list auto-fix 已应用（Round 18 P1-9）",
+                    True,
+                )
+                return
+            except Exception as _ex:
+                rep.record("P1", "H20", f"polish_log dict→list auto-fix 失败: {_ex}", False)
+                return
         rep.record("P1", "H20", f"polish_log 不是 list（{type(polish_log).__name__}）", False)
         return
     if not polish_log:

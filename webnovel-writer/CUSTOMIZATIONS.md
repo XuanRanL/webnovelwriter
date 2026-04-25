@@ -28,17 +28,27 @@
 - **Fix #4**：minimax-m2.7-hs 即使返回 null issues 也进入 dim_summary 校验路径，phantom_score0 处理仍生效，模型不再整体崩溃
 - **集成验证**：post_draft_check Ch10 显示 ✅ 全部通过（4 个 warn 全消）
 
-### Round 18 同时记录的 P1 级问题（暂以文档警示）
+### Round 18.1 · 2026-04-24 · 7 类 P1 全部追加根治到代码级
 
-不在代码层根治，但写入 prompt 提醒：
+| # | Bug | Root Cause | Fix | 文件 | 状态 |
+|---|---|---|---|---|---|
+| P1-5 | CLI audit A3 外部覆盖口径与 external_review.py 不一致用户混淆 | audit A3 严格判定（routing+全维度+无 phantom）vs external_review.py 宽松判定（API 响应 OK 即 success），两者数值差异未明示 | A3 evidence 增加"严格 valid={N}/{T} vs 宽松 success={M}/{T}"双指标显示 + measured 加 lenient_success_count | `chapter_audit.py:778+` | ✅ 根治 |
+| P1-6 | audit B4 解析"综合分数：86"失败 | P1/P2 正则只识别 `overall_score / 综合分 / 合并分`，缺"综合分数 / 综合评分 / 总评分 / 总分"中文别名 | P1/P2 正则增加 6 个中文别名 | `chapter_audit.py:1559-1561` | ✅ 根治 |
+| P1-7 | review_metrics.overall_score 不更新 Step 4.5 polish 后分数 | set-checker-score 只更新 chapter_meta，不同步 index.db.review_metrics | set-checker-score 重算 overall 后自动 UPDATE index.db.review_metrics 同步 | `state_manager.py:1664+` | ✅ 根治 |
+| P1-8 | Data Agent Step K 主角卡 md_append 经常漏 | data-agent.md 描述"best-effort"但未硬约束 | data-agent.md 加 Round 18 硬规则段：明确主角卡/伏笔追踪/资产变动表 3 文件必须自动追加 + 失败时人工补救 + polish_log notes 标记 | `data-agent.md:463+` | ✅ 根治 |
+| P1-9 | polish_log 写成 dict（H20 schema 要 list） | data-agent.md 有规范但落实不到位 | hygiene_check H20 加 dict→list auto-fix：自动包装成 list[dict] + 注入 version/timestamp/notes 兜底字段 | `hygiene_check.py:890+` | ✅ 根治 |
+| P1-10 | kimi-k2.6 13/13 rate_limited 但 details 报 success | _run_model_safe 只 try/catch 不抛异常即 success，未检查 dimension_reports 实际状态 | success 后增加二次校验：读输出 JSON 检查 ≥1 个 ok 维度，否则改报 all_dimensions_failed | `external_review.py:1395+` | ✅ 根治 |
+| P1-11 | chapter_meta.naturalness_verdict 缺失，data-agent 经常漏写 | data-agent.md L572 有规范但落实不到位 | 项目本地 hygiene_check.py naturalness_log_check 加 auto-sync：从 .webnovel/tmp/{checker}_recheck/check_ch{NNNN}.json 读 verdict + score 自动写入 | `末世重生/.webnovel/hygiene_check.py:128+` | ✅ 根治 |
 
-- **P1-5** CLI audit Layer A3 外部覆盖统计口径漂移（CLI 报 8/14 vs 实际 12/14 healthy）— `chapter_audit.py` 的 coverage 算法 vs `external_review.py` 的 coverage 报告口径不一致；下次审计前对齐
-- **P1-6** CLI audit B4 review_metrics 解析失败（搜不到"overall_score: 86"，因为审查报告写"综合分数：86"）— audit B4 应同时识别中英文 key 写法
-- **P1-7** review_metrics 不更新 polish 后分数（first-pass 写入后不回填 Step 4.5 复测分数）— Step 4.5 完成后应自动 CLI 更新一次 review_metrics
-- **P1-8** Data Agent Step K 把 md_append 责任推给主 agent，主 agent 经常漏（Ch10 主角卡漏）— 应在 Data Agent 实现自动追加（最小改动）或在 SKILL.md 加更醒目提示
-- **P1-9** Data Agent polish_log 写成 dict（H20 schema 要 list）— data-agent.md 已有规范但 prompt 落实不到位；Ch10 用户手动转换
-- **P1-10** kimi-k2.6 13/13 维度 rate_limited 但 details 报 "success" — `_run_model_safe` 的成功判定应基于 `dimensions_ok > 0` 而非简单 try/catch
-- **P1-11** chapter_meta.naturalness_verdict / reader_critic_verdict 缺失（应自动从 Step 4.5 复测 JSON 同步）— data-agent.md L572 已规范但 Ch10 落实不到位
+### Round 18.1 验证
+
+- **P1-5**：Ch10 A3 evidence 现显示 `严格 valid=8/14（路由+全维度+无 phantom）· 宽松 success=13/14（仅看 API 响应）`
+- **P1-6**：Ch10 B4 从 `warn medium` 升级为 **pass**（识别"综合分数：86" = db_score=86）
+- **P1-7**：Step 4.5 set-checker-score 后 review_metrics.overall_score 立即同步
+- **P1-8**：data-agent.md Round 18 硬规则段已写入；下章 Data Agent 必读
+- **P1-9**：H20 dict 进来时自动 wrap 成 list[dict]，schema 合规
+- **P1-10**：kimi-k2.6 这种 13/13 失败的会被准确报 `all_dimensions_failed` 而非 success
+- **P1-11**：项目 hygiene 跑时若 verdict 缺失，自动从 _recheck JSON 同步并落库
 
 ---
 

@@ -1662,6 +1662,29 @@ def main():
                 changes.append(
                     f"chapter_meta.{key}.checker_scores.{checker}={score} (overall 重算={new_overall})"
                 )
+                # Round 18 · 2026-04-24 · Ch10 P1-7 根治：Step 4.5 复测后自动同步 review_metrics
+                # 旧逻辑：review_metrics.overall_score 在 Step 3 首次写入后不更新，
+                # 导致 audit B4 用旧分数（86）vs report 新分数（88）出现 medium warn。
+                # 新逻辑：每次 set-checker-score 后，把新 overall 同步到 index.db.review_metrics。
+                try:
+                    db_path = manager.config.project_root / ".webnovel" / "index.db"
+                    if db_path.exists():
+                        import sqlite3 as _sqlite3
+                        _conn = _sqlite3.connect(str(db_path))
+                        _conn.execute(
+                            "UPDATE review_metrics SET overall_score = ? "
+                            "WHERE start_chapter <= ? AND end_chapter >= ?",
+                            (float(new_overall), ch, ch),
+                        )
+                        _conn.commit()
+                        _conn.close()
+                        changes.append(
+                            f"index.db.review_metrics[ch={ch}].overall_score={new_overall} (auto-sync)"
+                        )
+                except Exception as _ex:
+                    changes.append(
+                        f"WARN: review_metrics auto-sync 失败（不阻塞）: {_ex}"
+                    )
             manager._pending_raw_state_mutations.add("chapter_meta")
             if applied_chapter is None:
                 applied_chapter = ch
