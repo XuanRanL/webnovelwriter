@@ -7,6 +7,39 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase A 复审] quote_pair_fix.py 加 fenced 保护
+
+Phase A subagent 反馈：在 SKILL.md 上首次跑 `quote_pair_fix.py --ascii-to-curly` 时担心 fenced ```bash``` 块内的 `"${VAR}"` / `cat "..."` / heredoc 被段奇偶配对算法破坏，subagent 已 git checkout 回滚并改手工 Edit。主会话复审时确认了**该担心是真的**——脚本 `fix_text` 按 `\n{2,}` 切段后 `fix_paragraph_ascii_to_curly` 不区分代码块。
+
+### 根因
+
+`scripts/quote_pair_fix.py` 的 `fix_text` 直接对全文段切分，fenced block 内的 ASCII " 与正文 ASCII " 混在一起按段计数→奇偶颠倒后 bash 语法可能崩。
+
+### 修复（commit 同 Phase A 一起）
+
+```python
+_FENCED_RE = re.compile(r"(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`)", re.MULTILINE)
+def _mask_fenced(text): ...   # 替换为 QPF_FENCED_{i} 占位符
+def _unmask_fenced(text, blocks): ...
+def fix_text(text, ascii_to_curly=True):
+    masked, blocks = _mask_fenced(text)
+    # ... 按段处理 ...
+    return _unmask_fenced("".join(out), blocks), total, fixed
+```
+
+### 验证
+
+- 单元测试 4 例（fenced ```bash / inline ` / ~~~python / 多 fence + 段内嵌）全过
+- SKILL.md 真跑 `quote_pair_fix.py`：`fixed=27` 段叙述段引号被规范化，**bash 块 596 个 ASCII " 全保留**，`md5` 仅在 char 2387/2394/2418/... 等正文段位置变化（如「任何"先写完再补审"」→「任何"先写完再补审"」），bash heredoc / `if [ -z "${VAR:-}" ]` / `cat "..."` 全部不动
+- preflight + hygiene_check Ch11 仍 26/0/0/0
+
+### 影响范围
+
+- Phase B / C / G / H / X1 后续 subagent 都将跑 quote_pair_fix.py，本修复让它们可以放心改 .md 不破坏 bash 块
+- post_draft_check.py 内部调用 quote_pair_fix.fix_paragraph_ascii_to_curly **段级 API 不变**，无回归
+
+---
+
 ## [2026-04-25 · Round 19 Phase A] anti-ai-guide.md 起草预防层
 
 upstream@f774f2b 引入 Step 2 起草前 Anti-AI 预防 reference。本地全程缺“起草前预防”层，AI 腔靠 polish_cycle 反复修。基于 Ch1-11 RCA（5 类强信号根因），本文件包含 upstream 8 倾向 + 本作专属 5 类根因映射。

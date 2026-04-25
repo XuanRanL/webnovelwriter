@@ -90,9 +90,37 @@ def fix_paragraph(para: str, ascii_to_curly: bool = True) -> tuple[str, bool]:
     return fix_paragraph_curly(para)
 
 
+_FENCED_RE = re.compile(r"(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`)", re.MULTILINE)
+
+
+def _mask_fenced(text: str) -> tuple[str, list[str]]:
+    """Round 19 · 把 markdown ``` fenced block / inline ` code ` 替换成占位符。
+
+    防御点：fenced 内可能含 bash heredoc / Python f-string / JSON 等带 ASCII " 的代码，
+    若按段奇偶配对会把 `if [ -z "$X" ]` 等语法破坏。占位符不含引号且参与段切分但不被改写。
+    """
+    blocks: list[str] = []
+
+    def _sub(m):
+        blocks.append(m.group(0))
+        return f"QPF_FENCED_{len(blocks) - 1}"
+
+    return _FENCED_RE.sub(_sub, text), blocks
+
+
+def _unmask_fenced(text: str, blocks: list[str]) -> str:
+    for i, blk in enumerate(blocks):
+        text = text.replace(f"QPF_FENCED_{i}", blk)
+    return text
+
+
 def fix_text(text: str, ascii_to_curly: bool = True) -> tuple[str, int, int]:
-    """返回 (修后文本, 总段数, 修复段数)。"""
-    segs = re.split(r"(\n{2,})", text)
+    """返回 (修后文本, 总段数, 修复段数)。
+
+    Round 19 · 增加 fenced code 保护：先 mask ``` 块和 inline `code`，处理完再还原。
+    """
+    masked, blocks = _mask_fenced(text)
+    segs = re.split(r"(\n{2,})", masked)
     total = 0
     fixed = 0
     out = []
@@ -108,7 +136,8 @@ def fix_text(text: str, ascii_to_curly: bool = True) -> tuple[str, int, int]:
         if changed:
             fixed += 1
         out.append(new)
-    return "".join(out), total, fixed
+    result = _unmask_fenced("".join(out), blocks)
+    return result, total, fixed
 
 
 def main():
