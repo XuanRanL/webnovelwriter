@@ -1862,11 +1862,26 @@ def check_a_x1_reader_critic_hard_block(project_root: Path, chapter: int) -> Che
         # legacy 兼容（Round 13 v2 之前的 key）
         rc = scores.get("reader-critic")
     if not isinstance(rc, (int, float)):
-        # 再尝试从 tmp/reader_critic_ch{NNNN}.json 读 overall_score
-        tmp_path = project_root / ".webnovel" / "tmp" / f"reader_critic_ch{_pad(chapter)}.json"
-        data = _read_json(tmp_path)
-        if isinstance(data, dict):
-            rc = data.get("overall_score")
+        # 再尝试从 tmp/reader_critic_ch{NNNN}{_vN}.json 读 overall_score
+        # Round 19 Phase X1 复审修：按 v 后缀降序（v5 > v4 > v3 > v2 > 无后缀=v1）
+        # 选最新 polish 版本，避免读到 v1 首测分误判（Ch1 v1=58 / v5=91）
+        tmp_dir = project_root / ".webnovel" / "tmp"
+        candidates = []
+        if tmp_dir.is_dir():
+            for p in tmp_dir.glob(f"reader_critic_ch{_pad(chapter)}*.json"):
+                # 提取 _vN 排序值；无后缀视为 v1
+                stem = p.stem
+                m = re.search(r"_v(\d+)$", stem)
+                ver = int(m.group(1)) if m else 1
+                candidates.append((ver, p))
+        candidates.sort(reverse=True)  # 最新版优先
+        for _, p in candidates:
+            data = _read_json(p)
+            if isinstance(data, dict):
+                v = data.get("overall_score")
+                if isinstance(v, (int, float)):
+                    rc = v
+                    break
     if not isinstance(rc, (int, float)):
         return CheckResult(
             id="A-RC-X1", name="reader-critic <75 P0 硬阻止", layer="A",
