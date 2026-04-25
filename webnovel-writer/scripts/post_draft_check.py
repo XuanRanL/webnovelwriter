@@ -184,18 +184,27 @@ def check_editor_notes_word_drift(
                 k in ctx for k in ("字数", "word_count", "字符")
             ):
                 continue
-            # 负样本豁免（Round 15.2 · 2026-04-23 修复）：
+            # 负样本豁免（Round 15.2 · 2026-04-23 修复 + Round 18 · 2026-04-24 · Ch10 P0-2 扩充）：
             # 若区间出现在 forbidden / 禁止 / 不得 / 不能 / 不得自造 / forbidden_items
-            # / word_count_narrowing / disallowed / 负样本 等上下文内（前后 120 字节内），
+            # / word_count_narrowing / disallowed / 负样本 等上下文内（前后 200 字节内），
             # 说明是声明"禁区"而非"实际采用"——必须豁免，否则 context-agent 无法在
             # forbidden 列表里反讽式列举伪窄区间（Ch5 ch0005_context.json L40/L655 案例）
-            neg_start = max(0, m.start() - 120)
-            neg_end = min(len(text), m.end() + 120)
+            #
+            # Round 18 · Ch10 P0-2 根因：context-agent forbidden_items 描述里写
+            # "字数自造区间（如 2800-3200 / 2700-3200 / 2400-3200·非 SSOT 派生白名单）"
+            # 这种反例列举被误判。扩展窗口到 200 字节 + 加 "字数自造" / "如 N-N" / "白名单外" /
+            # "非 SSOT" / "派生白名单" / "示例" / "反例" 等 markers。
+            neg_start = max(0, m.start() - 200)
+            neg_end = min(len(text), m.end() + 200)
             neg_ctx = text[neg_start:neg_end]
             _neg_markers = (
                 "forbidden", "禁止", "不得", "不能", "不得自造",
                 "word_count_narrowing", "disallowed", "负样本",
                 "自造字数区间", "伪窄", "forbidden_items",
+                # Round 18 新增：
+                "字数自造", "字数自造区间", "白名单外", "非 SSOT",
+                "派生白名单", "示例", "反例", "反讽", "如 ", "rationale",
+                "alternative_suggestions", "alternative",
             )
             if any(k in neg_ctx for k in _neg_markers):
                 continue
@@ -544,6 +553,15 @@ def main() -> int:
     # Claude Code Write/Edit 工具把 U+201C/201D 转 ASCII，导致每章起草后都有 ASCII 引号。
     # 这里在第一次 check 前自动跑 quote_pair_fix.py --ascii-to-curly，自动根治。
     # 用户可用 --no-auto-fix 禁用。
+    #
+    # Round 18 · 2026-04-24 · Ch10 RCA P0-1 根治：
+    # 旧逻辑只在 `chr(34) in text_before` 时触发（即文件里有 ASCII 引号才跑 fix）。
+    # 但 Edit 工具在替换跨弯引号段时，可能把 new_string 内的 ASCII " 写成 U+201D（右），
+    # 导致 "全 ASCII 已变全弯引号但段内方向错配" 的状态——那时段内 0 个 ASCII，
+    # auto-fix 就不会跑，错配段一直留到下一阶段。
+    # 根治：触发条件改为"任一段引号方向不平衡 OR 仍含 ASCII 双引号"。
+    # quote_pair_fix.fix_paragraph_ascii_to_curly 是 idempotent 的——已正确配对的段
+    # 不会被改写（out == para），所以总跑一遍是安全的。
     if not args.no_auto_fix:
         try:
             import glob as _glob
@@ -553,7 +571,12 @@ def main() -> int:
             if candidates:
                 chapter_file = candidates[0]
                 text_before = Path(chapter_file).read_text(encoding="utf-8")
-                if chr(34) in text_before:
+                # 判定是否需要 fix：(1) 有 ASCII 引号 OR (2) 有任一段弯引号方向不平衡
+                needs_fix = chr(34) in text_before or any(
+                    seg.count("“") != seg.count("”")
+                    for seg in re.split(r"\n{2,}", text_before)
+                )
+                if needs_fix:
                     # 调 quote_pair_fix 模块（内联 import）
                     import importlib.util as _iu
 
@@ -566,7 +589,7 @@ def main() -> int:
                         if new_text != text_before:
                             Path(chapter_file).write_text(new_text, encoding="utf-8", newline="\n")
                             print(
-                                f"  🔧 [auto-fix] ASCII 引号 → 弯引号："
+                                f"  🔧 [auto-fix] 引号配对 → 弯引号 OCOC："
                                 f"段 {total}, 修 {fixed}（写回 {Path(chapter_file).name}）"
                             )
         except Exception as _ex:

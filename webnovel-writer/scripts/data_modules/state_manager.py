@@ -1727,9 +1727,22 @@ def main():
                 loc["current"] = str(payload["location_current"])
                 changes.append(f"location.current={payload['location_current']}")
             if "vital_force_current" in payload:
-                vf = ps.setdefault("vital_force", {})
-                vf["current"] = int(payload["vital_force_current"])
-                changes.append(f"vital_force.current={payload['vital_force_current']}")
+                # Round 18 · 2026-04-24 · Ch10 P0-3 根治：vital_force 双路径同步
+                # 项目历史上有两条 vital_force 路径：
+                #   - protagonist_state.vital_force.current（顶层，CLI 旧路径）
+                #   - protagonist_state.golden_finger.vital_force.current（金手指卡权威源）
+                # Ch9-Ch10 之前只更新顶层，导致 golden_finger 子树仍是旧值，
+                # context-agent 读权威源时漂移，audit B-VF 触发 medium warn。
+                # 根治：sync 时同时写两条路径，保持双源一致。
+                _new_vf = int(payload["vital_force_current"])
+                vf_top = ps.setdefault("vital_force", {})
+                vf_top["current"] = _new_vf
+                gf_for_vf = ps.setdefault("golden_finger", {})
+                vf_gf = gf_for_vf.setdefault("vital_force", {})
+                vf_gf["current"] = _new_vf
+                changes.append(
+                    f"vital_force.current={_new_vf}（顶层+golden_finger 双源同步）"
+                )
             if "seal_jump_count" in payload:
                 seal = ps.setdefault("seal_state", {})
                 seal["jump_count"] = int(payload["seal_jump_count"])
