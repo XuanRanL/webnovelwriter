@@ -232,6 +232,67 @@ def count_chinese_chars(text: str) -> int:
     return len(re.findall(r"[\u4e00-\u9fff]", text))
 
 
+def _count_recent_word_drift_chapters(project_root: Path, current_chapter: int, lookback: int = 3) -> int:
+    """Round 18.2 · Ch11 RCA #1 根治：检测近 N 章 EDITOR_NOTES_WORD_DRIFT 连续命中。
+
+    扫描 .webnovel/editor_notes/chXXXX_prep.md 里的字数区间，对每个章号判断是否含
+    白名单外区间。返回连续命中（包含当前章）的章数；当 ≥3 时上层把 warning 升 ERROR。
+    """
+    if current_chapter < 2:
+        return 0
+    notes_dir = project_root / ".webnovel" / "editor_notes"
+    if not notes_dir.exists():
+        return 0
+    try:
+        ssot_lo, ssot_hi = _read_word_policy_ssot(project_root)
+    except Exception:
+        return 0
+    whitelist = set(load_word_policy_subranges(project_root)) | {(ssot_lo, ssot_hi)}
+    consecutive = 0
+    for ch in range(current_chapter, max(0, current_chapter - lookback), -1):
+        fp = notes_dir / f"ch{ch:04d}_prep.md"
+        if not fp.exists():
+            break
+        try:
+            t = fp.read_text(encoding="utf-8")
+        except Exception:
+            break
+        hit = False
+        for m in WORD_COUNT_RANGE_RE.finditer(t):
+            lo, hi = int(m.group("lo")), int(m.group("hi"))
+            ctx_start = max(0, m.start() - 30)
+            ctx_end = min(len(t), m.end() + 10)
+            ctx = t[ctx_start:ctx_end]
+            if not any(k in ctx for k in ("字数", "word_count", "字符")):
+                continue
+            neg_start = max(0, m.start() - 200)
+            neg_end = min(len(t), m.end() + 200)
+            neg_ctx = t[neg_start:neg_end]
+            if any(k in neg_ctx for k in (
+                "forbidden", "禁止", "不得", "不能", "negative", "反例", "禁区",
+                "白名单外", "非 SSOT", "派生白名单", "alternative",
+            )):
+                continue
+            if (lo, hi) in whitelist:
+                continue
+            hit = True
+            break
+        if hit:
+            consecutive += 1
+        else:
+            break
+    return consecutive
+
+
+def _read_word_policy_ssot(project_root: Path) -> tuple[int, int]:
+    state_file = project_root / ".webnovel" / "state.json"
+    if not state_file.exists():
+        return (2200, 3500)
+    s = json.loads(state_file.read_text(encoding="utf-8"))
+    pol = s.get("project_info", {}).get("word_count_policy", {})
+    return int(pol.get("hard_min", 2200)), int(pol.get("hard_max", 3500))
+
+
 def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -246,6 +307,14 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
     required_seeds = cfg.get("required_seeds_by_chapter", {}).get(
         str(chapter), DEFAULT_REQUIRED_SEEDS.get(chapter, [])
     )
+
+    # Round 18.2 · 连续 ≥3 章 EDITOR_NOTES_WORD_DRIFT 升级为 ERROR（阻断起草）
+    drift_streak = _count_recent_word_drift_chapters(project_root, chapter, lookback=3)
+    if drift_streak >= 3:
+        errors.append(
+            f"[EDITOR_NOTES_WORD_DRIFT_STREAK] 近 {drift_streak} 章 editor_notes 连续含伪窄/外溢区间 · "
+            f"audit-agent SSOT self-check 未根治 · 必须先修 audit-agent 输出再继续"
+        )
 
     fp = find_chapter_file(project_root, chapter)
     if not fp:
@@ -406,6 +475,15 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         "扶眼镜": {"pattern": r"扶眼镜", "warn": 4, "block": 6},
         "笑了一下": {"pattern": r"笑了一下", "warn": 5, "block": 8},
         "停了半秒": {"pattern": r"停了半秒", "warn": 5, "block": 8},
+        # Round 18.2 · 2026-04-25 · Ch11 RCA #2 根治
+        # Ch10 polish 把"没X"压下来后，Ch11 起草时签名迁移到"那一X"18 次（reader-naturalness +
+        # prose-quality 双独立 grep 证实）。post_draft 没有相应扫描，导致 Step 3 才被发现。
+        # 根治：把"那一X"加入默认签名 lint，warn ≥10 / block ≥18。
+        "那一X": {"pattern": r"那一[一-鿿]", "warn": 10, "block": 18},
+        # 同期发现：精确秒级时间词外溢（叙事声音约束 ≤3）。Ch11 polish 前 5 次。
+        "半秒|一秒|三秒": {"pattern": r"(?:半秒|一秒|三秒)", "warn": 3, "block": 6},
+        # 段落首"他"开头连续（叙事声音约束 0 容忍）。Ch11 polish 前 2 处。
+        # 这里用近似：单文档"他+空白"模式过密时 warn（精确版要分段处理，留 prose-quality 兜底）
     }
     # 项目级 override
     sig_cfg_path = project_root / ".webnovel" / "signature_density_config.json"

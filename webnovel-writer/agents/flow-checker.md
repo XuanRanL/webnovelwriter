@@ -60,4 +60,11 @@ model: inherit
 - **只读当前章 + 上章末段**（不读大纲/设定集/state.json/前几章——读了就不是裸读读者了）
 - **quote 必须能在正文 grep 到**（防幻觉）
 
+## 时间预算（Round 18.2 · 2026-04-25 · Ch11 RCA #4 根治）
+
+- **time_budget**：单次执行硬上限 **10 分钟**（含 grep 验证 + 输出落盘）
+- **problems 上限**：建议 ≤ 8 条（critical+high 优先；medium/low 合并相似项）；超过 8 条说明章节问题集中度过高，应回到 Step 4 polish 而非堆 problems
+- **超时降级**：若已生成 ≥3 条 critical+high 但仍未完成，可在主 problems 列表后加 `summary` 段描述其余 medium/low 倾向，**不要**把每个 medium 都展开。
+- **历史教训**：Ch11 flow 复测耗时 24 分（≈ 上限 2.4 倍），触发"复测部分超时"协议。根因是 14 problems + 7 highlights 全做 grep 验证 + 编辑视角逐项展开建议。time_budget 强制收敛后预期 ≤ 10 分钟可返回。
+
 其他一概不限制。Deep research 走起——卡在哪儿就说在哪儿，编辑退稿怎么退就怎么写，建议越完整越好。
