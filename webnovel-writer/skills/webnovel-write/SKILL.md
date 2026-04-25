@@ -469,7 +469,43 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" con
 cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 cat "${SKILL_ROOT}/references/anti-ai-guide.md"
 cat "${SKILL_ROOT}/references/visual-concreteness-rubric.md"
+# Round 19.1 P0-3：chapter ≤ 5 时必须加载 first-chapter-hook-rubric（首章追读契约 + Ch2-3 跨章弱版）
+if [ "${CHAPTER_NUM}" -le 5 ]; then
+  cat "${SKILL_ROOT}/references/first-chapter-hook-rubric.md"
+fi
 ```
+
+#### Round 19.1 P0-3 · 前 5 章写前自检（X1 强制流程，对应 anti-ai-guide.md §"前 5 章 reader-critic 写前自检清单"）
+
+仅当 `chapter ≤ 5` 时，**起草前**必须输出 `tmp/pre_draft_self_check_ch{NNNN}.json`，含 5 类自检项：
+
+```json
+{
+  "chapter": 3,
+  "phase": "pre_draft_self_check",
+  "items": [
+    {"id": "1_golden_finger_timing", "verdict": "PASS|WARN|FAIL", "evidence": "本章金手指披露符合 state.golden_finger 梯度"},
+    {"id": "2_unbacked_terms", "verdict": "...", "evidence": "新出场实体均有 1 句以上身份暗示"},
+    {"id": "3_climax_payoff_rate", "verdict": "...", "evidence": "outline 列出爽点 2/2 兑现"},
+    {"id": "4_loop_pacing", "verdict": "...", "evidence": "新铺设钩子 1 条，先闭上章 2 条"},
+    {"id": "5_reader_stuck_points", "verdict": "...", "evidence": "无突兀编号 / 无单段说明 / 无跨语境隐喻"}
+  ],
+  "verdict": "PASS|NEEDS_ADJUST|REWRITE_RECOMMENDED",
+  "all_fail_count": 0,
+  "all_warn_count": 0
+}
+```
+
+**自检 verdict 处理规则**（违反即阻断 Step 2A）：
+
+- `verdict=REWRITE_RECOMMENDED`（≥ 2 FAIL）→ writer 必须**回 Step 1** 重做大纲再起草，禁止本步进入正文起草
+- `verdict=NEEDS_ADJUST`（1 FAIL 或 ≥ 3 WARN）→ writer 起草时刻意规避，并在 `tmp/pre_draft_self_check_ch{NNNN}.json` 同时写 `writing_constraints_addendum`：起草中至少包含对应规避动作 1 处
+- `verdict=PASS` → 正常起草
+
+5 类自检项详细定义见 `references/anti-ai-guide.md` § "Round 19 Phase X1 · 前 5 章 reader-critic 写前自检清单"。
+
+**与 Phase X1 reader-critic <75 全卷 P0 阻止配套**：写前自检接住 Ch1-5 的"金手指披露突兀 / 编号无铺垫 / 爽点未兑现 / 伏笔超载"等高风险（这些是 reader-critic Ch3=62/Ch4=58 历史谷底的真实根因）。
+
 
 硬要求：
 - 只输出纯正文到章节正文文件；若详细大纲已有章节名，优先使用 `正文/第{chapter_padded}章-{title_safe}.md`，否则回退为 `正文/第{chapter_padded}章.md`。
