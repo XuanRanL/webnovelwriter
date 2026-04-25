@@ -1394,6 +1394,23 @@ def run_dimensions_mode(args, api_keys):
             try:
                 print(f"[all-models] 开始: {mk}", file=sys.stderr)
                 _run_single_model(args_copy, api_keys)
+                # Round 18 · 2026-04-24 · Ch10 P1-10 根治：success 实际指标
+                # 旧逻辑：try/catch 不抛异常即"success"。但 kimi-k2.6 13/13 维度 rate_limited
+                # 早停后 _run_single_model 仍正常返回（写出 score=0 的 JSON），被误判 success。
+                # 新逻辑：检查输出 JSON 的 dimension_reports 是否有 ≥1 个 ok 维度，
+                # 否则改报 "all_dimensions_failed"（仍不抛异常，但 status 准确）。
+                try:
+                    out_path = (Path(args_copy.project_root) / ".webnovel" / "tmp"
+                                / f"external_review_{mk}_ch{args_copy.chapter:04d}.json")
+                    if out_path.exists():
+                        d = json.loads(out_path.read_text(encoding='utf-8'))
+                        ok_dims = [r for r in d.get("dimension_reports") or []
+                                   if r.get("status") == "ok"]
+                        if not ok_dims:
+                            print(f"[all-models] 完成: {mk}（all_dimensions_failed）", file=sys.stderr)
+                            return mk, "all_dimensions_failed"
+                except Exception:
+                    pass
                 print(f"[all-models] 完成: {mk}", file=sys.stderr)
                 return mk, "success"
             except SystemExit:

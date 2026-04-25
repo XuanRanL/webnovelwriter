@@ -462,6 +462,23 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 
 所有追加必须带 `[Ch{N}]` 章节标注。Step K 失败不阻断流程。
 
+**Round 18 · 2026-04-24 · Ch10 P1-8 根治硬规则**：
+
+主角卡 / 伏笔追踪 / 资产变动表 这 3 个被 `pre_commit_step_k.py` 检查的核心文件，
+**Data Agent 必须在 Step K 内自动用 Edit 工具追加 `[Ch{N}]` 标注行**，不得只写 state/index。
+具体清单：
+
+| 文件 | 自动追加位置 | 内容范式 |
+|---|---|---|
+| `设定集/主角卡.md` | "Ch{N-1}" 行之后插入新行 | `- **[Ch{N}]**: {一句话总结本章主角变化}` |
+| `设定集/伏笔追踪.md` | 末尾 `## [Ch{N}]` 新段 | 列出本章新埋 + 兑现的所有伏笔 ID |
+| `设定集/资产变动表.md` | 表格新行 | 团队/基地/vital_force/hourglass/现金 等 5 个字段值 |
+
+如果主 agent 通过 `Task(data-agent)` 调用 Data Agent 后，
+`pre_commit_step_k.py` 仍报 `[STEP_K_MISSING] 设定集/主角卡.md 未找到 '[Ch{N}'`，
+这是 **Data Agent 失职**——主 agent 必须人工补一次，
+并在 polish_log notes 注明 "step_k_md_append_recovered_by_main_agent" 用于跨章追溯。
+
 ## 审查报告持久化（扩展）
 
 > 将每章的审查结果持久化存储，支持趋势分析。

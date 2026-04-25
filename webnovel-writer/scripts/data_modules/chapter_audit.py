@@ -777,19 +777,28 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
             )
         if valid_count < EXTERNAL_MODELS_HEALTHY_MIN:
             # 8-9/14：warn medium
+            # Round 18 · 2026-04-24 · Ch10 P1-5 根治：明确严格 valid vs 宽松 success 口径差异
+            # external_review.py 报 coverage 用宽松判定（API 响应有 JSON 即 success），
+            # audit A3 用严格判定（routing_verified + 全维度 OK + 0 phantom），两者口径必然不同。
             missing_models = [m for m in EXTERNAL_MODELS_ALL if m not in valid_models]
             extra = []
             if spread_alert_note:
                 extra.append(spread_alert_note)
+            lenient_success = total_expected - sum(
+                1 for m in EXTERNAL_MODELS_ALL
+                if m not in external_results
+            )
             return CheckResult(
                 id="A3", name="外部模型覆盖", layer="A",
                 status="warn", severity="medium",
                 evidence=(
-                    f"external review coverage ok (degraded_ok): {valid_count}/{total_expected} models valid. "
+                    f"external review coverage ok (degraded_ok): "
+                    f"严格 valid={valid_count}/{total_expected}（路由+全维度+无 phantom）· "
+                    f"宽松 success={lenient_success}/{total_expected}（仅看 API 响应）· "
                     f"missing/invalid={sorted(missing_models)}"
                     + (f". {' | '.join(extra)}" if extra else "")
                 ),
-                measured=measured,
+                measured={**measured, "lenient_success_count": lenient_success},
                 remediation=(
                     ["人工复核最低分模型的 high/medium issues"] if spread_alert_note else []
                 ),
@@ -1556,9 +1565,9 @@ def check_B4_review_metrics_consistency(project_root: Path, chapter: int) -> Che
     # 要求 score 后紧跟中文括号、换行、空白+中文字符或行尾（避免吃到公式里的数字）
     for pattern in (
         # P1：标准 frontmatter 行：`> overall_score: 93（...）` / `overall_score: 93`
-        r"(?im)^[>\s]*(?:overall[_ ]?score|score\s*total|合并加权分|综合分|合并分)\s*[:：=]\s*[*_~`]*\s*(\d{1,3}(?:\.\d)?)(?=\s*[\*（(\n]|\s+[\u4e00-\u9fff]|$)",
+        r"(?im)^[>\s]*(?:overall[_ ]?score|score\s*total|合并加权分|综合分数|综合分|综合评分|总评分|合并分|总分)\s*[:：=]\s*[*_~`]*\s*(\d{1,3}(?:\.\d)?)(?=\s*[\*（(\n]|\s+[\u4e00-\u9fff]|$)",
         # P2：宽松匹配：要求数字不跟随小数点（排除 0.6 等权重）
-        r"(?i)(?:overall[_ ]?score|score\s*total|合并加权分|合并分)\s*[:：=]?\s*[*_~`]*\s*(\d{2,3})(?!\.\d)(?!\s*[×x*])",
+        r"(?i)(?:overall[_ ]?score|score\s*total|合并加权分|综合分数|综合分|综合评分|总评分|合并分|总分)\s*[:：=]?\s*[*_~`]*\s*(\d{2,3})(?!\.\d)(?!\s*[×x*])",
         # P3 兜底：整段独立一行 `93 分` 或 `综合: 93` 或 Markdown 加粗 `合并分：**91**`
         r"(?im)^(?!\s*[-*>])\s*[^0-9\n]{0,30}[:：]?\s*\*{0,2}\s*(\d{2,3})\*{0,2}\s*(?:分)?\s*$",
     ):
