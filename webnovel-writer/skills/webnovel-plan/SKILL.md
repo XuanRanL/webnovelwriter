@@ -49,7 +49,7 @@ export PROJECT_ROOT="$(python "${SCRIPTS_DIR}/webnovel.py" --project-root "${WOR
 
 Use progressive disclosure and load only what current step requires:
 - L0: No references before scope/volume is confirmed.
-- L1: Before each step, load only the "必读" items in **References（按步骤导航）**.
+- L1: Before each step, load only the “必读” items in **References（按步骤导航）**.
 - L2: Load optional items only when the trigger condition applies.
 
 ## Workflow
@@ -87,7 +87,35 @@ If 总纲.md lacks volume ranges / core conflict / climax, ask the user to fill 
 - `设定集/叙事声音.md`（缺失 → style-adapter 使用分题材默认，跨章风格一致性降低）
 - `设定集/情感蓝图.md`（缺失 → emotion-checker 跳过蓝图对标）
 - `设定集/开篇策略.md`（缺失 → Ch1-3 使用 Golden Opening Protocol 通用默认）
-若缺失，在 plan 开始前提示用户："建议先运行 /webnovel-init 补齐设定集"。
+若缺失，在 plan 开始前提示用户：“建议先运行 /webnovel-init 补齐设定集”。
+
+### Step 1.5 · Cross-volume awareness（Round 19 Phase E · upstream@3e36417 借鉴）
+
+下卷规划前**必须**读已写章节真实数据，不能只看大纲：
+
+1. 跑：
+   ```bash
+   python -X utf8 ${SCRIPTS_DIR}/webnovel.py --project-root "${PROJECT_ROOT}" \
+     state get-recent-meta --last-n 10
+   ```
+   取最近 10 章 `hook_close / hook_type / unresolved_loops / overall_score / narrative_version`。
+
+2. （Phase G 之后追加）跑：
+   ```bash
+   python -X utf8 ${SCRIPTS_DIR}/webnovel.py --project-root "${PROJECT_ROOT}" \
+     state get-hook-trend --last-n 10
+   ```
+   取 4 类钩子分布。
+
+3. 在新卷规划必须**显式回应**：
+   - 至少 1 个上卷未解决伏笔在本卷开篇 3 章内被触及
+   - 主角金手指曲线在新卷保持单调或带显式弱化事件
+   - 上卷读者钩子若 overall_score < 70，新卷开篇加强同类钩子
+   - 上卷 hook_type 若连续 5+ 章相同 → 新卷必须切换钩子类型
+
+### 不做 Cross-volume 检查的章节
+
+第 1 卷规划（无前卷数据）→ 跳过 Step 1.5，仅按既有 Step 1 大纲流程。
 
 ## 2) Build setting baseline from 总纲 + 世界观
 目标：在不推翻现有内容的前提下，让设定集从“骨架模板”进入“可规划可写作”的基线状态。
@@ -170,7 +198,7 @@ Completion criteria:
 
 ## 4.5) Generate volume timeline (时间线表)
 
-目标：为本卷建立时间轴基准，确保章节间时间推进逻辑自洽，避免"第一章灾变第二章火拼"的时间跳跃问题。
+目标：为本卷建立时间轴基准，确保章节间时间推进逻辑自洽，避免“第一章灾变第二章火拼”的时间跳跃问题。
 
 Load template:
 ```bash
@@ -254,7 +282,7 @@ Based on genre profile, **adjusted by project pacing_preference** (from state.js
   - 每 8-12 章至少 1 个关键章节
   - 每卷 `climaxes_per_volume` 个高潮章节
 
-若 `pacing_preference` 缺失，使用"适中"默认值。
+若 `pacing_preference` 缺失，使用“适中”默认值。
 
 ### 约束触发规划策略
 If idea_bank.json exists:
@@ -404,7 +432,7 @@ Chapter format (include 反派层级 for context-agent):
 - **钩子**：本章应设置的章末钩子（规划用）
   - 例：悬念钩 - 神秘人身份即将揭晓
   - 意思是：本章结尾要设置这个悬念钩子
-  - 下章 context-agent 会读取 chapter_meta[N].hook（实际实现的钩子），生成"接住上章"指导
+  - 下章 context-agent 会读取 chapter_meta[N].hook（实际实现的钩子），生成“接住上章”指导
   - 钩子类型参考：悬念钩 | 危机钩 | 承诺钩 | 情绪钩 | 选择钩 | 渴望钩
 
 Save after each batch:
@@ -427,7 +455,7 @@ EOF
 - 新增角色：写入对应角色卡或角色组条目（含首次出场章、关系、红线）。
 - 新增势力/地点/规则：写入世界观或力量体系对应章节。
 - 新增反派层级信息：写入反派设计并保持小/中/大层级一致。
-- 典故引用回写（若 `典故引用库.md` 存在）：将卷骨架"引用规划"段的条目增量写入引用库的"第N卷引用规划总表"。若章纲中有"引用锚点"引用了引用库中未登记的新引用，追加到对应分类。同时将承载伏笔的引用条目登记到 `伏笔追踪.md` 的"典故伏笔"分类。
+- 典故引用回写（若 `典故引用库.md` 存在）：将卷骨架“引用规划”段的条目增量写入引用库的“第N卷引用规划总表”。若章纲中有“引用锚点”引用了引用库中未登记的新引用，追加到对应分类。同时将承载伏笔的引用条目登记到 `伏笔追踪.md` 的“典故伏笔”分类。
 
 冲突处理（硬规则）：
 - 若卷纲新增信息与总纲或已确认设定冲突，标记 `BLOCKER` 并停止 state 更新。
@@ -489,13 +517,13 @@ Every chapter must have:
 - 大跨度时间跳跃（>3天）必须有过渡章说明或明确标注
 
 **7. 读者情绪连续性检查（新增）**
-- 连续 3 章以上相同"读者情绪"值 = 预警（读者疲劳风险）
+- 连续 3 章以上相同“读者情绪”值 = 预警（读者疲劳风险）
 - 高压章节（压抑/紧张/焦虑）后 2 章内必须出现释放/温暖/燃
-- 卷末 3 章必须有至少 1 个"燃"或"震撼"
-- 卷首章必须是"好奇"或"震撼"（抓住新读者）
+- 卷末 3 章必须有至少 1 个“燃”或“震撼”
+- 卷首章必须是“好奇”或“震撼”（抓住新读者）
 
 **8. 钩子强度与丰满度检查（新增）**
-- 钩子强度交替规则："1强2缓"交替（不要每章都 strong，会疲劳）
+- 钩子强度交替规则：“1强2缓”交替（不要每章都 strong，会疲劳）
 - 卷末 3 章连续 strong 钩子
 - 卷首章 strong 钩子
 - 每章场景预案至少 1 个
