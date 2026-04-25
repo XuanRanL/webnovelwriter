@@ -60,6 +60,9 @@ novel-refined/
 .claude/scheduled_tasks.lock
 scheduled_tasks.lock
 
+# Workspace agent copies (auto-synced from webnovel-writer/agents/ by sync-agents)
+.claude/agents/
+
 # Local analysis snapshots and draft docs
 PROJECT_MINDMAP*.md
 webnovel-writer-v5*-architecture.svg
