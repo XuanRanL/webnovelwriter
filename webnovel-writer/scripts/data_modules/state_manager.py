@@ -1380,6 +1380,16 @@ def main():
     # 读取进度
     subparsers.add_parser("get-progress")
 
+    # Round 19 Phase E · 跨卷规划数据读取（upstream@3e36417 借鉴）
+    # plan 阶段下卷规划前必须读最近 N 章已写真实数据（hook_close / unresolved_loops / overall_score）
+    recent_parser = subparsers.add_parser(
+        "get-recent-meta",
+        help="取最近 N 章 chapter_meta 摘要供 plan 阶段读 write history",
+    )
+    recent_parser.add_argument(
+        "--last-n", type=int, default=10, help="取最近 N 章（默认 10）"
+    )
+
     # 获取实体
     get_entity_parser = subparsers.add_parser("get-entity")
     get_entity_parser.add_argument("--id", required=True)
@@ -1471,6 +1481,36 @@ def main():
 
     if args.command == "get-progress":
         emit_success(manager._state.get("progress", {}), message="progress")
+
+    elif args.command == "get-recent-meta":
+        # Round 19 Phase E · 跨卷规划数据（upstream@3e36417 借鉴）
+        # 输出最近 N 章 chapter_meta 摘要：hook_close / hook_type / unresolved_loops /
+        # overall_score / narrative_version / word_count，供 plan 阶段消费
+        chapter_meta = manager._state.get("chapter_meta", {}) or {}
+        chs_str = sorted(chapter_meta.keys())
+        chs = sorted([int(k) for k in chs_str if str(k).isdigit()])
+        last_n = int(getattr(args, "last_n", 10) or 10)
+        recent = chs[-last_n:] if len(chs) >= last_n else chs
+        out: dict = {}
+        for ch in recent:
+            m = chapter_meta.get(f"{ch:04d}") or {}
+            out[str(ch)] = {
+                "hook_close": m.get("hook_close"),  # Phase G 后会填充
+                "hook_type": m.get("hook_type"),
+                "hook_strength": m.get("hook_strength"),
+                "hook_content": (m.get("hook_content") or "")[:120],
+                "unresolved_loops": m.get("unresolved_loops") or [],
+                "overall_score": m.get("overall_score")
+                or (m.get("checker_scores") or {}).get("overall"),
+                "narrative_version": m.get("narrative_version"),
+                "word_count": m.get("word_count"),
+            }
+        payload = {
+            "last_n": last_n,
+            "chapters_returned": list(out.keys()),
+            "data": out,
+        }
+        emit_success(payload, message="recent_meta")
 
     elif args.command == "get-entity":
         entity = manager.get_entity(args.id)

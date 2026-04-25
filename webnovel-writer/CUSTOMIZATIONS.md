@@ -7,6 +7,39 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase E] plan 跨卷感知 + get-recent-meta CLI
+
+upstream@3e36417 借鉴 · plan 阶段下卷规划前必须读已写章节真实数据。Phase E 仅做 CLI（独立工具，Phase G hook_trend 之后扩展）。
+
+### 变更摘要
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `scripts/data_modules/state_manager.py` | 加 `get-recent-meta --last-n N` 独立子命令 + dispatch（输出最近 N 章 hook_close / hook_type / unresolved_loops / overall_score 摘要） |
+| 2 | `skills/webnovel-plan/SKILL.md` | Step 1.5 加跨卷加载段（call get-recent-meta + 4 条显式回应规则） |
+
+### 4 条显式回应规则
+
+- 至少 1 个上卷未解决伏笔在本卷开篇 3 章内触及
+- 主角金手指曲线单调或显式弱化事件
+- 上卷 overall_score < 70 → 新卷开篇加强钩子
+- 上卷 hook_type 连续 5+ 章相同 → 新卷必须切换
+
+### 跨 Phase 协同
+
+- Phase E（本规则） get-recent-meta CLI 提供“最近 N 章摘要”
+- Phase G（待做） get-hook-trend CLI + hook_close 4 分类强制映射
+- Phase F（待做） private-csv strong-chapter-end-hooks 私库（≥90 章末模板）
+
+三者协同 = plan 阶段读“最近 N 章数据 + 钩子趋势 + 高分章末模板”做下卷规划。
+
+### 验证
+
+- get-recent-meta 烟雾测试 5 章数据返回成功
+- preflight + hygiene Ch11 + sync-cache 全绿
+
+---
+
 ## [2026-04-25 · Round 19 Phase B] polish-guide K/L/M/N 4 类词库 + 4 句式规则补强
 
 upstream@74717aa 的 polish-guide K/L/M/N 4 类细化词库 + 6 条句式规则。Round 19 Phase B 取并集（保留本地 200+ 高频词 + Round 17.2 签名密度硬线），缩到 4 句式（“不是X是Y” 已被 Phase A 起草前预防接住，不重复）。
