@@ -1,0 +1,11 @@
+=== upstream/master HEAD ===
+1d7c952b470981756a49e3a90c4688c3ab7855ab
+1d7c952b470981756a49e3a90c4688c3ab7855ab 2026-04-25 00:33:54 +0800 chore: remove legacy reference batch scripts
+
+=== main HEAD ===
+84249bd343537d95719e26bde9e8aec71865e61b
+84249bd343537d95719e26bde9e8aec71865e61b 2026-04-25 03:42:33 -0400 chore(repo): untrack workspace-synced .claude/agents/ + scheduled_tasks.lock
+
+=== merge-base ===
+535d60d1ff55cfe92c2da8e86a697638ed21bb18
+2026-03-23 15:34:00 +0800 Merge pull request #42 from Jevanzhu/master
