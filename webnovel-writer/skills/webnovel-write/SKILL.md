@@ -133,6 +133,9 @@ git log --oneline -1 | grep "第${chapter_num}章"
 - `references/first-chapter-hook-rubric.md`（Round 19 Phase I · 仅 chapter == 1 加载 · 追读契约 A/B/C 三项硬规则 + Ch2/Ch3 跨章衔接弱版）
   - 用途：Ch1 专属“读者 3 秒决定追读”硬规则，叠加 Round 10 既有 9 项严格规则
   - 触发：chapter == 1 时由 reader-pull-checker 加载并强制走；chapter ∈ (2,3) 跨章衔接弱检查
+- `references/visual-concreteness-rubric.md`（Round 19 Phase H · 画面感硬规则 · 视觉锚点 / 5+1 感官色谱 / 抽象动作改写）
+  - 用途：Step 2A 起草时即时遵守 + Step 3 prose-quality-checker 评分硬卡
+  - 触发：永久加载（与 anti-ai-guide.md 并列）
 - `references/style-variants.md`
   - 用途：Step 1（内置 Contract）开头/钩子/节奏变体与重复风险控制。
   - 触发：Step 1 当需要做差异化设计时加载。
@@ -462,6 +465,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" con
 ```bash
 cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
 cat "${SKILL_ROOT}/references/anti-ai-guide.md"
+cat "${SKILL_ROOT}/references/visual-concreteness-rubric.md"
 ```
 
 硬要求：

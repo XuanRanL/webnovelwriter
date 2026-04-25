@@ -7,6 +7,48 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase H] prose-quality 画面感 3 子规则 + 5+1 感官色谱
+
+读者头号差评是“看不到画面”。Round 19 Phase H 把“画面感”从综合感官评分细化成 3 项可硬扫子规则，并加权 0.4 入 prose_quality 主分。
+
+### 变更摘要
+
+| # | 文件 | 改动 | 行数 |
+|---|------|------|------|
+| 1 | `skills/webnovel-write/references/visual-concreteness-rubric.md` | NEW · 3 子规则 + 5+1 感官色谱 + 8 抽象动作模板 | ~120 |
+| 2 | `agents/prose-quality-checker.md` | 末尾追加 visual_subdimensions schema + 6 类感官词扫法 + 加权计算 | +35 |
+| 3 | `skills/webnovel-write/SKILL.md` | references catalog 加 visual-concreteness-rubric | +3 |
+
+### 3 子规则
+
+- **scene_visual_anchor**：每场景首句必有视觉锚点（光 / 空间 / 物体），违例 -10 critical
+- **sensory_coverage_score**：5+1 感官色谱（视+听必到 + 嗅或触/温/味/体至少 1 个），覆盖 ≥4 项 = 100
+- **abstract_action_count**：8 模板未改写每处 -3，≥5 处 high
+
+### 与 Phase A/F 协同
+
+- Phase A 起草前预防（含 N5 AI 腔模板）
+- Phase F 私库回查（recurring_violation 升级）
+- Phase H 评分硬卡（visual_subdim 加权 0.4 入主分）
+
+### 末世重生历史 visual 缺失章节
+
+- Ch4 / Ch8 / Ch9 嗅觉零（汽修厂 / 城市傍晚 / 桃源空间二度入境）
+- Phase H 起 prose-quality 加权后会从 85 → 80 critical 命中
+
+### 预期效果
+
+- Ch12+ prose-quality 主分从 baseline 88.27 → 90+
+- visual_subdim_avg 期望 ≥ 88
+- 嗅觉等“沉默感官”自动被捕获并强制补描写
+
+### 验证
+
+- preflight + hygiene Ch11 + sync-cache 全绿
+- Ch12 写作期 visual_subdimensions 字段输出生效（Phase 8 验证）
+
+---
+
 ## [2026-04-25 · Round 19 Phase F] 自建私库 4 表 + extractor + 双向回灌
 
 > 这是 Round 19 杠杆最大的 Phase。Ch1-11 实测 polish_reports 显示 5 类问题（半度/了一下/系统术语/AI腔模板/不是X是Y）在 7-10 章反复修但都修不住——证明纯 polish 兜底失效。Phase F 把 RCA 数据自动派生 4 张 CSV，writer 起草前查 + checker 复测时回查，从根源根治。
