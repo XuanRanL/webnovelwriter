@@ -7,13 +7,56 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase I] Ch1 追读契约 9+3 rubric
+
+网文平台第 1 章前 300 字决定弃读率（商业转化率核心指标）。Round 10 已加 9 项严格 rubric（feedback_round10_first_chapter_rubric.md，偏“安全检查”），Round 19 补 3 项“读者承诺信号”。
+
+### 变更摘要
+
+| # | 文件 | 改动 | 行数 |
+|---|------|------|------|
+| 1 | `skills/webnovel-write/references/first-chapter-hook-rubric.md` | NEW · A/B/C 三项追读契约 + Ch2/Ch3 跨章弱版 + 末世重生 Ch1 复盘 | ~95 |
+| 2 | `agents/reader-pull-checker.md` | 第 1 章强制走 A/B/C；A → REWRITE；Ch2/Ch3 跨章衔接弱检查 | +25 |
+| 3 | `skills/webnovel-write/SKILL.md` | references catalog 加 chapter==1 加载条目 | +3 |
+
+### 三项追读契约
+
+- **A 首句钩（critical）**：冲突 / 反差 / 悬念信号三选一；禁天气 / 姓名 / 时代背景 / 时间标记 / 纯说明开头
+- **B 第 1 段承诺（high）**：反差身份 / 核心冲突 / 核心动机三选一
+- **C 300 字内触发器（high）**：金手指或核心冲突触发器
+
+### 与 Round 10 既有规则的关系
+
+| 规则集 | 偏重 | 数量 | 关系 |
+|---|---|---|---|
+| Round 10 严格 rubric | 安全检查 | 9 项 | 不取代 |
+| Round 19 追读契约 | 读者承诺信号 | A/B/C 3 项 | 叠加 |
+
+### 末世重生 Ch1 复盘验证
+
+末世重生 Ch1（“我又活了”）当前 v3 polish 后 reader-pull=93 / reader-critic=91，A/B/C 三项已自然满足。本 rubric 主要为未来重写 Ch1 或新书首章兜底。
+
+### 预期效果
+
+- Ch1 完读率（网文平台命门指标）显著提升
+- 不会出现“前 1000 字全是回忆 / 日常”的开头
+- 前 300 字必有金手指或冲突触发器
+- 与 Round 10 9 项规则叠加 → Ch1 reader-pull-checker ≥ 88
+
+### 验证
+
+- preflight + hygiene_check Ch11 + sync-cache 全绿（保持 26/0/0/0）
+- Ch1 不重写时本 rubric 默认安静；新作或 Ch1 重写时强制激活
+
+---
+
 ## [2026-04-25 · Round 19 Phase A 复审] quote_pair_fix.py 加 fenced 保护
 
 Phase A subagent 反馈：在 SKILL.md 上首次跑 `quote_pair_fix.py --ascii-to-curly` 时担心 fenced ```bash``` 块内的 `"${VAR}"` / `cat "..."` / heredoc 被段奇偶配对算法破坏，subagent 已 git checkout 回滚并改手工 Edit。主会话复审时确认了**该担心是真的**——脚本 `fix_text` 按 `\n{2,}` 切段后 `fix_paragraph_ascii_to_curly` 不区分代码块。
 
 ### 根因
 
-`scripts/quote_pair_fix.py` 的 `fix_text` 直接对全文段切分，fenced block 内的 ASCII " 与正文 ASCII " 混在一起按段计数→奇偶颠倒后 bash 语法可能崩。
+`scripts/quote_pair_fix.py` 的 `fix_text` 直接对全文段切分，fenced block 内的 ASCII “ 与正文 ASCII ” 混在一起按段计数→奇偶颠倒后 bash 语法可能崩。
 
 ### 修复（commit 同 Phase A 一起）
 
@@ -408,7 +451,7 @@ Round 15.1 字数根治后首章 Ch4 完整跑完 Step 0-7，approve_with_warnin
 ### 正则设计
 
 ```python
-WORD_COUNT_RANGE_RE = re.compile(r"(?P<lo>\b[23]\d{3})\s*[-—–]\s*(?P<hi>\b[23]\d{3})\b")
+WORD_COUNT_RANGE_RE = re.compile(r“(?P<lo>\b[23]\d{3})\s*[-—–]\s*(?P<hi>\b[23]\d{3})\b”)
 ```
 
 上下文过滤：只取字符串附近 30 字内含 `字数` / `word_count` / `字符` 关键字的区间，避免误伤时间戳/编号。
@@ -1120,7 +1163,7 @@ Round 10 五个 rubric 升级**不止服务 Ch1**：
 
 **根因**：`agents/data-agent.md:557,623` 官方示例写成：
 ```json
-"checker_scores": {"设定一致性": 100, "连贯性": 97}
+“checker_scores”: {“设定一致性”: 100, “连贯性”: 97}
 ```
 AI 照文档写中文 key，但代码侧 `CHECKER_NAMES` 是 11 个英文（`consistency-checker` 等）。**文档/代码 schema 割裂**，永无匹配。
 
@@ -1236,8 +1279,8 @@ invalid: [COLLISION:伏笔埋设→consistency-checker(prev=设定一致性), BA
 
 **修复**（`scripts/workflow_manager.py:163`）：
 ```python
-"Step 3": ["overall_score", "checker_count", "internal_avg", "review_score",
-           "naturalness_verdict", "naturalness_score"],  # 2026-04-16 Round 8
+“Step 3”: [“overall_score”, “checker_count”, “internal_avg”, “review_score”,
+           “naturalness_verdict”, “naturalness_score”],  # 2026-04-16 Round 8
 ```
 
 **追加防御**：`feedback_doc_counter_single_source.md` 的"真源清单"从 6 处增到 7 处，把 `workflow_manager.py::REQUIRED_ARTIFACT_FIELDS` 列为第 7 处；任何 Step N artifact 字段变更都必须同步改这里。
@@ -1311,7 +1354,7 @@ invalid: [COLLISION:伏笔埋设→consistency-checker(prev=设定一致性), BA
 
 输出示例:
 ```json
-{"status": "success", "message": "cache 同步 v5.6.0: +0 新增, ~1 更新, =286 未变, -0 .pyc 清理", ...}
+{“status”: “success”, “message”: “cache 同步 v5.6.0: +0 新增, ~1 更新, =286 未变, -0 .pyc 清理”, ...}
 ```
 
 #### 2. preflight 新增 `cache_sync` 检查项（非阻断警告）
@@ -1867,17 +1910,17 @@ P2 建议（exit 2）：
 
 ```python
 {
-    "Step 1":  ["file", "snapshot"],
-    "Step 2A": ["word_count"],
-    "Step 2B": ["style_applied", "deviation_notes"],
-    "Step 3":  ["overall_score", "checker_count", "internal_avg"],
-    "Step 3.5":["external_avg", "models_ok", "external_avg_score"],
-    "Step 4":  ["anti_ai_force_check", "polish_report", "fixes"],
-    "Step 5":  ["state_modified", "entities", "chapter_meta_fields", "scene_count"],
-    "Step 6":  ["decision", "audit_report"],
-    "Step 7":  ["commit", "branch"],
+    “Step 1”:  [“file”, “snapshot”],
+    “Step 2A”: [“word_count”],
+    “Step 2B”: [“style_applied”, “deviation_notes”],
+    “Step 3”:  [“overall_score”, “checker_count”, “internal_avg”],
+    “Step 3.5”:[“external_avg”, “models_ok”, “external_avg_score”],
+    “Step 4”:  [“anti_ai_force_check”, “polish_report”, “fixes”],
+    “Step 5”:  [“state_modified”, “entities”, “chapter_meta_fields”, “scene_count”],
+    “Step 6”:  [“decision”, “audit_report”],
+    “Step 7”:  [“commit”, “branch”],
 }
-PLACEHOLDER_ONLY_FIELDS = {"v2", "ok", "chapter_completed", "committed"}
+PLACEHOLDER_ONLY_FIELDS = {“v2”, “ok”, “chapter_completed”, “committed”}
 ```
 
 完整校验逻辑见 `workflow_manager._validate_artifact_has_semantic_field`。每个 step 的 complete-step 都必须至少填白名单中的一个字段（非 None 非空字符串非空列表），否则 reject 并写入 `step_complete_rejected` call trace。
@@ -2049,7 +2092,7 @@ Data Agent 自身无 search 能力（只有 Read/Write/Bash），改为"主 agen
   ↓
 作者运行 /webnovel-write 1
   ↓ Step 0.7 context-agent 读典故库
-  ↓    附加"验证建议"标签（trust_local/cached/memory/verify/timeliness/register）
+  ↓    附加“验证建议”标签（trust_local/cached/memory/verify/timeliness/register）
   ↓ Step 1 任务书第 6 板块推荐 0-2 条引用 + 验证标签
   ↓ Step 2A 起草：
   ↓    - trust_* → 直接用
@@ -2111,22 +2154,22 @@ Data Agent 自身无 search 能力（只有 Read/Write/Bash），改为"主 agen
 #### 修复 1：同步 fork 所有改动到插件缓存
 ```bash
 # 备份插件缓存
-cp -r "$CACHE" "$CACHE.backup-before-sync-20260410"
+cp -r “$CACHE” “$CACHE.backup-before-sync-20260410”
 
 # 同步 10 个既有文件 + 2 个新文件
 FILES_TO_SYNC=(
-  "skills/webnovel-init/SKILL.md"
-  "skills/webnovel-plan/SKILL.md"
-  "skills/webnovel-write/SKILL.md"
-  "skills/webnovel-write/references/step-3.5-external-review.md"
-  "skills/webnovel-write/references/step-6-audit-matrix.md"
-  "skills/webnovel-write/references/writing/classical-references.md"  # 新建
-  "agents/context-agent.md"
-  "agents/data-agent.md"
-  "agents/audit-agent.md"
-  "agents/prose-quality-checker.md"
-  "agents/density-checker.md"
-  "scripts/build_external_context.py"  # 新建
+  “skills/webnovel-init/SKILL.md”
+  “skills/webnovel-plan/SKILL.md”
+  “skills/webnovel-write/SKILL.md”
+  “skills/webnovel-write/references/step-3.5-external-review.md”
+  “skills/webnovel-write/references/step-6-audit-matrix.md”
+  “skills/webnovel-write/references/writing/classical-references.md”  # 新建
+  “agents/context-agent.md”
+  “agents/data-agent.md”
+  “agents/audit-agent.md”
+  “agents/prose-quality-checker.md”
+  “agents/density-checker.md”
+  “scripts/build_external_context.py”  # 新建
 )
 ```
 
@@ -2204,27 +2247,27 @@ FILES_TO_SYNC=(
 
 ```bash
 #!/bin/bash
-FORK="I:/AI-extention/webnovel-writer/webnovel-writer"
-CACHE="C:/Users/Windows/.claude/plugins/cache/webnovel-writer-marketplace/webnovel-writer/5.6.0"
-cp -r "$CACHE" "$CACHE.backup-$(date +%Y%m%d-%H%M%S)"
+FORK=“I:/AI-extention/webnovel-writer/webnovel-writer”
+CACHE=“C:/Users/Windows/.claude/plugins/cache/webnovel-writer-marketplace/webnovel-writer/5.6.0”
+cp -r “$CACHE” “$CACHE.backup-$(date +%Y%m%d-%H%M%S)”
 
 FILES=(
-  "skills/webnovel-init/SKILL.md"
-  "skills/webnovel-plan/SKILL.md"
-  "skills/webnovel-write/SKILL.md"
-  "skills/webnovel-write/references/step-3.5-external-review.md"
-  "skills/webnovel-write/references/step-6-audit-matrix.md"
-  "skills/webnovel-write/references/writing/classical-references.md"
-  "agents/context-agent.md"
-  "agents/data-agent.md"
-  "agents/audit-agent.md"
-  "agents/prose-quality-checker.md"
-  "agents/density-checker.md"
-  "scripts/build_external_context.py"
+  “skills/webnovel-init/SKILL.md”
+  “skills/webnovel-plan/SKILL.md”
+  “skills/webnovel-write/SKILL.md”
+  “skills/webnovel-write/references/step-3.5-external-review.md”
+  “skills/webnovel-write/references/step-6-audit-matrix.md”
+  “skills/webnovel-write/references/writing/classical-references.md”
+  “agents/context-agent.md”
+  “agents/data-agent.md”
+  “agents/audit-agent.md”
+  “agents/prose-quality-checker.md”
+  “agents/density-checker.md”
+  “scripts/build_external_context.py”
 )
-for f in "${FILES[@]}"; do
-  mkdir -p "$CACHE/$(dirname "$f")"
-  cp "$FORK/$f" "$CACHE/$f"
+for f in “${FILES[@]}”; do
+  mkdir -p “$CACHE/$(dirname ”$f“)”
+  cp “$FORK/$f” “$CACHE/$f”
 done
 ```
 
@@ -2475,7 +2518,7 @@ cultural_reference_trigger:
     - 网游
     - 电竞
   # 额外触发
-  quality_route_override: true  # 作者选择"悬疑正剧品质路线"时自动升级到 mandatory
+  quality_route_override: true  # 作者选择“悬疑正剧品质路线”时自动升级到 mandatory
 ```
 
 #### 建议 2：Step 1.5 叙事声音增加"典故密度偏好"维度
@@ -2484,7 +2527,7 @@ cultural_reference_trigger:
 **新增字段**：
 ```json
 {
-  "cultural_density_preference": "高 / 中 / 低 / 按需"
+  “cultural_density_preference”: “高 / 中 / 低 / 按需”
 }
 ```
 
@@ -2496,7 +2539,7 @@ cultural_reference_trigger:
 typed_allusions:
   - detection: 扫描章节正文，识别引用自 典故引用库.md / 原创诗词口诀.md 的片段
   - record: 写入 chapter_meta[N].allusions_used 字段
-  - update: 回写 典故引用库.md 的"第 N 卷引用规划总表"的"实际使用"列
+  - update: 回写 典故引用库.md 的“第 N 卷引用规划总表”的“实际使用”列
   - index: 写入 index.db 的 allusions 表（新增）
 ```
 
@@ -2520,11 +2563,11 @@ C01_typed_reference_audit:
 **新增字段**：
 ```json
 {
-  "chapter_meta": {
-    "0001": {
-      "...既有字段...": "...",
-      "allusions_used": [
-        {"id": "S01", "snippet": "蓼蓼者莪", "type": "诗词", "source": "诗经·蓼莪", "carrier": "主角心里一闪"}
+  “chapter_meta”: {
+    “0001”: {
+      “...既有字段...”: “...”,
+      “allusions_used”: [
+        {“id”: “S01”, “snippet”: “蓼蓼者莪”, “type”: “诗词”, “source”: “诗经·蓼莪”, “carrier”: “主角心里一闪”}
       ]
     }
   }
@@ -2940,15 +2983,15 @@ C01_typed_reference_audit:
 **审计触发命令**：
 ```bash
 # Part 1 CLI 快速审计
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+python -X utf8 “${SCRIPTS_DIR}/webnovel.py” --project-root “${PROJECT_ROOT}” \
   audit chapter --chapter {N} --mode standard \
-  --out "${PROJECT_ROOT}/.webnovel/tmp/audit_layer_abg_ch{NNNN}.json"
+  --out “${PROJECT_ROOT}/.webnovel/tmp/audit_layer_abg_ch{NNNN}.json”
 
 # Part 2 audit-agent 深度审计
 Task(audit-agent, {chapter: N, project_root, mode, chapter_file, time_budget_seconds: 300})
 
 # 章节间闸门验证
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+python -X utf8 “${SCRIPTS_DIR}/webnovel.py” --project-root “${PROJECT_ROOT}” \
   audit check-decision --chapter {N} --require approve,approve_with_warnings
 ```
 
@@ -2995,8 +3038,8 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
 **验收路径**（下次会话）：
 ```
 /agents                                     # 确认列表中出现 context-agent/data-agent/*-checker
-Agent(subagent_type="context-agent",        # 调用时不再报 "not found"
-      prompt="...")
+Agent(subagent_type=“context-agent”,        # 调用时不再报 “not found”
+      prompt=“...”)
 ```
 
 **对比：上一次会话（Ch1 写作）**：
@@ -3724,7 +3767,7 @@ density-checker（信息密度）：
   Step 1: 黑名单检查（不变）
   Step 2: 正向匹配 — requested_model_id 的 base name ⊂ response_model（不区分大小写）
   Step 3: key_match fallback — model_key ⊂ response_model
-  Step 4: 全不匹配 → False + "no_positive_match" 原因
+  Step 4: 全不匹配 → False + “no_positive_match” 原因
 ```
 
 **验证：** Python ast.parse SYNTAX OK，9/9 自动化检查全部通过
@@ -3783,7 +3826,7 @@ density-checker:     PADDING/REPETITION
 **改动文件：**
 | 文件 | 类型 | 说明 |
 |------|------|------|
-| `agents/external-review-agent.md` | 修复 | 大纲路径硬编码"第1卷"→动态 `{volume_id}` |
+| `agents/external-review-agent.md` | 修复 | 大纲路径硬编码“第1卷”→动态 `{volume_id}` |
 | `skills/webnovel-write/references/step-3.5-external-review.md` | 修复 | User消息模板中大纲路径同上 |
 | `references/checker-output-schema.md` | 修复 | cool_value 示例 score 62→28（匹配公式 8×7/max(1,11-9)=28） |
 | `agents/high-point-checker.md` | 修复 | 同上 cool_value score 修正 |
@@ -3804,5 +3847,5 @@ density-checker:     PADDING/REPETITION
 - **根因**: SKILL.md 编写时使用了 PowerShell 语法，与其他 skill 文件（均为 bash）不一致
 
 **验证结果：**
-- grep 确认零残留 PowerShell 语法、零硬编码"第1卷"、零 score:62
+- grep 确认零残留 PowerShell 语法、零硬编码“第1卷”、零 score:62
 - 插件缓存已同步（25文件）

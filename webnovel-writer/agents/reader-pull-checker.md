@@ -30,7 +30,7 @@ model: inherit
 
 > **仔细研究认真思考详细调查搜索分析 deep research 以正常读者的角度和编辑退稿视角去锐评和找这个小说的问题，最后给出完整详细全面的修改建议以及原因。**
 >
-> 专注于"我会点下一章吗" —— 钩子有没有、强不强、是否回应了上章承诺、大纲承诺的爽点有没有兑现、有没有未闭合问题拉着读者、本章有没有微兑现让人读得爽、模式会不会和前两三章同型、Ch1 跨卷大悬念有没有过早泄露。
+> 专注于“我会点下一章吗” —— 钩子有没有、强不强、是否回应了上章承诺、大纲承诺的爽点有没有兑现、有没有未闭合问题拉着读者、本章有没有微兑现让人读得爽、模式会不会和前两三章同型、Ch1 跨卷大悬念有没有过早泄露。
 >
 > **上章钩子**：{上章钩子}
 >
@@ -95,7 +95,7 @@ model: inherit
 
 ## 唯一的硬约束
 
-- **HARD-001 可读性底线**：读者读完不知道"发生了什么/谁/为什么" → critical
+- **HARD-001 可读性底线**：读者读完不知道“发生了什么/谁/为什么” → critical
 - **HARD-002 承诺违背**：上章明确钩子/承诺本章完全无回应 → critical
 - **HARD-003 节奏灾难**：整章零推进 → critical
 - **HARD-004 冲突真空**：整章无问题/目标/代价 → high
@@ -104,3 +104,25 @@ model: inherit
 - **quote 必须能在正文 grep 到**（防幻觉）
 
 其他一概不限制。Deep research 走起——读者追不追得下去、编辑会不会退稿，全写出来。
+
+## Round 19 Phase I · Ch1 追读契约（参 first-chapter-hook-rubric.md）
+
+仅当 `chapter == 1` 时强制走 `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/first-chapter-hook-rubric.md` 的 A/B/C 三项追读契约：
+
+- **A 首句钩缺失**（含冲突/反差/悬念之一 OR 命中 5 项禁止之一） → critical issue, blocking=true
+  fix_hint = “首句必须含冲突/反差/悬念信号之一；禁止天气/姓名/时代背景/时间标记/纯说明开头”
+- **B 第 1 段承诺缺失** → high issue
+  fix_hint = “第 1 段必须暗示卖点：反差身份 / 核心冲突 / 核心动机 三选一”
+- **C 300 字内触发器缺失** → high issue
+  fix_hint = “300 字内必须显形金手指或核心冲突触发器”
+
+任何 A 触发 → verdict=REWRITE_RECOMMENDED；2 个 B/C 同时触发也升级为 REWRITE_RECOMMENDED。
+
+## Round 19 Phase I · Ch2/Ch3 跨章衔接（弱版本）
+
+仅当 `chapter in (2, 3)` 时检查：
+
+- Ch2 末段必须含 Ch1 主悬念的新进展或新分支 → 缺失 medium warn
+- Ch3 末段必须含 Ch1 卖点的第一次小兑现 + 抛出更大悬念 → 缺失 medium warn
+
+证据通过 Read Ch1 末段 + 当前章末段 200 字对比判定。
