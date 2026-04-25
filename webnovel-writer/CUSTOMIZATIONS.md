@@ -7,6 +7,51 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase X1] reader-critic <75 全卷 P0 硬阻止 + 前 5 章写前自检
+
+末世重生 Ch1-11 reader-critic 实测谷底：Ch3=62 / Ch4=58 远低于 75 但当时未触发 hard block（reader-critic 直到 Round 13 才纳入 13 维度）。Phase X1 把 reader-critic <75 升级为全卷 P0 硬阻止，并在 anti-ai-guide.md 加“前 5 章写前自检清单”段。
+
+### 变更摘要
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `skills/webnovel-write/references/anti-ai-guide.md` | 末尾追加 Phase X1 段（5 类前置自检 + 自检 schema + 与 polish_cycle 耦合） |
+| 2 | `agents/reader-critic-checker.md` | 末尾追加 <75 全卷硬阻止 + 前 5 章 75-79 medium warn + 历史数据对照 |
+| 3 | `agents/audit-agent.md` | Layer A 加 X1 检测项（A-RC-X1） |
+| 4 | `scripts/data_modules/chapter_audit.py` | Layer A 加 check_a_x1_reader_critic_hard_block（注册到 _run_layer_a） |
+
+### 5 类前置自检项
+
+1. 金手指首披露时序
+2. 突兀编号 / 系统术语铺垫
+3. 大纲爽点兑现密度
+4. 伏笔铺设节奏
+5. 读者卡点检查
+
+### 全卷硬阈值
+
+- < 75 → P0 block_pending_revision，必须 polish 重写
+- 75-79（前 5 章） → medium warn
+- ≥ 80（前 5 章） → PASS
+- ≥ 75（Ch6+） → PASS
+
+### 历史 Ch3/4 谷底回溯
+
+Ch3=62 / Ch4=58 是 18 轮 RCA 漏掉的“reader-critic 早期 P0”——Round 19 Phase X1 起类似分数将自动 REWRITE_RECOMMENDED，不再 polish patch 蒙混。
+
+### 预期效果
+
+- 前 5 章 reader-critic 谷底自动捕获，不会再像 Ch3/4 那样首稿 60 分就 commit
+- 写前自检 + 写后硬阻止双闸门 + 与 polish_cycle reader-critic 复测耦合 → 前 5 章 reader-critic 平均期望 ≥ 85（vs baseline Ch1-5 = 73.6）
+
+### 验证
+
+- preflight + hygiene Ch11 + sync-cache 全绿
+- Ch1-5 历史数据用新规则回算：Ch3/4 应触发 P0 block；Ch1/2/5 应 PASS
+- Ch6+ 历史数据应全 PASS
+
+---
+
 ## [2026-04-25 · Round 19 Phase I] Ch1 追读契约 9+3 rubric
 
 网文平台第 1 章前 300 字决定弃读率（商业转化率核心指标）。Round 10 已加 9 项严格 rubric（feedback_round10_first_chapter_rubric.md，偏“安全检查”），Round 19 补 3 项“读者承诺信号”。

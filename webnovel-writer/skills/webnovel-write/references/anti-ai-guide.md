@@ -105,3 +105,73 @@ Step 2 起草正文前，由 SKILL.md Step 2 references 列表加载。
 
 - upstream `docs/specs/2026-04-03-ai-writing-quirks.md`（148 行 6 层 60+ 癖好全景图）暂不引入，避免与本文件 + polish-guide 冗余
 - 如需扩展，往 `references/private-csv/ai-replacement-vocab.csv` 沉淀（Phase F）
+
+---
+
+## Round 19 Phase X1 · 前 5 章 reader-critic 写前自检清单
+
+> **触发**：当 chapter ∈ (1, 2, 3, 4, 5)，writer 在 Step 2A 起草前必须按下表逐项自检并写入 `tmp/pre_draft_self_check_ch{NNNN}.json`。这是与全卷 reader-critic <75 P0 硬阻止配套的“写前预防”，目的是把 reader-critic 历史 Ch3=62 / Ch4=58 的谷底类问题前置堵掉。
+
+### 5 类前置自检项（每项 PASS / WARN / FAIL）
+
+#### 1. 金手指首披露时序
+
+- 本章是否符合 state.json 的 golden_finger 披露梯度？
+- 不超前披露下一卷剧情；不延后兑现已承诺爽点
+- FAIL 触发：超前 1+ 卷或延后 ≥ 5 章兑现
+
+#### 2. 突兀编号 / 系统术语铺垫
+
+- 章内出现的所有数字编号（#4732 / D-25 / 23:42 / 0% 8% 等）是否本章前文已铺垫？
+- 命名实体（陈默 / 林晚秋 / 苏蕊 / 老李 / 秦岳等）首次出现是否有 1 句以上的身份暗示？
+- FAIL 触发：≥ 2 个数字编号或命名实体无铺垫直接抛出
+
+#### 3. 大纲爽点兑现密度
+
+- 本章 outline 列出的 N 条爽点 / 钩子，正文兑现率 ≥ 70%？
+- 关键爽点（reader-pull-checker 标“strong”）必须 100% 兑现
+- FAIL 触发：兑现率 < 50% 或关键 strong 钩子缺兑现
+
+#### 4. 伏笔铺设节奏
+
+- 本章新铺设的钩子线条数 ≤ 2（避免 Ch3 一次铺 5 条新期待线的雷）
+- 上章未闭合钩子若 ≥ 5 条，本章必须先闭合 ≥ 1 条再开新钩
+- FAIL 触发：本章新开 ≥ 3 条钩子且上章未闭 ≥ 5 条
+
+#### 5. 读者卡点检查
+
+- 章内是否有 ≥ 1 处“读者读到会停下来 google / 翻前章 / 出戏”的点？
+- 候选风险：突兀专有名词、复杂金手指机制单段说明、跨语境隐喻
+- FAIL 触发：发现 ≥ 2 处读者卡点
+
+### 自检产物
+
+```json
+{
+  "chapter": N,
+  "phase": "pre_draft_self_check",
+  "items": [
+    {"id": "1_golden_finger_timing", "verdict": "PASS|WARN|FAIL", "evidence": "..."},
+    {"id": "2_unbacked_terms", "verdict": "...", "evidence": "..."},
+    {"id": "3_climax_payoff_rate", "verdict": "...", "evidence": "..."},
+    {"id": "4_loop_pacing", "verdict": "...", "evidence": "..."},
+    {"id": "5_reader_stuck_points", "verdict": "...", "evidence": "..."}
+  ],
+  "verdict": "PASS|NEEDS_ADJUST|REWRITE_RECOMMENDED",
+  "all_fail_count": N,
+  "all_warn_count": N
+}
+```
+
+### 与 reader-critic-checker 的耦合
+
+- 自检 `verdict=REWRITE_RECOMMENDED`（≥2 FAIL）→ writer **必须**回 Step 1 重做大纲再起草
+- 自检 `verdict=NEEDS_ADJUST`（1 FAIL 或 ≥3 WARN）→ writer 起草时刻意规避，并在 writing_guidance.constraints 追加 “X1 自检命中：{item_id}” 提醒
+- 自检 `verdict=PASS` → 正常起草
+
+### 与 polish_cycle 的耦合
+
+polish_cycle 完成后 reader-critic-checker 复测：
+
+- 若 reader-critic 仍 < 75 → polish 必须再来一轮（不能 commit）
+- 若 reader-critic ≥ 75 但 < 80 且本章是前 5 章 → polish_log notes 追加“Ch{N} reader-critic={score}（前 5 章警告区）”，下章自检时强提醒

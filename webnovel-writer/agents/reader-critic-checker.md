@@ -62,3 +62,35 @@ model: inherit
 - **quote 必须能在正文 grep 到**（防幻觉）
 
 其他一概不限制。Deep research 走起——读者怎么吐槽就怎么写，编辑怎么退稿就怎么退，建议怎么详细怎么来。
+
+## Round 19 Phase X1 · <75 全卷 P0 硬阻止 + 前 5 章特殊待遇
+
+### 全卷硬阈值
+
+- reader-critic 评分 < 75 → 输出 verdict=REWRITE_RECOMMENDED + blocking=true
+- 该 verdict 写入 `tmp/reader_critic_ch{NNNN}.json` 与 chapter_meta.checker_scores.reader-critic-checker
+- audit-agent Step 6 Layer A 检测到 reader-critic-checker < 75 → 直接给出 audit_decision=block_pending_revision，禁止 Step 7 commit
+
+### 前 5 章额外严格度
+
+仅当 chapter ∈ (1, 2, 3, 4, 5)：
+
+- < 75 → 同样 P0 阻止
+- 75-79 → high warn（不阻止 commit 但 polish_log notes 追加警告）
+- ≥ 80 → PASS
+
+### 历史数据对照
+
+末世重生 Ch1-11 reader-critic 实测：
+- Ch3 = 62（历史 P0 但当时无硬阻止）
+- Ch4 = 58（历史 P0 但当时无硬阻止）
+- Ch2 = 76（前 5 章警告区命中）
+- Ch5+ = 86-89（安全）
+
+Round 19 Phase X1 起，类似 Ch3/4 类首稿低分将自动触发 REWRITE_RECOMMENDED，必须重写而非 polish patch。
+
+### 与 Phase I 的关系
+
+- Phase I（reader-pull-checker）防 Ch1 追读契约
+- Phase X1（本规则）防全卷 reader-critic <75
+- 二者覆盖不同失败模式：Phase I 抓 Ch1 首句钩，X1 抓 Ch1-5 整体读者视角谷底
