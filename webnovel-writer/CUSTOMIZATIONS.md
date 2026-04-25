@@ -7,6 +7,56 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase B] polish-guide K/L/M/N 4 类词库 + 4 句式规则补强
+
+upstream@74717aa 的 polish-guide K/L/M/N 4 类细化词库 + 6 条句式规则。Round 19 Phase B 取并集（保留本地 200+ 高频词 + Round 17.2 签名密度硬线），缩到 4 句式（“不是X是Y” 已被 Phase A 起草前预防接住，不重复）。
+
+### 变更摘要
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `skills/webnovel-write/references/polish-guide.md` | 第 1 层 K/L/M/N 4 类合并（共 44 个新词）+ 第 2 层补 4 条句式规则 |
+
+### K/L/M/N 4 类新词
+
+- K 神态模板词 15 个（眸中闪过 / 瞳孔微缩 / 嘴角微微上扬 等）
+- L 万能副词 10 个（缓缓 / 淡淡 / 微微 / 轻轻 / 静静 / 默默 / 悄悄 / 慢慢 / 渐渐 / 暗暗）
+- M 内心活动套话 10 个（心中暗道 / 心中一凛 / 暗自盘算 等）
+- N 转折/递进模板 9 个（话虽如此 / 就在此刻 / 殊不知 / 然而就在这时 等）
+
+合计 44 个新词，全部为 upstream 净增量（本地 J 段之后无任何重复）。
+
+### 4 句式规则（对应 RCA top 根因）
+
+| 句式 | 阈值 | 严重度 | RCA 对应 |
+|---|---|---|---|
+| 刻度量词外溢（半度/半秒/半指/半分） | 单章 ≥ 3 处 | block | N1（强信号必修）|
+| “了一下” 节拍密度 | 单章 ≥ 4 次/千字 | block | N2（强信号必修）|
+| “未”字否定外溢 | 叙事/对话混用 ≥ 2 处 | warn | N3（中信号必修）|
+| 系统/RPG 术语百分比腔 | 单章 ≥ 1 处 | warn | P4（强信号必修）|
+
+### 与 Phase A / F / H 协同
+
+- Phase A 起草前预防（writing_guidance.constraints 6 条硬注入）
+- Phase B 本规则 polish 兜底（200+ 词 + 4 句式扫描）
+- Phase F 私库回灌（命中 recurring_violation 升级 severity）
+- Phase H 画面感硬卡（visual_subdim 加权）
+
+四层协同 = 起草前预防 + polish 检测 + 复测回灌 + 评分硬卡。
+
+### 不重复实施的 upstream 6 句式
+
+- “不是X是Y” 排比 → 已被 Phase A anti-ai-guide.md 起草前预防（N4 根因）
+- 其他 upstream 句式如“四段闭环”“情绪三连”“每段总结句”“同段内解决冲突”“同义反复”“更重要的是递进” → 在本地 7 层第 5/第 6 层既有规则覆盖
+- 因此 Phase B 实施 4 句式即可（RCA §7 建议）
+
+### 验证
+
+- preflight + hygiene Ch11 + sync-cache 全绿
+- 维持本地 polish-guide 既有 7 层结构 + 200+ 词库 + Round 17.2 签名密度硬线
+
+---
+
 ## [2026-04-25 · Round 19 Phase H] prose-quality 画面感 3 子规则 + 5+1 感官色谱
 
 读者头号差评是“看不到画面”。Round 19 Phase H 把“画面感”从综合感官评分细化成 3 项可硬扫子规则，并加权 0.4 入 prose_quality 主分。
