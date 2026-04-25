@@ -64,7 +64,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
 3. `.webnovel/context_snapshots/ch{NNNN}.json` — Step 1 Context Contract 快照
 4. `审查报告/第{NNNN}章审查报告.md` — Step 3+3.5 审查报告
 5. `大纲/总纲.md` + `大纲/第N卷-章纲.md` + `大纲/第N卷-节拍表.md` — 对照承诺
-5b. **`大纲/第N卷-v[X]-前YY章覆盖大纲.md`（Round 17.5 · 2026-04-24 · Ch9 RCA P0-1 根治 · 必读最新版本）** — 若存在 v2/v3/v4 等覆盖大纲，audit-agent 必读对应章节段。生成 `editor_notes_for_next_chapter` 时必须把 v[N] 大纲中的"功能验证 / 关键事件 / 承诺兑现项"完整列入"必兑现"清单。Ch9 血教训：v4 大纲明确 Ch9 要兑现"切伤手指+南瓜汁 5 秒愈合"，但 audit-agent 生成 ch0009_prep.md 时未读 v4，导致 context-agent 默认信任 editor_notes 也遗漏，首稿完全缺失关键 v4 承诺。
+5b. **`大纲/第N卷-v[X]-前YY章覆盖大纲.md`（Round 17.5 · 2026-04-24 · Ch9 RCA P0-1 根治 · 必读最新版本）** — 若存在 v2/v3/v4 等覆盖大纲，audit-agent 必读对应章节段。生成 `editor_notes_for_next_chapter` 时必须把 v[N] 大纲中的“功能验证 / 关键事件 / 承诺兑现项”完整列入“必兑现”清单。Ch9 血教训：v4 大纲明确 Ch9 要兑现“切伤手指+南瓜汁 5 秒愈合”，但 audit-agent 生成 ch0009_prep.md 时未读 v4，导致 context-agent 默认信任 editor_notes 也遗漏，首稿完全缺失关键 v4 承诺。
 6. `设定集/` 全部文件 — 设定验证 + 人设基线
 7. `state.json.project_info.core_selling_points` — 题材卖点（驱动 Layer F）
 8. 前 5 章的 `.webnovel/summaries/ch{prev}.md` + `正文/第{prev}章*.md`（若存在）— 跨章基线
@@ -98,7 +98,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
 - **C13 quote 归一化**：`"".join(quote.split())` 后取前 15 字前缀做模糊匹配；同时 compact grep 验证在章节原文中（去空白后）能找到，找不到的 issue 降级 low
 - **C13 单模型孤报 high 自动降级为 medium**（对冲 LLM 单次跑高方差）
 - **C14 双通道规则**：每个关键反应至少满足之一——(a) 同章前置线索距离 ≤ 30 段；(b) 跨章线索 + **本章有呼应锚点**（呼应锚点 = 主角对前章事件的具体回忆/复述）
-- **C14 关键反应清单**：主动动作（盖镜/选择不救）/ 规则推断（看字懂意）/ 情绪爆发 / 技能使用（制签/烧签）/ 内心顿悟（"原来 X 是 Y"）——每章挑 **3-5 个**
+- **C14 关键反应清单**：主动动作（盖镜/选择不救）/ 规则推断（看字懂意）/ 情绪爆发 / 技能使用（制签/烧签）/ 内心顿悟（“原来 X 是 Y”）——每章挑 **3-5 个**
 - **C15 baseline 来源**：`.webnovel/observability/chapter_audit.jsonl` 最近 5 条 `layer_c_flow_median`；或从 `state.json → chapter_meta[N].flow_score_median` 读最近 5 章；首 3 章基线不足 warn-only
 - **C15 本章 flow_score_median**：median of [A 层 flow-checker 的 overall_score] + [C 层每个模型的 reader_flow score]
 - **C13/C15 如何应对缺失**：
@@ -241,7 +241,7 @@ overall_decision =
 2. **每个 check 必须有 evidence 字段**，包含具体文件路径 + 行号 / 具体字符串 / 具体数值
 3. **不得凭印象给分**，所有分数来自 check 结果聚合
 4. **不得修改任何文件**（除了写 audit 产物）— audit 是只读审计员
-5. **block 决议必须列出可执行修复命令**，不允许"需要调查"之类的模糊话术
+5. **block 决议必须列出可执行修复命令**，不允许“需要调查”之类的模糊话术
 6. **time_exhausted=true 时必须记录未完成的 layer**，不得假装通过
 7. **JSON schema 不符 = 自动视为 fail**，主流程应拒绝该审计结果
 7.5. **Bash redirection 安全规则（2026-04-23 Ch6 RCA Bug #2 根治）**：
@@ -264,25 +264,32 @@ overall_decision =
      python -X utf8 {SCRIPTS_DIR}/post_draft_check.py {N+1} --project-root {PROJECT_ROOT} --editor-notes-only
      ```
    - 若有任何 `EDITOR_NOTES_WORD_DRIFT` warn：**必须**改写 editor_notes 把伪区间替换为合法子区间白名单内的值，直到 self-check **0 warn**（不是 ≤ 几条）
-   - 若 editor_notes 的 `trend_hints` / `step_specific_hints` 段落里有自由文本形式的"推荐落点 X-Y" / "常态区间 X-Y" / "建议回 X-Y" / "本章建议 X-Y"，X-Y **必须**对齐合法子区间白名单
-   - **Round 18.2 加固**：自由文本中"X-Y" 形式（任何前后包含"字数 / word / 字符 / 落点"语义的数字范围）也**必须**对齐白名单，不能因为不在 JSON 字段里就豁免
+   - 若 editor_notes 的 `trend_hints` / `step_specific_hints` 段落里有自由文本形式的“推荐落点 X-Y” / “常态区间 X-Y” / “建议回 X-Y” / “本章建议 X-Y”，X-Y **必须**对齐合法子区间白名单
+   - **Round 18.2 加固**：自由文本中“X-Y” 形式（任何前后包含“字数 / word / 字符 / 落点”语义的数字范围）也**必须**对齐白名单，不能因为不在 JSON 字段里就豁免
    - 连 3 章同源 EDITOR_NOTES_WORD_DRIFT → post_draft_check 升级为 ERROR 阻断下章 Step 2（已在 post_draft_check.py `_count_recent_word_drift_chapters` 实装）
    - 背景：
-     - Ch7 audit 写了 "2800-3100" 到 Ch8 editor_notes，Ch8 post_draft_check 两次 warn 都被忽略。Round 15.1 硬约束只覆盖字段描述，未覆盖自由文本。
-     - Ch10 audit 又写了"建议回 2800-3100 避免累积疲劳"到 Ch11 editor_notes（自由文本，self-check 没抓到），导致 Ch11 context-agent 继承到 word_count_target，post_draft_check 7 处 EDITOR_NOTES_WORD_DRIFT。
-   - **operational rule**：写 editor_notes 之前先在 prompt 里列出本章所有"字数推荐"位置，每条对照白名单 [(2200,2800)/(2200,3500)/(2600,3200)/(2800,3400)/(3000,3500)] 校验后再写入 markdown。
+     - Ch7 audit 写了 “2800-3100” 到 Ch8 editor_notes，Ch8 post_draft_check 两次 warn 都被忽略。Round 15.1 硬约束只覆盖字段描述，未覆盖自由文本。
+     - Ch10 audit 又写了“建议回 2800-3100 避免累积疲劳”到 Ch11 editor_notes（自由文本，self-check 没抓到），导致 Ch11 context-agent 继承到 word_count_target，post_draft_check 7 处 EDITOR_NOTES_WORD_DRIFT。
+   - **operational rule**：写 editor_notes 之前先在 prompt 里列出本章所有“字数推荐”位置，每条对照白名单 [(2200,2800)/(2200,3500)/(2600,3200)/(2800,3400)/(3000,3500)] 校验后再写入 markdown。
+
+### Round 19 Phase X1 · reader-critic-checker <75 P0 硬阻止（追加 Layer A 检测）
+
+- 检测：读 chapter_meta.checker_scores.reader-critic-checker（或 tmp/reader_critic_ch{NNNN}.json）
+- 阈值：< 75 → audit_decision=block_pending_revision，severity=P0，layer=A
+- 前 5 章额外：75-79 触发 medium warn（不阻 commit 但 audit notes 标“前 5 章警告区”）
+- 输出：audit_reports/ch{NNNN}_audit.md 必须含 X1 检测结果段（A-RC-X1）
 
 ## 失败隔离
 
 - **audit-agent 本身调用失败（超时/JSON 不合规）**：主流程视为 Step 6 失败，不得默认放行进入 Step 7
-- **CLI 结构审计失败**：agent 继续完成 C/D/E/F，但在 blocking_issues 中追加"结构审计不可用"
+- **CLI 结构审计失败**：agent 继续完成 C/D/E/F，但在 blocking_issues 中追加“结构审计不可用”
 - **历史章节不可读（Ch1）**：Layer D/G 降级为 skipped + reason，不阻断
 
 ## 与其他 Agent 的协作
 
 - **与 Step 3 checker 互补**：不重复 Step 3 的单章内质量检查，专注 Step 3 管不到的维度（过程真实性 / 跨产物 / 跨章 / 承诺兑现）
 - **与 data-agent 协作**：读取 Step J 输出的 `step_k_status` / `applied_additions` 做对账
-- **与 context-agent 正反馈**：写入的 `editor_notes/ch{NNNN+1}_prep.md` 会被下章 context-agent 必读，形成"审计 → 改进"闭环
+- **与 context-agent 正反馈**：写入的 `editor_notes/ch{NNNN+1}_prep.md` 会被下章 context-agent 必读，形成“审计 → 改进”闭环
 
 ## 项目特定 Layer F 生成规则
 

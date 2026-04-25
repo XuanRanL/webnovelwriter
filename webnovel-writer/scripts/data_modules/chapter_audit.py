@@ -1853,6 +1853,57 @@ def check_G3_audit_trend(project_root: Path, chapter: int) -> CheckResult:
 
 # ==================== 聚合 ====================
 
+def check_a_x1_reader_critic_hard_block(project_root: Path, chapter: int) -> CheckResult:
+    """Round 19 Phase X1: reader-critic <75 全卷 P0 硬阻止 + 前 5 章 75-79 medium warn."""
+    cm = _chapter_meta_entry(project_root, chapter)
+    scores = cm.get("checker_scores") or {}
+    rc = scores.get("reader-critic-checker")
+    if not isinstance(rc, (int, float)):
+        # legacy 兼容（Round 13 v2 之前的 key）
+        rc = scores.get("reader-critic")
+    if not isinstance(rc, (int, float)):
+        # 再尝试从 tmp/reader_critic_ch{NNNN}.json 读 overall_score
+        tmp_path = project_root / ".webnovel" / "tmp" / f"reader_critic_ch{_pad(chapter)}.json"
+        data = _read_json(tmp_path)
+        if isinstance(data, dict):
+            rc = data.get("overall_score")
+    if not isinstance(rc, (int, float)):
+        return CheckResult(
+            id="A-RC-X1", name="reader-critic <75 P0 硬阻止", layer="A",
+            status="skipped", severity="medium",
+            evidence="reader-critic 分数缺失（chapter_meta + tmp 都未找到）",
+        )
+    if rc < 75:
+        return CheckResult(
+            id="A-RC-X1", name="reader-critic <75 P0 硬阻止", layer="A",
+            status="fail", severity="critical",
+            evidence=f"reader-critic-checker={rc} < 75（Round 19 Phase X1 全卷硬阈值）",
+            measured={"reader_critic_score": rc, "threshold": 75, "chapter": chapter},
+            remediation=[
+                "Round 19 Phase X1 · 必须 polish 重写至 reader-critic ≥ 75 才能 commit",
+                "参考 anti-ai-guide.md 末段 5 类前置自检反推问题（金手指时序/突兀编号/爽点兑现/伏笔节奏/读者卡点）",
+                "重跑 Step 4 polish_cycle 并在 Step 4.5 复测 reader-critic",
+            ],
+        )
+    if chapter <= 5 and 75 <= rc < 80:
+        return CheckResult(
+            id="A-RC-X1", name="reader-critic 前 5 章警告区", layer="A",
+            status="warn", severity="medium",
+            evidence=f"reader-critic-checker={rc}（前 5 章 75-79 警告区）",
+            measured={"reader_critic_score": rc, "chapter": chapter, "warn_band": "75-79"},
+            remediation=[
+                "前 5 章建议 reader-critic ≥ 80",
+                "polish_log notes 追加'Ch{N} reader-critic={score}（前 5 章警告区）'，下章自检强提醒",
+            ],
+        )
+    return CheckResult(
+        id="A-RC-X1", name="reader-critic <75 P0 硬阻止", layer="A",
+        status="pass", severity="critical",
+        evidence=f"reader-critic-checker={rc} ≥ 75（Phase X1 阈值通过）",
+        measured={"reader_critic_score": rc, "threshold": 75},
+    )
+
+
 def _run_layer_a(project_root: Path, chapter: int) -> LayerResult:
     checks = [
         check_A1_contract_completeness(project_root, chapter),
@@ -1863,6 +1914,7 @@ def _run_layer_a(project_root: Path, chapter: int) -> LayerResult:
         check_A6_workflow_timing(project_root, chapter),
         check_A7_encoding_clean(project_root, chapter),
         check_A8_anti_ai_force_not_stub(project_root, chapter),
+        check_a_x1_reader_critic_hard_block(project_root, chapter),
     ]
     return LayerResult(layer="A", score=_score_from_checks(checks), checks=checks)
 
