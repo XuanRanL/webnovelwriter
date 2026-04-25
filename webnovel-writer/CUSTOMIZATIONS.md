@@ -7,6 +7,55 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase C] reader-naturalness 5 子维度结构化评分
+
+upstream@5339e83 reviewer ai_flavor 5 子维度 rubric 借鉴（不引入 reviewer.md 整体）。把“AI 味重 78 分”单数字反馈升级成 vocab/syntax/narrative/emotion/dialogue 5 子维度，polish 定向修最低子维度。
+
+### 变更摘要
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `agents/reader-naturalness-checker.md` | 在 Phase F 段之前追加 5 子维度 rubric + schema 扩展 + RCA 5 类根因对账（保留 Ch11 方言血教训段） |
+| 2 | `agents/data-agent.md` | 加 subdimensions 落库段（兼容老 JSON 缺字段） |
+| 3 | `scripts/data_modules/state_manager.py` | `update --set-checker-subdimensions` CLI · 自动计算 _lowest |
+| 4 | `scripts/polish_cycle.py` | polish 前读 chapter_meta.checker_subdimensions._lowest，给作者/AI 定向修指令 |
+
+### 5 子维度
+
+- **vocab**：副词堆叠 / 神态模板 / N1 刻度量词外溢
+- **syntax**：四段闭环 / 同构句 / 段末总结 / N2 “了一下” / N4 “不是X是Y”
+- **narrative**：匀速 / 反讽提示 / 安全着陆 / 展示后解释 / 元标识符
+- **emotion**：标签化 / 即时切换 / 全员同款 / N5 AI 腔具身模板
+- **dialogue**：信息宣讲 / 全员书面（含 Ch11 方言血教训豁免） / 解释性叙述
+
+### 主分计算
+
+```
+reader_naturalness = round(mean(5 子维度), 2)
+```
+
+### 与 Phase A/B/F 协同
+
+- Phase A 起草前预防（writing_guidance 6 条 + N1-N5 映射）
+- Phase B polish 兜底（200+ 词 + 4 句式扫描）
+- Phase F 私库回查（recurring_violation 升级 severity）
+- Phase C 本规则 5 子维度定向反馈
+
+四层协同 = 起草前预防 + polish 检测 + 复测回灌 + 子维度精准修。
+
+### 兼容性
+
+- 主分数 reader_naturalness 仍输出
+- chapter_meta.checker_subdimensions 是新字段，hygiene_check 不报错
+- 老 JSON / 老 polish_cycle 行为不变
+
+### 验证
+
+- preflight + hygiene Ch11 + sync-cache 全绿
+- set-checker-subdimensions CLI 烟雾测试通过（_lowest=syntax 自动计算正确）
+
+---
+
 ## [2026-04-25 · Round 19 Phase E] plan 跨卷感知 + get-recent-meta CLI
 
 upstream@3e36417 借鉴 · plan 阶段下卷规划前必须读已写章节真实数据。Phase E 仅做 CLI（独立工具，Phase G hook_trend 之后扩展）。

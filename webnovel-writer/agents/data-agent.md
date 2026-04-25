@@ -108,25 +108,25 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" wher
 2. **从引用库提取关键词字典**：每条引用的 `snippet`（原文）、`id`（编号如 S01/O01）、`source`（出处）
 3. **扫描本章正文**：
    - 精确匹配原文字段（2 字以上）
-   - 出处名匹配（如"诗经·蓼莪"）
-   - 近似匹配（按书名号/引号/"正如...所言"等引导语）
+   - 出处名匹配（如“诗经·蓼莪”）
+   - 近似匹配（按书名号/引号/“正如...所言”等引导语）
 4. **对每条命中记录**：
    - `id`：引用库编号；无法匹配时填 `unknown`
    - `snippet`：正文中实际出现的片段（10-30字）
    - `type`：诗词/民俗/经典/歌谣/史料/原创/梗
-   - `source`：出处（如"诗经·蓼莪"或"老陈遗诗"）
+   - `source`：出处（如“诗经·蓼莪”或“老陈遗诗”）
    - `carrier`：载体（心里一闪/环境音/墙上字画/对话/标志台词 等）
    - `function`：功能（剧情推进/角色塑造/氛围/伏笔 任一）
    - `is_original`：是否为原创资产（对应 `原创诗词口诀.md` 里的条目）
 5. **计算本章典故密度**：
    - `total_count`：本章引用总数
    - `per_category`：按类型分组计数
-6. **若检测到 `unknown` 条目**：记录 warning，提示"本章出现未登记的引用，请人工补入引用库"
+6. **若检测到 `unknown` 条目**：记录 warning，提示“本章出现未登记的引用，请人工补入引用库”
 
 **输出写入 `chapter_meta.allusions_used`**（见下方接口规范第 22 个字段）。
 
-**回写引用库的 "第 N 卷引用规划总表"**（best-effort，失败不阻断）：
-- 若引用库的表格有"实际使用"列，将本章章号写入该列对应的行
+**回写引用库的 “第 N 卷引用规划总表”**（best-effort，失败不阻断）：
+- 若引用库的表格有“实际使用”列，将本章章号写入该列对应的行
 - CLI 命令（若未来实现）：
   ```bash
   python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
@@ -421,7 +421,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 - `step_k_status.outcome`：`applied`（全部追加成功）/ `skipped`（无需追加）/ `partial`（部分成功）/ `failed`（失败但 best-effort 不阻断）
 - `step_k_status.applied_additions`：实际写入到设定集的条目列表（供 Step 6 Layer B5/B6 对账）
 - `step_k_status.proposed_additions`：识别到但尚未追加的条目（信息不足/模糊），Step 6 可用于 editor_notes 下章提醒
-- `step_k_status.skipped_reasons`：Step K 逐项跳过原因（如"实体信息不足"、"已存在"）
+- `step_k_status.skipped_reasons`：Step K 逐项跳过原因（如“实体信息不足”、“已存在”）
 
 ### Step K: 设定集同步检查（每章执行，best-effort）
 
@@ -434,9 +434,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
    - 机制/规则 → `设定集/力量体系.md` 或 `设定集/世界观.md`
 
 2. **已有条目状态更新**：
-   - 道具状态变化 → 在 `道具与技术.md` 对应条目下追加 `[Ch{N} 动作] 描述`，更新"当前状态"行
-   - 主角能力/关系变化 → 在 `主角卡.md` 的"当前能力"和"关键关系"段追加 `[Ch{N}]` 行
-   - 主角性格/心态变化 → 在 `主角卡.md` 的"当前成长进度"段更新性格变化轨迹和下一个成长节点
+   - 道具状态变化 → 在 `道具与技术.md` 对应条目下追加 `[Ch{N} 动作] 描述`，更新“当前状态”行
+   - 主角能力/关系变化 → 在 `主角卡.md` 的“当前能力”和“关键关系”段追加 `[Ch{N}]` 行
+   - 主角性格/心态变化 → 在 `主角卡.md` 的“当前成长进度”段更新性格变化轨迹和下一个成长节点
 
 3. **伏笔追踪**：
    - 从本章摘要的 `## 伏笔` 段提取标注
@@ -470,14 +470,14 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 
 | 文件 | 自动追加位置 | 内容范式 |
 |---|---|---|
-| `设定集/主角卡.md` | "Ch{N-1}" 行之后插入新行 | `- **[Ch{N}]**: {一句话总结本章主角变化}` |
+| `设定集/主角卡.md` | “Ch{N-1}” 行之后插入新行 | `- **[Ch{N}]**: {一句话总结本章主角变化}` |
 | `设定集/伏笔追踪.md` | 末尾 `## [Ch{N}]` 新段 | 列出本章新埋 + 兑现的所有伏笔 ID |
 | `设定集/资产变动表.md` | 表格新行 | 团队/基地/vital_force/hourglass/现金 等 5 个字段值 |
 
 如果主 agent 通过 `Task(data-agent)` 调用 Data Agent 后，
 `pre_commit_step_k.py` 仍报 `[STEP_K_MISSING] 设定集/主角卡.md 未找到 '[Ch{N}'`，
 这是 **Data Agent 失职**——主 agent 必须人工补一次，
-并在 polish_log notes 注明 "step_k_md_append_recovered_by_main_agent" 用于跨章追溯。
+并在 polish_log notes 注明 “step_k_md_append_recovered_by_main_agent” 用于跨章追溯。
 
 ## 审查报告持久化（扩展）
 
@@ -496,7 +496,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index get-recent-review-metrics --limit 10
 ```
 - 若某 checker 连续 3 章分数下降 → 在 summary 中标注预警
-- 若某 issue type 连续 5 章出现 → 标注为"系统性问题"
+- 若某 issue type 连续 5 章出现 → 标注为“系统性问题”
 
 ## 实体状态交叉验证（扩展）
 
@@ -504,7 +504,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 ### 验证规则
 
-1. **重大变更定义**: 以下变更为"重大"，需要交叉验证
+1. **重大变更定义**: 以下变更为“重大”，需要交叉验证
    - 境界/等级变化
    - 角色关系变化（敌→友、友→敌）
    - 角色死亡/消失
@@ -526,17 +526,17 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 ## 风格样本采集阈值调整（扩展）
 
-> 从"整章高分才采样"改为"段落级精准采样"。
+> 从“整章高分才采样”改为“段落级精准采样”。
 
 ### 新规则
 
 | 条件 | 采样动作 |
 |------|---------|
 | 整章 review_score ≥ 85 | 全章风格采样（保持原逻辑） |
-| 整章 < 85 但某段被 dialogue-checker 标记为 "voice distinct" | 采样该对话段落 |
+| 整章 < 85 但某段被 dialogue-checker 标记为 “voice distinct” | 采样该对话段落 |
 | 整章 < 85 但某段被 high-point-checker 标记为 A 级爽点 | 采样该爽点段落 |
-| 整章 < 85 但某段被 prose-quality-checker 标记有"memorable_expressions" | 采样该段落 |
-| 整章 < 70 且某段被标记为典型问题 | 采样为"负面样本"（知道什么不该写） |
+| 整章 < 85 但某段被 prose-quality-checker 标记有“memorable_expressions” | 采样该段落 |
+| 整章 < 70 且某段被标记为典型问题 | 采样为“负面样本”（知道什么不该写） |
 
 ---
 
@@ -551,7 +551,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | 字段 | 类型 | 来源说明 |
 |------|------|---------|
 | `chapter` | int | 章号（整数，如 2） |
-| `title` | str | 章节标题（如"担保"） |
+| `title` | str | 章节标题（如“担保”） |
 | `word_count` | int | 正文字数 |
 | `summary` | str | 一句话剧情摘要 |
 | `hook_strength` | str | 钩子强度（weak/medium/strong） |
@@ -565,13 +565,13 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `location_current` | str | 章末主角所在地点 |
 | `power_realm` | str | 主角当前境界 |
 | `golden_finger_level` | int/str | 金手指等级/状态 |
-| `time_anchor` | str | 时间锚点（如"甲子57年·秋分"） |
+| `time_anchor` | str | 时间锚点（如“甲子57年·秋分”） |
 | `end_state` | str | 章末状态描述 |
 | `foreshadowing_planted` | list[str] | 本章埋设的伏笔 |
 | `foreshadowing_paid` | list[str] | 本章兑现的伏笔 |
 | `strand_dominant` | str | 主导情节线（quest/fire/constellation） |
 | `review_score` | float | 审查综合分 |
-| `checker_scores` | dict | 各 checker 分数。**key 必须是 11 个 canonical 英文 checker 名**（见 CHECKER_NAMES）+ `"overall"` 键（= `review_score`）。**禁用中文 key**（"设定一致性"/"钩子强度"/"Anti-AI" 等是 hygiene H18 P1 警告）。示例: `{"consistency-checker": 92, "continuity-checker": 91, "ooc-checker": 88, "reader-pull-checker": 94, "high-point-checker": 89, "pacing-checker": 91, "dialogue-checker": 91, "density-checker": 97, "prose-quality-checker": 92, "emotion-checker": 95, "flow-checker": 90, "overall": 91}` |
+| `checker_scores` | dict | 各 checker 分数。**key 必须是 11 个 canonical 英文 checker 名**（见 CHECKER_NAMES）+ `"overall"` 键（= `review_score`）。**禁用中文 key**（“设定一致性”/“钩子强度”/“Anti-AI” 等是 hygiene H18 P1 警告）。示例: `{"consistency-checker": 92, "continuity-checker": 91, "ooc-checker": 88, "reader-pull-checker": 94, "high-point-checker": 89, "pacing-checker": 91, "dialogue-checker": 91, "density-checker": 97, "prose-quality-checker": 92, "emotion-checker": 95, "flow-checker": 90, "overall": 91}` |
 | `allusions_used` | list[dict] | **本章引用的典故列表（Step B.5 产出），每条含 id/snippet/type/source/carrier/function/is_original 字段；无引用库或无引用时为空数组** |
 
 ### 第二层 · Extended 26 扩展字段（允许但不强制；B9 不检查；为长线质量积累服务）
@@ -588,6 +588,22 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 > **Round 17.2 · Ch8 P1-R7 根治**：`naturalness_verdict` / `reader_critic_verdict` 字段**必须**从 `.webnovel/tmp/{checker}_recheck_ch{NNNN}.json`（优先）或 `_check_ch{NNNN}.json` 读 `verdict` 字段（∈ {PASS, POLISH_NEEDED, FAIL, UNKNOWN} 或对应 yes/hesitant/no）写入。缺 JSON → 写 UNKNOWN + Layer A warn。
 
+### Round 19 Phase C · reader-naturalness 5 子维度落库
+
+读 `tmp/naturalness_check_ch{NNNN}.json` 时（兼容历史命名 `tmp/reader_naturalness_ch{NNNN}.json` / `tmp/naturalness_ch{NNNN}.json` 等）：
+
+1. 取 `reader_naturalness` 主分 → `state update --set-checker-score --checker reader-naturalness-checker --score N`（既有路径不变）
+2. 取 `subdimensions` 对象（5 键 vocab/syntax/narrative/emotion/dialogue）→ 跑：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  state update --set-checker-subdimensions '{"chapter":N,"checker":"reader-naturalness-checker","subdimensions":{"vocab":92,"syntax":78,"narrative":85,"emotion":90,"dialogue":95}}'
+```
+
+3. 若 JSON 缺 subdimensions 字段（老版 checker 输出）→ 写空 dict `{}` 兜底，不阻断
+4. 同时 lowest_subdimension 字段也写到 `chapter_meta.checker_subdimensions.reader-naturalness-checker._lowest` 字段供 polish_cycle 读（state_manager 会自动从 subdimensions 算出 _lowest）
+5. 落库后下游消费：polish_cycle.py 读 `_lowest` 选定要修的子维度 → polish-guide 按子维度定向修
+
 | 字段 | 类型 | 用途 |
 |---|---|---|
 | `chapter_title` | str | title 的别名；只在迁移期保留，二选一即可 |
@@ -600,7 +616,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `pattern` | dict | 本章开头/情绪/钩子 pattern 摘要 |
 | `pov_character` | str | 第一人称主角名 |
 | `pov_mode` | str | first / third / omniscient |
-| `emotion_rhythm` | str | 情绪节奏曲线（如"克制→震撼→压抑→温暖→警醒"） |
+| `emotion_rhythm` | str | 情绪节奏曲线（如“克制→震撼→压抑→温暖→警醒”） |
 | `strand` | str | strand 细分（与 strand_dominant 配合） |
 | `strand_sub` | str | 次级 strand |
 | `hook` | dict | 本章钩子详情：type/content/strength |
@@ -628,7 +644,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
   - 合法 key = 11 canonical 英文 checker 名 ∪ `{"overall"}`
   - 11 canonical 英文名：`consistency-checker / continuity-checker / ooc-checker / reader-pull-checker / high-point-checker / pacing-checker / dialogue-checker / density-checker / prose-quality-checker / emotion-checker / flow-checker`
   - **禁用中文 key**：AI 常写的 `{"设定一致性": 92, "钩子强度": 93, "Anti-AI": 91}` 会被 hygiene H18 P1 拦截
-  - Legacy 术语（"钩子强度"/"伏笔埋设"/"情绪曲线"/"节奏"/"对话"/"Prose质量"）**不是独立 checker**，别单独列维度
+  - Legacy 术语（“钩子强度”/“伏笔埋设”/“情绪曲线”/“节奏”/“对话”/“Prose质量”）**不是独立 checker**，别单独列维度
   - `Anti-AI`/naturalness 是 **veto verdict**（写到 `naturalness_verdict` 字段），不进 checker_scores
   - audit 会自动用 CHECKER_ALIASES 反向映射中文（兼容层），但写入时强制 canonical 英文
 
