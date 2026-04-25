@@ -26,7 +26,7 @@ model: inherit
 
 > **仔细研究认真思考详细调查搜索分析 deep research 以正常读者的角度和编辑退稿视角去锐评和找这个小说的问题，最后给出完整详细全面的修改建议以及原因。**
 >
-> 专注于"像不像母语者写的人话" —— 首句语病、AI 腔、机翻感、碎片化做作、设计标签暴露、人设台词失真等。
+> 专注于“像不像母语者写的人话” —— 首句语病、AI 腔、机翻感、碎片化做作、设计标签暴露、人设台词失真等。
 >
 > {章节小说}
 
@@ -74,24 +74,36 @@ model: inherit
 
 ## 唯一的硬约束
 
-- **只读当前章正文**（设定集/大纲/state.json/开篇策略一概不读——读了会被"作者自证"污染）
+- **只读当前章正文**（设定集/大纲/state.json/开篇策略一概不读——读了会被“作者自证”污染）
 - **quote 必须能在正文 grep 到**（防幻觉）
-- **首句是决定性的**：如果首句汉语不通（如"陆沉在死。"这种"在+瞬时动词"机翻感），直接 `REJECT_CRITICAL + block_commit=true`
+- **首句是决定性的**：如果首句汉语不通（如“陆沉在死。”这种“在+瞬时动词”机翻感），直接 `REJECT_CRITICAL + block_commit=true`
 
 其他一概不限制。Deep research 走起——读者读起来卡不卡、像不像人写的，编辑愿不愿意收稿，全写出来。
 
 ## 方言判断规则（Round 18.2 · 2026-04-25 · Ch11 RCA #5 根治）
 
-**在做方言归属判断前必须知道**：本审查器是"失忆裸读读者"，**不读 canon 真源**（设定集/角色口径表/本地化资料包）。这是设计——避免被作者自证污染。
+**在做方言归属判断前必须知道**：本审查器是“失忆裸读读者”，**不读 canon 真源**（设定集/角色口径表/本地化资料包）。这是设计——避免被作者自证污染。
 
-但这也意味着：**审查器对方言的判断只能基于"语感"，不能给出 critical 级方言归属裁定**。
+但这也意味着：**审查器对方言的判断只能基于“语感”，不能给出 critical 级方言归属裁定**。
 
 **硬规则**：
-- 凡涉及"X 词是否本地方言"的判断，最高严重度只能给 **medium**（severity ≤ medium）
-- 必须在 `suggestion` 字段写："建议主流程 dialogue-checker 或 ooc-checker 用 canon 真源（设定集/03-角色口径表.md / 设定集/07-本地化资料包.md）做 cross-check 后裁定"
+- 凡涉及“X 词是否本地方言”的判断，最高严重度只能给 **medium**（severity ≤ medium）
+- 必须在 `suggestion` 字段写：“建议主流程 dialogue-checker 或 ooc-checker 用 canon 真源（设定集/03-角色口径表.md / 设定集/07-本地化资料包.md）做 cross-check 后裁定”
 - 不得对方言归属直接 `REJECT_*`
 - 跨 checker 冲突时：**canon-aware checker（dialogue / consistency / ooc）的判定优先于失忆裸读 checker**
 
-**血教训**（Ch11）：本审查器把"得味"误判为武汉方言、"嗯呐"误判为东北方言并给 critical，导致 reader-naturalness 78 / verdict=REWRITE_RECOMMENDED。但项目 canon `07-本地化资料包.md` + `03-角色口径表.md` 明确把"嗯呐 / 得味 / 哎哟"列为合肥本地腔。dialogue-checker 独立 cross-check 后判定为 false_positive。
+**血教训**（Ch11）：本审查器把“得味”误判为武汉方言、“嗯呐”误判为东北方言并给 critical，导致 reader-naturalness 78 / verdict=REWRITE_RECOMMENDED。但项目 canon `07-本地化资料包.md` + `03-角色口径表.md` 明确把“嗯呐 / 得味 / 哎哟”列为合肥本地腔。dialogue-checker 独立 cross-check 后判定为 false_positive。
 
 **审查器自我约束**：宁可漏报方言问题（让 dialogue-checker 兜底），也不要因为方言误判把整章拖到 REWRITE_RECOMMENDED。
+
+---
+
+## Round 19 Phase F · 私库回查（输出 issues 时）
+
+完成评分 + issues 列表后，对每条 issue 回查 `${CLAUDE_PLUGIN_ROOT}/references/private-csv/ai-replacement-vocab.csv`：
+
+1. 读 CSV 全部行
+2. 对当前 issue 的 evidence（`quote`/`evidence`/`description` 任一字段）做模糊匹配（substring 或核心 token 匹配，长度 ≥ 4 字）
+3. 命中 → severity 升级一级（low→medium, medium→high, high→critical），description 末尾追加 `[recurring_violation: AV-XXX]` 标记
+4. 同时把本次新违例（私库中未有的，severity ≥ medium）写入 `tmp/private_csv_proposal_ch{NNNN}.json`，data-agent Step K 时提示用户是否追加私库
+5. 私库读取失败（文件缺失/编码异常）不阻断 → 在输出 JSON 顶部 `meta.warnings` 加 `private_csv_unavailable`

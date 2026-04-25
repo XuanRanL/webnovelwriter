@@ -7,6 +7,60 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase F] 自建私库 4 表 + extractor + 双向回灌
+
+> 这是 Round 19 杠杆最大的 Phase。Ch1-11 实测 polish_reports 显示 5 类问题（半度/了一下/系统术语/AI腔模板/不是X是Y）在 7-10 章反复修但都修不住——证明纯 polish 兜底失效。Phase F 把 RCA 数据自动派生 4 张 CSV，writer 起草前查 + checker 复测时回查，从根源根治。
+
+### 变更摘要
+
+| # | 文件 | 改动 | 行数 |
+|---|------|------|------|
+| 1 | `references/private-csv/{ai-replacement-vocab,strong-chapter-end-hooks,emotion-earned-vs-forced,canon-violation-traps}.csv` | NEW × 4 | 表头 + 提取数据 |
+| 2 | `references/private-csv/README.md` | NEW · schema 说明 | ~50 |
+| 3 | `scripts/private_csv_extractor.py` | NEW · 自动提取器（兼容多种 tmp/*.json 命名 + audit_reports B 层 JSON 抓取） | ~340 |
+| 4 | `scripts/data_modules/webnovel.py` | 加 `private-csv` 子命令转发 | +25 |
+| 5 | `agents/context-agent.md` | writing_guidance.local_blacklist + canon_traps + hook_close_examples 注入逻辑 | +27 |
+| 6 | `agents/reader-naturalness-checker.md` | issues 回查私库；recurring_violation 升级 + 新违例 proposal | +12 |
+| 7 | `agents/consistency-checker.md` | canon-violation-traps 回查 | +12 |
+
+### 提取数据规模（首次跑 Ch1-11）
+
+- ai-replacement-vocab: **89** 条
+- strong-chapter-end-hooks: **3** 条（Ch3=94 / Ch4=95 / Ch8=91 三章 reader_pull ≥ 90）
+- emotion-earned-vs-forced: **16** 条（全部 forced · EMOTION_SHALLOW 类）
+- canon-violation-traps: **28** 条（consistency 19 + audit B 层 9）
+
+### 与 RCA §4 的对账
+
+| RCA §4 复发问题 | 复现章 | 私库回灌路径 |
+|---|---|---|
+| 半度/半秒 刻度量词 | 7 章 | ai-replacement-vocab.csv vocab 子维度 |
+| “了一下” 节拍密度 | 8 章 | ai-replacement-vocab.csv syntax 子维度 |
+| 系统/RPG 术语腔 | 10 章 | ai-replacement-vocab.csv narrative + canon-violation-traps.csv 双源 |
+| AI 腔具身模板 | 8 章 | ai-replacement-vocab.csv emotion |
+| 后颈凉单一化 | 3 章 | ai-replacement-vocab.csv emotion |
+
+### 双向回灌
+
+- 写：context-agent → writing_guidance.local_blacklist + canon_traps + hook_close_examples（writer 起草时禁词 / 禁区 / 章末模板）
+- 读：reader-naturalness / consistency-checker → 命中私库即 severity 升级 + recurring_violation 标记，新违例写 proposal 文件供 data-agent Step K 提示
+
+### 跨项目可移植
+
+私库 sync-cache 后所有 fork 用户项目自动受益（条目本作专属，但 schema 通用）。
+
+### 容错原则
+
+任意 CSV 读取失败（缺文件/编码异常/解析错误）→ 输出 warning，不阻断主流程。
+
+### 验证
+
+- preflight + hygiene Ch11 (26/0/0/0) + sync-cache 全 exit=0
+- 4 张 CSV 实数据提取共 136 条
+- private-csv 子命令 webnovel.py 转发成功（去重生效，二次跑 +0）
+
+---
+
 ## [2026-04-25 · Round 19 Phase X1] reader-critic <75 全卷 P0 硬阻止 + 前 5 章写前自检
 
 末世重生 Ch1-11 reader-critic 实测谷底：Ch3=62 / Ch4=58 远低于 75 但当时未触发 hard block（reader-critic 直到 Round 13 才纳入 13 维度）。Phase X1 把 reader-critic <75 升级为全卷 P0 硬阻止，并在 anti-ai-guide.md 加“前 5 章写前自检清单”段。

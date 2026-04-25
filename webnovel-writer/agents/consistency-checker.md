@@ -68,13 +68,13 @@ model: inherit
 **校验依据**:
 - state.json: `protagonist_state.power.realm`, `protagonist_state.power.layer`
 - 设定集/修炼体系.md 或 设定集/力量体系.md: Realm ability restrictions
-- **[必读] 设定集/力量体系.md**：提取"操作链条/使用步骤/阶段能力"等段落
+- **[必读] 设定集/力量体系.md**：提取“操作链条/使用步骤/阶段能力”等段落
 - **[必读] 设定集/金手指设计.md**：提取金手指的完整操作流程
 - **[必读] .webnovel/context/ch{NNNN}_context.json** 里 `step_2a_write_prompt.immutable_facts` 中所有 `type: "mechanism_step"` 条目
 
 **机制步骤对照检查算法**（新增）：
 1. 列出本章涉及的所有能力使用场景（主角 + 配角都要）
-2. 对每一次能力使用，从设定集对应文件中查找该能力的"必经步骤序列"
+2. 对每一次能力使用，从设定集对应文件中查找该能力的“必经步骤序列”
 3. 在正文中按顺序搜索步骤关键词，任一必经步骤缺失即报 `MECHANISM_STEP_VIOLATION`，severity=high
 4. 如果执行包的 immutable_facts 含 mechanism_step fact，那是强约束：正文必须全部按序呈现该 fact 的 `required_sequence`；缺任一步或出现 `forbidden_shortcut` 即违规
 5. 若 immutable_facts 里 `mechanism_facts_count==0` 但本章涉及能力使用 → 输出 warn「上游 context-agent 可能漏注入 mechanism_facts，请核对设定」
@@ -84,17 +84,17 @@ model: inherit
 **为什么新增**（Ch7 血教训）：
 - Ch7 本地 consistency-checker 给 **100 分**
 - Gemini-3.1-pro 却抓到 **4 个 critical 设定崩塌**：沙漏物理实体化（违反脑内设定）/ 桃源空间石板入口（违反随身维度）/ A 级诗经麦（违反 D 级 lock-in）/ 金手指首秀浪费
-- 这三类是**读者最敏感的设定漂移**——规则型读者（占 30%+）一旦发现"沙漏脑内变抽屉拿"、"空间走地下通道"、"作物一夜三级跳"，立刻弃书
-- 之前 consistency-checker 只做"战力越级""位置瞬移"等表层校验，对"物理形态 / 入口机制 / 等级 lock-in"三项有系统性盲区
+- 这三类是**读者最敏感的设定漂移**——规则型读者（占 30%+）一旦发现“沙漏脑内变抽屉拿”、“空间走地下通道”、“作物一夜三级跳”，立刻弃书
+- 之前 consistency-checker 只做“战力越级”“位置瞬移”等表层校验，对“物理形态 / 入口机制 / 等级 lock-in”三项有系统性盲区
 
 **必读源**：`设定集/金手指设计.md` 完整读取，重点记住以下三类规则的**唯一真源形态**：
 
 **Check A · 金手指物理形态**（意识层 vs 物理实体）
 
 对每个金手指扫描设定集，标记它是：
-- `MIND_LAYER`（意识/脑内/心念层）· 典型词："脑海里""脑子里""心念触发""意识深处""在心里"
-- `PHYSICAL`（物理实体层）· 典型词："放在抽屉""掏出""拿起""握住""戴在腕上"
-- `HYBRID`（混合/双层）· 如"脑内沙漏+实体计数器"
+- `MIND_LAYER`（意识/脑内/心念层）· 典型词：“脑海里”“脑子里”“心念触发”“意识深处”“在心里”
+- `PHYSICAL`（物理实体层）· 典型词：“放在抽屉”“掏出”“拿起”“握住”“戴在腕上”
+- `HYBRID`（混合/双层）· 如“脑内沙漏+实体计数器”
 
 然后在正文中对每次该金手指使用搜索**形态关键词**：
 - 若设定为 MIND_LAYER 而正文出现 PHYSICAL 动作 → `GOLDEN_FINGER_FORM_MISMATCH` · severity=**critical**
@@ -115,7 +115,7 @@ model: inherit
 - 激活方式：`PALM_MARK`（掌心印记触发）/ `MENTAL_COMMAND`（默念/心念）/ `PHYSICAL_DOOR`（物理门）/ `ITEM`（道具触发）
 
 在正文中扫描每次入场/激活的**动作序列**，与设定对比：
-- 设定 RANDOM_ACCESS + PALM_MARK 但正文写"从车库后门穿进地下通道·按石板" → `ENTRY_MECHANISM_MISMATCH` · severity=**critical**
+- 设定 RANDOM_ACCESS + PALM_MARK 但正文写“从车库后门穿进地下通道·按石板” → `ENTRY_MECHANISM_MISMATCH` · severity=**critical**
 - 两次入场使用不同机制（第一次默念、第二次按印记）且无设定支撑 → severity=**high**
 
 **示例**（Ch7 应抓到的漂移）：
@@ -129,12 +129,12 @@ model: inherit
 **Check C · 催化/升级 lock-in**（倍率特例 vs 日常规则）
 
 对催化/升级类金手指扫描设定集中的**规则 lock-in 条款**：
-- 关键词："lock-in""一次性特例""仅生效 1 次""回归标准 X 倍""×N 加速"
-- 记录每条特例的"已用章节"和"每日/每阶最大倍率"
+- 关键词：“lock-in”“一次性特例”“仅生效 1 次”“回归标准 X 倍”“×N 加速”
+- 记录每条特例的“已用章节”和“每日/每阶最大倍率”
 
 在正文中对每次催化/升级计算**实际倍率**：
 - 新等级与旧等级对比（如 D → A 需要跨 D→C→B→A 三阶）
-- 时间跨度（设定"每 3 天 1 阶"，Ch7 距上次催化 < 3 天就 +1 阶即违规）
+- 时间跨度（设定“每 3 天 1 阶”，Ch7 距上次催化 < 3 天就 +1 阶即违规）
 - 若 lock-in 特例已用过但正文再次触发 → `CATALYST_RULE_VIOLATION` · severity=**critical**
 
 **示例**（Ch7 应抓到的漂移）：
@@ -198,7 +198,7 @@ model: inherit
 | 问题类型 | Severity | 说明 |
 |---------|----------|------|
 | 倒计时算术错误 | **critical** | D-5 直接跳到 D-2，必须修复 |
-| **金手指激活时序矛盾** | **critical** | 设定"死亡瞬间激活"，却写"前世做过这个动作"（Ch1 末世重生血教训） |
+| **金手指激活时序矛盾** | **critical** | 设定“死亡瞬间激活”，却写“前世做过这个动作”（Ch1 末世重生血教训） |
 | 事件先后矛盾 | **high** | 先发生的事情后写，逻辑混乱 |
 | 年龄/修炼时长冲突 | **high** | 算术错误，如15岁修炼5年却10岁入门 |
 | 时间回跳无标注 | **high** | 非闪回章节却出现时间倒退 |
@@ -210,32 +210,32 @@ model: inherit
 - 源 · `设定集/金手指设计.md` + `state.json::protagonist_state.golden_finger`
 - 关键字段：`激活时机` / `scheduled_unlock` / `activation_chapter` / `first_appearance_chapter`
 - 校验规则：
-  1. 读出金手指的"激活章节"和"激活触发事件"（如"死亡瞬间被铜面具老者激活"）
+  1. 读出金手指的“激活章节”和“激活触发事件”（如“死亡瞬间被铜面具老者激活”）
   2. grep 正文中所有涉及金手指的描述（印记/系统/空间/能力名）
-  3. 检测"前世 + 金手指具名"的共现句式（例："前世每次要下重大决定之前摩挲烙印"）
-  4. 若金手指激活时机 ≥ 本章且正文有"前世 + 该金手指具体使用"描写 → **critical · GF_TIMELINE_VIOLATION**
-  5. 例外：设定明示"金手指源自前世遗留"（如血脉型、宿命型）不违规
+  3. 检测“前世 + 金手指具名”的共现句式（例：“前世每次要下重大决定之前摩挲烙印”）
+  4. 若金手指激活时机 ≥ 本章且正文有“前世 + 该金手指具体使用”描写 → **critical · GF_TIMELINE_VIOLATION**
+  5. 例外：设定明示“金手指源自前世遗留”（如血脉型、宿命型）不违规
 
 **前世记忆时间边界交叉校验（2026-04-23 Round 17 新增 · 根治末世重生 Ch1-6 deep research P0）**：
 - 源 · `设定集/金手指设计.md` §1.5.1 前世记忆时间边界（C/C'/C'' 三分类）+ `state.json::protagonist_state.previous_life.death_timestamp`
 - 关键字段（若 state 有）：`previous_life.death_timestamp` / `previous_life.death_event_description`
-- 若无 state 字段，则走正文约束推断：Ch1 主角前世死亡时刻 == 重生起点前 N 小时（如"他几个小时前死在月台。十一点四十七分"）
+- 若无 state 字段，则走正文约束推断：Ch1 主角前世死亡时刻 == 重生起点前 N 小时（如“他几个小时前死在月台。十一点四十七分”）
 - 校验规则：
-  1. grep 本章正文"前世"关键词所在句及前后两句
-  2. 对每处"前世 + 事件描述"检测事件时间是否 > 前世死亡时刻
+  1. grep 本章正文“前世”关键词所在句及前后两句
+  2. 对每处“前世 + 事件描述”检测事件时间是否 > 前世死亡时刻
   3. 检测下列高风险句式（正则多行）：
      - `前世.{0,20}(末世.{0,2}前|末世前夜|末世爆发前|末世爆发后|末世期间|末世后)` → 若主角前世死于末世爆发前，命中 → **critical · PREV_LIFE_TIMELINE_VIOLATION**
      - `前世.{0,20}(亲眼见|亲历|亲身|当时我|那时候我)` + 末世相关名词 → 同上
      - `前世.{0,20}(看过旧帖|刷到过|听说过|新闻边角|档案边角)` → 属 C' 类二手信息 · 合法 · 通过
-  4. 对每处"守夜人/系统/印记相关实体 + 前世"共现做 C/C'/C'' 分类：
+  4. 对每处“守夜人/系统/印记相关实体 + 前世”共现做 C/C'/C'' 分类：
      - C 类：主角前世亲自做过 · 时间 ≤ 死亡时刻 · 地点 在主角接触范围 → 合法
-     - C' 类：主角前世通过网络/新闻/口述听说过（必须是死前已公开的信息）→ 合法，但作者必须明示信息源（"刷到过 / 听某某说过"）
-     - C'' 类：主角前世没接触过 → 必须走 B 类私账档案（铜面具老者灌注），不能伪装"前世记忆"
+     - C' 类：主角前世通过网络/新闻/口述听说过（必须是死前已公开的信息）→ 合法，但作者必须明示信息源（“刷到过 / 听某某说过”）
+     - C'' 类：主角前世没接触过 → 必须走 B 类私账档案（铜面具老者灌注），不能伪装“前世记忆”
   5. 违规严重度分级：
-     - **critical**：前世亲历 × 前世死后发生的事件（如 Ch6 原文"前世末世爆发前的某一个晚上，见过这种狗叫"）
-     - **high**：前世用了"末世前夜"等歧义时序词 + 主角前世死于末世前 30 天（如 Ch4 原文"守夜人是末世前夜那张情报网，他前世在档案边角见过几次"）
+     - **critical**：前世亲历 × 前世死后发生的事件（如 Ch6 原文“前世末世爆发前的某一个晚上，见过这种狗叫”）
+     - **high**：前世用了“末世前夜”等歧义时序词 + 主角前世死于末世前 30 天（如 Ch4 原文“守夜人是末世前夜那张情报网，他前世在档案边角见过几次”）
      - **medium**：前世记忆引用了精确数字/时间戳但主角前世不可能记得那么精确
-     - **low**：前世记忆含模糊词（"依稀记得 / 好像"），但未明示信息源
+     - **low**：前世记忆含模糊词（“依稀记得 / 好像”），但未明示信息源
 - 错误示例（Ch6 末世重生 全套 checker 漏抓 · 血教训）：
   ```
   ❌ [critical] 设定：Ch1 L114 "他几个小时前死在那个月台。十一点四十七分。他根本没活到那一天" = 前世死于 2026-04-14 23:47 · 末世爆发在 30 天后
@@ -288,7 +288,7 @@ model: inherit
 **并行读取**（追加）:
 - `设定集/典故引用库.md`（引用总库与本卷规划表）
 - `设定集/原创诗词口诀.md`（原创口诀使用规划）
-- `大纲/第{volume_id}卷-详细大纲.md` 中本章的"引用锚点"字段
+- `大纲/第{volume_id}卷-详细大纲.md` 中本章的“引用锚点”字段
 
 **校验项**:
 
@@ -302,7 +302,7 @@ model: inherit
 
 3. **引用密度合规**: 单章引用总数是否超过上限（2处）？
    - 单章 ≤2 处 → 正常
-   - 单章 3 处 → medium（SETTING_CONFLICT，"超过引用密度上限"）
+   - 单章 3 处 → medium（SETTING_CONFLICT，“超过引用密度上限”）
    - 单章 ≥4 处 → high（炫学风险）
 
 4. **伏笔引用时序**: 若引用承载伏笔功能，引用时机是否符合规划？
@@ -380,7 +380,7 @@ model: inherit
 
 ### 评分与 JSON 输出
 
-使用统一扣分制公式（详见 `checker-output-schema.md` "统一评分公式"）：
+使用统一扣分制公式（详见 `checker-output-schema.md` “统一评分公式”）：
 - `overall_score = max(0, 100 - sum(deductions))`（critical=25, high=15, medium=8, low=3）
 - `pass = overall_score >= 75`
 
@@ -464,7 +464,7 @@ python -X utf8 "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts/we
 ❌ 接受无世界观解释的瞬移
 ❌ **降低时间线类 CONTINUITY 问题严重度**（时间问题不得降级）
 ❌ **通过存在严重/高优先级时间线问题的章节**（必须修复）
-❌ **时间线类 CONTINUITY 问题的 `description` 中缺少时间线关键词**（闸门依赖关键词匹配，必须在 description 中包含"时间线/倒计时/时间回跳/事件先后/年龄冲突/时间锚点/时间过渡/时间矛盾/时间流逝/D-"等关键词）
+❌ **时间线类 CONTINUITY 问题的 `description` 中缺少时间线关键词**（闸门依赖关键词匹配，必须在 description 中包含“时间线/倒计时/时间回跳/事件先后/年龄冲突/时间锚点/时间过渡/时间矛盾/时间流逝/D-”等关键词）
 
 ## 成功标准
 
@@ -473,3 +473,14 @@ python -X utf8 "${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT is required}/scripts/we
 - 所有新实体与现有世界观一致
 - 地点和时间线过渡合乎逻辑
 - 报告为润色步骤提供具体修复建议
+
+---
+
+## Round 19 Phase F · 私库回查 canon-violation-traps
+
+发现 setting/timeline/character/logic 类 issue 时回查 `${CLAUDE_PLUGIN_ROOT}/references/private-csv/canon-violation-traps.csv`：
+
+1. 读 CSV 全部行（容错：文件缺失/解析异常 → 仅在输出 `meta.warnings` 追加 `private_csv_unavailable`，不阻断）
+2. 对当前 issue 的 evidence/quote 做 substring 模糊匹配（长度 ≥ 4 字 token）
+3. 命中 → severity 升级一级 + description 末尾追加 `recurring_canon_violation: CV-XXX` 标记
+4. 新禁区（severity ≥ medium 且未命中私库） → 写 `tmp/canon_proposal_ch{NNNN}.json`，data-agent 提示用户追加
