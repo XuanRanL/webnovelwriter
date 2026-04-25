@@ -7,6 +7,69 @@
 
 ---
 
+## [2026-04-25 · Round 19 Phase G] 章末钩子 4 分类 + 跨章追踪 + H25 + 回填 Ch1-11
+
+RCA §3 揭示：现有 hook_type 命名严重泛用化（“主线单钩/冷钩/悬念钩+认知钩/ambient+mystery”等 7+ 种）。Ch4-5-6 内白模板三连 / Ch6/9/10/11 远处声音锚四连读者明显疲劳。Phase G 引入 4 分类强制映射 + 跨章趋势 + H25 hygiene + 回填 Ch1-11。
+
+### 变更摘要
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `skills/webnovel-write/references/chapter-end-hook-taxonomy.md` | NEW · 4 分类定义 + 跨章趋势规则 + Ch1-11 启发式映射表 |
+| 2 | `agents/reader-pull-checker.md` | 末尾追加 4 分类输出 + 跨章趋势检查（不动 Phase I 段） |
+| 3 | `scripts/data_modules/state_manager.py` | `update --set-hook-close` + 顶级 `get-hook-trend` CLI |
+| 4 | `scripts/hygiene_check.py` | H25 hook_trend_check（连续 5 章 primary 相同 P1 warn） |
+| 5 | `agents/data-agent.md` | Step K hook_close 落库段 + 跨章趋势 polish_log 提醒 |
+| 6 | `skills/webnovel-write/SKILL.md` | references catalog 加 chapter-end-hook-taxonomy |
+
+### 4 类钩子定义
+
+- 信息钩 · 想知道“是什么/为什么/谁”
+- 情绪钩 · 想知道“她怎么应对/下一步什么心情”
+- 决策钩 · 想知道“她选哪边/怎么选”
+- 动作钩 · 想知道“打赢了吗/逃掉了吗”
+
+### 跨章趋势规则（H25 联动）
+
+- 连续 5 章 primary 相同 → P1 warn
+- 连续 3 章 primary+secondary 相同 → high warn
+- 连续 8 章无决策钩 / 无情绪钩 → medium warn
+- 单卷内 4 类全缺 1 类 → medium warn
+
+### Ch1-11 启发式回填实测
+
+| 章 | 既有 hook_type | 启发式 4 类 |
+|---|---|---|
+| 0001 | 主线单钩·规则代价钩 | 动作钩 |
+| 0002 | 冷钩·备忘录异常A级 | 信息钩 |
+| 0003 | 悬念钩+认知钩 | 信息钩 |
+| 0004 | 新设定钩·第 2 次暗示不止我一个 | 信息钩 |
+| 0005 | 情感+神秘钩 | 情绪钩 |
+| 0006 | ambient+mystery | 信息钩 + 情绪钩 |
+| 0007 | mystery+threat | 动作钩 + 信息钩 |
+| 0008 | crisis+mystery | 动作钩 + 信息钩 |
+| 0009 | 情感钩+伏笔钩 | 情绪钩 + 信息钩 |
+| 0010 | 悬念钩+信息钩 | 信息钩 |
+| 0011 | 意象钩 | 信息钩 |
+
+跨章趋势分析：
+- `no_decision_hook_8 == true` 命中（Ch4-Ch11 8 章窗口无决策钩）→ 与 RCA §3 揭示一致
+- `all_same_primary` 最近 5 章不命中 → H25 PASS
+- Ch7-Ch8 连发 “动作钩+信息钩” 组合相同 → combo_repeated_3 待 Ch12 起触发
+
+### 与 Phase I/E 协同
+
+- Phase I（reader-pull-checker chapter==1 追读契约）+ Phase G（reader-pull-checker chapter ∈ all 4 分类）= 完整 reader-pull 升级
+- Phase E（state get-recent-meta）+ Phase G（state get-hook-trend）= 完整跨卷数据 CLI
+
+### 验证
+
+- preflight + hygiene Ch11 + sync-cache 全绿（通过 27/0/0/0；新增 H25 让通过数从 26 → 27）
+- get-hook-trend CLI 烟雾测试通过
+- Ch1-11 hook_close 11 章全部回填成功
+
+---
+
 ## [2026-04-25 · Round 19 Phase C] reader-naturalness 5 子维度结构化评分
 
 upstream@5339e83 reviewer ai_flavor 5 子维度 rubric 借鉴（不引入 reviewer.md 整体）。把“AI 味重 78 分”单数字反馈升级成 vocab/syntax/narrative/emotion/dialogue 5 子维度，polish 定向修最低子维度。

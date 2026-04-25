@@ -1440,6 +1440,21 @@ def main():
         "--set-checker-subdimensions",
         help='JSON: {"chapter":N,"checker":"reader-naturalness-checker","subdimensions":{"vocab":92,"syntax":78,"narrative":85,"emotion":90,"dialogue":95}}（写入 chapter_meta.NNNN.checker_subdimensions.{checker}；自动计算 _lowest）',
     )
+    # Round 19 Phase G · 章末钩子 4 分类入口（信息/情绪/决策/动作）
+    # reader-pull-checker 章末必输出 hook_close 子对象；data-agent Step K 调本入口落库。
+    # 与既有自由文本字段 hook_type 并存（不替换）。
+    update_parser.add_argument(
+        "--set-hook-close",
+        help='JSON: {"chapter":N,"primary":"信息钩|情绪钩|决策钩|动作钩","secondary":null,"strength":88,"text":"章末最后 200 字"}',
+    )
+
+    # Round 19 Phase E · 跨卷规划数据：get-hook-trend 与 get-recent-meta 同级
+    # Round 19 Phase G · 跨章钩子趋势查询：取最近 N 章 hook_close.primary_type 序列 + 自动判定
+    trend_parser = subparsers.add_parser(
+        "get-hook-trend",
+        help="查询最近 N 章 hook_close.primary_type 序列 + 自动判定连续 5 章同型 / 8 章缺类",
+    )
+    trend_parser.add_argument("--last-n", type=int, default=5)
 
     argv = normalize_global_project_root(sys.argv[1:])
     args = parser.parse_args(argv)
@@ -1520,6 +1535,60 @@ def main():
         }
         emit_success(payload, message="recent_meta")
 
+    elif args.command == "get-hook-trend":
+        # Round 19 Phase G · 跨章钩子趋势查询（信息钩 / 情绪钩 / 决策钩 / 动作钩）
+        # 取最近 N 章 hook_close.primary_type / secondary_type 序列 + 自动判定:
+        # - all_same_primary：连续 N 章 primary 相同（H25 P1 warn 信号）
+        # - combo_repeated_3：连续 3 章 primary+secondary 组合相同
+        # - no_decision_hook_8：连续 8 章无决策钩
+        # - no_emotion_hook_8：连续 8 章无情绪钩
+        chapter_meta = manager._state.get("chapter_meta", {}) or {}
+        chs = sorted([int(k) for k in chapter_meta.keys() if str(k).isdigit()])
+        last_n = int(getattr(args, "last_n", 5) or 5)
+        recent = chs[-last_n:] if len(chs) >= last_n else chs
+        primaries: list[str] = []
+        secs: list[str] = []
+        for ch in recent:
+            hc = (chapter_meta.get(f"{ch:04d}") or {}).get("hook_close") or {}
+            primaries.append(hc.get("primary_type") or "")
+            secs.append(hc.get("secondary_type") or "")
+        # 跨章趋势判定（空字符串不算连续相同）
+        all_same_primary = bool(
+            primaries
+            and len(set(primaries)) == 1
+            and len(primaries) == last_n
+            and primaries[0]
+        )
+        # combo（primary, secondary）连续 3 章相同
+        combo_repeated_3 = (
+            len(primaries) >= 3
+            and len({(p, s) for p, s in zip(primaries[-3:], secs[-3:])}) == 1
+            and primaries[-1] != ""
+        )
+        # 8 章窗口对决策钩 / 情绪钩缺位检查（取所有章节最近 8 个，不只 last_n）
+        last_8_primaries = [
+            (chapter_meta.get(f"{c:04d}") or {}).get("hook_close", {}).get("primary_type") or ""
+            for c in chs[-8:]
+        ]
+        no_decision_hook_8 = (
+            len(last_8_primaries) >= 8 and "决策钩" not in last_8_primaries
+        )
+        no_emotion_hook_8 = (
+            len(last_8_primaries) >= 8 and "情绪钩" not in last_8_primaries
+        )
+        out = {
+            "last_n": last_n,
+            "chapters": recent,
+            "recent_primary": primaries,
+            "recent_secondary": secs,
+            "all_same_primary": all_same_primary,
+            "combo_repeated_3": combo_repeated_3,
+            "no_decision_hook_8": no_decision_hook_8,
+            "no_emotion_hook_8": no_emotion_hook_8,
+            "last_8_primaries": last_8_primaries,
+        }
+        emit_success(out, message="hook_trend")
+
     elif args.command == "get-entity":
         entity = manager.get_entity(args.id)
         if entity:
@@ -1573,10 +1642,11 @@ def main():
                 or args.append_recheck
                 or args.add_words
                 or args.set_checker_subdimensions
+                or args.set_hook_close
             ):
                 emit_error(
                     "MISSING_ARG",
-                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck / --add-words / --set-checker-subdimensions）",
+                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck / --add-words / --set-checker-subdimensions / --set-hook-close）",
                 )
                 return
         changes: list[str] = []
@@ -1855,6 +1925,40 @@ def main():
             manager._pending_raw_state_mutations.add("chapter_meta")
             changes.append(
                 f"chapter_meta.{key}.checker_subdimensions.{checker}={checker_subs}"
+            )
+            if applied_chapter is None:
+                applied_chapter = ch
+
+        # Round 19 Phase G · 章末钩子 4 分类落库（信息钩 / 情绪钩 / 决策钩 / 动作钩）
+        # reader-pull-checker 章末必输出 hook_close 子对象；data-agent Step K 调本入口写入。
+        # 与既有自由文本字段 hook_type 并存不替换。
+        if args.set_hook_close:
+            payload = load_json_arg(args.set_hook_close)
+            ch = int(payload.get("chapter", 0))
+            primary = str(payload.get("primary", "")).strip()
+            VALID_HOOK_TYPES = {"信息钩", "情绪钩", "决策钩", "动作钩"}
+            if not ch or primary not in VALID_HOOK_TYPES:
+                emit_error(
+                    "INVALID_ARG",
+                    f"--set-hook-close 需要 chapter(int) + primary∈{sorted(VALID_HOOK_TYPES)}",
+                )
+                return
+            sec = payload.get("secondary")
+            if sec and sec not in VALID_HOOK_TYPES:
+                sec = None
+            cm = manager._state.setdefault("chapter_meta", {})
+            key = f"{ch:04d}"
+            entry = cm.setdefault(key, {})
+            entry["hook_close"] = {
+                "primary_type": primary,
+                "secondary_type": sec,
+                "strength": int(payload.get("strength", 80)),
+                "text_excerpt": (str(payload.get("text") or ""))[:200],
+            }
+            manager._pending_raw_state_mutations.add("chapter_meta")
+            changes.append(
+                f"chapter_meta.{key}.hook_close.primary={primary}"
+                + (f"+secondary={sec}" if sec else "")
             )
             if applied_chapter is None:
                 applied_chapter = ch
