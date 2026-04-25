@@ -1,43 +1,104 @@
-# Webnovel Writer
+# Webnovel Writer · XuanRanL Fork
 
 [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Compatible-purple.svg)](https://claude.ai/claude-code)
 
-<a href="https://trendshift.io/repositories/22487" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22487" alt="lingfengQAQ%2Fwebnovel-writer | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-## 项目简单介绍
+> **本 fork 与原项目 [lingfengQAQ/webnovel-writer](https://github.com/lingfengQAQ/webnovel-writer) 已分叉为不同产品**：
+> 原项目走“轻量化 + 降 token + 单 reviewer 不评分”路线；本 fork 走“13-checker 评分硬卡 + 18 轮 RCA 加固 + 读者三件标尺”路线。
+> 两者**架构不可合并**，本 fork 选择性吸收原项目精华（v6 之前的好东西），拒绝 v6 删评分 / 删 workflow_manager / 引入 story-system 投影等架构级改动。
 
-`Webnovel Writer` 是基于 Claude Code 的长篇网文创作系统，目标是降低 AI 写作中的“遗忘”和“幻觉”，支持长周期连载创作。
+---
 
-详细文档已拆分到 `docs/`：
+## 1. 这个 fork 解决什么问题（核心定位）
 
-- 架构与模块：`docs/architecture.md`
-- 命令详解：`docs/commands.md`
-- RAG 与配置：`docs/rag-and-config.md`
-- 题材模板：`docs/genres.md`
-- 运维与恢复：`docs/operations.md`
-- 文档导航：`docs/README.md`
+读者追下一章只看 3 件事：
+1. **自然度**：写得不像 AI（不是“缓缓开口、瞳孔微缩、心中一凛”）
+2. **画面感**：场景具象、感官层次、节奏对（看得见、闻得到、节奏对）
+3. **追读力**：情绪欠债 + 悬念 + 爽点节奏（想看下一章）
 
-## 快速开始
+**所有功能必须直接映射到这 3 件之一**——映射不到的不做（即使原项目有这功能）。这是本 fork 的取舍底线。
 
-### 1) 安装插件（官方 Marketplace）
+### 实测兑现（基于《末世重生》Ch1-11 真实数据）
+
+| 标尺 | baseline (Ch1-11 平均) | Round 19 期望（Ch12+） |
+|---|---|---|
+| reader-naturalness | 87.10 | ≥ 92（A + C + F + B 合力） |
+| prose-quality | 88.27 | ≥ 91（H 加权） |
+| reader-pull | 88.91 | 维持 + 钩子多样性 |
+| **reader-critic** | **80.30** | **≥ 87**（X1 谷底自动 block） |
+| overall | 88.36 | ≥ 90 |
+| polish 周期数 | 2-3 轮 | 1-2 轮（A 起草前预防） |
+
+**关键：Ch3=62 / Ch4=58 这种历史 reader-critic 谷底，Round 19 后自动触发 P0 block 不能 commit**，必须 polish 重写到 ≥75。
+
+---
+
+## 2. Round 19 的 9 个核心 Phase（vs 原项目）
+
+| Phase | 解决什么 | 来源 |
+|---|---|---|
+| **A** anti-ai-guide.md 起草前预防 | AI 8 倾向 + 本作 N1-N5 根因映射 | 原项目精华（v6 之前） + 本 fork 独有的 RCA 映射 |
+| **I** Ch1 追读契约 9+3 rubric | 网文平台前 300 字弃读率（首句钩 critical / 第 1 段承诺 / 300 字内触发器） | 本 fork 独创 |
+| **X1** reader-critic <75 全卷 P0 阻止 | Ch3=62/Ch4=58 类首稿低分自动 block，必须 polish 至 ≥75 才能 commit | 本 fork 独创 |
+| **X1B** 前 5 章写前自检 5 类 | 金手指时序 / 突兀编号 / 爽点兑现 / 伏笔节奏 / 读者卡点 | 本 fork 独创 |
+| **F** 4 张项目本地私库 + 双向回灌 | 跨章 7-10 章重犯模式（polish 修不住的根因）从根源根治 | 本 fork 独创（最大杠杆 Phase） |
+| **H** 画面感 3 子规则 | 场景首句视觉锚点 / 5+1 感官色谱（嗅觉强制） / 抽象动作改写 | 本 fork 独创 |
+| **B** polish K/L/M/N + 4 句式 | 200+ 词库扩充 + 4 句式对应 N1/N2/N3/P4 根因 | 原项目精华 + 本 fork 句式硬卡 |
+| **E** plan 跨卷感知 | 下卷规划读最近 N 章真实 hook_close + 钩子趋势 + 未解决伏笔 | 原项目思路 + 本 fork CLI |
+| **C** reader-naturalness 5 子维度 | vocab/syntax/narrative/emotion/dialogue 定向反馈 + polish 定向修最低子维度 | 借鉴原项目 v5（不引入 v6 单 reviewer 整体） |
+| **G** 章末钩子 4 分类 + H25 跨章 | 信息/情绪/决策/动作钩 + 连续 5 章同型 P1 warn | 本 fork 独创 |
+
+### 永久拒绝合并的原项目 10 类改动（DO NOT MERGE）
+
+详见 `webnovel-writer/ROUND19_DO_NOT_MERGE.md`：
+
+1. v6 单 reviewer.md 替代 13 checker
+2. workflow_manager 移除依赖 Claude Code /resume
+3. story-system 事件溯源 + projection writers
+4. vector_projection_writer + vectors.db
+5. dashboard 路由多页重建
+6. Token 整文件压缩替换
+7. v6 chapter_drafted/reviewed/committed 状态机
+8. SKILL.md 充分性闸门状态机
+9. 移除 golden_three_checker / Step 2B legacy
+10. Memory contract / scratchpad 大改
+
+每条原因 + 替代路径见专门文档。**未来 git fetch upstream 看到这 10 类直接跳过**。
+
+---
+
+## 3. 跨项目可移植性（Round 19.1 P0-1 根治）
+
+私库 CSV 改为**项目本地** `{project}/.webnovel/private-csv/`，跨项目隔离：
+- 写《画山海》不会被《末世重生》“陆沉/麦穗/印记”反例污染
+- 每个项目专属反例 + fork 共享 schema seed
+
+**新项目接入流程**见 `webnovel-writer/MIGRATION_NEW_PROJECT.md`，关键步骤：
+
+1. `webnovel-init` 后 9 个 Phase 自动生效
+2. 写完 Ch1-2 后跑 1 次 `webnovel.py private-csv --table X --chapters 1-2` 初始化项目本地私库
+3. Ch3+ writer 自动消费**本项目专属**私库
+
+---
+
+## 4. 快速开始
+
+### 4.1 安装本 fork（推荐）
 
 ```bash
-claude plugin marketplace add lingfengQAQ/webnovel-writer --scope user
-claude plugin install webnovel-writer@webnovel-writer-marketplace --scope user
+# 直接 clone（保留 18 轮 RCA 加固 + Round 19 全部）
+git clone https://github.com/XuanRanL/webnovelwriter.git
+cd webnovelwriter
 ```
 
-> 仅当前项目生效时，将 `--scope user` 改为 `--scope project`。
-
-### 2) 安装 Python 依赖
+### 4.2 安装 Python 依赖
 
 ```bash
-python -m pip install -r https://raw.githubusercontent.com/lingfengQAQ/webnovel-writer/HEAD/requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-说明：该入口会同时安装核心写作链路与 Dashboard 依赖。
-
-### 3) 初始化小说项目
+### 4.3 初始化小说项目
 
 在 Claude Code 中执行：
 
@@ -45,17 +106,14 @@ python -m pip install -r https://raw.githubusercontent.com/lingfengQAQ/webnovel-
 /webnovel-init
 ```
 
-说明：`/webnovel-init` 会在当前 Workspace 下按书名创建 `PROJECT_ROOT`（子目录），并在 `workspace/.claude/.webnovel-current-project` 写入当前项目指针。
-
-### 4) 配置 RAG 环境（必做）
-
-进入初始化后的书项目根目录，创建 `.env`：
+### 4.4 配置 RAG 环境
 
 ```bash
 cp .env.example .env
+# 编辑 .env 填入 EMBED / RERANK / LLM API 密钥
 ```
 
-最小配置示例：
+最小配置：
 
 ```bash
 EMBED_BASE_URL=https://api-inference.modelscope.cn/v1
@@ -67,104 +125,140 @@ RERANK_MODEL=jina-reranker-v3
 RERANK_API_KEY=your_rerank_api_key
 ```
 
-### 5) 开始使用
+### 4.5 开始使用
 
 ```bash
-/webnovel-plan 1
-/webnovel-write 1
-/webnovel-review 1-5
+/webnovel-plan 1            # 生成第 1 卷大纲
+/webnovel-write 1           # 写第 1 章（自动 Step 0-7 + Round 19 全部 Phase）
+/webnovel-review 1-5        # 审查 Ch1-5 质量
 ```
 
-如需排查本地 CLI / 插件目录 / 项目根解析问题，可直接运行统一预检：
+### 4.6 故障排查
 
 ```bash
-python -X utf8 "<CLAUDE_PLUGIN_ROOT>/scripts/webnovel.py" --project-root "<WORKSPACE_ROOT>" preflight
+python -X utf8 webnovel-writer/scripts/webnovel.py preflight
+python -X utf8 webnovel-writer/scripts/webnovel.py sync-cache
+python -X utf8 webnovel-writer/scripts/webnovel.py --project-root <project> sync-agents
 ```
 
-### 6) 启动可视化面板（可选）
+### 4.7 启动可视化面板（可选）
 
 ```bash
 /webnovel-dashboard
 ```
 
-说明：
-- Dashboard 为只读面板（项目状态、实体图谱、章节/大纲浏览、追读力查看）。
-- 前端构建产物已随插件发布，使用者无需本地 `npm build`。
+---
 
-### 7) Agent 模型设置（可选）
+## 5. 与原项目同步策略
 
-本项目所有内置 Agent 默认配置为：
+```bash
+# 已配置好 upstream remote，可随时 fetch 最新
+git fetch upstream
+git log upstream/master ^main --oneline   # 查看上游新增 commits
 
-```yaml
-model: inherit
+# 选择性吸收（**必须先看 ROUND19_DO_NOT_MERGE.md 排除清单**）：
+# - 落入 DO NOT MERGE 10 类 → 直接跳过
+# - 通用工具改进（如 anti-ai-guide / polish-guide 词库扩充）→ 评估后手动取并集
+# - bug fix → 直接 cherry-pick
 ```
 
-表示子 Agent 继承当前 Claude 会话所用模型。
+**绝不**用 `git merge upstream/master` 整体合并 — 会破坏 18 轮 RCA 加固。
 
-如果要单独给某个 Agent 指定模型，编辑对应文件（`webnovel-writer/agents/*.md`）的 frontmatter，例如：
+---
 
-```yaml
----
-name: context-agent
-description: ...
-tools: Read, Grep, Bash
-model: sonnet
----
+## 6. 架构核心（与原项目差异）
+
+```
+本 fork (XuanRanL/webnovelwriter)            原项目 (lingfengQAQ/webnovel-writer)
+─────────────────────────────────────       ──────────────────────────────────────
+13 checker × 14 外部模型 × 13 维度评分      单 reviewer.md（无评分 / 结构化问题清单）
+↓
+182 共识样本 → overall_score 0-100         "issues 列表"无量化分
+↓
+90-100 评分硬卡 / Round 14 加固            读者无法对比 Ch10 vs Ch5 质量
+
+workflow_manager 状态机                    依赖 Claude Code /resume
+↓
+start-step → complete-step → complete-task
+↓
+Step 0-7 全流程审计闸门
+
+state.json 直接真源                        story-system 事件溯源 + projection
+↓
+24 项 hygiene_check 硬扫描                 多层投影 / state.json 是只读视图
+
+Round 19.1 项目本地私库                    无私库（用泛用 CSV）
+↓                                          ↓
+{project}/.webnovel/private-csv/           references/csv/ 共享
+跨项目隔离 + 本作 RCA 派生                  题材通用知识表
 ```
 
-常见可选值：`inherit` / `sonnet` / `opus` / `haiku`（以 Claude Code 当前支持为准）。
+---
 
-## 更新简介
+## 7. 文档导航
+
+| 文档 | 内容 |
+|---|---|
+| `docs/architecture.md` | 系统架构与模块设计 |
+| `docs/commands.md` | 命令详解 |
+| `docs/rag-and-config.md` | RAG 与 .env 配置 |
+| `docs/genres.md` | 题材模板 |
+| `docs/operations.md` | 运维与恢复 |
+| `webnovel-writer/CUSTOMIZATIONS.md` | fork 全部改动日志（Round 1-19.1） |
+| `webnovel-writer/ROUND19_DO_NOT_MERGE.md` | 永久拒绝合并的 10 类原项目改动 |
+| `webnovel-writer/MIGRATION_NEW_PROJECT.md` | 新项目接入 Round 19 流程指南 |
+| `docs/superpowers/plans/round19-comprehensive-test-report.md` | Round 19 全面测试报告 |
+| `docs/superpowers/plans/round19.1-final-report.md` | Round 19.1 P0×3 根治测试报告 |
+| `docs/superpowers/plans/round19-research/ch1-11-root-cause-analysis.md` | RCA 深度分析 |
+| `docs/superpowers/plans/round19-audit-report.md` | Round 19 第三方审计报告 |
+
+---
+
+## 8. 版本简史
 
 | 版本 | 说明 |
-|------|------|
-| **v5.6.0 (当前)** | 新增 Step 6 审计闸门（7 层 ~70 检查项：过程真实性/跨产物一致性/读者体验/作品连续性/创作工艺/题材兑现/跨章趋势），独立于 Step 3 内审；原 Step 6「Git 备份」重命名为 Step 7；新增 audit-agent 子代理、chapter_audit.py CLI、editor_notes 跨章闭环反馈；配套 29 个新测试全部通过。 |
-| **v5.5.4** | 补齐写作链提示词强约束（流程硬约束、中文思维写作约束、Step 职责边界）；统一中文化审查/润色/Agent 报告文案；清理文档内部版本号与版本历史，降低与插件发版版本混淆。 |
-| **v5.5.3** | 新增统一 `preflight` 预检命令；写作链 CLI 示例统一为 UTF-8 运行方式，收口文档中的长 shell 预检片段并降低 Windows 终端乱码风险。 |
-| **v5.5.2** | 支持将详细大纲中的章节名同步到正文文件名；修复 workflow_manager 在无参 find_project_root monkeypatch 下的兼容性问题。 |
-| **v5.5.1** | 修复卷级单文件大纲在上下文快照中的章节提取问题；补齐命令文档中遗漏的 `/webnovel-dashboard` 与 `/webnovel-learn`。 |
-| **v5.5.0** | 新增只读可视化 Dashboard Skill（`/webnovel-dashboard`）与实时刷新能力；支持插件目录启动与预构建前端分发 |
-| **v5.4.4** | 引入官方 Plugin Marketplace 安装机制；统一修复 Skills/Agents/References 的 CLI 调用（`CLAUDE_PLUGIN_ROOT` 单路径，透传命令统一 `--`） |
-| **v5.4.3** | 增强智能 RAG 上下文辅助（`auto/graph_hybrid` 回退 BM25） |
-| **v5.3** | 引入追读力系统（Hook / Cool-point / 微兑现 / 债务追踪） |
+|---|---|
+| **Round 19.1** | P0×3 根治：私库跨项目隔离 + quote_pair_fix 文件类型守卫 + 写前自检 dead spec 兑现 |
+| **Round 19** | 三件标尺重新定位 + 9 Phase 落地：A/I/X1/F/H/B/E/C/G + Phase 7 永久清单 + Phase D 决策 |
+| Round 18.x | Ch10/Ch11 RCA 5 类根治批次 |
+| Round 17.x | Ch7/Ch8 RCA + polish_cycle 归档层 + 现实红旗 +285 行 |
+| Round 16 | 14 外部模型扁平共识 + Bash redirect 安全规则 |
+| Round 15.3 | Ch6 6 类 bug 全部根治（complete-task --force / sync-cache --prune / merge-partial 等） |
+| Round 14.5 | Step 8 Post-Commit Polish 引入 |
+| Round 14 | 9→14 外部模型 × 13 维度 = 182 共识样本 |
+| Round 13 v2 | 读者视角双 checker（naturalness + reader-critic）+ 13 维度 |
+| Round 12 | Ch1 披露时序 6 道防御 |
+| Round 11 | 外审架构重构 · openclawroot 首位供应商 + 9 新模型 |
+| Round 10 | Ch1 末世重生 5 个 checker rubric 升级 |
+| ... | （Round 1-9 详见 `CUSTOMIZATIONS.md`） |
 
-## 插件发版
+---
 
-推荐使用 GitHub Actions 的 `Plugin Release` 工作流统一发版：
+## 9. 开源协议
 
-1. 先在本地同步版本信息：
-   ```bash
-   python -X utf8 webnovel-writer/scripts/sync_plugin_version.py --version 5.5.4 --release-notes "本次版本说明"
-   ```
-2. 提交并推送版本变更（`README.md`、`plugin.json`、`marketplace.json`）。
-3. 打开仓库的 Actions 页面，选择 `Plugin Release`。
-4. 输入与当前仓库元数据一致的 `version`（例如 `5.5.4`）和用于 GitHub Release 的 `release_notes`。
-5. 工作流会执行以下动作：
-   - 校验 `plugin.json`、`marketplace.json` 与 README 当前版本已经一致
-   - 校验当前版本与输入的 `version` 一致
-   - 创建并推送 `vX.Y.Z` Tag
-   - 创建同名 GitHub Release
+`GPL v3` 协议，详见 `LICENSE`。
 
-日常开发中，`Plugin Version Check` 会在 Push / PR 时自动校验版本信息是否一致。
+## 10. 致谢
 
-## 开源协议
-本项目使用 `GPL v3` 协议，详见 `LICENSE`。
+- 原项目作者 [@lingfengQAQ](https://github.com/lingfengQAQ) — 提供本 fork 的初始基线
+- 本 fork 由 [@XuanRanL](https://github.com/XuanRanL) 维护，配合 Claude Code (Opus 4.7 1M context) 执行 Round 1-19 加固
 
-## Star 历史
+## 11. 贡献
 
-[![Star History Chart](https://api.star-history.com/svg?repos=lingfengQAQ/webnovel-writer&type=Date)](https://star-history.com/#lingfengQAQ/webnovel-writer&Date)
+本 fork 接受三类贡献：
 
-## 致谢
-
-本项目使用 **Claude Code + Gemini CLI + Codex** 配合 Vibe Coding 方式开发。  
-灵感来源：[Linux.do 帖子](https://linux.do/t/topic/1397944/49)
-
-## 贡献
-
-欢迎提交 Issue 和 PR：
+1. **bug fix**：直接 PR
+2. **小说质量提升**：必须能映射到自然度 / 画面感 / 追读力其中至少 1 件，否则不接受
+3. **跨项目可移植性改进**：欢迎（特别是非末世题材的私库 schema 验证）
 
 ```bash
 git checkout -b feature/your-feature
-git commit -m "feat: add your feature"
+git commit -m "feat: <feature description>"
 git push origin feature/your-feature
 ```
+
+---
+
+## 12. Star 历史
+
+[![Star History Chart](https://api.star-history.com/svg?repos=XuanRanL/webnovelwriter&type=Date)](https://star-history.com/#XuanRanL/webnovelwriter&Date)
