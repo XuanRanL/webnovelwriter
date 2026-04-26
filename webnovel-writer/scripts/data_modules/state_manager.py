@@ -1726,6 +1726,7 @@ def main():
                 "reader_critic_verdict", "reader_critic_score",
                 "strand_dominant", "word_count",
                 "chapter_type", "review_score",
+                "thrill_score",  # Round 20.1 · Ch1-12 体检 Bug 1：reader-thrill-checker 6 子维度结构
             }
             if not ch or not field:
                 emit_error("INVALID_ARG", "--set-chapter-meta-field 需要 chapter + field 字段")

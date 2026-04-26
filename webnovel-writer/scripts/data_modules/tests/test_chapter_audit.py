@@ -644,6 +644,137 @@ def test_outline_has_three_release_plans():
     assert "标题承诺兑现计划" in text and "title_promise_payoff_plan" in text
 
 
+def test_H25_no_decision_hook_8_chapters_p0_fail(tmp_path):
+    """Round 20.1 · H25 升级：连续 8 章无决策钩升 P0 fail."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    state = {
+        "chapter_meta": {
+            f"{i:04d}": {
+                "chapter": i,
+                "hook_close": {
+                    "primary_type": "信息钩" if i % 3 == 0 else ("动作钩" if i % 3 == 1 else "情绪钩"),
+                },
+            }
+            for i in range(1, 9)
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_hook_trend(project, 8, rep)
+    p0_msgs = "|".join(rep.p0_fails)
+    assert "连续 8 章无决策钩" in p0_msgs, f"H25 应 P0 fail，实际 p0={rep.p0_fails}"
+
+
+def test_H25_with_decision_hook_no_p0_fail(tmp_path):
+    """Round 20.1 · H25：8 章中含 1 个决策钩 → 不 P0 fail."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    types = ["信息钩", "动作钩", "情绪钩", "信息钩", "动作钩", "情绪钩", "决策钩", "信息钩"]
+    state = {
+        "chapter_meta": {
+            f"{i+1:04d}": {
+                "chapter": i + 1,
+                "hook_close": {"primary_type": types[i]},
+            }
+            for i in range(8)
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_hook_trend(project, 8, rep)
+    p0_msgs = "|".join(rep.p0_fails)
+    assert "连续 8 章无决策钩" not in p0_msgs
+
+
+def test_H27_polish_sunk_cost_warns(tmp_path):
+    """Round 20.1 · H27：v3+polish_log≥2+5 项 80 一线 → P1 警报."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    state = {
+        "chapter_meta": {
+            "0006": {
+                "chapter": 6,
+                "narrative_version": "v3",
+                "polish_log": [
+                    {"version": "v2", "timestamp": "x", "notes": "r1"},
+                    {"version": "v3", "timestamp": "y", "notes": "r2"},
+                ],
+                "checker_scores": {
+                    "consistency-checker": 88,
+                    "continuity-checker": 80,  # 1
+                    "ooc-checker": 82,         # 2
+                    "reader-pull-checker": 80, # 3
+                    "high-point-checker": 81,  # 4
+                    "pacing-checker": 83,      # 5
+                    "dialogue-checker": 87,
+                    "density-checker": 88,
+                    "prose-quality-checker": 86,
+                    "emotion-checker": 87,
+                    "flow-checker": 86,
+                    "reader-naturalness-checker": 90,
+                    "reader-critic-checker": 86,
+                },
+            }
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_polish_sunk_cost(project, 6, rep)
+    p1_msgs = "|".join(rep.p1_fails)
+    assert "sunk cost" in p1_msgs, f"H27 应 P1 警报，实际 p1={rep.p1_fails}"
+
+
+def test_H27_v1_no_sunk_cost(tmp_path):
+    """Round 20.1 · H27：v1 章节即使有 80 一线也不警报（polish 还没多轮）."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    state = {
+        "chapter_meta": {
+            "0001": {
+                "chapter": 1,
+                "narrative_version": "v1",
+                "checker_scores": {k: 80 for k in [
+                    "consistency-checker", "continuity-checker", "ooc-checker",
+                    "reader-pull-checker", "high-point-checker", "pacing-checker",
+                ]},
+            }
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_polish_sunk_cost(project, 1, rep)
+    assert "H27" in rep.passes, "v1 章节 H27 应 pass，实际未通过"
+
+
 def test_apply_overall_floor_caps_overall_score(good_project):
     """Round 20 · apply_overall_floor 直接调用：raw_avg 高但有硬伤 → 实际 overall 被 cap."""
     mod = _load_module()

@@ -1381,6 +1381,68 @@ def check_reality_red_flags(root: Path, chapter: int, rep: HygieneReport):
         )
 
 
+def check_polish_sunk_cost(root: Path, chapter: int, rep: HygieneReport):
+    """H27: polish sunk cost 警报（Round 20.1 · Ch1-12 体检 Bug 3 根治）
+
+    Ch6 血教训：narrative_version=v3 + polish_log=2 + 五项 80 一线 + 空间方向 -1 倒退
+    → 已是 sunk cost 但流程没识别，AI 还会继续 polish。
+
+    检查规则：
+      - chapter_meta.{NNNN}.narrative_version 解析 >= 3
+      - polish_log 长度 >= 2
+      - checker_scores 中存在 ≥ 5 项 ∈ [80, 84]（"80 一线" 集群）
+      - → P1 warn 提示考虑回 Step 0 重写而非继续 polish
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        rep.record("P1", "H27", "state.json 不存在，跳过 sunk cost 检查", True)
+        return
+    try:
+        state = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        rep.record("P1", "H27", f"state.json 解析失败：{exc}", True)
+        return
+    meta = (state.get("chapter_meta") or {}).get(f"{chapter:04d}") or {}
+    if not meta:
+        rep.record("P1", "H27", f"chapter_meta.{chapter:04d} 不存在", True)
+        return
+
+    nv = meta.get("narrative_version") or "v1"
+    nv_n = 1
+    if isinstance(nv, str) and nv.startswith("v"):
+        try:
+            nv_n = int(nv[1:].split(".")[0])
+        except Exception:
+            nv_n = 1
+
+    polish_log = meta.get("polish_log") or []
+    polish_rounds = len([e for e in polish_log if isinstance(e, dict)])
+
+    cs = meta.get("checker_scores") or {}
+    canonical_set = {
+        "consistency-checker", "continuity-checker", "ooc-checker",
+        "reader-pull-checker", "high-point-checker", "pacing-checker",
+        "dialogue-checker", "density-checker", "prose-quality-checker",
+        "emotion-checker", "flow-checker",
+        "reader-naturalness-checker", "reader-critic-checker",
+    }
+    eighty_line = [
+        k for k, v in cs.items()
+        if k in canonical_set and isinstance(v, (int, float)) and 80 <= v <= 84
+    ]
+
+    if nv_n >= 3 and polish_rounds >= 2 and len(eighty_line) >= 5:
+        rep.record(
+            "P1", "H27",
+            f"sunk cost 警报：nv={nv} polish={polish_rounds} 轮 + {len(eighty_line)} 项 80 一线"
+            f"（{sorted(eighty_line)}） · 建议 Step 0 重写而非继续 polish"
+            f" · 命中 Round 20 max-rounds=3 上限，刻意突破需 --deviation-reason",
+            False,
+        )
+        return
+    rep.record("P1", "H27", f"polish 状态健康（nv={nv}, polish={polish_rounds} 轮）", True)
+
+
 def check_hook_close_persistence(root: Path, chapter: int, rep: HygieneReport):
     """H26: hook_close 落库一致性（Round 20 · Ch12 RCA P0）
 
@@ -1494,6 +1556,26 @@ def check_hook_trend(root: Path, chapter: int, rep: HygieneReport):
         True,
     )
 
+    # Round 20.1 · Ch1-12 体检 P0 升级：连续 8 章无决策钩升 P0 fail
+    # 决策钩 = 主角主动选择 = 网文核心爽点。Ch1-12 累计 0 个决策钩是结构信号。
+    # 旧逻辑：state get-hook-trend CLI 只在 reader-pull-checker 输出 issue，
+    #         hygiene 不强制阻断，导致 12 章累积警报无效。
+    # 新逻辑：H25 直接读最近 8 章 primary_type，全无决策钩 → P0 fail。
+    if len(chs) >= 8:
+        recent_8 = chs[-8:]
+        primaries_8 = [
+            ((metas.get(k) or {}).get("hook_close") or {}).get("primary_type") or ""
+            for k in recent_8
+        ]
+        if all(p for p in primaries_8) and "决策钩" not in primaries_8:
+            rep.record(
+                "P0", "H25",
+                f"连续 8 章无决策钩（章 {[int(k) for k in recent_8]} primary_types={primaries_8}）"
+                f" · 决策钩=主角主动选择=网文核心爽点，必须在下章兑现"
+                f" · 修复：下章 hook_close.primary_type=决策钩 或 reader-thrill protagonist_victory ≥ 80",
+                False,
+            )
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -1528,6 +1610,7 @@ def main():
     check_reality_red_flags(root, args.chapter, rep)  # H22 · Round 17
     check_cross_chapter_cadence(root, args.chapter, rep)  # H23 · Round 17.1 · Ch7 RCA P1.5
     check_hook_trend(root, args.chapter, rep)  # H25 · Round 19 Phase G · 章末钩子 4 类跨章趋势
+    check_polish_sunk_cost(root, args.chapter, rep)  # H27 · Round 20.1 · sunk cost 警报
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
