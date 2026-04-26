@@ -621,12 +621,14 @@ cat "${SKILL_ROOT}/references/step-3-review-gate.md"
   - `reader-pull-checker`（追读力）
   - `high-point-checker`（爽点密度）
   - `flow-checker`（读者视角流畅度 · 失忆裸读协议）
-- Batch 2（Batch 1 全部返回后启动，5 个并发）：
+- Batch 2（Batch 1 全部返回后启动，6 个并发 · Round 20 新增 reader-thrill-checker）：
   - `pacing-checker`（节奏平衡）
   - `dialogue-checker`（对话质量）
   - `density-checker`（信息密度）
   - `prose-quality-checker`（文笔质感）
   - `emotion-checker`（情感表现）
+  - `reader-thrill-checker`（**Round 20 · Ch12 RCA P0 新增**）爽感强度 6 子维度（金手指释放/主角胜利/反派受挫/信息差兑现/标题承诺兑现/节奏推进）· 与 reader-pull-checker（追读力）+ reader-critic-checker（读者批评）+ high-point-checker（爽点密度）互补：thrill 评"读完爽不爽"，pull 评"会不会追下一章"
+  - **reader-thrill-checker 触发 block 规则**：前 5 章 verdict ∈ {tepid, frustrating} 且 reader-critic-checker < 80 → 双 floor 联动 block；连续 3 章 golden_finger_release ≤ 50（前 5 章为 high）→ critical block
 
 模式说明：
 - 标准/`--fast`：全量 13 个审查器（2 + 6 + 5），分段执行。
