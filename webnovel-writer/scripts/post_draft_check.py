@@ -528,6 +528,108 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
                 f"人物不知道章号 · 必须自然化表述"
             )
 
+    # 13. Round 18.3 · AI 套话副词密度扫描（2026-04-25 · Ch12 RCA P0 根治）
+    # 引入背景：跨 Ch1-12 数据：Ch5 "轻轻" 7 次（章 3406 字 → 2.06/千字），Ch9 "轻轻" 5 次，
+    # Ch10 "轻轻" 1 次，Ch12 polish 引入"轻轻"+"仿佛" 各 1 次。累计 12 章 ≥36 处 AI 套话副词。
+    # 根因：context-agent 的 forbidden_items 列入 ai_cliche（轻轻/仿佛/微微等 10 词）作为 writer
+    # 起草软提示，但 polish 阶段没有"复扫禁词"机制，反向引入；post_draft_check 不扫这些词。
+    # 影响：网文读者高度敏感这类 AI 副词（tavily search 2026-04-25 · "弃文风险"），累积削弱质感。
+    # 根治：post_draft_check 强制扫描 10 类 AI cliche 副词，warn ≥3 / block ≥6（按千字计算更合理：
+    # warn 1.0/千字，block 2.0/千字，单词上限按章字数动态算）。
+    # 项目级 override：`.webnovel/ai_cliche_config.json`
+    ai_cliche_default = {
+        "微微": {"per_kchar_warn": 0.8, "per_kchar_block": 1.5, "abs_min_warn": 2, "abs_min_block": 4},
+        "缓缓": {"per_kchar_warn": 0.6, "per_kchar_block": 1.2, "abs_min_warn": 2, "abs_min_block": 3},
+        "淡淡": {"per_kchar_warn": 0.6, "per_kchar_block": 1.2, "abs_min_warn": 2, "abs_min_block": 3},
+        "轻轻": {"per_kchar_warn": 0.8, "per_kchar_block": 1.5, "abs_min_warn": 3, "abs_min_block": 5},
+        "仿佛": {"per_kchar_warn": 0.5, "per_kchar_block": 1.0, "abs_min_warn": 2, "abs_min_block": 3},
+        "终究": {"per_kchar_warn": 0.5, "per_kchar_block": 1.0, "abs_min_warn": 2, "abs_min_block": 3},
+        "本能地": {"per_kchar_warn": 0.3, "per_kchar_block": 0.6, "abs_min_warn": 1, "abs_min_block": 2},
+        "猛地": {"per_kchar_warn": 0.5, "per_kchar_block": 1.0, "abs_min_warn": 2, "abs_min_block": 3},
+        "陡然": {"per_kchar_warn": 0.3, "per_kchar_block": 0.6, "abs_min_warn": 1, "abs_min_block": 2},
+        "缓缓地": {"per_kchar_warn": 0.3, "per_kchar_block": 0.6, "abs_min_warn": 1, "abs_min_block": 2},
+    }
+    ai_cliche_cfg_path = project_root / ".webnovel" / "ai_cliche_config.json"
+    if ai_cliche_cfg_path.exists():
+        try:
+            cfg = json.loads(ai_cliche_cfg_path.read_text(encoding="utf-8"))
+            for k, v in (cfg or {}).items():
+                if k in ai_cliche_default and isinstance(v, dict):
+                    ai_cliche_default[k].update(v)
+        except Exception:
+            pass
+    chinese_chars = len(re.findall(r"[一-鿿]", text))
+    kchar = max(1, chinese_chars / 1000.0)
+    ai_cliche_total = 0
+    ai_cliche_hits_summary = {}
+    for word, cfg in ai_cliche_default.items():
+        count = text.count(word)
+        if count == 0:
+            continue
+        ai_cliche_total += count
+        ai_cliche_hits_summary[word] = count
+        per_k = count / kchar
+        # 单词级扫描
+        if count >= cfg["abs_min_block"] or per_k >= cfg["per_kchar_block"]:
+            errors.append(
+                f"[AI_CLICHE] '{word}' {count} 次（{per_k:.2f}/千字）"
+                f" ≥ block 阈值 · 必须 polish 删/换具象动词"
+            )
+        elif count >= cfg["abs_min_warn"] or per_k >= cfg["per_kchar_warn"]:
+            warnings.append(
+                f"[AI_CLICHE_WARN] '{word}' {count} 次（{per_k:.2f}/千字）"
+                f" ≥ warn 阈值 · 建议 polish 删/换具象动词"
+            )
+    # 总量级扫描（避免 10 词每词都低于阈值但累积爆表）
+    total_per_k = ai_cliche_total / kchar
+    if total_per_k >= 3.0:
+        errors.append(
+            f"[AI_CLICHE_TOTAL] 10 类 AI 套话副词累计 {ai_cliche_total} 次"
+            f"（{total_per_k:.2f}/千字）≥ block 3.0/千字 · "
+            f"明显 AI 文风（命中：{ai_cliche_hits_summary}）· 必须 polish 大幅删除"
+        )
+    elif total_per_k >= 1.8:
+        warnings.append(
+            f"[AI_CLICHE_TOTAL_WARN] 10 类 AI 套话副词累计 {ai_cliche_total} 次"
+            f"（{total_per_k:.2f}/千字）≥ warn 1.8/千字 · "
+            f"建议 polish 替换具象动词（命中：{ai_cliche_hits_summary}）"
+        )
+
+    # 14. Round 18.3 · 破折号密度扫描（2026-04-25 · Ch10 RCA 47 个破折号 P0 根治）
+    # 引入背景：06-叙事声音约束.md 写"破折号 ≤3/单章"，但跨 Ch1-12 实测：
+    # Ch1 21 / Ch2 29 / Ch5 31 / Ch10 47 / Ch12 6 — 平均 ~21，远超约束 ≤3。
+    # Ch10 47 个 = 13.4/千字，节奏严重失控但 prose-quality 给 91 高分（因为视觉锚等加分项盖过节奏扣分）。
+    # 根因：约束在文档层面但缺乏工具检测；只有人工注意能控（Ch11 4 个证明能控）。
+    # 影响：破折号过密 = 节奏断裂 = 读者阅读疲劳（中文小说破折号比英文敏感）。
+    # 根治：post_draft_check 强制硬扫，warn ≥6 / block ≥10（比 06 约束更宽松，因为 ≤3 太严苛但 ≥10 必爆）。
+    # 项目级 override：`.webnovel/dash_density_config.json`
+    dash_count = text.count("——")
+    dash_per_k = dash_count / kchar
+    dash_warn_abs = 6
+    dash_block_abs = 10
+    dash_per_k_warn = 2.5
+    dash_per_k_block = 4.0
+    dash_cfg_path = project_root / ".webnovel" / "dash_density_config.json"
+    if dash_cfg_path.exists():
+        try:
+            dcfg = json.loads(dash_cfg_path.read_text(encoding="utf-8"))
+            dash_warn_abs = dcfg.get("warn_abs", dash_warn_abs)
+            dash_block_abs = dcfg.get("block_abs", dash_block_abs)
+            dash_per_k_warn = dcfg.get("per_kchar_warn", dash_per_k_warn)
+            dash_per_k_block = dcfg.get("per_kchar_block", dash_per_k_block)
+        except Exception:
+            pass
+    if dash_count >= dash_block_abs or dash_per_k >= dash_per_k_block:
+        errors.append(
+            f"[DASH_DENSITY] 破折号 '——' {dash_count} 次（{dash_per_k:.2f}/千字）"
+            f" ≥ block 阈值 · 节奏断裂硬线 · 必须 polish 改为句号/逗号/省略号"
+        )
+    elif dash_count >= dash_warn_abs or dash_per_k >= dash_per_k_warn:
+        warnings.append(
+            f"[DASH_DENSITY_WARN] 破折号 '——' {dash_count} 次（{dash_per_k:.2f}/千字）"
+            f" ≥ warn 阈值 · 06-叙事声音约束 ≤3/单章 · 建议 polish 收敛"
+        )
+
     # 12. Round 17.5 · 中文章数元叙事扫描（2026-04-24 · Ch9 RCA P0-3 根治）
     # 引入背景：Ch9 L233 主角心里"二十章之前，不问这种事"——
     # 主角不应该用"章"做时间单位（这是元叙事破壁）。

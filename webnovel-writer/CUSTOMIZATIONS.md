@@ -7,6 +7,63 @@
 
 ---
 
+## [2026-04-25 · Round 18.3] Ch12 RCA · post_draft H22 AI cliche + H23 破折号密度 + polish 复扫规范
+
+**Trigger**：Ch12 polish 阶段反向引入 2 个 forbidden_items 黑名单词（"轻轻放下了" + "仿佛...糖纸"），audit E3 low warn 标识但已渗入正文。
+
+**Deep Research**（跨 Ch1-12 数据）：
+- AI cliche 累计 36 处：Ch5=11 (2.06/千字"轻轻") / Ch9=7 / Ch10=1 / Ch12=2，主要由 polish 引入
+- 破折号 "——" 跨章失控：Ch1=21 / Ch2=29 / Ch5=31 / **Ch10=47 (13.4/千字)** / Ch11=4 / Ch12=6
+- 06-叙事声音约束写"破折号 ≤3/单章"但**无任何工具检测**，导致 12 章累积 252 个
+
+**Root Cause**：
+1. context-agent 给 writer 的 forbidden_items 是软提示，writer 起草时凭记忆遵守，polish 阶段**没有复扫机制**
+2. post_draft_check.py 检测的签名维度不全（只查 没X/未X/那一X/半秒一秒三秒），不查 AI cliche 副词 + 不查破折号
+3. 06-叙事声音约束的硬规则只在文档层面，没进自动化闸门
+
+**Fix**：
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `scripts/post_draft_check.py` | NEW section 13 H22 AI cliche 密度扫描（10 词 · 单词阈值 + 累计阈值 · 项目级 override `.webnovel/ai_cliche_config.json`）|
+| 2 | `scripts/post_draft_check.py` | NEW section 14 H23 破折号密度扫描（warn ≥6/2.5千字 · block ≥10/4.0千字 · 项目级 override `.webnovel/dash_density_config.json`）|
+| 3 | `skills/webnovel-write/references/polish-guide.md` | 执行顺序加第 5 步 "polish 后复扫 forbidden_items" + §2.5 复扫流程 + §2.6 破折号收敛 |
+
+**H22 AI cliche 阈值表**（按千字密度 + 绝对最小值双闸）：
+
+| 词 | warn 千字 | block 千字 | warn 绝对值 | block 绝对值 |
+|---|---|---|---|---|
+| 微微 | 0.8 | 1.5 | 2 | 4 |
+| 缓缓 / 淡淡 | 0.6 | 1.2 | 2 | 3 |
+| **轻轻** | 0.8 | 1.5 | 3 | 5 |
+| 仿佛 | 0.5 | 1.0 | 2 | 3 |
+| 终究 | 0.5 | 1.0 | 2 | 3 |
+| 本能地 / 陡然 / 缓缓地 | 0.3 | 0.6 | 1 | 2 |
+| 猛地 | 0.5 | 1.0 | 2 | 3 |
+| **累计 10 词** | warn 1.8/千字 | block 3.0/千字 | — | — |
+
+**H23 破折号阈值**：
+- warn: ≥6 个/章 OR ≥2.5/千字
+- block: ≥10 个/章 OR ≥4.0/千字
+- 06-叙事声音约束理论 ≤3 但实际 Ch11/Ch12 表明 ≤6 可控可读
+
+**回放测试结果**（验证闸门效果）：
+
+| 章 | 历史症状 | 新闸门检测 | 结论 |
+|---|---|---|---|
+| Ch5 | 轻轻 7 / cliche 累计 11 / 破折号 31 | block: AI_CLICHE 轻轻 + AI_CLICHE_TOTAL 3.23/千字 + DASH_DENSITY 31 | ✓ 命中 |
+| Ch10 | 破折号 47 (13.4/千字) | block: DASH_DENSITY 13.45/千字 | ✓ 命中 |
+| Ch11 | polish 后 cliche 2 / 破折号 4 | 全过 | ✓ 不误报 |
+| Ch12 | polish 后 cliche 2 / 破折号 6 | DASH_DENSITY_WARN 2.26/千字 | ✓ 准确警告 |
+
+**Sanity 同步**：sync-cache 完成（updated: post_draft_check.py + polish-guide.md）
+
+**预期效果**：
+- 立即（Ch13 起）：起草后 + polish 后两次自动扫描，cliche 和破折号无法静默渗入
+- 跨 30 章：累计 cliche 从 ~36 → <5 / 破折号每章稳定 ≤6
+- 读者体验：减少 AI 文风感 / 节奏自然不断裂 / 适用所有项目（不仅本作）
+
+---
+
 ## [2026-04-25 · Round 19 Phase G] 章末钩子 4 分类 + 跨章追踪 + H25 + 回填 Ch1-11
 
 RCA §3 揭示：现有 hook_type 命名严重泛用化（“主线单钩/冷钩/悬念钩+认知钩/ambient+mystery”等 7+ 种）。Ch4-5-6 内白模板三连 / Ch6/9/10/11 远处声音锚四连读者明显疲劳。Phase G 引入 4 分类强制映射 + 跨章趋势 + H25 hygiene + 回填 Ch1-11。

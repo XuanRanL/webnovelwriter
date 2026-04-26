@@ -41,7 +41,62 @@ purpose: 章节生成后的润色阶段加载，基于审查报告修复问题 +
 2. 校验网文化 Hard/Soft/Style 规则
 3. 执行 Phase 1 Anti-AI 终检并改写
 4. 执行 No-Poison 毒点规避检查
-5. 输出润色结果与 deviation（若有）
+5. **polish 后复扫 forbidden_items（Round 18.3 · Ch12 RCA P0 根治 · 2026-04-25）**
+6. 输出润色结果与 deviation（若有）
+
+### 2.5 polish 后复扫 forbidden_items（必做 · Round 18.3）
+
+**为什么必要**（Ch12 血教训）：
+- Ch12 Step 4 polish 修复 11 high + 3 medium，质量大幅提升
+- 但 polish 改写时**反向引入** 2 个 forbidden_items 黑名单词：
+  - "像有人把那只举起的手轻轻放下了"（"轻轻" 是 ai_cliche 黑名单）
+  - "仿佛刚才那句话和糖纸是同一类东西"（"仿佛" 是 ai_cliche 黑名单）
+- audit E3 low warn 标识但已通过，问题渗入正文
+- **跨章数据**：Ch1-12 累积 ai_cliche **36 处**（Ch5 11 处 / Ch9 7 处 / Ch10 1 处 / Ch12 2 处），主要由 polish 引入
+
+**根因**：polish 修复时只盯审查 issue，没回头检 forbidden_items。
+
+**复扫流程**（Step 4 anti_ai_force_check 之前必跑）：
+
+```bash
+# 1. 重跑 post_draft_check（已含 H22 AI cliche + H23 破折号扫描）
+python -X utf8 "${SCRIPTS_DIR}/post_draft_check.py" ${chapter_num} --project-root "${PROJECT_ROOT}"
+# 任一 [AI_CLICHE] / [AI_CLICHE_TOTAL] / [DASH_DENSITY] block → polish 继续，不得进 Step 5
+
+# 2. 对照 context 包 forbidden_items 全文复扫
+python -X utf8 -c "
+import json, pathlib, re
+ctx = json.loads(pathlib.Path('${PROJECT_ROOT}/.webnovel/context/ch${chapter_padded}_context.json').read_text(encoding='utf-8'))
+text = pathlib.Path('${PROJECT_ROOT}/正文/第${chapter_padded}章*.md').read_text(encoding='utf-8')  # 通配
+for f in ctx['step_2a_write_prompt']['forbidden_items']:
+    if isinstance(f,dict) and f.get('type')=='ai_cliche':
+        for w in f.get('items',[]):
+            n = text.count(w)
+            if n: print(f'WARN polish 后仍含 ai_cliche {w}: {n} 次')
+"
+```
+
+**硬规则**：
+- post_draft_check 报 `[AI_CLICHE] 'X' N 次 ≥ block` → polish 继续修
+- post_draft_check 报 `[AI_CLICHE_TOTAL] 累计 N 次 ≥ block 3.0/千字` → polish 大幅删除/换具象
+- 单 word block 阈值参见 H22（按词性配置 · 默认 1.5/千字）
+- 累计 block 3.0/千字 = 明显 AI 文风（必须降到 < 1.8/千字）
+- 替换策略：用具体动作/感官细节替换副词（"轻轻按"→"按一下"/"拂过"；"仿佛 X"→直接比喻或 Show）
+
+**项目级 override**：`.webnovel/ai_cliche_config.json` 可调阈值（如战斗章可放宽"猛地"）
+
+### 2.6 polish 后破折号收敛（Round 18.3 · Ch10 47 个 RCA）
+
+**跨章数据**：Ch1=21 / Ch2=29 / Ch5=31 / Ch10=**47**（13.4/千字）/ Ch11=4 / Ch12=6
+- 06-叙事声音约束写"≤3/单章"，但只在 Ch11/Ch12 控住
+- Ch10 47 个 = 节奏失控但 prose-quality 给 91（视觉锚加分掩盖）
+
+**post_draft_check H23 已自动扫**：warn ≥6 / block ≥10。polish 必须降到 warn 以下（单章 ≤ 5）。
+
+**替换策略**：
+- 短破折号补充（"X——Y" 信息）→ 用句号/逗号断句
+- 长破折号悬停（"X——"半句）→ 用省略号"……"或单独成段
+- 破折号嵌套（"——X——"）→ 用括号或单独成句
 
 ## 2A. Anti-AI 检测细则（对应执行顺序第 3 步）
 
