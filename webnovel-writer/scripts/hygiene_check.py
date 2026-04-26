@@ -1039,10 +1039,29 @@ def check_cross_chapter_style_drift(root: Path, chapter: int, rep: HygieneReport
     # 根因：Ch7 对话占比 = 0.200 但 `r < 0.20` 浮点比较仍判 True（float 精度问题）
     # 修法：留 2.5% 容差（与 post_draft_check DIALOGUE_RATIO 一致）
     dialogue_min_effective = dialogue_min - 0.005
+
+    # Round 20.6 · 2026-04-26 · 读 post_draft_config.json 的 dialogue_ratio_override_chapters
+    # Root cause：H21 一直无视 post_draft_config 的 override（Ch2/Ch3 已豁免），
+    # 导致项目级豁免章节仍报 P1 假阳。post_draft_check.py 已读，hygiene 没读 → 漂移。
+    # 根治：豁免章不计入连续低对话占比 streak
+    override_chapters: set[int] = set()
+    config_p = root / ".webnovel" / "post_draft_config.json"
+    if config_p.exists():
+        try:
+            cfg = json.loads(config_p.read_text(encoding="utf-8"))
+            override_chapters = set(int(c) for c in cfg.get("dialogue_ratio_override_chapters", []) or [])
+        except Exception:
+            override_chapters = set()
+
     low_streak = 0
-    for r in [cur_ratio, prev1_ratio, prev2_ratio]:
+    skipped_overrides: list[int] = []
+    for offset, r in enumerate([cur_ratio, prev1_ratio, prev2_ratio]):
         if r is None:
             break
+        ch_idx = chapter - offset
+        if ch_idx in override_chapters:
+            skipped_overrides.append(ch_idx)
+            continue  # 豁免章不打断也不计数
         if r < dialogue_min_effective:
             low_streak += 1
         else:
@@ -1052,7 +1071,8 @@ def check_cross_chapter_style_drift(root: Path, chapter: int, rep: HygieneReport
         rep.record("P1", "H21",
                    f"对话占比连 3 章 < {dialogue_min}（Ch{chapter}={cur_ratio:.3f} / "
                    f"Ch{chapter-1}={prev1_ratio:.3f} / Ch{chapter-2}={prev2_ratio:.3f}）· "
-                   f"读者 reader-critic 低位风险", False)
+                   f"读者 reader-critic 低位风险"
+                   + (f" · override skipped {sorted(skipped_overrides)}" if skipped_overrides else ""), False)
     elif low_streak == 2:
         rep.record("P2", "H21",
                    f"对话占比连 2 章 < {dialogue_min}（Ch{chapter}={cur_ratio:.3f} / "
@@ -1504,6 +1524,85 @@ def check_hook_close_persistence(root: Path, chapter: int, rep: HygieneReport):
     rep.record("P0", "H26", f"hook_close 落库一致（primary='{src_primary}'）", True)
 
 
+def check_hook_close_freshness(root: Path, chapter: int, rep: HygieneReport):
+    """H28: hook_close 版本新鲜度（Round 20.5 · post-polish drift 根治）
+
+    Root cause：Step 8 polish 能改正文章末决策，但旧 hook_close 仍留在
+    state.chapter_meta，H26 只比对 reader_pull JSON 与 state 是否一致，无法判断
+    二者是否都已经落后于最新 narrative_version。结果是"正文写出决策钩，
+    hook trend 仍读旧信息钩"，H25 继续 P0。
+
+    根治：
+      - set-hook-close 写入 source_narrative_version
+      - 当前 narrative_version 与 hook_close.source_narrative_version 不一致 → P0
+      - 老数据缺 source_narrative_version 但已经有 polish_log → P1，提示回填
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        rep.record("P0", "H28", "state.json 不存在，跳过 hook_close 版本检查", True)
+        return
+    try:
+        state = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        rep.record("P0", "H28", f"state.json 解析失败：{exc}", False)
+        return
+
+    meta = (state.get("chapter_meta") or {}).get(f"{chapter:04d}") or {}
+    if not meta:
+        rep.record("P0", "H28", f"chapter_meta.{chapter:04d} 不存在，跳过", True)
+        return
+    hook_close = meta.get("hook_close") or {}
+    if not hook_close:
+        rep.record("P0", "H28", "hook_close 缺失，交由 H26/H25 判断", True)
+        return
+
+    # Round 20.6 · needs_reclassify=True 必须先 set-hook-close 重分类才能通过
+    # polish_cycle 末尾自动设此 flag，迫使 AI/人工立即重分类，永不留 stale primary_type
+    if hook_close.get("needs_reclassify"):
+        old_primary = hook_close.get("primary_type") or "未知"
+        synced = hook_close.get("polish_synced_at") or "?"
+        rep.record(
+            "P0", "H28",
+            f"hook_close 待重分类：polish 改了正文（synced_at={synced}），"
+            f"旧 primary_type='{old_primary}' 可能已不准。"
+            f" 修复：阅读章末后执行 state update --set-hook-close 重新分类，"
+            f"设新 primary∈[信息钩,情绪钩,决策钩,动作钩] + source_narrative_version={meta.get('narrative_version','')}",
+            False,
+        )
+        return
+
+    current_nv = str(meta.get("narrative_version") or "").strip()
+    hook_nv = str(
+        hook_close.get("source_narrative_version")
+        or hook_close.get("narrative_version")
+        or ""
+    ).strip()
+    if current_nv and hook_nv and current_nv != hook_nv:
+        rep.record(
+            "P0", "H28",
+            f"hook_close stale：state narrative_version={current_nv}，"
+            f"hook_close.source_narrative_version={hook_nv}。"
+            f" 说明正文 polish 后未重跑 reader-pull/未重新 set-hook-close，"
+            f"会污染 H25 hook trend。修复：重跑 reader-pull-checker 或执行 "
+            f"state update --set-hook-close 并带 source_narrative_version={current_nv}",
+            False,
+        )
+        return
+
+    polish_log = meta.get("polish_log") or []
+    has_polish = bool([e for e in polish_log if isinstance(e, dict)])
+    if current_nv and has_polish and not hook_nv:
+        rep.record(
+            "P1", "H28",
+            f"hook_close 缺 source_narrative_version（当前 {current_nv}，polish_log 已存在）。"
+            f" 老数据无法证明章末钩子来自最新版正文；建议重跑 reader-pull 或用 set-hook-close 回填版本。",
+            False,
+        )
+        return
+
+    rep.record("P0", "H28", f"hook_close 版本新鲜（source_narrative_version={hook_nv or 'legacy-none'}）", True)
+
+
 def check_hook_trend(root: Path, chapter: int, rep: HygieneReport):
     """H25: 章末钩子 4 类跨章趋势（Round 19 Phase G）
 
@@ -1571,17 +1670,33 @@ def check_hook_trend(root: Path, chapter: int, rep: HygieneReport):
     if len(chs) >= 8 and chapter >= int(chs[-1]):
         # 仅在 polish 当前最新章或更新章时检查"未来 8 章"窗口
         recent_8 = chs[-8:]
-        primaries_8 = [
-            ((metas.get(k) or {}).get("hook_close") or {}).get("primary_type") or ""
-            for k in recent_8
-        ]
-        if all(p for p in primaries_8) and "决策钩" not in primaries_8:
+        primaries_8 = []
+        decision_signals = []
+        for k in recent_8:
+            meta = metas.get(k) or {}
+            primary = ((meta.get("hook_close") or {}).get("primary_type") or "")
+            primaries_8.append(primary)
+            victory = (
+                ((meta.get("thrill_score") or {}).get("subdimensions") or {})
+                .get("protagonist_victory")
+            )
+            if primary == "决策钩":
+                decision_signals.append(f"Ch{int(k)} hook_close=决策钩")
+            elif isinstance(victory, (int, float)) and victory >= 80:
+                decision_signals.append(f"Ch{int(k)} protagonist_victory={victory}")
+        if all(p for p in primaries_8) and not decision_signals:
             rep.record(
                 "P0", "H25",
                 f"连续 8 章无决策钩（章 {[int(k) for k in recent_8]} primary_types={primaries_8}）"
                 f" · 决策钩=主角主动选择=网文核心爽点，必须在下章兑现"
                 f" · 修复：下章 hook_close.primary_type=决策钩 或 reader-thrill protagonist_victory ≥ 80",
                 False,
+            )
+        elif decision_signals:
+            rep.record(
+                "P0", "H25",
+                f"最近 8 章存在主角主动决策/胜利信号：{decision_signals}",
+                True,
             )
 
 
@@ -1603,6 +1718,7 @@ def main():
     check_execution_package_persistence(root, args.chapter, rep)
     check_polish_report_persistence(root, args.chapter, rep)
     check_hook_close_persistence(root, args.chapter, rep)  # H26 · Round 20 · Ch12 RCA P0
+    check_hook_close_freshness(root, args.chapter, rep)  # H28 · Round 20.5 · hook_close post-polish freshness
 
     # P1 检查
     check_root_layout(root, rep)

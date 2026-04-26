@@ -701,6 +701,236 @@ def test_H25_with_decision_hook_no_p0_fail(tmp_path):
     assert "连续 8 章无决策钩" not in p0_msgs
 
 
+def test_H25_protagonist_victory_proxy_no_p0_fail(tmp_path):
+    """Round 20.5 · H25 文档兑现：reader-thrill protagonist_victory≥80 可替代决策钩."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    state = {
+        "chapter_meta": {
+            f"{i:04d}": {
+                "chapter": i,
+                "hook_close": {"primary_type": "信息钩" if i % 2 == 0 else "动作钩"},
+                "thrill_score": {
+                    "subdimensions": {
+                        "protagonist_victory": 80 if i == 8 else 60
+                    }
+                },
+            }
+            for i in range(1, 9)
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_hook_trend(project, 8, rep)
+    p0_msgs = "|".join(rep.p0_fails)
+    assert "连续 8 章无决策钩" not in p0_msgs
+    assert "H25" in rep.passes
+
+
+def test_H28_hook_close_stale_after_polish_p0_fail(tmp_path):
+    """Round 20.5 · hook_close 绑定旧 narrative_version 时必须 P0 阻断."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    state = {
+        "chapter_meta": {
+            "0006": {
+                "chapter": 6,
+                "narrative_version": "v5",
+                "hook_close": {
+                    "primary_type": "信息钩",
+                    "source_narrative_version": "v3",
+                },
+            }
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_hook_close_freshness(project, 6, rep)
+    p0_msgs = "|".join(rep.p0_fails)
+    assert "hook_close stale" in p0_msgs
+
+
+def test_H28_hook_close_current_version_pass(tmp_path):
+    """Round 20.5 · hook_close.source_narrative_version 与正文版本一致时通过."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    state = {
+        "chapter_meta": {
+            "0006": {
+                "chapter": 6,
+                "narrative_version": "v5",
+                "hook_close": {
+                    "primary_type": "决策钩",
+                    "source_narrative_version": "v5",
+                },
+            }
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_hook_close_freshness(project, 6, rep)
+    assert "H28" in rep.passes
+    assert not rep.p0_fails
+
+
+def test_H28_hook_close_needs_reclassify_p0_fail(tmp_path):
+    """Round 20.6 · polish_cycle 自动设 needs_reclassify=True，
+    必须 P0 阻断直到作者/AI 重跑 set-hook-close 给出新分类."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    state = {
+        "chapter_meta": {
+            "0006": {
+                "chapter": 6,
+                "narrative_version": "v5",
+                "hook_close": {
+                    "primary_type": "信息钩",
+                    "source_narrative_version": "v5",
+                    "needs_reclassify": True,  # polish_cycle 自动标记
+                    "polish_synced_at": "2026-04-26T05:00:00Z",
+                },
+            }
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_hook_close_freshness(project, 6, rep)
+    p0_msgs = "|".join(rep.p0_fails)
+    assert "待重分类" in p0_msgs
+    assert "set-hook-close" in p0_msgs
+
+
+def test_H28_hook_close_after_reclassify_pass(tmp_path):
+    """Round 20.6 · 作者跑过 set-hook-close 后 needs_reclassify=False，应通过 H28."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    state = {
+        "chapter_meta": {
+            "0006": {
+                "chapter": 6,
+                "narrative_version": "v5",
+                "hook_close": {
+                    "primary_type": "决策钩",
+                    "source_narrative_version": "v5",
+                    "needs_reclassify": False,
+                    "polish_synced_at": "2026-04-26T05:00:00Z",
+                },
+            }
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_hook_close_freshness(project, 6, rep)
+    assert "H28" in rep.passes
+    assert not rep.p0_fails
+
+
+def test_H21_dialogue_ratio_override_skips_chapter(tmp_path):
+    """Round 20.6 · post_draft_config dialogue_ratio_override_chapters
+    应让 hygiene H21 也跳过该章，不再报连续低对话占比 P1."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    (project / "正文").mkdir()
+    # 三个连续对话占比都 < 0.20 的章节
+    low_text = "他想了一下。\n\n他没说话。\n\n" + ("内心独白" * 200)
+    (project / "正文" / "第0001章-A.md").write_text(low_text, encoding="utf-8")
+    (project / "正文" / "第0002章-B.md").write_text(low_text, encoding="utf-8")
+    (project / "正文" / "第0003章-C.md").write_text(low_text, encoding="utf-8")
+    state = {
+        "chapter_meta": {
+            "0001": {"chapter": 1, "narrative_version": "v1"},
+            "0002": {"chapter": 2, "narrative_version": "v1"},
+            "0003": {"chapter": 3, "narrative_version": "v1"},
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    # post_draft_config 豁免 Ch2/Ch3
+    (project / ".webnovel" / "post_draft_config.json").write_text(
+        json.dumps(
+            {"dialogue_ratio_override_chapters": [2, 3]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    rep = h.HygieneReport()
+    h.check_cross_chapter_style_drift(project, 3, rep)
+    p1_msgs = "|".join(rep.p1_fails)
+    # H21 dialogue 连 3 章 < 0.20 应被 override 跳过
+    assert "对话占比连 3 章" not in p1_msgs
+
+
+def test_H21_dialogue_ratio_no_override_still_fires(tmp_path):
+    """Round 20.6 · 没有 override 时仍正常报 P1（保持原有行为）."""
+    import sys
+    plugin_root = Path(__file__).resolve().parents[3]
+    if str(plugin_root / "scripts") not in sys.path:
+        sys.path.insert(0, str(plugin_root / "scripts"))
+    import hygiene_check as h
+    project = tmp_path / "test_project"
+    (project / ".webnovel").mkdir(parents=True)
+    (project / "正文").mkdir()
+    low_text = "他想了一下。\n\n他没说话。\n\n" + ("内心独白" * 200)
+    (project / "正文" / "第0001章-A.md").write_text(low_text, encoding="utf-8")
+    (project / "正文" / "第0002章-B.md").write_text(low_text, encoding="utf-8")
+    (project / "正文" / "第0003章-C.md").write_text(low_text, encoding="utf-8")
+    state = {
+        "chapter_meta": {
+            "0001": {"chapter": 1, "narrative_version": "v1"},
+            "0002": {"chapter": 2, "narrative_version": "v1"},
+            "0003": {"chapter": 3, "narrative_version": "v1"},
+        }
+    }
+    (project / ".webnovel" / "state.json").write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    rep = h.HygieneReport()
+    h.check_cross_chapter_style_drift(project, 3, rep)
+    p1_msgs = "|".join(rep.p1_fails)
+    assert "对话占比连 3 章" in p1_msgs
+
+
 def test_H27_polish_sunk_cost_warns(tmp_path):
     """Round 20.1 · H27：v3+polish_log≥2+5 项 80 一线 → P1 警报."""
     import sys

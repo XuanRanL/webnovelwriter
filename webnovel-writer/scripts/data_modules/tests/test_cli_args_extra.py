@@ -60,6 +60,18 @@ def test_load_json_arg_supports_inline_file_and_stdin(tmp_path, monkeypatch):
     assert mod.load_json_arg("@-") == {"chapter": 3}
 
 
+def test_load_json_arg_tolerates_bom_file_and_stdin(tmp_path, monkeypatch):
+    """PowerShell 5 pipes/files may include UTF-8 BOM; JSON args must still parse."""
+    mod = _load_module()
+
+    payload_path = tmp_path / "payload_bom.json"
+    payload_path.write_text('\ufeff{"chapter": 4}', encoding="utf-8")
+    assert mod.load_json_arg(f"@{payload_path}") == {"chapter": 4}
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO('\ufeff{"chapter": 5}'))
+    assert mod.load_json_arg("@-") == {"chapter": 5}
+
+
 def test_load_json_arg_rejects_empty_at_reference():
     mod = _load_module()
     with pytest.raises(ValueError):

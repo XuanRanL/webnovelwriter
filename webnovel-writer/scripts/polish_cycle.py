@@ -226,11 +226,61 @@ def update_state_after_polish(
         )
         diff["polish_log_appended"] = True
 
+    # Round 20.6 · 2026-04-26 · hook_close 自动同步（防 polish 漂移根治）
+    # Root cause：以前 polish 改正文（Ch3/Ch4/Ch6 加决策钩）但 hook_close
+    # 仍是旧版分类与旧 text_excerpt，hook trend 因而被旧信息钩污染，H25 P0 误报。
+    # 之前靠 H28 detect + 人工 set-hook-close 修，但每次 polish 又会重造 stale。
+    # 根治：polish 末尾自动：
+    #   1) 抽取章末最后段作为 text_excerpt（事实层）
+    #   2) source_narrative_version=new_version（绑定本次版本）
+    #   3) needs_reclassify=True（强制下游必须重分类才能通过 hygiene H28 P0）
+    # 这样下次 polish 自动标 stale，AI/人工必须立刻 set-hook-close 重分类才能 commit。
+    hook_close = meta.setdefault("hook_close", {})
+    hook_close["text_excerpt"] = _extract_chapter_tail_excerpt(text)
+    hook_close["source_narrative_version"] = new_version
+    hook_close["needs_reclassify"] = True
+    hook_close["polish_synced_at"] = _utc_iso()
+    diff["hook_close_synced"] = {
+        "source_narrative_version": new_version,
+        "needs_reclassify": True,
+        "old_primary_type": hook_close.get("primary_type"),
+    }
+
     state_p.write_text(
         json.dumps(s, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
     return diff
+
+
+def _extract_chapter_tail_excerpt(text: str, max_len: int = 200) -> str:
+    """Round 20.6 · 抽取章末最后段供 hook_close.text_excerpt 使用。
+
+    优先取最后 4 段非空文本。若总长不足，回退到末尾 max_len 字符。
+    剥除 markdown 标题/分隔线/frontmatter 标记。
+    """
+    cleaned = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            cleaned.append("")
+            continue
+        if stripped.startswith("#") or stripped.startswith("---"):
+            continue
+        cleaned.append(stripped)
+    # 取最后非空段（最多 4 段）
+    paragraphs = []
+    cur = []
+    for ln in cleaned:
+        if ln:
+            cur.append(ln)
+        elif cur:
+            paragraphs.append("\n".join(cur))
+            cur = []
+    if cur:
+        paragraphs.append("\n".join(cur))
+    tail = "\n\n".join(paragraphs[-4:]) if paragraphs else text.rstrip()[-max_len:]
+    return tail[-max_len:]
 
 
 def register_workflow_polish_task(

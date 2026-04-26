@@ -745,3 +745,136 @@ def test_polish_cycle_allow_exceed_without_reason_fails(tmp_path):
     )
     assert result.returncode == 1
     assert "deviation-reason" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# Round 20.6 · 2026-04-26 · hook_close 自动同步（防 polish 漂移根治）
+# ---------------------------------------------------------------------------
+
+
+def test_extract_chapter_tail_excerpt_basic():
+    _ensure_scripts_on_path()
+    import polish_cycle as pc
+
+    text = "第一段\n\n第二段\n\n第三段\n\n第四段\n\n这是最后一段决策"
+    excerpt = pc._extract_chapter_tail_excerpt(text, max_len=200)
+    assert "这是最后一段决策" in excerpt
+    assert "第一段" not in excerpt  # 第一段超出最后 4 段
+
+
+def test_extract_chapter_tail_excerpt_strips_markdown():
+    _ensure_scripts_on_path()
+    import polish_cycle as pc
+
+    text = "# 标题\n\n第一段内容\n\n---\n\n## 子标题\n\n他做了决定。\n\n明天就动手。"
+    excerpt = pc._extract_chapter_tail_excerpt(text, max_len=200)
+    assert "#" not in excerpt
+    assert "---" not in excerpt
+    assert "明天就动手" in excerpt
+
+
+def test_extract_chapter_tail_excerpt_respects_max_len():
+    _ensure_scripts_on_path()
+    import polish_cycle as pc
+
+    text = "段落\n\n" + ("正文" * 500)
+    excerpt = pc._extract_chapter_tail_excerpt(text, max_len=200)
+    assert len(excerpt) <= 200
+
+
+def test_update_state_after_polish_syncs_hook_close(tmp_path):
+    """Round 20.6 · polish 末尾必须自动写 hook_close.text_excerpt
+    + source_narrative_version=new_version + needs_reclassify=True."""
+    _ensure_scripts_on_path()
+    import polish_cycle as pc
+
+    chapter_text = (
+        "他想，昨晚谁来过。\n\n他转身看脚印。\n\n"
+        "他在心里说一句。\n\n明天他要去敲一次隔壁那扇门。"
+    )
+    project = _make_minimal_project(tmp_path, chapter_text=chapter_text)
+    chapter_file = project / "正文" / "第0001章-测试.md"
+
+    # 假设 polish 前有旧的 hook_close
+    state_p = project / ".webnovel" / "state.json"
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    s["chapter_meta"]["0001"]["hook_close"] = {
+        "primary_type": "信息钩",
+        "strength": 80,
+        "text_excerpt": "旧版本章末文本",
+        "source_narrative_version": "v2",
+        "updated_at": "2026-04-25T00:00:00+00:00",
+    }
+    state_p.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    diff = pc.update_state_after_polish(
+        project, 1, chapter_file, new_version="v3", notes="add decision hook"
+    )
+
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    hc = s["chapter_meta"]["0001"]["hook_close"]
+    # 关键三件：text_excerpt 刷新、source_narrative_version=v3、needs_reclassify=True
+    assert "明天他要去敲一次隔壁那扇门" in hc["text_excerpt"]
+    assert hc["source_narrative_version"] == "v3"
+    assert hc["needs_reclassify"] is True
+    assert "polish_synced_at" in hc
+    # 旧 primary_type 保留（等 set-hook-close 重分类）
+    assert hc["primary_type"] == "信息钩"
+    # diff 也带上 hook_close_synced
+    assert "hook_close_synced" in diff
+    assert diff["hook_close_synced"]["needs_reclassify"] is True
+    assert diff["hook_close_synced"]["source_narrative_version"] == "v3"
+
+
+def test_update_state_after_polish_creates_hook_close_when_missing(tmp_path):
+    """旧章节没有 hook_close 时，polish 也自动创建骨架。"""
+    _ensure_scripts_on_path()
+    import polish_cycle as pc
+
+    project = _make_minimal_project(tmp_path, chapter_text="决策段\n\n明天动手")
+    chapter_file = project / "正文" / "第0001章-测试.md"
+
+    pc.update_state_after_polish(project, 1, chapter_file, "v3", notes="first polish")
+
+    s = json.loads((project / ".webnovel" / "state.json").read_text(encoding="utf-8"))
+    hc = s["chapter_meta"]["0001"]["hook_close"]
+    assert hc["needs_reclassify"] is True
+    assert hc["source_narrative_version"] == "v3"
+    assert "明天动手" in hc["text_excerpt"]
+
+
+def test_set_hook_close_clears_needs_reclassify(tmp_path):
+    """Round 20.6 · 主动 set-hook-close 表示已重分类，必须清 needs_reclassify=False。"""
+    _ensure_scripts_on_path()
+    import subprocess as sp
+    import sys as _sys
+
+    project = _make_minimal_project(tmp_path, chapter_text="末段\n\n明天动手")
+    state_p = project / ".webnovel" / "state.json"
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    s["chapter_meta"]["0001"]["hook_close"] = {
+        "primary_type": "信息钩",
+        "needs_reclassify": True,
+        "polish_synced_at": "2026-04-26T00:00:00+00:00",
+        "source_narrative_version": "v3",
+    }
+    state_p.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    cli = _plugin_root() / "scripts" / "webnovel.py"
+    payload = json.dumps({
+        "chapter": 1, "primary": "决策钩", "strength": 85,
+        "text": "明天动手", "source_narrative_version": "v3",
+    }, ensure_ascii=False)
+    r = sp.run(
+        [_sys.executable, "-X", "utf8", str(cli),
+         "--project-root", str(project),
+         "state", "update", "--set-hook-close", payload],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert r.returncode == 0, r.stderr
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    hc = s["chapter_meta"]["0001"]["hook_close"]
+    assert hc["primary_type"] == "决策钩"
+    assert hc["needs_reclassify"] is False
+    # polish_synced_at 历史保留
+    assert hc.get("polish_synced_at") == "2026-04-26T00:00:00+00:00"

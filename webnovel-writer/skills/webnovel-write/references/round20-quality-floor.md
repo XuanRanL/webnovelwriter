@@ -124,6 +124,29 @@ python webnovel.py state update --set-hook-close \
 
 ---
 
+## 4.5 H28 hook_close 版本新鲜度
+
+**问题根因**：Step 8 polish 可以改写章末，让正文已经出现决策钩/主角选择；但旧 `hook_close` 仍留在 `state.chapter_meta`。H26 只能判断 reader-pull JSON 与 state 是否一致，无法判断二者是否都落后于最新版正文，导致“正文改好了，H25 hook trend 仍读旧信息钩”。
+
+**根治位置**：`scripts/data_modules/state_manager.py --set-hook-close` + `scripts/hygiene_check.py:check_hook_close_freshness`
+
+**检查规则**：
+- `set-hook-close` 自动写入 `hook_close.source_narrative_version = chapter_meta.narrative_version`
+- 若 `chapter_meta.NNNN.narrative_version != hook_close.source_narrative_version` → **P0 fail**
+- 老数据缺 `source_narrative_version` 且存在 `polish_log` → P1 提醒回填
+
+**修复路径**：
+```bash
+python webnovel.py state update --set-hook-close \
+  '{"chapter":N,"primary":"决策钩","secondary":"信息钩","strength":85,
+    "source_narrative_version":"v5","source":"manual_after_polish",
+    "text":"章末最新版决策钩原文摘录"}'
+```
+
+**质量意义**：H25 的跨章钩子趋势从此只消费“与最新版正文绑定”的 hook_close，避免 post-polish 后继续按旧章末做质量决策。
+
+---
+
 ## 5. H27 polish sunk cost 警报
 
 **问题根因**：Ch6 v3+polish 2 轮+5 项 80 一线（continuity/flow/reader-pull/high-point/pacing 全在 78-83）→ 没人识别这是 sunk cost，AI 还想再 polish。Ch1 v7 11 轮 polish 血教训同源。

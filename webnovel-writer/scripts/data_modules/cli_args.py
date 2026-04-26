@@ -89,8 +89,8 @@ def load_json_arg(raw: str) -> Any:
         if not target:
             raise ValueError("invalid json arg: '@' without path")
         if target == "-":
-            content = sys.stdin.read()
+            content = sys.stdin.read().lstrip("\ufeff")
         else:
-            content = Path(target).read_text(encoding="utf-8")
+            content = Path(target).read_text(encoding="utf-8-sig")
         return json.loads(content)
     return json.loads(text)

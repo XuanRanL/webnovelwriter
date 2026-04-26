@@ -82,6 +82,7 @@ SKILL.md 充分性闸门除了上述 15 条，再增加：
 
 16. **polish_log schema 合规**（Round 14.5.2 · `H20`）：若 `chapter_meta.{NNNN}.polish_log` 存在，每条必须含 `version/timestamp/notes` 三字段，version 匹配 `vN` 或 `vN.M.K`，timestamp 为 ISO-8601
 17. **polish drift 零 P0**（Round 14.5.2 · preflight `polish_drift`）：Step 0 preflight 必须报告 `polish_drift: ok=True`；P0 drift 视为 preflight 失败
+18. **hook_close 版本新鲜度**（Round 20.5 · hygiene `H28`）：`hook_close.source_narrative_version` 必须与当前 `chapter_meta.NNNN.narrative_version` 一致；不一致说明 Step 8 polish 后章末钩子未重算，会污染 H25 跨章趋势，P0 阻断。
 
 ## 同步维护规则
 

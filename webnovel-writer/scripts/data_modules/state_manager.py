@@ -1964,11 +1964,32 @@ def main():
             cm = manager._state.setdefault("chapter_meta", {})
             key = f"{ch:04d}"
             entry = cm.setdefault(key, {})
-            entry["hook_close"] = {
+            source_nv = str(
+                payload.get("source_narrative_version")
+                or payload.get("narrative_version")
+                or entry.get("narrative_version")
+                or ""
+            ).strip()
+            hook_close = {
                 "primary_type": primary,
                 "secondary_type": sec,
                 "strength": int(payload.get("strength", 80)),
                 "text_excerpt": (str(payload.get("text") or ""))[:200],
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            if source_nv:
+                hook_close["source_narrative_version"] = source_nv
+            if payload.get("source"):
+                hook_close["source"] = str(payload.get("source"))[:80]
+            # Round 20.6 · 主动 set-hook-close 表示已重分类，清 needs_reclassify
+            # 与 polish_cycle 末尾 needs_reclassify=True 形成"标记 → 重分类"闭环。
+            # 保留来自 polish_cycle 的 polish_synced_at 历史轨迹（如存在）。
+            existing_close = entry.get("hook_close") or {}
+            if existing_close.get("polish_synced_at"):
+                hook_close["polish_synced_at"] = existing_close["polish_synced_at"]
+            hook_close["needs_reclassify"] = False
+            entry["hook_close"] = {
+                **hook_close,
             }
             manager._pending_raw_state_mutations.add("chapter_meta")
             changes.append(
