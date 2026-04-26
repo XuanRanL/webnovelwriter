@@ -1561,7 +1561,15 @@ def check_hook_trend(root: Path, chapter: int, rep: HygieneReport):
     # 旧逻辑：state get-hook-trend CLI 只在 reader-pull-checker 输出 issue，
     #         hygiene 不强制阻断，导致 12 章累积警报无效。
     # 新逻辑：H25 直接读最近 8 章 primary_type，全无决策钩 → P0 fail。
-    if len(chs) >= 8:
+    #
+    # Round 20.2 · 2026-04-26 · Ch3 polish 误伤根治：
+    # 旧 H25 P0 不区分当前 chapter，导致 polish 早期章节（如 Ch3）时被未来章节
+    # 状态（Ch5-12 全无决策钩）阻断 commit。
+    # 修法：H25 P0 仅在"当前 chapter ≥ 当前章号窗口包含的最末章"时触发——
+    # 即只有当 polish/写当前最末章及之前 7 章范围时才检查。
+    # 早期章节 polish 不受未来章节状态阻断。
+    if len(chs) >= 8 and chapter >= int(chs[-1]):
+        # 仅在 polish 当前最新章或更新章时检查"未来 8 章"窗口
         recent_8 = chs[-8:]
         primaries_8 = [
             ((metas.get(k) or {}).get("hook_close") or {}).get("primary_type") or ""
