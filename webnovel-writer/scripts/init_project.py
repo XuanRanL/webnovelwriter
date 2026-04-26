@@ -196,6 +196,59 @@ def _build_master_outline(target_chapters: int, *, chapters_per_volume: int = 50
             ]
         )
 
+    # Round 20 · 2026-04-25 · 大纲三计划 schema 必含
+    # reader-thrill-checker 6 子维度直接读这三计划评分；context-agent Step 1 转执行包硬约束
+    # 详见 references/outline-release-plans-template.md
+    lines.extend(
+        [
+            "## 金手指释放计划（golden_finger_release_plan）",
+            "",
+            "> Round 20 必含。reader-thrill-checker.golden_finger_release 子维度评分依据。",
+            "> 强度 5 档：1=micro 存在感 / 2=small 有用 / 3=medium 赢一次 / 4=large 爆发 / 5=milestone 改变战局",
+            "> 硬约束：每 3 章至少 1 次 medium；连续 3 章 ≤ micro 触发 thrill warn；连续 5 章 ≤ micro = critical block；卷末必须 milestone",
+            "",
+            "| 章节 | 强度 | 释放事件 |",
+            "|---|:---:|---|",
+            "| Ch1 |  | （示例：金手指首发暗示） |",
+            "| Ch2 |  | （示例：小爽点） |",
+            "| Ch3 |  | （示例：medium 赢一次） |",
+            "| ... |  | ... |",
+            "",
+            "## 冲突释放计划（conflict_release_plan）",
+            "",
+            "> Round 20 必含。reader-thrill-checker.protagonist_victory + plot_momentum 子维度评分依据。",
+            "> 5 类冲突：A 内心冲突 / B 隐性博弈 / C 决策对线 / D 正面对抗 / E 战斗对决",
+            "> 硬约束：每 5 章至少 1 次 D；每 8 章至少 1 次决策钩 hook_close.primary_type=决策钩；前 12 章必须有至少 1 次 D",
+            "",
+            "| 章节 | 冲突类型 | 事件 |",
+            "|---|:---:|---|",
+            "| Ch1 |  | （示例：A+B 内心 + 隐性博弈） |",
+            "| Ch4 |  | （示例：C+D 决策 + 首次正面对抗） |",
+            "| ... |  | ... |",
+            "",
+            "## 标题承诺兑现计划（title_promise_payoff_plan）",
+            "",
+            "> Round 20 必含。reader-thrill-checker.title_promise_payoff 子维度评分依据。",
+            "> 把书名/简介承诺拆成 3-5 个关键词，逐章打推进档：",
+            "> 5=milestone(卷末必有) / 4=large / 3=medium(每 3 章 1 个) / 2=small / 1=micro / 0=none / -1=倒退(critical block 禁止)",
+            "",
+            "### 标题关键词分解",
+            "",
+            "- 关键词 1：",
+            "- 关键词 2：",
+            "- 关键词 3：",
+            "",
+            "### 兑现里程碑",
+            "",
+            "| 章节 | 里程碑 | 标题方向推进幅度 |",
+            "|---|---|:---:|",
+            "| Ch3 |  |  |",
+            "| Ch15 |  |  |",
+            "| Ch卷末 |  | milestone |",
+            "",
+        ]
+    )
+
     return "\n".join(lines).rstrip() + "\n"
 
 
