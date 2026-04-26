@@ -68,6 +68,16 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
 6. `设定集/` 全部文件 — 设定验证 + 人设基线
 7. `state.json.project_info.core_selling_points` — 题材卖点（驱动 Layer F）
 8. 前 5 章的 `.webnovel/summaries/ch{prev}.md` + `正文/第{prev}章*.md`（若存在）— 跨章基线
+9. **`.webnovel/state.json.chapter_meta.{NNNN}.thrill_score`（Round 20 · 2026-04-25 新增）** — reader-thrill-checker 6 子维度评分（如已落库）。audit-agent Layer C 必须读该字段：
+   - 若 `thrill_score.verdict ∈ {tepid, frustrating}` 且 `chapter ≤ 5` → Layer C 加 `C16_thrill_floor` critical（与 reader-critic <80 联动 block）
+   - 若 `thrill_score.subdimensions.golden_finger_release ≤ 50` 且最近 3 章同样 ≤ 50 → Layer F（题材兑现）加 `F_thrill_golden_finger_drought` critical
+   - 若 `thrill_score.subdimensions.title_promise_payoff` 出现倒退（连续 5 章 ≤ small）→ Layer F 加 `F_title_drift` high warn
+   - 字段缺失（老章节）→ 跳过，不 block
+10. **`大纲/总纲.md` 三计划段（Round 20 · 2026-04-25 新增）** — `golden_finger_release_plan` / `conflict_release_plan` / `title_promise_payoff_plan` 三个 ## 段落。audit-agent Layer F 用三计划本章行作为承诺基线：
+    - 计划本章金手指强度 vs 实际 → Layer F 兑现度判定
+    - 计划本章冲突类型 vs 实际 hook_close.primary_type / 正文 → Layer F 兑现度判定
+    - 计划本章标题方向推进档 vs 实际推进 → Layer F 兑现度判定
+    - 三计划段缺失（老项目）→ Layer F 跳过承诺验证，不 block，提示 editor_notes 下章补
 
 ### 第二步：七层审计执行
 

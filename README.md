@@ -5,19 +5,33 @@
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Compatible-purple.svg)](https://claude.ai/claude-code)
 
 > **本 fork 与原项目 [lingfengQAQ/webnovel-writer](https://github.com/lingfengQAQ/webnovel-writer) 已分叉为不同产品**：
-> 原项目走“轻量化 + 降 token + 单 reviewer 不评分”路线；本 fork 走“13-checker 评分硬卡 + 18 轮 RCA 加固 + 读者三件标尺”路线。
+> 原项目走"轻量化 + 降 token + 单 reviewer 不评分"路线；本 fork 走"13-checker 评分硬卡 + 20 轮 RCA 加固 + 读者四件标尺（含 Round 20 爽感）"路线。
 > 两者**架构不可合并**，本 fork 选择性吸收原项目精华（v6 之前的好东西），拒绝 v6 删评分 / 删 workflow_manager / 引入 story-system 投影等架构级改动。
 
 ---
 
 ## 1. 这个 fork 解决什么问题（核心定位）
 
-读者追下一章只看 3 件事：
-1. **自然度**：写得不像 AI（不是“缓缓开口、瞳孔微缩、心中一凛”）
+读者追下一章只看 4 件事（Round 20 在原 3 件基础上加第 4 件）：
+1. **自然度**：写得不像 AI（不是"缓缓开口、瞳孔微缩、心中一凛"）
 2. **画面感**：场景具象、感官层次、节奏对（看得见、闻得到、节奏对）
 3. **追读力**：情绪欠债 + 悬念 + 爽点节奏（想看下一章）
+4. **爽感强度**（Round 20 新增）：金手指释放 / 主角胜利 / 反派受挫 / 标题承诺兑现（读完爽不爽）
 
-**所有功能必须直接映射到这 3 件之一**——映射不到的不做（即使原项目有这功能）。这是本 fork 的取舍底线。
+**所有功能必须直接映射到这 4 件之一**——映射不到的不做（即使原项目有这功能）。这是本 fork 的取舍底线。
+
+### Round 20.x 8 道质量护栏（2026-04-25 → 2026-04-26 累计 4 批）
+
+1. **A9 dimension floor block**：任一维度 <60 → overall ≤70 fail critical（评分体系不再撒谎）
+2. **reader-thrill-checker 6 子维度**：金手指/胜利/反派/信息差/标题/节奏 → "读完爽不爽"系统化
+3. **H26 hook_close 落库一致性**：Phase G 不再漂移
+4. **H25 连续 8 章无决策钩 P0**：主角必须主动选择
+5. **H27 polish sunk cost 警报**：v3+polish≥2+5 项 80 一线 → 提示重写
+6. **polish_cycle max-rounds=3 + deviation 出口**：防 Ch1 v7 11 轮死循环
+7. **dialogue_ratio_override 章型豁免**：空间/独白章型合理低对话
+8. **大纲三计划 schema**（golden_finger / conflict / title_promise）：标题方向硬绑定
+
+详见 `webnovel-writer/skills/webnovel-write/references/round20-quality-floor.md`
 
 ### 实测兑现（基于《末世重生》Ch1-11 真实数据）
 

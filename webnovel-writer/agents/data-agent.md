@@ -635,6 +635,37 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
 
 提醒**不阻断**当前章 commit，但 hygiene_check H25 会在连续 5 章相同时 P1 warn，作为下章 reader-pull-checker 输入。
 
+**Round 20.1 升级**：当 `no_decision_hook_8 == true` 且 chapter 是当前最新章时，hygiene H25 升 **P0 fail 阻断 commit**（决策钩=主角主动选择=网文核心爽点不能连续 8 章缺）。修复路径：下章 hook_close.primary_type=决策钩 或 reader-thrill protagonist_victory ≥80。
+
+**Round 20 · H26 hook_close 落库一致性 P0**：若 reader_pull_chNNNN.json 含 hook_close.primary_type 但 set-hook-close CLI 未跑 → state.chapter_meta.NNNN.hook_close 缺失 → hygiene H26 P0 fail 阻断 commit。data-agent 必须按本节执行落库步骤，不得跳过。
+
+### Round 20 · reader-thrill-checker 6 子维度落库（标准模式必跑）
+
+读 `tmp/reader_thrill_ch{NNNN}.json` 取 thrill_score 6 子维度，跑：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  state update --set-chapter-meta-field \
+  '{"chapter":N,"field":"thrill_score","value":{
+    "overall":75,"verdict":"neutral|thrilling|tepid|frustrating",
+    "will_recommend":"yes|hesitant|no",
+    "subdimensions":{
+      "golden_finger_release":NN,"protagonist_victory":NN,
+      "antagonist_setback":NN,"info_advantage_payoff":NN,
+      "title_promise_payoff":NN,"plot_momentum":NN
+    },
+    "narrative_version":"vN","note":"..."
+  }}'
+```
+
+落库后效果：
+- audit-agent Layer C/F 必读该字段（详见 `agents/audit-agent.md` § 第二步并行读取 #9）
+- 前 5 章 verdict ∈ {tepid, frustrating} 且 reader-critic <80 → audit Layer C16 critical block
+- 连续 3 章 golden_finger_release ≤ 50 → audit Layer F critical block
+- title_promise_payoff 倒退（如标题种田，本章只搞文学独白）→ THRILL_HARD_001 critical block
+
+若 `tmp/reader_thrill_chNNNN.json` 不存在（minimal 模式或老 checker 版本）→ data-agent 跳过落库，不阻断；audit-agent 同样跳过 thrill 评估。
+
 | 字段 | 类型 | 用途 |
 |---|---|---|
 | `chapter_title` | str | title 的别名；只在迁移期保留，二选一即可 |

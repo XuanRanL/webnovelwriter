@@ -4242,3 +4242,82 @@ density-checker:     PADDING/REPETITION
 **验证结果：**
 - grep 确认零残留 PowerShell 语法、零硬编码“第1卷”、零 score:62
 - 插件缓存已同步（25文件）
+
+
+---
+
+## [2026-04-25 → 2026-04-26] Round 20.x 质量护栏完整批次（4 批同步根治）
+
+### Round 20 (5551f07) · 评分硬底线 + reader-thrill + 大纲三计划
+
+**新增机制**：
+- A9 `apply_overall_floor()` + Layer A9 dimension_floor block：任一 <60 cap 70 / 任一 <75 cap 85 / 前 5 章 rc <80 cap 80
+- `agents/reader-thrill-checker.md` 新 agent（207 行 / 6 子维度 / 4 verdict / 3 硬约束）
+- 大纲三计划 schema：golden_finger_release_plan / conflict_release_plan / title_promise_payoff_plan
+- polish_cycle.py `--max-rounds 3` + `--allow-exceed-max-rounds` + `--deviation-reason` 出口协议
+
+**改动文件**：
+| 文件 | 类型 |
+|---|---|
+| `scripts/data_modules/chapter_audit.py` | 新增 apply_overall_floor + check_A9_dimension_floor |
+| `scripts/data_modules/state_manager.py` | set-checker-score 写库路径集成 floor |
+| `scripts/polish_cycle.py` | --max-rounds + deviation 路径 |
+| `scripts/hygiene_check.py` | H26 hook_close 落库一致性 |
+| `skills/webnovel-write/SKILL.md` | Step 3 Batch 2 注册 reader-thrill |
+| `agents/reader-thrill-checker.md` | NEW |
+
+### Round 20.1 (c93a70f) · H25 P0 升级 + H27 sunk cost + thrill 白名单
+
+**新增机制**：
+- H25 升 P0 fail：连续 8 章无决策钩 → 阻断 commit（不再只是 P1 warn）
+- H27 sunk cost 警报：v3+polish≥2+5 项 80 一线 → P1 提示考虑 Step 0 重写
+- chapter_meta.thrill_score 加入 set-chapter-meta-field 白名单
+
+### Round 20.2 (404bb1f) · H25 chapter-aware
+
+**修订**：H25 P0 仅在 polish 当前最新章或更新章时触发，避免 polish 早章被未来章状态误伤（Ch3 polish 血教训）
+
+### Round 20.3 (9443eb6) · Ch2/Ch6 真改造
+
+**实战验证**：
+- Ch6 v3→v5 真重写：thrill 50 tepid → 75 neutral (+25 跨档)
+- Ch2 v2→v3 真 polish：没X 47→2 / 破折号 29→5
+- Ch4 重写多维度重审：cons 47→85 / rc 58→82 / A9 floor BLOCK→pass
+- 4 章 reader-thrill 落库验证维度可信
+
+### Round 20.4 (本次) · 流程层 SKILL/references/init/agents 全面同步
+
+**改动文件**：
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `skills/webnovel-write/SKILL.md` | 更新 | 加 A9 floor + reader-thrill 完整规范 + polish max-rounds + 充分性闸门 18-22（A9/H26/H25/H27/thrill_score） + references 引用 round20-quality-floor.md / outline-release-plans-template.md |
+| `skills/webnovel-write/references/round20-quality-floor.md` | NEW | Round 20.x 5 道护栏完整规范 + 跨项目通用化清单 |
+| `skills/webnovel-write/references/outline-release-plans-template.md` | NEW | 三计划通用模板 + 跨题材应用建议 |
+| `scripts/init_project.py` | 更新 | _build_master_outline 自动注入三计划占位（新书启动即生效）|
+| `agents/audit-agent.md` | 更新 | 第二步并行读取 #9 (thrill_score) + #10 (三计划) → Layer C/F 判定依据 |
+| `agents/data-agent.md` | 更新 | Phase G 之后加 Round 20 reader-thrill 落库节 + H25 P0 升级说明 + H26 强制约束 |
+| `CUSTOMIZATIONS.md` | 更新 | 本节登记 |
+
+**目标**：让 Round 20.x 所有改动从"末世重生项目特有"真正变成"任何新书都自动获益的全流程标准"。
+
+**验证**：
+- 397/397 测试通过 · coverage 81.57% (0 退化)
+- Ch1-12 状态：A9 floor BLOCK 1→0 / pass 9→11 / warn 2→1
+- 4 章 reader-thrill 落库与读者代理判断同向（Ch4 38→75 跨档 frustrating→neutral）
+
+**8 道护栏成果**：
+1. A9 dimension floor block（评分体系不再撒谎）
+2. reader-thrill-checker 6 子维度（爽感系统化）
+3. H26 hook_close 落库一致性（Phase G 不再漂移）
+4. H25 连续 8 章无决策钩 P0（结构性硬约束）
+5. H27 polish sunk cost 警报（防 Ch1 v7 11 轮死循环）
+6. polish_cycle max-rounds=3 + deviation 出口
+7. dialogue_ratio_override 章型豁免（空间/独白章型）
+8. 大纲三计划 schema（标题方向硬绑定）
+
+**根治的 5 类质量陷阱**（永不复发）：
+- 评分掩盖硬伤（Ch4 cons 47 + rc 58 → 假 88）
+- 标题反向（Ch3 milestone → Ch4 半指停下）
+- 12 章 0 决策钩（主角无主动选择）
+- polish 沉没成本（Ch1 v7 11 轮）
+- hook_close 落库漂移（Ch12 Phase G 跳步）

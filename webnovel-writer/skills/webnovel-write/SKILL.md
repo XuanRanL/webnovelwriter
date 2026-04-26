@@ -157,6 +157,12 @@ git log --oneline -1 | grep "第${chapter_num}章"
 - `references/gate-matrix.md`
   - 用途：充分性闸门 vs hygiene_check H* 项的一一对应表 + 多层防御设计 + 同步维护规则（Round 14.5.2 新增）。
   - 触发：新增/修改/删除任一闸门前必读；调试闸门打架时必读。
+- `references/round20-quality-floor.md`（Round 20.x · 2026-04-26 新增 · A9 评分硬底线 + reader-thrill + H26/H27 + polish 上限完整规范）
+  - 用途：Round 20.x 累积的 5 道质量护栏完整规范（A9 dimension floor / reader-thrill 6 子维度 / H26 hook_close 落库一致性 / H27 sunk cost 警报 / polish_cycle max-rounds + deviation 出口）。
+  - 触发：所有项目通用必读；Step 3+3.5 → Step 4 → Step 6 → Step 8 链路涉及评分判定/polish 决策/hygiene 检查时必读。
+- `references/outline-release-plans-template.md`（Round 20 · 2026-04-25 新增 · 大纲三计划通用模板）
+  - 用途：所有新书 `大纲/总纲.md` 必含的三计划 schema：`golden_finger_release_plan` / `conflict_release_plan` / `title_promise_payoff_plan`。
+  - 触发：`/webnovel-init` 创建新书时 + Step 1 context-agent 读取三计划生成执行包硬约束 + reader-thrill-checker 比对兑现度。
 
 ### writing（问题定向加读）
 
@@ -659,6 +665,19 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
 - `--minimal` 也必须产出 `overall_score`。
 - 未落库 `review_metrics` 不得进入 Step 5。
 - `overall_score` 必须按 `step-3-review-gate.md` 的“内外部分数合并规则”计算：`round(internal * 0.6 + external_avg * 0.4)`。若 Step 3.5 全部失败或被模式跳过（`--minimal`），则退化为纯内部分数。
+- **Round 20 · A9 评分硬底线（apply_overall_floor）**：`set-checker-score` 写库时自动应用 floor 重算 overall：
+  - 任一维度 < 60 → overall ≤ **70**（FLOOR_HARD）+ Step 6 audit Layer A9 fail critical block
+  - 任一维度 < 75 → overall ≤ **85**（FLOOR_SOFT）+ A9 warn high
+  - 前 5 章 reader-critic < 80 → overall ≤ **80**（FLOOR_EARLY_RC，首章追读契约保护）+ A9 fail critical block
+  - **不得手动 Edit state.json 绕过 floor**（hygiene H9 score_alignment 会检测 overall vs checker_scores.overall 不一致）
+  - Round 20 · 2026-04-25 上线 · Ch4 Round 20.2 重写实战验证（cons 47 / rc 58 双触发 → cap 70 → 重写后全维 ≥75 解除 floor）
+- **Round 20 · reader-thrill-checker 6 子维度评分**（`agents/reader-thrill-checker.md`）：
+  - 6 子维度：`golden_finger_release` / `protagonist_victory` / `antagonist_setback` / `info_advantage_payoff` / `title_promise_payoff` / `plot_momentum`
+  - 4 verdict 档：`thrilling`(≥80) / `neutral`(65-79) / `tepid`(50-64) / `frustrating`(<50)
+  - **不计入 13 canonical**（避免触发 7 处真源同步），单独写 `chapter_meta.thrill_score`
+  - 落库通道：`set-chapter-meta-field --field thrill_score --value '{...嵌套 dict...}'`（Round 20.1 加入白名单）
+  - block 规则：前 5 章 verdict ∈ {tepid, frustrating} 且 reader-critic-checker < 80 → 双 floor 联动 block；连续 3 章 golden_finger_release ≤ 50（前 5 章为 high）→ critical block
+  - THRILL_HARD_001：标题反向（如标题种田，本章只搞文学独白）→ critical block
 - **Round 13 v2 · naturalness 和 reader-critic 作为常规评分维度**：两个读者视角 checker 的 `overall_score` 和 `problems` 与其他 11 个 checker **平等进入 `overall_score` 聚合**，不 block 流程。它们的 high/critical problems 与其他 checker 的 issues **合并**给 Step 4 做定向修复。**极端 block 条件**：仅当 Step 4 polish 后重新审查，`naturalness` 或 `reader-critic` 仍返回 `REJECT_CRITICAL` / `will_continue_reading=no`，才回到 Step 2A 重写。背景：Ch1 v1 case 中 19 审查器 + 7 层审计给 91 分 approve_with_warnings，但用户一眼看出“陆沉在死”语病——说明规则同源污染会让评分系统集体失灵。解决方案不是 block，而是**把读者视角纳入评分，强制 Step 4 必须修**。
 
 ### Step 3.5：外部模型审查（与 Step 3 并行或紧接执行）
@@ -1125,6 +1144,12 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 - **禁止**：`git commit -m "polish"` / `git commit --amend --no-verify` 等绕过手段
 - **禁止**：用 Edit/Write 直接改 `state.json` 的 `word_count` / `narrative_version`（必须经 polish_cycle.py）
 - 同一章节多轮 polish 应每轮独立调用一次（每轮 v3 → v4 → v5），保留完整 polish_log
+- **Round 20 · polish 轮数硬上限**（`--max-rounds` 默认 3）：
+  - 单章 polish_log >= 3 轮 → polish_cycle.py exit 1 给出协议提示
+  - 突破上限必须 `--allow-exceed-max-rounds --deviation-reason "为何还要再修"`
+  - deviation 自动写入 `audit_reports/chNNNN.json.deviations[]`
+  - 配套 H27 sunk cost 警报（v3+polish≥2+5 项 80 一线 → P1 提示考虑 Step 0 重写）
+  - Ch1 v7 11 轮 polish 沉没成本血教训：加法导向 polish 会陷死循环
 
 **与 Step 1-7 的关系**：
 - Step 8 是 **Step 7 之后的开放循环**，可无限次触发（每次产生一个 `polish_NNN` task）
@@ -1155,6 +1180,11 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 15. 若开启性能观测，已读取最新 timing 记录并输出结论
 16. **polish_log schema 合规**（2026-04-20 Round 14.5.2 新增 · hygiene `H20`）：若 `chapter_meta.{NNNN}.polish_log` 存在，每条必须含 `version` / `timestamp` / `notes` 三字段，`version` 匹配 `vN` 或 `vN.M.K`，`timestamp` 为 ISO-8601。schema 违规会让下章 context-agent 解析 polish 经验失败（跨章传递断层）
 17. **polish_drift 零 P0**（2026-04-20 Round 14.5.2 新增 · preflight `polish_drift`）：Step 0 preflight 必须报告 `polish_drift: ok=True`；若 P0 drift（正文已改 + `narrative_version=v1`）则 preflight 失败，必须先走 `polish_cycle.py` 提交或 `git stash` 暂存
+18. **A9 评分硬底线 pass / warn**（2026-04-25 Round 20 新增 · audit Layer A9）：Step 6 audit `layers.A_process_integrity.checks` 中 A9 dimension_floor 必须 status ∈ {pass, warn}；fail critical 阻断 Step 7。任一维度 <60 → cap 70 fail critical；<75 → cap 85 warn high；前 5 章 reader-critic <80 → cap 80 fail critical
+19. **H26 hook_close 落库一致性**（2026-04-25 Round 20 新增 · hygiene `H26` P0）：若 `tmp/reader_pull_chNNNN.json` 含 `hook_close.primary_type` 但 `state.chapter_meta.NNNN.hook_close` 缺失 → P0 fail（Phase G 落库被跳过的 Ch12 血教训根治）
+20. **H25 连续 8 章无决策钩 P0**（2026-04-25 Round 20.1 升级 · hygiene `H25`）：最近 8 章 hook_close.primary_type 全无"决策钩" → P0 fail；触发后下章 reader-pull-checker.hook_close.primary_type 必须为"决策钩" 或 reader-thrill protagonist_victory ≥80。chapter-aware（Round 20.2）：仅在 polish 当前最新章或更新章时触发，不阻断早章 polish
+21. **H27 polish sunk cost 警报**（2026-04-25 Round 20.1 新增 · hygiene `H27` P1）：narrative_version ≥ v3 + polish_log ≥ 2 轮 + ≥ 5 项 checker_scores ∈ [80, 84]（80 一线）→ P1 提示考虑 Step 0 重写而非继续 polish（Ch6 sunk cost 血教训根治）
+22. **chapter_meta.thrill_score 落库**（2026-04-25 Round 20 新增 · 可选字段）：若 Step 3 跑了 reader-thrill-checker（标准模式 Batch 2 默认跑），`set-chapter-meta-field --field thrill_score --value '{...}'` 写库；前 5 章 verdict ∈ {tepid, frustrating} 且 reader-critic <80 → audit 双 floor 联动 block
 
 ## 验证与交付
 
