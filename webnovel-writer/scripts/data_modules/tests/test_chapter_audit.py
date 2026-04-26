@@ -159,7 +159,18 @@ def good_project(tmp_path):
         "naturalness",       # Round 13 v2
         "reader_critic",     # Round 13 v2
     ]
-    for model_key in ("qwen3.6-plus", "gpt-5.4", "gemini-3.1-pro"):
+    # Round 20 · Ch12 RCA P1: A3 fixture 升级到 14 模型
+    # Round 16 阈值（healthy ≥10/14, degraded_ok ≥8, degraded_warn ≥5, fail <5）
+    # 之前 fixture 只造 3 模型 → check_A3 返回 fail critical → test_A3_external_models_pass 失败。
+    # 修法：good_project 默认提供 10 个 valid 模型（healthy），覆盖 healthy pass 路径。
+    # 单独需要 partial 场景的 test 自行删除模型。
+    fixture_valid_models = [
+        "qwen3.6-plus", "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+        "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
+        "mimo-v2-pro", "minimax-m2.7-hs", "minimax-m2.5",
+        "deepseek-v3.2-thinking", "kimi-k2.5", "kimi-k2.6",
+    ]
+    for model_key in fixture_valid_models:
         payload = {
             "agent": f"external-{model_key}",
             "chapter": 1,
@@ -365,15 +376,25 @@ def test_A5_fallback_pass(good_project):
 
 
 def test_A3_external_models_json_phantom_zero(good_project):
+    """Round 20 · Ch12 RCA P1 修正：phantom_zero 检测机制本身保留，
+    但 1 个模型 phantom 不再能直接 trigger fail critical（需 <5 valid）。
+    新断言：phantom 写入 invalid_models 元数据 + 总 valid 仍 ≥10 healthy。
+    """
     mod = _load_module()
     payload = {
         "agent": "external-qwen3.6-plus",
         "chapter": 1,
         "model_key": "qwen3.6-plus",
+        "routing_verified": True,
         "overall_score": 0,
         "pass": False,
         "dimension_reports": [
-            {"dimension": "consistency", "status": "ok", "score": 0, "summary": ""},
+            {"dimension": dim, "status": "ok", "score": 0, "summary": ""}
+            for dim in [
+                "consistency", "continuity", "ooc", "reader_pull", "high_point",
+                "pacing", "dialogue_quality", "information_density", "prose_quality",
+                "emotion_expression", "reader_flow", "naturalness", "reader_critic",
+            ]
         ],
     }
     (good_project / ".webnovel" / "tmp" / "external_review_qwen3.6-plus_ch0001.json").write_text(
@@ -381,58 +402,292 @@ def test_A3_external_models_json_phantom_zero(good_project):
         encoding="utf-8",
     )
     r = mod.check_A3_external_models(good_project, 1)
-    assert r.status == "fail"
-    assert r.severity == "critical"
+    # 13/14 valid (qwen3.6-plus phantom invalidated) → still healthy pass
+    assert r.status == "pass"
+    measured_blob = json.dumps(r.measured, ensure_ascii=False)
+    assert "phantom_zero_dimensions" in measured_blob
+    assert "qwen3.6-plus" in measured_blob
 
 
-def test_A3_external_models_fails_on_core_partial_dimensions(good_project):
+def test_A3_external_models_warns_on_one_partial_dimensions(good_project):
+    """Round 16 语义：单模型缺维度 → 该模型 invalid → 13/14 valid → 仍 healthy pass。
+
+    Round 20 · Ch12 RCA P1 修正：
+    旧测试名 _fails_on_core_partial_dimensions 来自 Round 13 之前 "core 3 必须成功" 时代。
+    Round 16 已扁平化 → 任何 1 个模型部分维度只让总数从 14 减到 13，仍 ≥ 10 healthy。
+    若要触发 warn high，需让 valid 降到 5-7（即至少 invalidate 7 个模型）。
+    """
     mod = _load_module()
     core_path = good_project / ".webnovel" / "tmp" / "external_review_qwen3.6-plus_ch0001.json"
     payload = json.loads(core_path.read_text(encoding="utf-8"))
     payload["dimension_reports"] = payload["dimension_reports"][:9]
     core_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     r = mod.check_A3_external_models(good_project, 1)
-    assert r.status == "fail"
-    assert r.severity == "critical"
+    # 13 valid → healthy pass (Round 16)
+    assert r.status == "pass"
     assert "qwen3.6-plus" in json.dumps(r.measured, ensure_ascii=False)
 
 
-def test_A3_external_models_fails_on_core_routing_unverified(good_project):
-    mod = _load_module()
-    core_path = good_project / ".webnovel" / "tmp" / "external_review_gpt-5.4_ch0001.json"
-    payload = json.loads(core_path.read_text(encoding="utf-8"))
-    payload["routing_verified"] = False
-    core_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    r = mod.check_A3_external_models(good_project, 1)
-    assert r.status == "fail"
-    assert r.severity == "critical"
-    assert "routing_unverified" in json.dumps(r.measured, ensure_ascii=False)
+def test_A3_external_models_warn_high_when_only_5_to_7_valid(good_project):
+    """Round 20 · Ch12 RCA P1 新增：触发 warn high 需 invalidate 至少 7 个模型。
 
-
-def test_A3_external_models_warns_on_partial_supplemental_model(good_project):
+    Round 16 阈值：5-7/14 valid → warn high · 不 block。
+    """
     mod = _load_module()
-    payload = {
-        "agent": "external-doubao-pro",
-        "chapter": 1,
-        "model_key": "doubao-pro",
-        "model_actual": "doubao-seed-2.0-pro",
-        "routing_verified": True,
-        "overall_score": 88.0,
-        "pass": True,
-        "dimension_reports": [
-            {"dimension": "consistency", "status": "ok", "score": 88, "summary": "ok"},
-            {"dimension": "continuity", "status": "ok", "score": 89, "summary": "ok"},
-            {"dimension": "ooc", "status": "ok", "score": 87, "summary": "ok"},
-        ],
-    }
-    (good_project / ".webnovel" / "tmp" / "external_review_doubao-pro_ch0001.json").write_text(
-        json.dumps(payload, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    # invalidate 8 模型（routing_unverified）→ 只剩 6 valid → warn high
+    invalidate_keys = [
+        "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+        "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7", "mimo-v2-pro",
+    ]
+    for key in invalidate_keys:
+        p = good_project / ".webnovel" / "tmp" / f"external_review_{key}_ch0001.json"
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        payload["routing_verified"] = False
+        p.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     r = mod.check_A3_external_models(good_project, 1)
     assert r.status == "warn"
     assert r.severity == "high"
-    assert "doubao-pro" in json.dumps(r.measured, ensure_ascii=False)
+
+
+def test_A3_external_models_fails_critical_when_under_5(good_project):
+    """Round 20 · Ch12 RCA P1 新增：< 5 valid 才 fail critical（多家 provider 同时挂）."""
+    mod = _load_module()
+    # invalidate 10 模型 → 只剩 4 valid → fail critical
+    invalidate_keys = [
+        "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+        "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
+        "mimo-v2-pro", "minimax-m2.7-hs", "minimax-m2.5",
+    ]
+    for key in invalidate_keys:
+        p = good_project / ".webnovel" / "tmp" / f"external_review_{key}_ch0001.json"
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        payload["routing_verified"] = False
+        p.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    r = mod.check_A3_external_models(good_project, 1)
+    assert r.status == "fail"
+    assert r.severity == "critical"
+
+
+def test_A9_dimension_floor_pass_when_all_above_75(good_project):
+    """Round 20 · A9: 全部维度 ≥75 + reader-critic ≥80 → pass."""
+    mod = _load_module()
+    state_path = good_project / ".webnovel" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["chapter_meta"]["1"]["checker_scores"] = {
+        "consistency-checker": 88,
+        "continuity-checker": 90,
+        "ooc-checker": 85,
+        "reader-pull-checker": 82,
+        "high-point-checker": 80,
+        "pacing-checker": 78,
+        "dialogue-checker": 81,
+        "density-checker": 84,
+        "prose-quality-checker": 79,
+        "emotion-checker": 83,
+        "flow-checker": 80,
+        "reader-naturalness-checker": 85,
+        "reader-critic-checker": 82,
+    }
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    r = mod.check_A9_dimension_floor(good_project, 1)
+    assert r.status == "pass", r.evidence
+
+
+def test_A9_dimension_floor_blocks_critical_below_60(good_project):
+    """Round 20 · A9: 任一维度 <60 → fail critical (block)."""
+    mod = _load_module()
+    state_path = good_project / ".webnovel" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["chapter_meta"]["1"]["checker_scores"] = {
+        "consistency-checker": 47,  # 触发 <60 floor
+        "continuity-checker": 90,
+        "ooc-checker": 85,
+        "reader-pull-checker": 82,
+        "high-point-checker": 80,
+        "pacing-checker": 88,
+        "dialogue-checker": 81,
+        "density-checker": 84,
+        "prose-quality-checker": 79,
+        "emotion-checker": 83,
+        "flow-checker": 80,
+        "reader-naturalness-checker": 85,
+        "reader-critic-checker": 82,
+    }
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    r = mod.check_A9_dimension_floor(good_project, 1)
+    assert r.status == "fail"
+    assert r.severity == "critical"
+    assert "consistency-checker" in r.evidence
+    # raw_avg 仍然较高（加权平均），但 floor 70 应被记录
+    assert r.measured["floor"] == 70
+    # overall 实际计算应被压到 70 或更低
+    assert r.measured["overall"] <= 70
+
+
+def test_A9_dimension_floor_warns_high_below_75(good_project):
+    """Round 20 · A9: 任一维度 <75 (但 ≥60) → warn high (不 block)."""
+    mod = _load_module()
+    state_path = good_project / ".webnovel" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["chapter_meta"]["1"]["checker_scores"] = {
+        "consistency-checker": 70,  # 触发 <75 floor (不 <60)
+        "continuity-checker": 90,
+        "ooc-checker": 85,
+        "reader-pull-checker": 82,
+        "high-point-checker": 80,
+        "pacing-checker": 88,
+        "dialogue-checker": 81,
+        "density-checker": 84,
+        "prose-quality-checker": 79,
+        "emotion-checker": 83,
+        "flow-checker": 80,
+        "reader-naturalness-checker": 85,
+        "reader-critic-checker": 82,
+    }
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    r = mod.check_A9_dimension_floor(good_project, 1)
+    assert r.status == "warn"
+    assert r.severity == "high"
+    assert r.measured["floor"] == 85
+
+
+def test_A9_dimension_floor_blocks_early_chapter_reader_critic(good_project):
+    """Round 20 · A9: 前 5 章 reader-critic <80 → fail critical (block).
+
+    背景：Ch3 reader-critic=62、Ch4=58 历史问题——首章追读契约保护。
+    """
+    mod = _load_module()
+    state_path = good_project / ".webnovel" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["chapter_meta"]["1"]["checker_scores"] = {
+        "consistency-checker": 88,
+        "continuity-checker": 90,
+        "ooc-checker": 85,
+        "reader-pull-checker": 82,
+        "high-point-checker": 80,
+        "pacing-checker": 88,
+        "dialogue-checker": 81,
+        "density-checker": 84,
+        "prose-quality-checker": 79,
+        "emotion-checker": 83,
+        "flow-checker": 80,
+        "reader-naturalness-checker": 85,
+        "reader-critic-checker": 78,  # 前 5 章 <80 触发硬 block
+    }
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    r = mod.check_A9_dimension_floor(good_project, 1)
+    assert r.status == "fail"
+    assert r.severity == "critical"
+    assert "reader-critic" in r.evidence
+
+
+def test_A9_dimension_floor_late_chapter_reader_critic_warn_only(good_project):
+    """Round 20 · A9: Ch6+ reader-critic=78 (<80 但 >75) → 不触发 early floor，因 78>75 不触发 soft floor，pass."""
+    mod = _load_module()
+    state_path = good_project / ".webnovel" / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    # 改章号到 6（key 仍为 "1" 但 chapter param 传 6 不行——floor 用 chapter param 判断）
+    # 直接测 chapter=6
+    state["chapter_meta"]["6"] = dict(state["chapter_meta"]["1"])
+    state["chapter_meta"]["6"]["checker_scores"] = {
+        "consistency-checker": 88,
+        "continuity-checker": 90,
+        "ooc-checker": 85,
+        "reader-pull-checker": 82,
+        "high-point-checker": 80,
+        "pacing-checker": 88,
+        "dialogue-checker": 81,
+        "density-checker": 84,
+        "prose-quality-checker": 79,
+        "emotion-checker": 83,
+        "flow-checker": 80,
+        "reader-naturalness-checker": 85,
+        "reader-critic-checker": 78,  # 78 ≥75 且 ch=6 不在前 5 章 → pass
+    }
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    r = mod.check_A9_dimension_floor(good_project, 6)
+    assert r.status == "pass"
+
+
+def test_reader_thrill_checker_agent_file_exists():
+    """Round 20 · 批3-A：reader-thrill-checker.md 必须存在 + 含 6 子维度 + block 规则."""
+    plugin_root = Path(__file__).resolve().parents[3]
+    agent_file = plugin_root / "agents" / "reader-thrill-checker.md"
+    assert agent_file.exists(), f"reader-thrill-checker.md 不存在: {agent_file}"
+    text = agent_file.read_text(encoding="utf-8")
+    # 6 子维度
+    for sub in [
+        "golden_finger_release", "protagonist_victory", "antagonist_setback",
+        "info_advantage_payoff", "title_promise_payoff", "plot_momentum",
+    ]:
+        assert sub in text, f"reader-thrill-checker.md 缺子维度 {sub}"
+    # block 规则
+    assert "THRILL_HARD_001" in text
+    assert "标题反向" in text or "title_promise" in text
+    # 与 reader-pull / reader-critic / high-point 区分声明
+    assert "reader-pull-checker" in text
+    assert "reader-critic-checker" in text
+
+
+def test_outline_has_three_release_plans():
+    """Round 20 · 批3-B：末世重生 项目 总纲.md 必须含 3 个 release plan section."""
+    # parents[4] = repo root I:\AI-extention\webnovel-writer
+    project_root = Path(__file__).resolve().parents[4] / "末世重生-我在空间里种出了整个基地"
+    if not project_root.exists():
+        pytest.skip(f"末世重生 项目不存在 ({project_root})")
+    outline = project_root / "大纲" / "总纲.md"
+    if not outline.exists():
+        pytest.skip(f"总纲不存在 ({outline})")
+    text = outline.read_text(encoding="utf-8")
+    assert "金手指释放计划" in text and "golden_finger_release_plan" in text
+    assert "冲突释放计划" in text and "conflict_release_plan" in text
+    assert "标题承诺兑现计划" in text and "title_promise_payoff_plan" in text
+
+
+def test_apply_overall_floor_caps_overall_score(good_project):
+    """Round 20 · apply_overall_floor 直接调用：raw_avg 高但有硬伤 → 实际 overall 被 cap."""
+    mod = _load_module()
+    cs = {
+        "consistency-checker": 47,
+        "continuity-checker": 90,
+        "ooc-checker": 85,
+        "reader-pull-checker": 82,
+        "high-point-checker": 80,
+        "pacing-checker": 88,
+        "dialogue-checker": 81,
+        "density-checker": 84,
+        "prose-quality-checker": 79,
+        "emotion-checker": 83,
+        "flow-checker": 80,
+        "reader-naturalness-checker": 85,
+        "reader-critic-checker": 78,
+    }
+    result = mod.apply_overall_floor(cs, chapter=4)  # 旧 Ch4 真实数据复现
+    # raw_avg ≈ 80（加权平均）
+    # floor = 70（任一 <60）
+    # 前 5 章 reader-critic 78 <80 → cap 80（但 70 更严格胜出）
+    assert result["floor"] == 70
+    assert result["overall"] <= 70
+    assert any("FLOOR_HARD" in r for r in result["floor_reasons"])
+    assert any("FLOOR_EARLY_RC" in r for r in result["floor_reasons"])
+
+
+def test_A3_external_models_warns_medium_when_8_or_9_valid(good_project):
+    """Round 20 · Ch12 RCA P1 新增：8-9/14 valid → warn medium · 不 block."""
+    mod = _load_module()
+    # invalidate 6 模型 → 8 valid → warn medium
+    invalidate_keys = [
+        "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+        "doubao-seed-2.0-lite", "glm-5", "glm-5.1",
+    ]
+    for key in invalidate_keys:
+        p = good_project / ".webnovel" / "tmp" / f"external_review_{key}_ch0001.json"
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        payload["routing_verified"] = False
+        p.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    r = mod.check_A3_external_models(good_project, 1)
+    assert r.status == "warn"
+    assert r.severity == "medium"
 
 
 def test_A4_data_agent_steps_passes_with_timing_ms(good_project):

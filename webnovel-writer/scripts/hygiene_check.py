@@ -1381,6 +1381,67 @@ def check_reality_red_flags(root: Path, chapter: int, rep: HygieneReport):
         )
 
 
+def check_hook_close_persistence(root: Path, chapter: int, rep: HygieneReport):
+    """H26: hook_close 落库一致性（Round 20 · Ch12 RCA P0）
+
+    Ch12 血教训：reader_pull_ch0012.json 已含 hook_close 子对象，
+    但 data-agent Phase G 落库步骤被跳过，state.chapter_meta.0012.hook_close 缺失。
+    后果：H25 hook_trend 被迫退化跳过、cross-chapter 决策钩缺失探测失效、
+    private_csv 取 hook_type 兜底而非 primary_type、跨卷 plan 读不到。
+
+    检查规则：
+      - 若 reader_pull_ch{NNNN}.json 存在且含 hook_close.primary_type
+      - 但 state.chapter_meta.{NNNN}.hook_close 缺失或 primary_type 为空
+      - → P0 fail（必须落库后才能 commit）
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        rep.record("P0", "H26", "state.json 不存在，跳过 hook_close 落库检查", True)
+        return
+    rp_p = root / ".webnovel" / "tmp" / f"reader_pull_ch{chapter:04d}.json"
+    if not rp_p.exists():
+        rep.record("P0", "H26", f"reader_pull_ch{chapter:04d}.json 不存在，跳过", True)
+        return
+    try:
+        rp = json.loads(rp_p.read_text(encoding="utf-8"))
+    except Exception:
+        rep.record("P0", "H26", f"reader_pull_ch{chapter:04d}.json 解析失败，跳过", True)
+        return
+    src_hc = rp.get("hook_close") or {}
+    src_primary = src_hc.get("primary_type") or ""
+    if not src_primary:
+        # 老 checker 版本无 hook_close 子对象 - 兼容跳过（不阻断）
+        rep.record("P0", "H26", "reader_pull JSON 无 hook_close 子对象（老版本），跳过", True)
+        return
+    try:
+        state = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        rep.record("P0", "H26", f"state.json 解析失败：{exc}", False)
+        return
+    meta = (state.get("chapter_meta") or {}).get(f"{chapter:04d}") or {}
+    state_hc = meta.get("hook_close") or {}
+    state_primary = state_hc.get("primary_type") or ""
+    if not state_primary:
+        rep.record(
+            "P0", "H26",
+            f"reader_pull_ch{chapter:04d}.json 含 hook_close.primary_type='{src_primary}' "
+            f"但 state.chapter_meta.{chapter:04d}.hook_close 缺失。"
+            f" data-agent Phase G 落库被跳过。修复："
+            f" python webnovel.py state update --set-hook-close "
+            f"'{{\"chapter\":{chapter},\"primary\":\"{src_primary}\",\"strength\":{src_hc.get('strength',80)},\"text\":\"...\"}}'",
+            False,
+        )
+        return
+    if state_primary != src_primary:
+        rep.record(
+            "P1", "H26",
+            f"reader_pull primary='{src_primary}' 与 state primary='{state_primary}' 不一致，请核对",
+            False,
+        )
+        return
+    rep.record("P0", "H26", f"hook_close 落库一致（primary='{src_primary}'）", True)
+
+
 def check_hook_trend(root: Path, chapter: int, rep: HygieneReport):
     """H25: 章末钩子 4 类跨章趋势（Round 19 Phase G）
 
@@ -1451,6 +1512,7 @@ def main():
     check_chapter_text_hygiene(root, args.chapter, rep)
     check_execution_package_persistence(root, args.chapter, rep)
     check_polish_report_persistence(root, args.chapter, rep)
+    check_hook_close_persistence(root, args.chapter, rep)  # H26 · Round 20 · Ch12 RCA P0
 
     # P1 检查
     check_root_layout(root, rep)

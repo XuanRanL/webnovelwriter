@@ -638,3 +638,110 @@ def test_polish_cycle_has_idempotent_warning():
     text = pc.read_text(encoding="utf-8")
     assert "幂等" in text or "idempotent" in text.lower()
     assert "existing_versions" in text or "polish_log_existing" in text
+
+
+# ---------------------------------------------------------------------------
+# Round 20 · Ch12 RCA P0：polish 轮数上限测试
+# ---------------------------------------------------------------------------
+
+
+def test_polish_cycle_has_max_rounds_arg():
+    """Round 20：polish_cycle.py 必须有 --max-rounds / --allow-exceed-max-rounds 参数."""
+    pc = _plugin_root() / "scripts" / "polish_cycle.py"
+    text = pc.read_text(encoding="utf-8")
+    assert "--max-rounds" in text
+    assert "--allow-exceed-max-rounds" in text
+    assert "--deviation-reason" in text
+
+
+def test_polish_cycle_blocks_when_round_exceeds_max(tmp_path):
+    """Round 20：polish_log 已 3 轮，再跑 polish_cycle 必须 exit 1."""
+    _ensure_scripts_on_path()
+    project = _make_minimal_project(tmp_path)
+    state_p = project / ".webnovel" / "state.json"
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    s["chapter_meta"]["0001"]["polish_log"] = [
+        {"version": "v2", "timestamp": "2026-04-20T10:00:00Z", "notes": "r1"},
+        {"version": "v3", "timestamp": "2026-04-20T11:00:00Z", "notes": "r2"},
+        {"version": "v4", "timestamp": "2026-04-20T12:00:00Z", "notes": "r3"},
+    ]
+    state_p.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    pc_script = _plugin_root() / "scripts" / "polish_cycle.py"
+    result = subprocess.run(
+        [
+            sys.executable, "-X", "utf8", str(pc_script),
+            "1",
+            "--project-root", str(project),
+            "--reason", "fourth round attempt",
+            "--narrative-version", "v5",
+            "--no-commit",
+        ],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert result.returncode == 1, f"应被 max-rounds 闸门 block，实际 exit={result.returncode}"
+    assert "POLISH ROUND LIMIT" in result.stdout
+
+
+def test_polish_cycle_allow_exceed_max_rounds_with_deviation(tmp_path):
+    """Round 20：--allow-exceed-max-rounds + --deviation-reason 可继续 polish."""
+    _ensure_scripts_on_path()
+    project = _make_minimal_project(tmp_path)
+    state_p = project / ".webnovel" / "state.json"
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    s["chapter_meta"]["0001"]["polish_log"] = [
+        {"version": "v2", "timestamp": "2026-04-20T10:00:00Z", "notes": "r1"},
+        {"version": "v3", "timestamp": "2026-04-20T11:00:00Z", "notes": "r2"},
+        {"version": "v4", "timestamp": "2026-04-20T12:00:00Z", "notes": "r3"},
+    ]
+    state_p.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    pc_script = _plugin_root() / "scripts" / "polish_cycle.py"
+    result = subprocess.run(
+        [
+            sys.executable, "-X", "utf8", str(pc_script),
+            "1",
+            "--project-root", str(project),
+            "--reason", "deviation polish",
+            "--narrative-version", "v5",
+            "--allow-exceed-max-rounds",
+            "--deviation-reason", "Beat 3 关键反派对线必须修",
+            "--no-commit",
+        ],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    # 没 commit 但 allow exceed → 应进入正常流程（最后 --no-commit return 0 或前置 fail）
+    # 因为 minimal project 没建 hygiene_check fixtures, post_draft_check 可能 fail
+    # 关键：不应被 max-rounds 直接 block (return code != 1 with "POLISH ROUND LIMIT")
+    assert "POLISH ROUND LIMIT" not in result.stdout
+    assert "POLISH ROUND DEVIATION" in result.stdout or result.returncode in (0, 1)
+
+
+def test_polish_cycle_allow_exceed_without_reason_fails(tmp_path):
+    """Round 20：--allow-exceed-max-rounds 但缺 --deviation-reason → exit 1."""
+    _ensure_scripts_on_path()
+    project = _make_minimal_project(tmp_path)
+    state_p = project / ".webnovel" / "state.json"
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    s["chapter_meta"]["0001"]["polish_log"] = [
+        {"version": "v2", "timestamp": "2026-04-20T10:00:00Z", "notes": "r1"},
+        {"version": "v3", "timestamp": "2026-04-20T11:00:00Z", "notes": "r2"},
+        {"version": "v4", "timestamp": "2026-04-20T12:00:00Z", "notes": "r3"},
+    ]
+    state_p.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    pc_script = _plugin_root() / "scripts" / "polish_cycle.py"
+    result = subprocess.run(
+        [
+            sys.executable, "-X", "utf8", str(pc_script),
+            "1",
+            "--project-root", str(project),
+            "--reason", "deviation polish",
+            "--narrative-version", "v5",
+            "--allow-exceed-max-rounds",
+            "--no-commit",
+        ],
+        capture_output=True, text=True, encoding="utf-8",
+    )
+    assert result.returncode == 1
+    assert "deviation-reason" in result.stdout

@@ -1783,11 +1783,25 @@ def main():
             # 重算 overall 为 13 canonical 平均（存在多少算多少）
             present = [v for k, v in cs.items() if k in CANONICAL_CHECKERS]
             if present:
-                new_overall = round(sum(present) / len(present))
+                # Round 20 · Ch12 RCA P0：apply_overall_floor 防加权稀释
+                # 任一 <60 → cap 70；任一 <75 → cap 85；前 5 章 reader-critic <80 → cap 80
+                try:
+                    from data_modules.chapter_audit import apply_overall_floor as _aof
+                    floor_result = _aof(cs, ch)
+                    new_overall = floor_result["overall"]
+                    floor = floor_result.get("floor")
+                    floor_note = (
+                        f" (raw_avg={floor_result['raw_avg']}, floor={floor})"
+                        if floor is not None else ""
+                    )
+                except Exception:
+                    new_overall = round(sum(present) / len(present))
+                    floor_note = ""
                 cs["overall"] = new_overall
                 entry["overall_score"] = new_overall
                 changes.append(
-                    f"chapter_meta.{key}.checker_scores.{checker}={score} (overall 重算={new_overall})"
+                    f"chapter_meta.{key}.checker_scores.{checker}={score} "
+                    f"(overall 重算={new_overall}{floor_note})"
                 )
                 # Round 18 · 2026-04-24 · Ch10 P1-7 根治：Step 4.5 复测后自动同步 review_metrics
                 # 旧逻辑：review_metrics.overall_score 在 Step 3 首次写入后不更新，

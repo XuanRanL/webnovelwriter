@@ -519,6 +519,19 @@ def main() -> int:
         default=True,
         help="Round 17.4：polish 后提示 audit_reports 已变 stale（建议重跑 Step 6 audit-agent）",
     )
+    # Round 20 · Ch12 RCA P0：polish 上限闸门（防 Ch1 v7 11 轮 polish 沉没成本）
+    ap.add_argument(
+        "--max-rounds", type=int, default=3,
+        help="单章 polish 总轮数上限（默认 3）。超出触发 deviation 出口协议。",
+    )
+    ap.add_argument(
+        "--allow-exceed-max-rounds", action="store_true",
+        help="刻意突破 --max-rounds 上限（必须在 deviation 报告里说明原因）",
+    )
+    ap.add_argument(
+        "--deviation-reason", default=None,
+        help="超过 max-rounds 时必须提供：deviation 出口理由（写进 audit_reports）",
+    )
     args = ap.parse_args()
 
     if args.narrative_version and args.narrative_version_bump:
@@ -541,6 +554,73 @@ def main() -> int:
     print(f" 文件：{chapter_file.relative_to(project_root)}")
     print(f" 原因：{args.reason}")
     print("=" * 70)
+
+    # Round 20 · Ch12 RCA P0：polish 轮数上限闸门（在变化检测之前）
+    state_p_for_round_check = project_root / ".webnovel" / "state.json"
+    if state_p_for_round_check.exists():
+        try:
+            _s = json.loads(state_p_for_round_check.read_text(encoding="utf-8"))
+            _meta = (_s.get("chapter_meta") or {}).get(f"{args.chapter:04d}", {}) or {}
+            _polish_log = _meta.get("polish_log") or []
+            _existing_rounds = len([e for e in _polish_log if isinstance(e, dict)])
+            if _existing_rounds >= args.max_rounds and not args.allow_exceed_max_rounds:
+                print(
+                    f"\n❌ POLISH ROUND LIMIT: 第{args.chapter:04d}章已 polish {_existing_rounds} 轮 "
+                    f"(上限 {args.max_rounds})。"
+                )
+                print(
+                    "  Round 20 · Ch12 RCA：polish 多轮无止境会陷入沉没成本（Ch1 v7 血教训）。"
+                )
+                print("  推荐协议：")
+                print("    1) 接受当前状态，写 deviation 进 audit_reports/chNNNN.json:")
+                print(
+                    f"       --allow-exceed-max-rounds --deviation-reason \"为何还要再修：...\""
+                )
+                print("    2) 或回 Step 1/Step 2A 重写整章（不再走 polish）")
+                return 1
+            if (
+                args.allow_exceed_max_rounds
+                and _existing_rounds >= args.max_rounds
+                and not args.deviation_reason
+            ):
+                print(
+                    f"\n❌ POLISH ROUND LIMIT: --allow-exceed-max-rounds 必须配 "
+                    f"--deviation-reason \"...\""
+                )
+                return 1
+            if args.allow_exceed_max_rounds and _existing_rounds >= args.max_rounds:
+                print(
+                    f"\n⚠ POLISH ROUND DEVIATION: 第{args.chapter:04d}章已 polish "
+                    f"{_existing_rounds} 轮，本次为第 {_existing_rounds + 1} 轮。"
+                )
+                print(f"  Deviation 理由：{args.deviation_reason}")
+                # 写入 audit_reports deviation 字段
+                try:
+                    audit_path = (
+                        project_root / ".webnovel" / "audit_reports"
+                        / f"ch{args.chapter:04d}.json"
+                    )
+                    if audit_path.exists():
+                        audit_d = json.loads(audit_path.read_text(encoding="utf-8"))
+                        deviations = audit_d.setdefault("deviations", [])
+                        deviations.append(
+                            {
+                                "type": "polish_round_exceeds_max",
+                                "round": _existing_rounds + 1,
+                                "max_rounds": args.max_rounds,
+                                "reason": args.deviation_reason,
+                                "ts": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                            }
+                        )
+                        audit_path.write_text(
+                            json.dumps(audit_d, ensure_ascii=False, indent=2),
+                            encoding="utf-8",
+                        )
+                        print(f"  ✓ deviation 已写入 audit_reports/ch{args.chapter:04d}.json")
+                except Exception as _ex:
+                    print(f"  ⚠ deviation 写入 audit_reports 失败（不阻断）: {_ex}")
+        except Exception as _ex:
+            print(f"  ⚠ polish round count 读取失败（不阻断）: {_ex}")
 
     changed, diff_lines = detect_chapter_changed(project_root, chapter_file)
     print(f"\n[1/7] 变化检测：changed={changed}, diff_lines={diff_lines}")

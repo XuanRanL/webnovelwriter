@@ -1234,6 +1234,174 @@ def check_A8_anti_ai_force_not_stub(project_root: Path, chapter: int) -> CheckRe
     )
 
 
+# ==================== Round 20 · A9: 评分硬底线（防 overall 加权稀释硬伤） ====================
+
+# 核心读者维度（同源 LLM 但最贴近真实读者反馈）
+READER_DIMENSIONS = (
+    "reader-critic-checker",
+    "reader-naturalness-checker",
+    "reader-pull-checker",
+    "flow-checker",
+)
+
+# 前 N 章 reader-critic 严格阈值（首章追读契约）
+EARLY_CHAPTER_LIMIT = 5
+EARLY_READER_CRITIC_FLOOR = 80  # 前 5 章 reader-critic <80 = block
+
+
+def apply_overall_floor(checker_scores: Dict[str, Any], chapter: int) -> Dict[str, Any]:
+    """Round 20 · Ch12 RCA P0：overall 硬底线计算（防加权稀释）。
+
+    流程旧 bug：Ch4 consistency=47, reader-critic=58 + 其余 11 维 80+ → overall 88 入库。
+    Step 6 audit 给 approve_with_warnings 放行。读者代理 5.5/10。
+
+    新规则（floor 优先于平均）：
+      - 任一维度 <60        → overall ≤ 70
+      - 任一维度 <75        → overall ≤ 85
+      - reader-critic 任一章 <75 → overall ≤ 85（与上条同步生效）
+      - 前 5 章 reader-critic <80 → overall ≤ 80（特殊保护：首章追读契约）
+
+    返回：{"overall": int, "raw_avg": int, "floor": int|None, "floor_reasons": [str]}
+    floor_reasons 列出触发原因，audit Layer A9 据此 block。
+    """
+    canonical_set = {
+        "consistency-checker", "continuity-checker", "ooc-checker",
+        "reader-pull-checker", "high-point-checker", "pacing-checker",
+        "dialogue-checker", "density-checker", "prose-quality-checker",
+        "emotion-checker", "flow-checker",
+        "reader-naturalness-checker", "reader-critic-checker",
+    }
+    present = {k: v for k, v in (checker_scores or {}).items()
+               if k in canonical_set and isinstance(v, (int, float))}
+    if not present:
+        return {"overall": 0, "raw_avg": 0, "floor": None, "floor_reasons": []}
+    raw_avg = round(sum(present.values()) / len(present))
+    floor = None
+    reasons: List[str] = []
+
+    # 规则 1：任一维度 <60 → overall ≤ 70
+    below_60 = [k for k, v in present.items() if v < 60]
+    if below_60:
+        floor = 70
+        reasons.append(
+            f"FLOOR_HARD: {','.join(below_60)} <60 → overall capped at 70 (raw_avg={raw_avg})"
+        )
+
+    # 规则 2：任一维度 <75 → overall ≤ 85
+    below_75 = [k for k, v in present.items() if v < 75]
+    if below_75:
+        cap = 85
+        if floor is None or cap < floor:
+            floor = cap
+        reasons.append(
+            f"FLOOR_SOFT: {','.join(below_75)} <75 → overall capped at 85 (raw_avg={raw_avg})"
+        )
+
+    # 规则 3：前 5 章 reader-critic <80 → overall ≤ 80（首章追读契约保护）
+    rc_score = present.get("reader-critic-checker")
+    if (
+        chapter <= EARLY_CHAPTER_LIMIT
+        and rc_score is not None
+        and rc_score < EARLY_READER_CRITIC_FLOOR
+    ):
+        cap = 80
+        if floor is None or cap < floor:
+            floor = cap
+        reasons.append(
+            f"FLOOR_EARLY_RC: ch{chapter}≤5 reader-critic={rc_score} <{EARLY_READER_CRITIC_FLOOR} "
+            f"→ overall capped at 80 (raw_avg={raw_avg})"
+        )
+
+    overall = min(raw_avg, floor) if floor is not None else raw_avg
+    return {
+        "overall": overall,
+        "raw_avg": raw_avg,
+        "floor": floor,
+        "floor_reasons": reasons,
+    }
+
+
+def check_A9_dimension_floor(project_root: Path, chapter: int) -> CheckResult:
+    """A9: 评分硬底线 — 任一核心维度 <60 = critical block, <75 = high warn,
+    前 5 章 reader-critic <80 = critical block.
+
+    Round 20 · Ch12 RCA P0 根治：评分体系撒谎（Ch4 cons 47+rc 58 仍合成 overall 88）。
+    """
+    state_p = project_root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return CheckResult(
+            id="A9", name="评分硬底线", layer="A",
+            status="skipped", severity="low",
+            evidence="state.json 不存在",
+        )
+    try:
+        state = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return CheckResult(
+            id="A9", name="评分硬底线", layer="A",
+            status="warn", severity="medium",
+            evidence=f"state.json 解析失败: {exc}",
+        )
+    chapter_meta_dict = state.get("chapter_meta") or {}
+    # 兼容 "0001" / "1" 两种历史键格式
+    meta = chapter_meta_dict.get(_pad(chapter)) or chapter_meta_dict.get(str(chapter)) or {}
+    cs = meta.get("checker_scores") or {}
+    if not cs:
+        return CheckResult(
+            id="A9", name="评分硬底线", layer="A",
+            status="skipped", severity="low",
+            evidence=f"chapter_meta.{_pad(chapter)}.checker_scores 为空",
+        )
+    result = apply_overall_floor(cs, chapter)
+    floor = result.get("floor")
+    reasons = result.get("floor_reasons", [])
+    if not floor:
+        return CheckResult(
+            id="A9", name="评分硬底线", layer="A",
+            status="pass", severity="low",
+            evidence=f"全部 13 维度 ≥75 + reader-critic ≥80 (raw_avg={result['raw_avg']})",
+            measured=result,
+        )
+    # 任一 <60 = critical block
+    canonical_present = {
+        k: v for k, v in cs.items()
+        if k in {"consistency-checker", "continuity-checker", "ooc-checker",
+                 "reader-pull-checker", "high-point-checker", "pacing-checker",
+                 "dialogue-checker", "density-checker", "prose-quality-checker",
+                 "emotion-checker", "flow-checker",
+                 "reader-naturalness-checker", "reader-critic-checker"}
+        and isinstance(v, (int, float))
+    }
+    has_below_60 = any(v < 60 for v in canonical_present.values())
+    is_early_rc_critical = (
+        chapter <= EARLY_CHAPTER_LIMIT
+        and canonical_present.get("reader-critic-checker", 100) < EARLY_READER_CRITIC_FLOOR
+    )
+    if has_below_60 or is_early_rc_critical:
+        return CheckResult(
+            id="A9", name="评分硬底线", layer="A",
+            status="fail", severity="critical",
+            evidence=f"FLOOR BLOCK: {' | '.join(reasons)}",
+            measured=result,
+            remediation=[
+                "回 Step 4 polish 直到所有维度 ≥75 + reader-critic ≥80",
+                "若 polish 多轮无果，回 Step 1 调整大纲并重写本章",
+                "禁止以 overall 加权 90 掩盖单维度 47 这类硬伤",
+            ],
+        )
+    # 任一 <75 = high warn（不 block，但记录）
+    return CheckResult(
+        id="A9", name="评分硬底线", layer="A",
+        status="warn", severity="high",
+        evidence=f"FLOOR WARN: {' | '.join(reasons)}",
+        measured=result,
+        remediation=[
+            "Step 4 polish 处理 <75 的维度，目标 ≥80",
+            "记录 deviation 若刻意不修",
+        ],
+    )
+
+
 # ==================== Layer B: 跨产物一致性 ====================
 
 def check_B1_summary_vs_chapter(project_root: Path, chapter: int) -> CheckResult:
@@ -1983,6 +2151,7 @@ def _run_layer_a(project_root: Path, chapter: int) -> LayerResult:
         check_A5_fallback_detection(project_root, chapter),
         check_A6_workflow_timing(project_root, chapter),
         check_A7_encoding_clean(project_root, chapter),
+        check_A9_dimension_floor(project_root, chapter),  # Round 20 · A9 floor block
         check_A8_anti_ai_force_not_stub(project_root, chapter),
         check_a_x1_reader_critic_hard_block(project_root, chapter),
         check_a_x1b_pre_draft_self_check(project_root, chapter),  # Round 19.1 P0-3
