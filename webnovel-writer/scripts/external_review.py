@@ -217,6 +217,8 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "openclawroot", "id": "MiniMax-M2.7-highspeed", "name": "MiniMax-M2.7-HS"},
+            # Round 20.x · 2026-04-27 · Ch14 RCA P0 修复：M2.7-HS 偶发 503，加普通 M2.7 作 fallback
+            {"provider": "openclawroot", "id": "MiniMax-M2.7", "name": "MiniMax-M2.7"},
         ],
         "timeout": 300,
     },
@@ -240,6 +242,9 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "kimi-k2.5", "name": "Kimi-K2.5-Ark", "max_tokens": 32768},
+            # Round 20.x · 2026-04-27 · Ch14 RCA P0-1 修复：ark-coding 偶发 phantom score=0,
+            # 加 siliconflow Pro/moonshotai/Kimi-K2.5 作 fallback (siliconflow models list 验证存在精准版本)
+            {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF", "max_tokens": 32768},
         ],
         "timeout": 300,
     },
@@ -247,6 +252,9 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "kimi-k2.6", "name": "Kimi-K2.6-Ark", "max_tokens": 65536},
+            # Round 20.x · 2026-04-27 · Ch14 RCA P0-1 修复：siliconflow Pro/moonshotai/Kimi-K2.6 实测 timeout,
+            # 降级用 Pro/moonshotai/Kimi-K2.5 作 fallback（实测 9.9s 稳定 + score 92）
+            {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF-fallback-for-K2.6", "max_tokens": 32768},
         ],
         "timeout": 300,
     },
