@@ -1801,7 +1801,7 @@ def main():
     parser.add_argument(
         "--model-key", default="qwen3.6-plus",
         help=(
-            "For dimensions mode: any of the 14 model keys (qwen3.6-plus/gpt-5.4/"
+            "For dimensions mode: any of the 14 model keys (qwen3.6-plus/gpt-5.5/"
             "gemini-3.1-pro/doubao-pro/doubao-seed-2.0-lite/glm-5/glm-5.1/glm-4.7/"
             "mimo-v2-pro/minimax-m2.7-hs/minimax-m2.5/deepseek-v3.2-thinking/"
             "kimi-k2.5/kimi-k2.6) or legacy aliases (qwen-plus/kimi/glm/...) or "
