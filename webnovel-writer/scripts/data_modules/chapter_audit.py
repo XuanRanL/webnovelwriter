@@ -691,12 +691,23 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
         # Round 12: external score spread alert.
         # Ch1《<example-project>》血教训——Gemini 75.3 与其他模型 87-91 分差 ≥ 10，
         # 平均化稀释后主审查员未读 Gemini 低分 issue，漏掉时间线矛盾。
+        #
+        # Round 20.x · 2026-04-27 · Ch14 RCA P0-3 修复：
+        # gemini-3.1-pro 在 Ch14 给出 51.9（远低于其他模型 85-93），spread 40.9 严重失真。
+        # 即使 prep §X5 已 routing-level downweight，原始 spread 仍包含 outlier。
+        # 修复：score_spread 计算时自动排除 score < 60 的 critical outlier
+        # （score_outliers 单独记录，供人工复核），让 spread 反映正常模型间差异。
         model_scores: Dict[str, float] = {}
+        score_outliers: Dict[str, float] = {}
         for model_key, payload in external_results.items():
             data = payload.get("data") or {}
             score = data.get("overall_score")
             if isinstance(score, (int, float)) and score > 0:
-                model_scores[model_key] = float(score)
+                if float(score) < 60:
+                    # critical outlier，不计入 spread 计算
+                    score_outliers[model_key] = float(score)
+                else:
+                    model_scores[model_key] = float(score)
         spread_alert_note = None
         if len(model_scores) >= 2:
             max_score = max(model_scores.values())
@@ -710,6 +721,13 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
                     f"(lowest={lowest_model}:{min_score:.1f}, highest={highest_model}:{max_score:.1f}). "
                     f"人工强制复核 {lowest_model} 的 all high/medium issues."
                 )
+        # 单独记录 critical outliers（< 60）
+        if score_outliers:
+            outliers_str = ", ".join(f"{m}:{s:.1f}" for m, s in score_outliers.items())
+            outlier_note = f"critical_score_outliers (<60, excluded from spread): {outliers_str}"
+            spread_alert_note = (
+                f"{spread_alert_note}; {outlier_note}" if spread_alert_note else outlier_note
+            )
 
         measured = {
             "valid_count": valid_count,

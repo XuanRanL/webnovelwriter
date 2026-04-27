@@ -1761,6 +1761,7 @@ def main():
                 "strand_dominant", "word_count",
                 "chapter_type", "review_score",
                 "thrill_score",  # Round 20.1 · Ch1-12 体检 Bug 1：reader-thrill-checker 6 子维度结构
+                "ending_form_class",  # Round 20.x · Ch14 RCA P1-5：12 NEW form 类别记录（与 X1 ending form taxonomy 配合）
             }
             if not ch or not field:
                 emit_error("INVALID_ARG", "--set-chapter-meta-field 需要 chapter + field 字段")

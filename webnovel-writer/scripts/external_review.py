@@ -1519,12 +1519,19 @@ def _run_single_model(args, api_keys):
     total_completion_tokens = 0
 
     # Round 16 · 2026-04-23 · 统一早停阈值（14 模型扁平化）：
-    # 任一模型累计 4 个维度失败 → 该模型早停（节省 API 配额给其他 13 模型）
+    # 任一模型累计 N 个维度失败 → 该模型早停（节省 API 配额给其他 13 模型）
     # 不再按 core/supplemental 区分 · 14 模型一视同仁
     # 维度并发降至 3 使排队维度可被 early_stop_event 拦截
+    #
+    # Round 20.x · 2026-04-27 · Ch14 RCA P0-1 修复：
+    # 阈值 4 → 6（13 维度多容忍 2 次失败）
+    # 根因：kimi-k2.5/k2.6 单 provider ark-coding 偶发 phantom score=0 空摘要，
+    # 4 次 phantom 即早停 → core 3 中 kimi 连续 4 章 (Ch11-14) 缺失。
+    # 阈值 6 给单 provider 模型留更多重试空间，同时对 13 维度模型仍能保留 7 个
+    # 维度数据（避免一直跑无效 API 调用）。
     early_stop_event = threading.Event()
     total_dim_failures = 0
-    EARLY_STOP_THRESHOLD = 4  # Round 16 统一值（老 core=5 / 老 supp=2 的折中）
+    EARLY_STOP_THRESHOLD = 6  # Round 20.x 提升（原 Round 16 = 4，Ch11-14 kimi 缺失血教训）
     dim_concurrent = min(max_concurrent, 3)
 
     with ThreadPoolExecutor(max_workers=dim_concurrent) as executor:
