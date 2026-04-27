@@ -163,7 +163,8 @@ def normalize_checker_scores_keys(
 # 根治：去 core/supplemental 层级 · 14 模型集体投票 · 任一失败不阻塞
 # 判定改为：成功模型数 ≥ 10/14 pass · 8-9/14 medium warn · <8/14 high warn（不 critical block）
 EXTERNAL_MODELS_ALL = [
-    "qwen3.6-plus", "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+    # Round 20.x · 2026-04-27 · Ch14 RCA P0-2：gpt-5.4 → gpt-5.5（ticketpro 主 provider）
+    "qwen3.6-plus", "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
     "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
     "mimo-v2-pro", "minimax-m2.7-hs", "minimax-m2.5",
     "deepseek-v3.2-thinking", "kimi-k2.5", "kimi-k2.6",

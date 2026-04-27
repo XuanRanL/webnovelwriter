@@ -1,6 +1,6 @@
-# Step 3.5 外部模型审查规范（Round 16 · 14 模型扁平共识架构）
+# Step 3.5 外部模型审查规范（Round 16 · 14 模型扁平共识架构 · Round 20.x ticketpro 加入）
 
-## 十四模型扁平共识架构 · 3 供应商
+## 十四模型扁平共识架构 · 4 供应商
 
 **Round 16 架构决策（2026-04-23 · Ch6 RCA 最终根治）**：
 - **去 core / supplemental 层级**：14 模型集体投票 · 任一失败不阻塞 · 以成功模型均分作共识
@@ -19,7 +19,7 @@
 | 模型 key | 主 provider | 请求 id | max_tokens | 备用 provider | 特点 |
 |---|---|---|---|---|---|
 | `qwen3.6-plus` | openclawroot | `qwen3.6-plus` | 65536 | — | 国产旗舰，识别语义重复最细致 |
-| `gpt-5.4` | openclawroot | `gpt-5.4` | 65536 | — | OpenAI 系，西方叙事视角，最快 2-7s |
+| `gpt-5.5` | **ticketpro** | `gpt-5.5` | 65536 | openclawroot/gpt-5.5 → openclawroot/gpt-5.4 (legacy) | OpenAI 系，西方叙事视角，最快 2-7s · Round 20.x 从 gpt-5.4 升级，主 provider 切换到 ticketpro 解决 openclawroot 间歇性 forbidden |
 | `gemini-3.1-pro` | openclawroot | `gemini-3.1-pro-high` | 65536 | — | 谷歌系，画面感审视 |
 | `doubao-pro` | ark-coding | `doubao-seed-2.0-pro` | 65536 | openclawroot | 结构审查严苛（火山直连） |
 | `doubao-seed-2.0-lite` | ark-coding | `doubao-seed-2.0-lite` | 65536 | — | 豆包轻量 thinking |
@@ -33,11 +33,12 @@
 | `kimi-k2.5` | ark-coding | `kimi-k2.5` | 32768 | — | Moonshot K2.5 thinking |
 | `kimi-k2.6` | ark-coding | `kimi-k2.6` | 65536 | — | Moonshot K2.6 旗舰 |
 
-## 供应商配置（3-tier）
+## 供应商配置（4-tier · Round 20.x ticketpro 加入）
 
-- **主力 A · openclawroot** (`https://openclawroot.com/v1`)，key: `OPENCLAWROOT_API_KEY`，RPM=30，承载 Core 3 + 部分 Supp（共 9 个模型，其中 doubao-pro/deepseek-v3.2-thinking 为 fallback 角色）
+- **GPT-5.x 主 · ticketpro** (`https://api.ticketpro.cc/v1`)，key: `TICKETPRO_API_KEY`，RPM=30，仅承载 GPT-5.x 系列（实测 9 模型 OK，无 openclawroot 间歇性 forbidden 问题）— Round 20.x · 2026-04-27 · Ch14 RCA P0-2 加入
+- **主力 A · openclawroot** (`https://openclawroot.com/v1`)，key: `OPENCLAWROOT_API_KEY`，RPM=30，承载 Core 3 + 部分 Supp（共 9 个模型，gpt-5.5 现在作 fallback 角色）
 - **主力 B · ark-coding**（火山方舟 Coding Plan，`https://ark.cn-beijing.volces.com/api/coding/v3`），key: `ARK_CODING_API_KEY`（fallback `ARK_API_KEY`），RPM=30，7 个模型；实测 7 并发 4.5× 加速
-- **兜底 · siliconflow** (`https://api.siliconflow.cn/v1`)，key: `EMBED_API_KEY`/`SILICONFLOW_API_KEY`，RPM=30（仅 glm-5/glm-4.7/deepseek-v3.2 支持）
+- **兜底 · siliconflow** (`https://api.siliconflow.cn/v1`)，key: `EMBED_API_KEY`/`SILICONFLOW_API_KEY`，RPM=30（kimi-k2.5/k2.6/glm-5/glm-4.7/deepseek-v3.2 fallback）
 
 ## 共识机制（核心设计）
 
@@ -51,8 +52,8 @@
 按 provider 分派（`call_api` 根据 `provider_name` 分支）：
 
 - **ark-coding**（7 模型）：`thinking={"type":"enabled"}`（火山原生），`max_tokens` 按模型上限（32768 或 65536）
-- **openclawroot / siliconflow**：按模型厂家家族分别：
-  - OpenAI 系（gpt-5.4）：`reasoning_effort="high"`
+- **openclawroot / ticketpro / siliconflow**：按模型厂家家族分别：
+  - OpenAI 系（gpt-5.5 · ticketpro 主）：`reasoning_effort="high"`
   - Gemini 系：`thinking_budget=16384`
   - Qwen/DeepSeek/Doubao/GLM/MiMo/MiniMax 系：`enable_thinking=True`
   - Anthropic 风格：`thinking={"type":"enabled","budget_tokens":16384}`

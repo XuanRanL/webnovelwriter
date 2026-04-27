@@ -104,7 +104,7 @@ Context Agent (读) ←→ index.db + state.json ←→ Data Agent (写)
    → 输出内部审查分数（13 维度平均）
 
 4. Step 3.5 外部模型审查（14 模型双层架构 · 13 维度 · Round 14+）
-   → 核心 3（qwen3.6-plus / gpt-5.4 / gemini-3.1-pro）+ 补充 11（含 5 个火山 coding 新模型）
+   → 核心 3（qwen3.6-plus / gpt-5.5 / gemini-3.1-pro · Round 20.x gpt 升级到 5.5，主 provider=ticketpro）+ 补充 11（含 5 个火山 coding 新模型）
    → 每模型 13 维度评分（含 reader_flow + naturalness + reader_critic · Round 13 v2）
    → 输出 14 模型 × 13 维度评分矩阵（182 份独立评分）
 

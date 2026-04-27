@@ -20,21 +20,21 @@ model: inherit
   "chapter": 11,
   "chapter_file": "正文/第0011章-猎人公会.md",
   "project_root": "{PROJECT_ROOT}",
-  "model_key": "qwen3.6-plus|gpt-5.4|gemini-3.1-pro|doubao-pro|doubao-seed-2.0-lite|glm-5|glm-5.1|glm-4.7|mimo-v2-pro|minimax-m2.7-hs|minimax-m2.5|deepseek-v3.2-thinking|kimi-k2.5|kimi-k2.6|all",
+  "model_key": "qwen3.6-plus|gpt-5.5|gemini-3.1-pro|doubao-pro|doubao-seed-2.0-lite|glm-5|glm-5.1|glm-4.7|mimo-v2-pro|minimax-m2.7-hs|minimax-m2.5|deepseek-v3.2-thinking|kimi-k2.5|kimi-k2.6|all",
   "scripts_dir": "{SCRIPTS_DIR}"
 }
 ```
 
-**model_key 说明（十四模型共识架构 · Round 14+ ark-coding 并入）**:
-- **架构**：3 供应商（openclawroot + **ark-coding** + siliconflow）× 14 模型 × 13 维度 = 182 份独立评分
+**model_key 说明（十四模型共识架构 · Round 14+ ark-coding 并入 · Round 20.x ticketpro 加入）**:
+- **架构**：4 供应商（**ticketpro** + openclawroot + **ark-coding** + siliconflow）× 14 模型 × 13 维度 = 182 份独立评分
 - **共识机制**：每个模型都跑**全 13 维度**（无分工），多模型共识 → 真 bug；单模型孤例 → 模型偏见
 - **所有模型 thinking 全开**
   - ark-coding：`thinking={"type":"enabled"}`（火山原生）
-  - openclawroot：按家族 `reasoning_effort/thinking_budget/enable_thinking`
+  - openclawroot / ticketpro：按家族 `reasoning_effort/thinking_budget/enable_thinking`
 - **max_tokens 拉满**：火山上的 `deepseek-v3.2` / `kimi-k2.5` 限 32768；其他全部 65536
 - **核心层**（tier=core · 必须成功，异构覆盖）：
   - `qwen3.6-plus`（国产旗舰，文学细致度最高）
-  - `gpt-5.4`（OpenAI 系，西方叙事视角，最快 2s）
+  - `gpt-5.5`（OpenAI 系，西方叙事视角，最快 2s · Round 20.x 从 gpt-5.4 升级，主 provider=ticketpro）
   - `gemini-3.1-pro`（谷歌系，画面感审视）
 - **补充层**（tier=supplemental · 失败不阻塞，累计 3 维度失败早停）：
   - `doubao-pro`（主 = ark-coding doubao-seed-2.0-pro，备 = openclawroot；结构审查严苛）

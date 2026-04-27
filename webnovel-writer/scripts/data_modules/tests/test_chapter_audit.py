@@ -165,7 +165,7 @@ def good_project(tmp_path):
     # 修法：good_project 默认提供 10 个 valid 模型（healthy），覆盖 healthy pass 路径。
     # 单独需要 partial 场景的 test 自行删除模型。
     fixture_valid_models = [
-        "qwen3.6-plus", "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+        "qwen3.6-plus", "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
         "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
         "mimo-v2-pro", "minimax-m2.7-hs", "minimax-m2.5",
         "deepseek-v3.2-thinking", "kimi-k2.5", "kimi-k2.6",
@@ -436,7 +436,7 @@ def test_A3_external_models_warn_high_when_only_5_to_7_valid(good_project):
     mod = _load_module()
     # invalidate 8 模型（routing_unverified）→ 只剩 6 valid → warn high
     invalidate_keys = [
-        "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+        "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
         "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7", "mimo-v2-pro",
     ]
     for key in invalidate_keys:
@@ -454,7 +454,7 @@ def test_A3_external_models_fails_critical_when_under_5(good_project):
     mod = _load_module()
     # invalidate 10 模型 → 只剩 4 valid → fail critical
     invalidate_keys = [
-        "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+        "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
         "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
         "mimo-v2-pro", "minimax-m2.7-hs", "minimax-m2.5",
     ]
@@ -1038,7 +1038,7 @@ def test_A3_external_models_warns_medium_when_8_or_9_valid(good_project):
     mod = _load_module()
     # invalidate 6 模型 → 8 valid → warn medium
     invalidate_keys = [
-        "doubao-pro", "gpt-5.4", "gemini-3.1-pro",
+        "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
         "doubao-seed-2.0-lite", "glm-5", "glm-5.1",
     ]
     for key in invalidate_keys:
@@ -1495,7 +1495,7 @@ def test_A3_external_models_markdown_only_uses_report_fallback(good_project):
     report_path.write_text(
         "# report\n"
         "- qwen3.6-plus: 90 (summary: solid prose and scene work)\n"
-        "- gpt-5.4: 91 (summary: strong pacing and hook)\n"
+        "- gpt-5.5: 91 (summary: strong pacing and hook)\n"
         "- gemini-3.1-pro: 89 (summary: emotion lands well)\n",
         encoding="utf-8",
     )
