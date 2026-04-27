@@ -42,6 +42,14 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 PROVIDERS = {
+    # Round 20.x · 2026-04-27 · Ch14 RCA P0-2 修复：ticketpro 作为 GPT-5.x 主 provider
+    # 实测 /v1/models 返回 9 模型（gpt-5.2/5.3-codex/5.4/5.4-mini/5.5/+3 image），
+    # 单测 gpt-5.4/5.5/5.4-mini 全 OK，无 openclawroot 间歇性 forbidden 问题
+    "ticketpro": {
+        "base_url": "https://api.ticketpro.cc/v1/chat/completions",
+        "env_key_names": ["TICKETPRO_API_KEY"],
+        "rpm": 30,
+    },
     "openclawroot": {
         "base_url": "https://openclawroot.com/v1/chat/completions",
         "env_key_names": ["OPENCLAWROOT_API_KEY"],
@@ -160,11 +168,16 @@ MODELS = {
         ],
         "timeout": 300,
     },
-    # ─── 西方异构视角 · 仅 openclawroot · 失败 fallback 到其他模型成功共识 ───
-    "gpt-5.4": {
+    # ─── 西方异构视角 ───
+    # Round 20.x · 2026-04-27 · Ch14 RCA P0-2 修复：gpt-5.4 替换为 gpt-5.5（更新版本）
+    # 主 provider 从 openclawroot（间歇性 forbidden）切到 ticketpro（实测无授权问题）
+    # 保留 openclawroot 作 fallback，gpt-5.4 改名为 gpt-5.5 但 model_key 维持向下兼容（别名映射）
+    "gpt-5.5": {
         "tier": "standard",
         "providers": [
-            {"provider": "openclawroot", "id": "gpt-5.4", "name": "GPT-5.4"},
+            {"provider": "ticketpro", "id": "gpt-5.5", "name": "GPT-5.5"},
+            {"provider": "openclawroot", "id": "gpt-5.5", "name": "GPT-5.5-OC-fallback"},
+            {"provider": "openclawroot", "id": "gpt-5.4", "name": "GPT-5.4-OC-legacy"},
         ],
         "timeout": 180,
     },
@@ -276,6 +289,9 @@ MODEL_ALIASES = {
     "minimax-m2.7": "minimax-m2.7-hs",
     "deepseek": "deepseek-v3.2-thinking",
     "deepseek-v3.2": "deepseek-v3.2-thinking",  # 短名映射到带 -thinking 的 key
+    # Round 20.x · 2026-04-27 · Ch14 RCA P0-2：gpt-5.4 升级为 gpt-5.5，旧 model_key 仍可用
+    "gpt-5.4": "gpt-5.5",
+    "gpt-5": "gpt-5.5",
     "doubao": "doubao-pro",
     "doubao-lite": "doubao-seed-2.0-lite",
 }
