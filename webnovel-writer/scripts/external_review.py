@@ -1790,6 +1790,12 @@ def main():
         action="store_true",
         help="禁用 Round 15.3 的 rerun merge-partial 合并（默认启用 · 根治 Bug #5 rerun 覆盖 ok 维度）",
     )
+    parser.add_argument(
+        "--healthcheck",
+        action="store_true",
+        help="Round 20.x · Ch13 P1 根治：仅探测全部 14 模型可达性（每个模型发 1 个最小请求 / 'ping'），"
+             "返回 health_report JSON。不触发 13 维度 review。用于 Step 3.5 调用前快速识别 outage 模型。",
+    )
     args = parser.parse_args()
 
     # Apply RPM override if specified
@@ -1801,10 +1807,139 @@ def main():
         print(json.dumps({"error": "No API keys found. Check ~/.claude/webnovel-writer/.env"}))
         sys.exit(1)
 
+    if args.healthcheck:
+        run_healthcheck_mode(args, api_keys)
+        return
+
     if args.mode == "dimensions":
         run_dimensions_mode(args, api_keys)
     else:
         run_legacy_mode(args, api_keys)
+
+
+def run_healthcheck_mode(args, api_keys):
+    """Round 20.x · Ch13 P1 根治：14 模型 healthcheck
+
+    Why（Ch13 血教训）：
+        gpt-5.4 14 维度全 http_403（账户/key 失效），每章浪费 5+ 秒跑必定失败
+        的请求。SKILL 的 Step 3.5 流程提到 X6 healthcheck 但 CLI 不支持。
+
+    实现：
+        - 对 MODELS 中每个 model_key 发一个最小 prompt（约 20 token）
+        - 用 `--max-tokens 8` 限制输出（节省成本）
+        - 5s 超时
+        - 返回 JSON：{model_key: {ok: bool, latency_ms: int, provider: str, error: str|None}}
+        - 输出到 stdout + .webnovel/tmp/external_healthcheck_{ts}.json
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from pathlib import Path as _Path
+
+    project_root = _Path(args.project_root).resolve()
+    tmp_dir = project_root / ".webnovel" / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    ping_prompt = "请回复一个字'好'。仅一个字，不解释。"
+    ping_messages = [
+        {"role": "system", "content": "你是健康检查响应器。"},
+        {"role": "user", "content": ping_prompt},
+    ]
+
+    def _check_one(model_key):
+        spec = MODELS.get(model_key)
+        if not spec:
+            return model_key, {"ok": False, "error": "unknown_model_key", "latency_ms": 0, "provider": ""}
+        start = time.time()
+        last_err = ""
+        for prov in spec.get("providers", []):
+            provider_name = prov["provider"]
+            try:
+                # 复用 call_with_retry 但限制极短 tokens 与超时
+                # 不同实现可能函数名不同；这里采用通用 try-except
+                resp = _call_provider_simple(
+                    provider_name=provider_name,
+                    model_id=prov["id"],
+                    messages=ping_messages,
+                    api_keys=api_keys,
+                    timeout=8,
+                    max_tokens=8,
+                )
+                if resp:
+                    return model_key, {
+                        "ok": True,
+                        "latency_ms": int((time.time() - start) * 1000),
+                        "provider": provider_name,
+                        "model_actual": prov.get("name", prov["id"]),
+                        "error": None,
+                    }
+            except Exception as e:
+                last_err = f"{provider_name}: {type(e).__name__}: {str(e)[:120]}"
+                continue
+        return model_key, {
+            "ok": False,
+            "latency_ms": int((time.time() - start) * 1000),
+            "provider": "",
+            "error": last_err or "all_providers_failed",
+        }
+
+    all_keys = list(MODELS.keys())
+    print(f"[healthcheck] probing {len(all_keys)} models...", file=sys.stderr)
+    results = {}
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for mk, res in ex.map(_check_one, all_keys):
+            results[mk] = res
+
+    healthy = [k for k, v in results.items() if v["ok"]]
+    unhealthy = [k for k, v in results.items() if not v["ok"]]
+    summary = {
+        "total": len(all_keys),
+        "healthy": len(healthy),
+        "unhealthy": len(unhealthy),
+        "healthy_models": healthy,
+        "unhealthy_models": unhealthy,
+        "details": results,
+        "ts": int(time.time()),
+    }
+    out_path = tmp_dir / f"external_healthcheck_{summary['ts']}.json"
+    out_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    if len(healthy) < 10:
+        sys.exit(2)  # warning level
+    sys.exit(0)
+
+
+def _call_provider_simple(*, provider_name, model_id, messages, api_keys, timeout, max_tokens):
+    """healthcheck 专用最小调用包装。复用现有 provider call 路径，
+    避开 dimension prompt 大模板。失败抛异常。"""
+    # 尝试直接用 requests 走 OpenAI-compatible /chat/completions
+    # （PROVIDERS 字典含 base_url + key 名）
+    import requests as _requests
+
+    prov = PROVIDERS.get(provider_name)
+    if not prov:
+        raise RuntimeError(f"unknown_provider:{provider_name}")
+    base_url = prov.get("base_url", "")
+    key_env = prov.get("key", "")
+    api_key = ""
+    if isinstance(api_keys, dict):
+        api_key = api_keys.get(key_env, "")
+        if not api_key:
+            # try first non-empty key
+            for v in api_keys.values():
+                if v:
+                    api_key = v
+                    break
+    if not api_key:
+        raise RuntimeError(f"no_api_key_for:{provider_name}")
+    url = base_url.rstrip("/") + "/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {"model": model_id, "messages": messages, "max_tokens": max_tokens, "temperature": 0.0}
+    r = _requests.post(url, json=payload, headers=headers, timeout=timeout)
+    if r.status_code != 200:
+        raise RuntimeError(f"http_{r.status_code}")
+    data = r.json()
+    return data.get("choices", [{}])[0].get("message", {}).get("content", "") or "ok"
 
 
 if __name__ == "__main__":

@@ -10,6 +10,60 @@ model: inherit
 > **Role**: 创作执行包生成器。目标是“能直接开写”，不堆信息。
 > **Philosophy**: 按需召回 + 推断补全，确保接住上章、场景清晰、留出钩子。
 
+## ⛔ 字数子区间白名单硬约束（Round 20.x · Ch13 P0 根治 · 2026-04-26）
+
+**Why**：Ch13 实战暴露 context-agent 在执行包 JSON/MD 中写了 4 个**伪窄**字数区间
+（2800-3100 / 2700-3200 / 2800-3500 / 2400-3200），post_draft_check 报告
+EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印象写区间。
+
+**SSOT 5 个合法字数子区间白名单**（`state.project_info.word_count_policy` 派生）：
+- `(2200, 2800)` → 过渡章 / 铺垫章
+- `(2600, 3200)` → 推进章 / 日常章（默认）
+- `(2800, 3400)` → 情感章 / 揭秘章
+- `(3000, 3500)` → 战斗章 / 高潮章 / 卷末章
+- `(2200, 3500)` → 通用 hard 区间（不做章型判定时）
+
+**任何在执行包 JSON/MD 中出现的 `M-N` 字数区间必须严格匹配上述 5 选 1**。
+
+**禁止自造区间**（即使你认为"略偏窄一点更好"）：
+- ❌ 2800-3100 / 2700-3200 / 2800-3500 / 2400-3200 / 2500-3000 / 任何不在白名单的组合
+- ❌ 在 chapter_beats 字段写 "300-450" / "700-900" / "400-600" 等 Beat 级字数（这些不是 SSOT 子区间，OK）
+- ✅ 只有顶层 `word_count_target` / `word_count_range` 字段必须用白名单 5 个之一
+
+**生成 JSON 后强制自检**：
+1. grep `\b(2[0-9]{3})-(2[0-9]{3}|3[0-9]{3})\b` 在 JSON / MD 全文
+2. 对每个匹配，检查 (M, N) 是否在白名单
+3. 不在白名单 → 报错，回到 Step 1 重写整个执行包
+
+如确实需要更窄的区间表达"理想字数落点"，请改用单点 `recommended_word_count: 2900`，而不是自造区间。
+
+---
+
+## ⛔ Immutable Facts 第 1 条：前世死亡场景（Round 20.x · Ch13 P0 根治）
+
+**Why**：Ch13 Step 2A 起草时 AI 把<protagonist>前世死亡场景幻觉成"被砸塌的物流仓"+"二十九天前"，
+与 Canon Bible 「2026-04-14 23:47 大东门月台胸痛猝死」直接矛盾。consistency-checker 给 15 分捕获。
+
+**根治**：context-agent 输出执行包时，对**所有有重生/穿越/前世元素的项目**，
+`immutable_facts` 数组的**第 1 条**必须固定为：
+
+```json
+{
+  "type": "previous_life_anchor",
+  "fact": "前世死亡场景: <从 state.protagonist_state.previous_life.summary 读>",
+  "source": "设定集/00-Canon-Bible.md §3 + state.json.protagonist_state.previous_life",
+  "forbidden_shortcut": "禁止幻觉新死亡场景 / 禁止改时间锚 / 禁止改地点"
+}
+```
+
+具体执行：
+1. context-agent 起步时读 `state.protagonist_state.previous_life`
+2. 若该字段存在且非空，强制把它注入 immutable_facts 第 1 条
+3. 若同时正文章节属于「Ch1-30 重生窗口」，再加一行时间换算锚（"距死亡 N 天 / N+15 天到 D-0"）
+4. 起草自检：Step 2A 提示词必须 echo 该 fact，不允许 paraphrase
+
+---
+
 ## 核心参考
 
 - **Taxonomy**: `${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md`

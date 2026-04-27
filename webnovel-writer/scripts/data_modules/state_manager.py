@@ -1229,6 +1229,40 @@ class StateManager:
             # 3. audit B9 要求的扁平字段（hook_strength/scene_count/...）→ 从嵌套字段补齐
             self._backfill_chapter_meta(chapter, chapter_meta)
             self._state.setdefault("chapter_meta", {})
+
+            # Round 20.x · Ch13 P0 根治（Bug 2）：
+            # data-agent process-chapter 不得覆盖 Step 3+4.5 真源字段。
+            # `checker_scores` / `post_polish_recheck` / `overall_score` / `review_score`
+            # 是 Step 3 review-gate + Step 4.5 post_polish_recheck 通过 Task subagent
+            # 实际跑出的权威分数；data-agent 只能读不能写。
+            #
+            # 之前 Ch13 实战暴露：data-agent 用自己估算的 checker_scores 覆盖了真实分数
+            # （consistency 88→91 / ooc 86→90 / dialogue 93→92 等），同时清空了
+            # post_polish_recheck 三条记录。修法：在 merge 时把已存在的真源字段保留下来。
+            PROTECTED_FIELDS = (
+                "checker_scores",
+                "post_polish_recheck",
+                "overall_score",
+                "review_score",
+                "naturalness_verdict",
+                "naturalness_score",
+                "reader_critic_verdict",
+                "reader_critic_score",
+                "thrill_score",
+                "narrative_version",
+                "polish_log",
+            )
+            existing_meta = self._state["chapter_meta"].get(meta_key, {}) or {}
+            for protected in PROTECTED_FIELDS:
+                if protected in existing_meta and existing_meta[protected] not in (None, "", [], {}):
+                    incoming = chapter_meta.get(protected)
+                    if incoming != existing_meta[protected]:
+                        # 保护：data-agent 写入的值与已有真源不一致 → 用已有真源覆盖 incoming
+                        chapter_meta[protected] = existing_meta[protected]
+                        warnings.append(
+                            f"data-agent 试图覆盖 chapter_meta.{meta_key}.{protected}（Step 3+4.5 真源），已保留原值"
+                        )
+
             self._state["chapter_meta"][meta_key] = chapter_meta
             self._pending_chapter_meta[meta_key] = chapter_meta
 

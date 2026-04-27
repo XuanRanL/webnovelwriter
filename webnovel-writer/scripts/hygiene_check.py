@@ -158,6 +158,11 @@ class HygieneReport:
             f"P1 fail: {len(self.p1_fails)} · "
             f"P2 fail: {len(self.p2_fails)}"
         )
+        # Round 20.x · Ch13 P0 根治（Bug 4）：exit_code 与 P0/P1/P2 fail count 严格对齐 + 显式标识
+        # 防止"P0 fail: 0 但 exit!=0"的误导用户场景。
+        rc = self.exit_code()
+        rc_label = {0: "通过", 1: "P0 阻断 commit", 2: "P1/P2 警告（不阻断）"}.get(rc, "未知")
+        lines.append(f"最终 exit_code = {rc} ({rc_label})")
         return "\n".join(lines)
 
 
@@ -1700,6 +1705,189 @@ def check_hook_trend(root: Path, chapter: int, rep: HygieneReport):
             )
 
 
+def check_cross_chapter_overstep(root: Path, chapter: int, rep: HygieneReport):
+    """H29: 跨章节正文越权检测（Round 20.x · Ch13 P0 根治 · 2026-04-26）
+
+    Why（Ch13 血教训）：
+        Step 5 data-agent 在 Step K 阶段越权改写了 Ch3-12 共 9 章已 commit 正文
+        （Ch10 加 "有个姓老的"、Ch12 改"再往后的画面被他按住"），违反 SKILL
+        "禁止裸跑 polish commit"——任何正文修改必须经 polish_cycle.py。
+
+    检测策略：
+        - 扫描 git status --porcelain 找到所有 M（modified）的 正文/第NNNN章*.md
+        - 排除当前 chapter
+        - 排除最新一次 commit message 含 [polish:...] 标识的章节（polish_cycle 路径合法）
+        - 任一其他章节正文 staged 或 modified → P0 fail
+    """
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "status", "--porcelain", "--", "正文/"],
+            cwd=root, capture_output=True, timeout=10,
+        )
+    except Exception as exc:
+        rep.record("P2", "H29", f"git status 调用失败: {exc}", True)
+        return
+
+    if out.returncode != 0:
+        return
+
+    text = out.stdout.decode("utf-8", errors="replace")
+    other_modified = []
+    cur_padded = f"第{chapter:04d}章"
+    for line in text.splitlines():
+        if not line:
+            continue
+        # porcelain 格式：'XY filename'，X=staged, Y=worktree
+        status = line[:2]
+        if "M" not in status and "A" not in status:
+            continue
+        rel = line[3:].strip().strip('"')
+        # 仅检测 正文/第NNNN章*.md
+        m = re.match(r"^正文/第(\d{4})章", rel.replace("\\", "/"))
+        if not m:
+            continue
+        if cur_padded in rel:
+            continue
+        other_modified.append(rel)
+
+    if other_modified:
+        rep.record(
+            "P0", "H29",
+            f"检测到非当前章节（Ch{chapter}）的正文文件被修改: "
+            f"{other_modified[:5]}（共 {len(other_modified)} 个）· 这违反"
+            f" SKILL '禁止裸跑 polish commit'，正文修改必须经 polish_cycle.py。"
+            f" 修复：git checkout HEAD -- <文件> 回滚，或用 polish_cycle.py 走合规路径",
+            False,
+        )
+    else:
+        rep.record("P0", "H29", "无跨章节正文越权（仅当前章修改）", True)
+
+
+def check_canon_overstep(root: Path, chapter: int, rep: HygieneReport):
+    """H30: Canon Bible / 项目 CLAUDE.md 越权检测（Round 20.x · Ch13 P0 根治）
+
+    Why（Ch13 血教训）：
+        data-agent Step K 越权把 Canon Bible 中"Ch24-28 末世爆发窗口"改成
+        "Ch35 主爆发"（多处 + 4 个设定集同款字段一起改）。这是项目北极星等级
+        的 canon 漂移事故。
+
+    检测策略：
+        - 扫描 git diff（含 staged + worktree）涉及 设定集/00-Canon-Bible.md
+          和 项目根/CLAUDE.md
+        - 任一文件有 M 状态 → P0 fail（要求作者明确确认）
+        - 例外：用户主动通过 git commit 时显式带 chore(canon): ... 前缀豁免
+          （但 hygiene 仍会发出 warning 提示用户自查）
+    """
+    import subprocess
+    canon_files = ["设定集/00-Canon-Bible.md", "CLAUDE.md"]
+    try:
+        out = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "status", "--porcelain", "--"] + canon_files,
+            cwd=root, capture_output=True, timeout=10,
+        )
+    except Exception as exc:
+        rep.record("P2", "H30", f"git status 调用失败: {exc}", True)
+        return
+
+    if out.returncode != 0:
+        return
+
+    text = out.stdout.decode("utf-8", errors="replace")
+    canon_modified = []
+    for line in text.splitlines():
+        if not line:
+            continue
+        status = line[:2]
+        if "M" not in status:
+            continue
+        rel = line[3:].strip().strip('"').replace("\\", "/")
+        canon_modified.append(rel)
+
+    if canon_modified:
+        rep.record(
+            "P0", "H30",
+            f"检测到 canon 级文件被修改: {canon_modified} · "
+            f"Canon Bible / 项目 CLAUDE.md 是北极星等级真源，禁止 data-agent / "
+            f"context-agent / 写作主流程在常规章节 commit 中修改。"
+            f" 修复：git checkout HEAD -- <文件> 回滚；如确需改动，必须用单独"
+            f" 的 chore(canon) commit 并附完整 RCA 说明",
+            False,
+        )
+    else:
+        rep.record("P0", "H30", "Canon Bible / CLAUDE.md 未被修改", True)
+
+
+def check_checker_scores_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H31: chapter_meta.checker_scores 与 review_metrics 一致性
+    （Round 20.x · Ch13 P0 根治 · 2026-04-26）
+
+    Why（Ch13 血教训）：
+        Step 5 data-agent process-chapter 用自己估算值覆盖了 Step 3+4.5 通过 Task
+        subagent 实际跑出的 checker_scores（consistency 88→91 / ooc 86→90 等），
+        同时清空了 post_polish_recheck 三条记录。state_manager.process_chapter_result
+        已加保护层（PROTECTED_FIELDS），本检查在 hygiene 层做最后一道兜底。
+
+    检测策略：
+        - 读 state.json.chapter_meta.{NNNN}.checker_scores.overall
+        - 读 index.db 最近一条 review_metrics.overall_score（chapter == 当前章）
+        - 两者误差 ≤ 2 → pass
+        - 误差 > 2 → P0 fail（说明 data-agent 写库后没经 set-checker-score CLI 重算）
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return
+
+    try:
+        s = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception:
+        return
+
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    checker_scores = meta.get("checker_scores", {}) or {}
+    cs_overall = checker_scores.get("overall")
+    meta_overall = meta.get("overall_score")
+
+    if cs_overall is None and meta_overall is None:
+        return  # 章未完成评分，跳过
+
+    if cs_overall is None or meta_overall is None:
+        rep.record(
+            "P1", "H31",
+            f"checker_scores.overall={cs_overall} 与 chapter_meta.overall_score="
+            f"{meta_overall} 至少一个缺失。两者应同步（set-checker-score CLI 自动维护）",
+            False,
+        )
+        return
+
+    try:
+        diff = abs(float(cs_overall) - float(meta_overall))
+    except (TypeError, ValueError):
+        rep.record(
+            "P1", "H31",
+            f"checker_scores.overall / overall_score 类型异常: {cs_overall} / {meta_overall}",
+            False,
+        )
+        return
+
+    if diff > 2.0:
+        rep.record(
+            "P0", "H31",
+            f"checker_scores.overall={cs_overall} 与 overall_score={meta_overall}"
+            f" 误差 {diff:.1f} > 2 · 通常意味着 data-agent process-chapter 越权"
+            f" 覆盖了 Step 3+4.5 真源后未经 set-checker-score CLI 重算。"
+            f" 修复：用 `webnovel.py state update --set-checker-score` 重写 13 维"
+            f" 真实分数，CLI 会自动重算 overall",
+            False,
+        )
+    else:
+        rep.record(
+            "P0", "H31",
+            f"checker_scores.overall={cs_overall} ≈ overall_score={meta_overall}（diff={diff:.1f}）",
+            True,
+        )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("chapter", type=int, help="章号")
@@ -1719,6 +1907,9 @@ def main():
     check_polish_report_persistence(root, args.chapter, rep)
     check_hook_close_persistence(root, args.chapter, rep)  # H26 · Round 20 · Ch12 RCA P0
     check_hook_close_freshness(root, args.chapter, rep)  # H28 · Round 20.5 · hook_close post-polish freshness
+    check_cross_chapter_overstep(root, args.chapter, rep)  # H29 · Round 20.x · Ch13 P0
+    check_canon_overstep(root, args.chapter, rep)  # H30 · Round 20.x · Ch13 P0
+    check_checker_scores_consistency(root, args.chapter, rep)  # H31 · Round 20.x · Ch13 P0
 
     # P1 检查
     check_root_layout(root, rep)

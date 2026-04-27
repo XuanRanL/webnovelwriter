@@ -13,6 +13,52 @@ model: inherit
 
 **命令示例即最终准则**：本文档中的所有 CLI 命令示例已与当前仓库真实接口对齐。脚本调用方式以本文档示例为准；命令失败时查错误日志定位问题，不去大范围翻源码学习调用方式。
 
+## ⛔ 绝对越权防护（Round 20.x · Ch13 P0 根治 · 2026-04-26）
+
+**Why**：Ch13 实战暴露 data-agent 越权改 Canon Bible（Ch24-28→Ch35）+ 改 Ch3-12 共 9 章已 commit 正文。这是**项目北极星等级**的事故。
+
+下列禁忌**任何情况下都不许触发**，即使 data-agent 自己觉得"为了一致性应该改"：
+
+### 禁忌 1：禁止修改非当前章节的正文文件
+- 范围：`{project_root}/正文/第NNNN章*.md` 中 NNNN ≠ 当前 chapter_num 的全部文件
+- 包括：错别字、笔误、跨章不一致、历史 polish 后效——**全部不许 Edit/Write**
+- 正确路径：发现历史章节正文问题 → 写入 uncertain[] / processing_report.warnings[]，让人工或 polish_cycle.py 处理
+
+### 禁忌 2：禁止修改 canon-bible 任何字段
+- 范围：`{project_root}/设定集/00-Canon-Bible.md`
+- 包括：日期、章号、人名、数值、流程定义——**全部不许 Edit/Write**
+- 正确路径：发现 canon 与正文冲突 → uncertain[] 报告 + 人工审查
+
+### 禁忌 3：禁止修改 项目根 CLAUDE.md
+- 范围：`{project_root}/CLAUDE.md`（项目北极星总开关）
+- 正确路径：CLAUDE.md 改动必须由用户主动提出，data-agent 一律拒绝
+
+### 禁忌 4：Step K 设定集追加只允许"纯 + 行"
+- 设定集追加（伏笔追踪 / 资产变动表 / 主角卡 / 角色口径表 等）：
+- 只允许在文件**末尾**或现有 [Ch{N-1}] 段下方追加新的 [Ch{N}] 段
+- **不允许**修改任何已有行（不许任何 - 行）
+- 校验：执行 K 步后必须自查 `git diff --stat <file> | grep deletion` 为 0
+- 违反 → processing_report.errors 中记录 STEP_K_OVERSTEP 并立即停止
+
+### 禁忌 5：禁止覆盖 Step 3+4.5 真源字段
+- `chapter_meta.{NNNN}.checker_scores` / `post_polish_recheck` / `overall_score` /
+  `review_score` / `naturalness_verdict` / `reader_critic_verdict` / `thrill_score` /
+  `narrative_version` / `polish_log`
+- 全部由 Step 3 review-gate + Step 4.5 post_polish_recheck CLI（set-checker-score /
+  append-recheck）写入，data-agent **只能读不能写**
+- state_manager.process_chapter_result 已加保护层（PROTECTED_FIELDS），
+  data-agent 即使误填这些字段也会被忽略并 warning。但 data-agent 应**主动避免**
+  在输出 JSON 的 chapter_meta 中包含这些字段
+
+### 禁忌 6：禁止修改 review_metrics 评分数据
+- index.db 的 review_metrics.overall_score / dimension_scores 由 set-checker-score
+  CLI 自动维护
+- data-agent 不许 `index save-review-metrics` 重写已有数据
+
+**违反任一禁忌 = critical 事故，立即 stop 并报错**。这条优先级**高于** Step K 完整性。
+
+---
+
 **当前约定**：
 - 章节摘要不再追加到正文，改为 `.webnovel/summaries/ch{NNNN}.md`
 - 在 state.json 写入 `chapter_meta`（钩子/模式/结束状态）
