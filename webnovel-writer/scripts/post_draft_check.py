@@ -97,14 +97,14 @@ def load_word_bounds(project_root: Path) -> tuple[int, int]:
         if wcp:
             return (
                 int(wcp.get("hard_min", pi.get("average_words_per_chapter_min", 2200))),
-                int(wcp.get("hard_max", pi.get("average_words_per_chapter_max", 3500))),
+                int(wcp.get("hard_max", pi.get("average_words_per_chapter_max", 3800))),
             )
         return (
             int(pi.get("average_words_per_chapter_min", 2200)),
-            int(pi.get("average_words_per_chapter_max", 3500)),
+            int(pi.get("average_words_per_chapter_max", 3800)),
         )
     except Exception:
-        return (2200, 3500)
+        return (2200, 3800)
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ WORD_COUNT_RANGE_RE = re.compile(
 def load_word_policy_subranges(project_root: Path) -> list[tuple[int, int]]:
     """读 state.word_count_policy.chapter_type_guide 的合法子区间白名单"""
     state_path = project_root / ".webnovel" / "state.json"
-    default = [(2200, 2800), (2600, 3200), (2800, 3400), (3000, 3500)]
+    default = [(2200, 2900), (2700, 3300), (2900, 3500), (3200, 3800)]
     try:
         d = json.loads(state_path.read_text(encoding="utf-8"))
         wcp = d.get("project_info", {}).get("word_count_policy", {})
@@ -149,10 +149,10 @@ def check_editor_notes_word_drift(
     """扫描 editor_notes 和 context JSON/MD，检测字数区间漂移
 
     判定规则（Round 15.1）：
-      a. 完整 SSOT 区间（2200-3500）：OK
+      a. 完整 SSOT 区间（2200-3800 · Round 21.1）：OK
       b. chapter_type_guide 白名单子区间（过渡/推进/情感/战斗四档）：OK
       c. 外溢 SSOT（如 2100-3500 / 2200-3600）：DRIFT · 外溢
-      d. 任意其他收紧（如 2800-3500 / 2400-3200 / 2700-3200）：DRIFT · 伪窄
+      d. 任意其他收紧（如 2900-3800 / 2400-3300 / 2700-3300）：DRIFT · 伪窄
     """
     warnings: list[str] = []
     padded = f"{chapter:04d}"
@@ -287,10 +287,10 @@ def _count_recent_word_drift_chapters(project_root: Path, current_chapter: int, 
 def _read_word_policy_ssot(project_root: Path) -> tuple[int, int]:
     state_file = project_root / ".webnovel" / "state.json"
     if not state_file.exists():
-        return (2200, 3500)
+        return (2200, 3800)
     s = json.loads(state_file.read_text(encoding="utf-8"))
     pol = s.get("project_info", {}).get("word_count_policy", {})
-    return int(pol.get("hard_min", 2200)), int(pol.get("hard_max", 3500))
+    return int(pol.get("hard_min", 2200)), int(pol.get("hard_max", 3800))
 
 
 def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
@@ -706,19 +706,19 @@ def main() -> int:
                 .get("word_count_policy", {})
             )
             ssot_lo = int(policy.get("hard_min", 2200))
-            ssot_hi = int(policy.get("hard_max", 3500))
+            ssot_hi = int(policy.get("hard_max", 3800))
         except Exception:
-            ssot_lo, ssot_hi = 2200, 3500
+            ssot_lo, ssot_hi = 2200, 3800
         drifts = check_editor_notes_word_drift(project_root, args.chapter, ssot_lo, ssot_hi)
         if drifts:
             print(f"\n ❌ 发现 {len(drifts)} 项字数漂移：")
             for d in drifts:
                 print(f"  ⚠️  {d}")
             print(
-                "\n  修复方式：把 editor_notes 里伪窄区间替换为合法子区间：\n"
-                "    过渡/铺垫：2200-2800  推进/日常：2600-3200\n"
-                "    情感/揭秘：2800-3400  战斗/高潮：3000-3500\n"
-                "    hard 兜底：2200-3500"
+                "\n  修复方式：把 editor_notes 里伪窄区间替换为合法子区间（Round 21.1）：\n"
+                "    过渡/铺垫：2200-2900  推进/日常：2700-3300\n"
+                "    情感/揭秘：2900-3500  战斗/高潮：3200-3800\n"
+                "    hard 兜底：2200-3800"
             )
             return 1
         print("\n ✅ editor_notes 无字数漂移")

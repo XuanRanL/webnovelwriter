@@ -1,6 +1,6 @@
 ---
 name: webnovel-write
-description: Writes webnovel chapters (default 2200-3500 words). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
+description: Writes webnovel chapters (default 2200-3800 words, Round 21.1 elastic ±500). Use when the user asks to write a chapter or runs /webnovel-write. Runs context, drafting, review, polish, and data extraction.
 allowed-tools: Read Write Edit Grep Bash Task
 ---
 
@@ -9,17 +9,17 @@ allowed-tools: Read Write Edit Grep Bash Task
 ## 目标
 
 - 以稳定流程产出可发布章节：优先使用 `正文/第{NNNN}章-{title_safe}.md`，无标题时回退 `正文/第{NNNN}章.md`。
-- 默认章节字数目标：**弹性区间 2200-3500**（SSOT = `state.project_info.word_count_policy` · 根据章节类型在 chapter_type_guide 里选）。
+- 默认章节字数目标：**弹性区间 2200-3800**（Round 21.1 · 弹性 ±500 · SSOT = `state.project_info.word_count_policy` · 根据章节类型在 chapter_type_guide 里选）。
 
   **字数弹性模型（Round 15.1 · 2026-04-22 根治三次漂移复现）**：
-  - **SSOT 字段**：`state.project_info.word_count_policy.hard_min` / `hard_max`（默认 2200/3500）
-  - **弹性准则**：根据章节类型在硬区间内自由浮动（约 ±400）· `average_words_per_chapter_target=3000` 只是项目级软目标**参考**，**不是**单章硬下限
+  - **SSOT 字段**：`state.project_info.word_count_policy.hard_min` / `hard_max`（默认 2200/3800 · Round 21.1）
+  - **弹性准则**：根据章节类型在硬区间内自由浮动（约 ±500 · Round 21.1）· `average_words_per_chapter_target=3000` 只是项目级软目标**参考**，**不是**单章硬下限
   - **chapter_type_guide 推荐区间**：
-    - 过渡章/铺垫章：2200-2800
-    - 推进章/日常章：2600-3200（默认）
-    - 情感章/揭秘章：2800-3400
-    - 战斗章/高潮章/卷末章：3000-3500（大纲/用户明确可破上限）
-  - **禁止伪造区间**：禁止在 editor_notes / context JSON / 审查报告写 2800-3500 / 2700-3200 / 2400-3200 等自造区间（硬 min/max 之外的数字）· 禁止引用不存在的 state 字段名（如 `target_words_per_chapter_target`）
+    - 过渡章/铺垫章：2200-2900
+    - 推进章/日常章：2700-3300（默认）
+    - 情感章/揭秘章：2900-3500
+    - 战斗章/高潮章/卷末章：3200-3800（大纲/用户明确可破上限）
+  - **禁止伪造区间**：禁止在 editor_notes / context JSON / 审查报告写 2900-3800 / 2700-3300 / 2400-3300 等自造区间（Round 21.1 区间已上调）（硬 min/max 之外的数字）· 禁止引用不存在的 state 字段名（如 `target_words_per_chapter_target`）
   - **冲突解决**：editor_notes（audit-agent 写）与 state.json SSOT 冲突时**以 state.json 为准**，context-agent 静默覆盖并在执行包 `warnings[]` 追加 `EDITOR_NOTES_WORD_COUNT_DRIFT`
   - **硬闸门**：post_draft_check.py 第 8 项 warn 扫描 editor_notes/context 字数漂移；audit-agent.md §8 block 凭印象自造区间
 - 保证审查、润色、数据回写完整闭环，避免“写完即丢上下文”。
@@ -515,7 +515,7 @@ fi
 
 硬要求：
 - 只输出纯正文到章节正文文件；若详细大纲已有章节名，优先使用 `正文/第{chapter_padded}章-{title_safe}.md`，否则回退为 `正文/第{chapter_padded}章.md`。
-- 默认按 2200-3500 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
+- 默认按 2200-3800 字执行（Round 21.1 · 弹性 ±500）；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
 - 禁止占位符正文（如 `[TODO]`、`[待补充]`）。
 - 保留承接关系：若上章有明确钩子，本章必须回应（可部分兑现）。
 - 爽点密度约束：每 800 字至少安排 1 个微爽点（信息揭示/小胜/认可/逆转/兑现）；纯铺垫章允许降至每 1200 字 1 个，但全章不得为零。
@@ -774,7 +774,7 @@ cat "${SKILL_ROOT}/references/writing/typesetting.md"
 
 **硬规则**：
 1. **净增上限 +200**：polish 导致字数净增超过 200，必须自检是否冗余
-2. **硬上限**：polish 后总字数 ≤ state.json `word_count_policy.hard_max`（默认 3500），否则触发强制压缩
+2. **硬上限**：polish 后总字数 ≤ state.json `word_count_policy.hard_max`（默认 3800 · Round 21.1），否则触发强制压缩
 3. **推荐顺序**：先删冗余段（reader-critic/pacing 标记的“非必要对话/描写”）再扩 critical 修复，而不是“先加后砍”
 4. **边界豁免**：若项目有 `word_count_policy.hard_max_polish_allowance`（如 +5%），polish 期可临时用，但 Step 5 前必须压回 hard_max 内
 

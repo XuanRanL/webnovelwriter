@@ -1975,7 +1975,7 @@ def check_G1_score_trend(project_root: Path, chapter: int) -> CheckResult:
 
 
 def check_G2_word_count_trend(project_root: Path, chapter: int) -> CheckResult:
-    """G2: 字数趋势 — 本章字数应在 2200-3500 范围; 与前章差异 < 40%."""
+    """G2: 字数趋势 — 本章字数应在 hard_min-hard_max 范围 (Round 21.1 默认 2200-3800, 从 state.json SSOT 读)."""
     chapter_file = _find_chapter_file(project_root, chapter)
     if chapter_file is None:
         return CheckResult(
@@ -1984,23 +1984,30 @@ def check_G2_word_count_trend(project_root: Path, chapter: int) -> CheckResult:
             evidence="章节文件不存在",
         )
     text = _read_text(chapter_file) or ""
-    # 简单字数 = 中文字符数
-    word_count = len(re.findall(r"[\u4e00-\u9fff]", text))
-    checks = []
-    if word_count < 2200:
+    word_count = len(re.findall(r"[一-鿿]", text))
+    state_path = project_root / ".webnovel" / "state.json"
+    target_min, target_max = 2200, 3800
+    try:
+        s = json.loads(state_path.read_text(encoding="utf-8"))
+        wcp = s.get("project_info", {}).get("word_count_policy", {})
+        target_min = int(wcp.get("hard_min", 2200))
+        target_max = int(wcp.get("hard_max", 3800))
+    except Exception:
+        pass
+    if word_count < target_min:
         return CheckResult(
             id="G2", name="字数趋势", layer="G",
             status="warn", severity="medium",
-            evidence=f"字数 {word_count} 低于目标 2200",
-            measured={"word_count": word_count, "target_min": 2200, "target_max": 3500},
+            evidence=f"字数 {word_count} 低于目标 {target_min}",
+            measured={"word_count": word_count, "target_min": target_min, "target_max": target_max},
             remediation=["Step 4 补写至目标范围"],
         )
-    if word_count > 3500:
+    if word_count > target_max:
         return CheckResult(
             id="G2", name="字数趋势", layer="G",
             status="warn", severity="low",
-            evidence=f"字数 {word_count} 超过目标 3500",
-            measured={"word_count": word_count, "target_min": 2200, "target_max": 3500},
+            evidence=f"字数 {word_count} 超过目标 {target_max}",
+            measured={"word_count": word_count, "target_min": target_min, "target_max": target_max},
         )
     return CheckResult(
         id="G2", name="字数趋势", layer="G",
@@ -2008,7 +2015,6 @@ def check_G2_word_count_trend(project_root: Path, chapter: int) -> CheckResult:
         evidence=f"字数 {word_count} 在目标范围",
         measured={"word_count": word_count},
     )
-
 
 def check_G3_audit_trend(project_root: Path, chapter: int) -> CheckResult:
     """G3: 跨章审计趋势 — chapter_audit.jsonl 中警告数不得累积上升."""

@@ -262,8 +262,8 @@ overall_decision =
    - hygiene_check.py H1 会在项目根自动检测并清除 `= / ** / 单汉字 / <>| / :: / ---` 开头的 0 字节文件，但仍应在源头防止
 8. **字数字段 SSOT 硬约束（2026-04-22 Round 15.1 新增 · 根治 3 次复现的字数漂移）**：
    - editor_notes / editor_notes_for_next_chapter / 审计报告 / blocking_issues / warnings 中**任何**涉及字数的表述，只允许引用 `state.project_info.word_count_policy` 的 `hard_min` / `hard_max` / `chapter_type_guide`
-   - **禁止自造区间**（如 2800-3500 / 2700-3200 / 2400-3200 / 2600-3400 / 2800-3100 / 2900-3100）· 必须用 `word_count_policy.hard_min`-`word_count_policy.hard_max`（默认 2200-3500）或 `chapter_type_guide` 里的**原生某一类型区间**
-   - **合法子区间白名单**（SSOT 派生 · 不可增减）：`(2200,2800)` 过渡章/铺垫章 · `(2600,3200)` 推进章/日常章 · `(2800,3400)` 情感章/揭秘章 · `(3000,3500)` 战斗章/高潮章/卷末章 · `(2200,3500)` hard 兜底
+   - **禁止自造区间**（如 2900-3800 / 2700-3300 / 2400-3300 / 2600-3400 / 2800-3100 / 2900-3100）· 必须用 `word_count_policy.hard_min`-`word_count_policy.hard_max`（Round 21.1 默认 2200-3800）或 `chapter_type_guide` 里的**原生某一类型区间**
+   - **合法子区间白名单**（SSOT 派生 · 不可增减 · Round 21.1）：`(2200,2900)` 过渡章/铺垫章 · `(2700,3300)` 推进章/日常章 · `(2900,3500)` 情感章/揭秘章 · `(3200,3800)` 战斗章/高潮章/卷末章 · `(2200,3800)` hard 兜底
    - **禁止引用不存在的 state 字段**（如 `target_words_per_chapter_target` / `word_target` 等）· 输出前必须用 `jq`/Python 校验字段存在
    - **推荐表述格式**：`本章字数建议 {chapter_type}类型 {min}-{max}（SSOT: word_count_policy.chapter_type_guide.{type} · 弹性模型允许剧情驱动在 {hard_min}-{hard_max} 内任意定位）`
    - 违反此条款 → Layer B 加 1 个 B-WC check 为 warn（medium）· 若 editor_notes 被下章 context-agent 读取后污染 writer，下章 Layer A 追加一个 critical 归因本条款
