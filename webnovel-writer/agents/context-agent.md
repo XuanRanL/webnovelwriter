@@ -17,11 +17,11 @@ model: inherit
 EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印象写区间。
 
 **SSOT 5 个合法字数子区间白名单**（`state.project_info.word_count_policy` 派生）：
-- `(2200, 2800)` → 过渡章 / 铺垫章
-- `(2600, 3200)` → 推进章 / 日常章（默认）
-- `(2800, 3400)` → 情感章 / 揭秘章
-- `(3000, 3500)` → 战斗章 / 高潮章 / 卷末章
-- `(2200, 3500)` → 通用 hard 区间（不做章型判定时）
+- `(2200, 2900)` → 过渡章 / 铺垫章（Round 21.1 上调）
+- `(2700, 3300)` → 推进章 / 日常章（默认 · Round 21.1 上调）
+- `(2900, 3500)` → 情感章 / 揭秘章（Round 21.1 上调）
+- `(3200, 3800)` → 战斗章 / 高潮章 / 卷末章（Round 21.1 上调 +300）
+- `(2200, 3800)` → 通用 hard 区间（Round 21.1 上调 hard_max 3500→3800）
 
 **任何在执行包 JSON/MD 中出现的 `M-N` 字数区间必须严格匹配上述 5 选 1**。
 
@@ -605,7 +605,7 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter-title "本章标题" \
   --narrative-version "v3" \
-  --word-count-target "2200-3500" \
+  --word-count-target "2200-3800" \
   --is-transition-chapter false \
   --input ".webnovel/tmp/execpkg_ch${chapter_padded}_stdin.json"
 ```
@@ -721,7 +721,7 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
   ```
 - **字数目标（word_count_target）SSOT 硬约束（2026-04-22 Round 15.1 根治 · 三次复现的漂移）**：
   - **唯一 SSOT**：`state.project_info.word_count_policy`（若项目无此字段，回退到 `average_words_per_chapter_min/max`）
-  - **读取优先级**：state.json.word_count_policy.chapter_type_guide[type] > state.json.word_count_policy.hard_min/max > state.json.average_words_per_chapter_min/max > 默认 `2200-3500`
+  - **读取优先级**：state.json.word_count_policy.chapter_type_guide[type] > state.json.word_count_policy.hard_min/max > state.json.average_words_per_chapter_min/max > 默认 `2200-3800`（Round 21.1 上调）
   - **章节类型自动识别**：Step 1 必须根据大纲批注（“过渡章/推进章/战斗章/卷末章等”）选择 chapter_type_guide 的对应区间；写入 `context_contract.word_count_target` 为区间字符串
   - **禁止**：擅自收紧到 2700-3200 / 2400-3200 / 2800-3500；禁止在执行包里写“avg 3000”/“目标 3000”这类单点数字作为硬目标（3000 只是 project 级 soft_target 参考）
   - **禁止**：使用 editor_notes 里的字数建议（editor_notes 可能被 audit-agent 污染）覆盖 SSOT · 若 editor_notes 与 state.json SSOT 冲突，**以 state.json 为准并在执行包中记录 warning**：`word_count_conflict_resolved_from_editor_notes`

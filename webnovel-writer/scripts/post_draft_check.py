@@ -151,7 +151,7 @@ def check_editor_notes_word_drift(
     判定规则（Round 15.1）：
       a. 完整 SSOT 区间（2200-3800 · Round 21.1）：OK
       b. chapter_type_guide 白名单子区间（过渡/推进/情感/战斗四档）：OK
-      c. 外溢 SSOT（如 2100-3500 / 2200-3600）：DRIFT · 外溢
+      c. 外溢 SSOT（如 2100-3800 / 2200-3900）：DRIFT · 外溢
       d. 任意其他收紧（如 2900-3800 / 2400-3300 / 2700-3300）：DRIFT · 伪窄
     """
     warnings: list[str] = []
