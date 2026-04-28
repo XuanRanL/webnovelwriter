@@ -280,7 +280,7 @@ overall_decision =
    - 背景：
      - Ch7 audit 写了 “2800-3100” 到 Ch8 editor_notes，Ch8 post_draft_check 两次 warn 都被忽略。Round 15.1 硬约束只覆盖字段描述，未覆盖自由文本。
      - Ch10 audit 又写了“建议回 2800-3100 避免累积疲劳”到 Ch11 editor_notes（自由文本，self-check 没抓到），导致 Ch11 context-agent 继承到 word_count_target，post_draft_check 7 处 EDITOR_NOTES_WORD_DRIFT。
-   - **operational rule**：写 editor_notes 之前先在 prompt 里列出本章所有“字数推荐”位置，每条对照白名单 [(2200,2800)/(2200,3500)/(2600,3200)/(2800,3400)/(3000,3500)] 校验后再写入 markdown。
+   - **operational rule**：写 editor_notes 之前先在 prompt 里列出本章所有“字数推荐”位置，每条对照白名单 [(2200,2900)/(2200,3800)/(2700,3300)/(2900,3500)/(3200,3800)]（Round 21.1 上调） 校验后再写入 markdown。
 
 ### Round 19 Phase X1 · reader-critic-checker <75 P0 硬阻止（追加 Layer A 检测）
 
