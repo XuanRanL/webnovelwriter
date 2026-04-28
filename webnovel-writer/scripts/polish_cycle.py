@@ -235,14 +235,25 @@ def update_state_after_polish(
     #   2) source_narrative_version=new_version（绑定本次版本）
     #   3) needs_reclassify=True（强制下游必须重分类才能通过 hygiene H28 P0）
     # 这样下次 polish 自动标 stale，AI/人工必须立刻 set-hook-close 重分类才能 commit。
+    #
+    # Round 21.0 · 2026-04-28 · Ch15 RCA 升级：chicken-egg loop 根治
+    # 旧版本：每次 polish_cycle 调用都强制设 needs_reclassify=True
+    # 后果：set-hook-close 后再跑 polish_cycle 又重新置 True，二次 commit 永远失败
+    # 修复：只有章末 excerpt 实际变化时才设 True；否则保持现有值（避免清掉用户手动 reclassify）
     hook_close = meta.setdefault("hook_close", {})
-    hook_close["text_excerpt"] = _extract_chapter_tail_excerpt(text)
+    new_excerpt = _extract_chapter_tail_excerpt(text)
+    old_excerpt = hook_close.get("text_excerpt", "")
+    excerpt_changed = (new_excerpt or "").strip() != (old_excerpt or "").strip()
+    hook_close["text_excerpt"] = new_excerpt
     hook_close["source_narrative_version"] = new_version
-    hook_close["needs_reclassify"] = True
+    if excerpt_changed:
+        hook_close["needs_reclassify"] = True
+    # else: 保留现有 needs_reclassify（防 chicken-egg）
     hook_close["polish_synced_at"] = _utc_iso()
     diff["hook_close_synced"] = {
         "source_narrative_version": new_version,
-        "needs_reclassify": True,
+        "needs_reclassify": hook_close.get("needs_reclassify", False),
+        "excerpt_changed": excerpt_changed,
         "old_primary_type": hook_close.get("primary_type"),
     }
 
