@@ -798,7 +798,12 @@ def main() -> int:
         return 1
 
     print("\n ✅ 全部通过，可进入 Step 3 审查")
-    return 0 if not (args.strict and warnings) else 1
+
+    # Round 20.8 · 2026-04-28 · Ch15 RCA:
+    # 字数命中硬区间时会记录一条 "[INFO] 字数..." 供日志留痕。它不是 warning，
+    # strict 模式不应因此返回 1；否则会出现"打印全部通过但退出码失败"的幽灵阻断。
+    strict_warnings = [w for w in warnings if not w.startswith("[INFO]")]
+    return 0 if not (args.strict and strict_warnings) else 1
 
 
 if __name__ == "__main__":

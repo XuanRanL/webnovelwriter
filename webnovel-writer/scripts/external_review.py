@@ -1388,21 +1388,48 @@ def run_dimensions_mode(args, api_keys):
         all_results = {}
 
         # 预加载共享数据（一次读取，所有线程复用，避免9次重复IO）
-        # 若 external_context 未预生成，使用 build_context_block 的磁盘 fallback —
-        # 这是脚本的设计能力，不是错误。写回一份 stub 供下次复用。
+        # Round 21.0 · 2026-04-28 · Ch15 RCA H32 根治：
+        #   旧版逻辑（"disk fallback"）允许在 context 文件缺失时落 50-byte stub，
+        #   让 build_context_block 在每个 worker 内零散从磁盘读字段。这种"魔法 fallback"
+        #   表面上可工作，但：
+        #     1. SKILL.md 明确写"若文件不存在，脚本将报错退出（exit 1）"，code 与 doc 不一致
+        #     2. 14 个并发 worker 各自从磁盘碎片化读字段，无法保证读到的是 build_external_context.py
+        #        生成的"14 字段结构化上下文"（含 narrative_voice / emotional_blueprint / classical_references）
+        #     3. Ch15 实战：disk fallback 50-byte stub 让 6 个完成的模型实际是"盲评"
+        #   新规则：
+        #     - context 文件不存在 → exit 1 + 提示运行 build_external_context.py
+        #     - context 文件存在但 < 1KB 或含 "_auto_generated":true → exit 1
+        #     - 只有真上下文（>= 1KB 真 14 字段）才允许进入并发审查
         context_file = project_root / ".webnovel" / "tmp" / f"external_context_ch{chapter_num:04d}.json"
-        if context_file.exists():
-            _shared_context = json.loads(context_file.read_text(encoding="utf-8"))
-        else:
-            _shared_context = {}
-            try:
-                context_file.parent.mkdir(parents=True, exist_ok=True)
-                context_file.write_text(
-                    json.dumps({"_auto_generated": True, "note": "disk fallback"}, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-            except Exception:
-                pass
+        if not context_file.exists():
+            print(json.dumps({
+                "error": f"external_context_ch{chapter_num:04d}.json 不存在",
+                "remediation": [
+                    f"先运行: python -X utf8 scripts/build_external_context.py --project-root \"{project_root}\" --chapter {chapter_num}",
+                    "build_external_context.py 会落盘 14 字段真上下文 (~250KB)，让 14 个外部模型有据可依地评分",
+                    "禁止从空 context 启动外部审查（Round 21.0 H32 根治）"
+                ]
+            }, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
+        ctx_size = context_file.stat().st_size
+        ctx_text = context_file.read_text(encoding="utf-8")
+        try:
+            _shared_context = json.loads(ctx_text)
+        except Exception as e:
+            print(json.dumps({
+                "error": f"external_context_ch{chapter_num:04d}.json 解析失败: {e}",
+                "remediation": ["重新运行 build_external_context.py 重建"]
+            }, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
+        if ctx_size < 1024 or _shared_context.get("_auto_generated") is True:
+            print(json.dumps({
+                "error": f"external_context_ch{chapter_num:04d}.json 是 disk fallback 占位 ({ctx_size} bytes)",
+                "detail": "Round 21.0 H32 根治：禁止从 50-byte fallback stub 启动外部审查（盲评）",
+                "remediation": [
+                    f"删除 stub 文件后，运行: python -X utf8 scripts/build_external_context.py --project-root \"{project_root}\" --chapter {chapter_num}",
+                ]
+            }, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
         chapters_dir = project_root / "正文"
         ch_files = list(chapters_dir.glob(f"第{chapter_num:04d}章*.md"))
         _shared_chapter_text = ch_files[0].read_text(encoding="utf-8") if ch_files else None
@@ -1508,20 +1535,29 @@ def _run_single_model(args, api_keys):
     chapter_text = getattr(args, '_preloaded_chapter_text', None)
 
     if context_data is None:
+        # Round 21.0 · 2026-04-28 · Ch15 RCA H32 根治：单模型路径同样禁止 disk fallback stub
         context_file = project_root / ".webnovel" / "tmp" / f"external_context_ch{chapter_num:04d}.json"
-        if context_file.exists():
+        if not context_file.exists():
+            print(json.dumps({
+                "error": f"external_context_ch{chapter_num:04d}.json 不存在",
+                "remediation": [
+                    f"先运行: python -X utf8 scripts/build_external_context.py --project-root \"{project_root}\" --chapter {chapter_num}",
+                    "Round 21.0 H32: 禁止从空 context 启动外部审查"
+                ]
+            }, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
+        ctx_size = context_file.stat().st_size
+        try:
             context_data = json.loads(context_file.read_text(encoding="utf-8"))
-        else:
-            # 磁盘 fallback 机制会在 build_context_block 中自动加载所需字段
-            context_data = {}
-            try:
-                context_file.parent.mkdir(parents=True, exist_ok=True)
-                context_file.write_text(
-                    json.dumps({"_auto_generated": True, "note": "disk fallback"}, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-            except Exception:
-                pass
+        except Exception as e:
+            print(json.dumps({"error": f"context 解析失败: {e}"}, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
+        if ctx_size < 1024 or context_data.get("_auto_generated") is True:
+            print(json.dumps({
+                "error": f"context 是 disk fallback 占位 ({ctx_size} bytes)",
+                "remediation": [f"先运行: python -X utf8 scripts/build_external_context.py --project-root \"{project_root}\" --chapter {chapter_num}"]
+            }, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
 
     if chapter_text is None:
         chapters_dir = project_root / "正文"
@@ -1951,19 +1987,18 @@ def _call_provider_simple(*, provider_name, model_id, messages, api_keys, timeou
     if not prov:
         raise RuntimeError(f"unknown_provider:{provider_name}")
     base_url = prov.get("base_url", "")
-    key_env = prov.get("key", "")
     api_key = ""
     if isinstance(api_keys, dict):
-        api_key = api_keys.get(key_env, "")
-        if not api_key:
-            # try first non-empty key
-            for v in api_keys.values():
-                if v:
-                    api_key = v
-                    break
+        api_key = api_keys.get(provider_name, "")
     if not api_key:
         raise RuntimeError(f"no_api_key_for:{provider_name}")
-    url = base_url.rstrip("/") + "/chat/completions"
+    # Round 20.8 · Ch15 RCA:
+    # PROVIDERS[*].base_url already points to the chat/completions endpoint.
+    # The old healthcheck appended "/chat/completions" again and also fell back
+    # to the first provider key, causing 14/14 false-negative probes.
+    url = base_url.rstrip("/")
+    if not url.endswith("/chat/completions"):
+        url += "/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {"model": model_id, "messages": messages, "max_tokens": max_tokens, "temperature": 0.0}
     r = _requests.post(url, json=payload, headers=headers, timeout=timeout)

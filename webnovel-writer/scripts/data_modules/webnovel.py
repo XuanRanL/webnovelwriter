@@ -355,6 +355,77 @@ def _check_polish_drift(project_root: Path) -> Optional[dict]:
     }
 
 
+def _check_stale_current_task(project_root: Path) -> Optional[dict]:
+    """Detect stale running current_task at preflight time.
+
+    Round 21.0 · 2026-04-28 · Ch15 RCA H33 根治
+    根因：上次 Ch15 重新开始时，workflow_state.json 的 current_task 卡死 Step 3.5
+        running 8 分钟（PID 52768 已死），preflight 不报，用户手动判断卡了多久。
+
+    检测逻辑：若 current_task.current_step.status == 'running' 且
+    started_at 距今 > 30 分钟 → P1 warn（不阻断 preflight，但提示"可能 dead task"）
+
+    返回 None → 无 workflow_state 或非项目目录
+    返回 dict → 含 ok / 提示
+    """
+    ws = project_root / ".webnovel" / "workflow_state.json"
+    if not ws.exists():
+        return None
+    try:
+        w = json.loads(ws.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    ct = w.get("current_task")
+    if not ct or not isinstance(ct, dict):
+        return {"name": "stale_task", "ok": True, "path": str(ws), "note": "无 active task"}
+    cs = ct.get("current_step")
+    if not cs or not isinstance(cs, dict):
+        return {"name": "stale_task", "ok": True, "path": str(ws), "note": "无 active step"}
+    if cs.get("status") != "running":
+        return {"name": "stale_task", "ok": True, "path": str(ws), "note": "无 running step"}
+    started_at_s = cs.get("started_at") or cs.get("running_at")
+    if not started_at_s:
+        return {"name": "stale_task", "ok": True, "path": str(ws), "note": "started_at 缺失·无法判断 stale"}
+    try:
+        from datetime import datetime, timezone
+        # ISO 格式可能含 Z 或 +00:00 或纯 naive；统一处理
+        s = started_at_s.replace("Z", "+00:00")
+        try:
+            started = datetime.fromisoformat(s)
+        except Exception:
+            started = datetime.fromisoformat(started_at_s.split(".")[0])
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        elapsed_min = (now - started).total_seconds() / 60.0
+        if elapsed_min > 30:
+            return {
+                "name": "stale_task",
+                "ok": False,
+                "path": str(ws),
+                "step_id": cs.get("id"),
+                "elapsed_min": round(elapsed_min, 1),
+                "started_at": started_at_s,
+                "error": (
+                    f"current_task.{cs.get('id')} running {elapsed_min:.0f} 分钟未完成（>30 min 阈值）。"
+                    f"可能是进程死亡或挂起。修复："
+                    f"\n  1) 检查进程：ps aux | grep python（或 PowerShell Get-Process）"
+                    f"\n  2) 若进程已死：python scripts/webnovel.py workflow fail-task --reason '...' "
+                    f"\n  3) 处理 stale tmp 文件后重新启动当前 step"
+                ),
+            }
+        return {
+            "name": "stale_task",
+            "ok": True,
+            "path": str(ws),
+            "step_id": cs.get("id"),
+            "elapsed_min": round(elapsed_min, 1),
+            "note": f"current_task.{cs.get('id')} running {elapsed_min:.1f} 分钟（< 30 min 阈值正常）",
+        }
+    except Exception as e:
+        return {"name": "stale_task", "ok": True, "path": str(ws), "note": f"时间解析失败: {e}"}
+
+
 def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
     scripts_dir = _scripts_dir().resolve()
     plugin_root = scripts_dir.parent
@@ -406,8 +477,21 @@ def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
         except Exception as exc:
             checks.append({"name": "polish_drift", "ok": True, "path": "", "note": f"检测失败: {exc}"})
 
+    # Stale current_task check — Round 21.0 · 2026-04-28 · Ch15 RCA H33 根治
+    # 检测 workflow_state.json 是否有死任务（current_task.current_step.started_at > 30 分钟）
+    # 上次 Ch15 重新开始时发现 PID 52768 已死但 current_task 仍 running 8 分钟，无超时机制
+    # 此检测让下次 preflight 立即提示，不再让用户手动判断
+    if project_root:
+        try:
+            stale_check = _check_stale_current_task(Path(project_root))
+            if stale_check is not None:
+                checks.append(stale_check)
+        except Exception as exc:
+            checks.append({"name": "stale_task", "ok": True, "path": "", "note": f"检测失败: {exc}"})
+
     # ok 聚合：只看 P0（必需）项；agents_sync/cache_sync 缺失只警告，不阻断 preflight
     # polish_drift 的 ok=False 只在 P0 drift 时；此时阻断
+    # stale_task 也是非阻断警告，不进入 P0
     p0_names = {"scripts_dir", "entry_script", "extract_context_script", "skill_root", "project_root", "polish_drift"}
     return {
         "ok": all(bool(item["ok"]) for item in checks if item["name"] in p0_names),
