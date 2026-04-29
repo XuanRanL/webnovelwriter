@@ -32,7 +32,7 @@ alwaysApply: true
 
 ## 每章必须跑完整审查流程
 
-- 每章必须并行启动审查子代理（10个维度全部执行）
+- 每章必须跑完整审查：Step 3 内部 13 checker + Step 3.5 外部 14 模型 × 13 维度
 - 等待所有审查器返回后汇总评分
 - 有可修复的 medium 以上问题就修改正文，然后重跑对应审查器做第二轮
 - 确认没有明显提升空间后才进入 Data Agent → 审计闸门 → Git
@@ -45,48 +45,36 @@ alwaysApply: true
 - 个别维度因章节类型/情节因素评分偏低属于正常，不必强行拉分
 - 存在可修复的 medium/high 问题时，Step 4 修复后重新进入 Step 3 做第二轮审查
 
-## Step 3.5 外部模型审查配置（Round 14+ · 14 模型 × 13 维度）
+## Step 3.5 外部模型审查配置（Round 21.4 · combined 默认 · 14 模型 × 13 维度）
 
 > 权威版本在 `webnovel-writer/skills/webnovel-write/references/step-3.5-external-review.md`。此处给运行时摘要。
 
-**架构：3 供应商 × 14 模型 × 13 维度 = 182 份独立评分（共识机制）**
+**架构：6 供应商 × 14 模型 × 13 维度 = 182 份逻辑评分（共识机制）**
 
-**核心层（3，必须成功，异构性覆盖）：**
-- `qwen3.6-plus` — openclawroot
-- `gpt-5.4` — openclawroot
-- `gemini-3.1-pro` — openclawroot
-
-**补充层（11，失败不阻塞，累计 3 维度失败早停）：**
-- `doubao-pro` — ark-coding（主） → openclawroot（备）
-- `doubao-seed-2.0-lite` — ark-coding
-- `glm-5` — openclawroot → siliconflow
-- `glm-5.1` — ark-coding
-- `glm-4.7` — openclawroot → siliconflow
-- `mimo-v2-pro` — openclawroot
-- `minimax-m2.7-hs` — openclawroot
-- `minimax-m2.5` — ark-coding
-- `deepseek-v3.2-thinking` — ark-coding（主 · max_tokens=32768） → openclawroot → siliconflow
-- `kimi-k2.5` — ark-coding（max_tokens=32768）
-- `kimi-k2.6` — ark-coding
+**模型扁平投票（无 core/supplemental 硬耦合）：**
+`qwen3.6-plus`, `gpt-5.5`, `gemini-3.1-pro`, `doubao-pro`, `doubao-seed-2.0-lite`, `glm-5`, `glm-5.1`, `glm-4.7`, `mimo-v2.5-pro`, `minimax-m2.7-hs`, `minimax-m2.5`, `deepseek-v3.2-thinking`, `kimi-k2.5`, `kimi-k2.6`
 
 **供应商：**
+- **ticketpro** (`https://api.ticketpro.cc/v1`)，key=`TICKETPRO_API_KEY`，承载 GPT-5.x 主路
+- **api666** (`https://api-666.cc/v1`)，key=`API666_API_KEY`，承载 Gemini 主路 `gemini-3.1-pro-preview`
 - **openclawroot** (`https://openclawroot.com/v1`)，key=`OPENCLAWROOT_API_KEY`，RPM=30
 - **ark-coding** 火山方舟 Coding Plan (`https://ark.cn-beijing.volces.com/api/coding/v3`)，key=`ARK_CODING_API_KEY`（fallback `ARK_API_KEY`），RPM=30；所有 7 个模型用原生 `thinking={"type":"enabled"}`
-- **siliconflow** (`https://api.siliconflow.cn/v1`)，key=`EMBED_API_KEY`，RPM=30（仅 glm-5/glm-4.7/deepseek-v3.2 兜底）
+- **xiaomimimo** (`https://token-plan-sgp.xiaomimimo.com/v1`)，key=`XIAOMIMIMO_API_KEY`，承载 `mimo-v2.5-pro`
+- **siliconflow** (`https://api.siliconflow.cn/v1`)，key=`EMBED_API_KEY`/`SILICONFLOW_API_KEY`，RPM=30（兜底）
 
 **thinking / max_tokens 策略：**
 - ark-coding：`thinking={"type":"enabled"}`，max_tokens 按上限（32768 或 65536）
-- openclawroot：按家族分派 `reasoning_effort`（gpt）/`thinking_budget`（gemini）/`enable_thinking`（qwen/deepseek/doubao/glm/mimo/minimax）
+- ticketpro / api666 / openclawroot / siliconflow / xiaomimimo：按家族分派 `reasoning_effort`（gpt）/`thinking_budget`（gemini）/`enable_thinking`（qwen/deepseek/doubao/glm/mimo/minimax/kimi）
 
 **重试与 fallback：**
-- ark-coding/healwrap/nextapi：重试 2 次
-- openclawroot/siliconflow：fail-fast 切下一 provider
+- 所有 provider：最多重试 2 次，失败后按 `MODELS[model].providers` 切下一 provider
 - 路由验证：每次调用后检查 `response.model` 与请求匹配
-- 幽灵零分（score=0 + 空摘要）：provider 层自动切下一供应商
+- 幽灵零分/空 combined reports：provider 层自动切下一供应商
 
 **调用方式（硬规则）：**
-- **必须**用 `--model-key all` 一次性跑全部 14 个模型，禁止手动逐个调用（防遗漏）
-- 脚本仅支持：`--project-root` / `--chapter` / `--mode` / `--model-key` / `--models` / `--max-concurrent` / `--rpm-override`
+- **必须**用 `--model-key all --dimension-strategy auto` 一次性跑全部 14 个模型，禁止手动逐个调用（防遗漏）
+- 默认 combined：每模型 1 次请求返回 13 个 `dimension_reports`；缺维度/坏 JSON 自动 split fallback
+- 脚本仅支持：`--project-root` / `--chapter` / `--mode` / `--model-key` / `--models` / `--dimension-strategy` / `--model-concurrent` / `--max-concurrent` / `--rpm-override` / `--rpm-override-provider` / `--no-merge-partial` / `--healthcheck`
 - 不要传 `--chapter-file` / `--outline-file` 等不存在的参数
 
 ```bash
@@ -94,11 +82,12 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter {chapter_num} \
   --mode dimensions \
-  --model-key all
+  --model-key all \
+  --dimension-strategy auto
 ```
 
 **外审 Prompt：**
-13 个审查维度 = 11 工艺维度（设定一致性 / 连贯性 / 人物塑造 / 追读力 / 爽点密度 / 节奏控制 / 对话质量 / 信息密度 / 文笔质感 / 情感表现 / 读者视角流畅度 `reader_flow`）+ `naturalness`（汉语母语自然度）+ `reader_critic`（读者锐评）。每个 issue 必含 type / severity / location / description / suggestion / quote。
+13 个审查维度 = 10 工艺维度（设定一致性 / 连贯性 / 人物塑造 / 追读力 / 爽点密度 / 节奏控制 / 对话质量 / 信息密度 / 文笔质感 / 情感表现）+ `reader_flow`（读者视角流畅度）+ `naturalness`（汉语母语自然度）+ `reader_critic`（读者锐评）。每个 issue 必含 type / severity / location / description / suggestion / quote。
 
 **外审输出 JSON 必须包含：**
 `model_actual` / `routing_verified` / `provider_chain` / `api_meta`（elapsed_ms / tokens / attempts / final_provider）。
@@ -108,7 +97,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 - 共识问题（≥3 个模型指出的同类问题 = 真问题；14 模型下可将阈值调至 ≥4）
 - Step 4 修复清单（共识 + severity ≥ medium + verified 筛选）
 
-**执行要求：** 每章 Step 3（13 个内部 checker）+ Step 3.5（14 个外部模型 × 13 维度）通过后，核心 3 模型全部返回后才进入 Step 4。
+**执行要求：** 每章 Step 3（13 个内部 checker）+ Step 3.5（14 个外部模型 × 13 维度）脚本退出且有效模型数达到阈值后才进入 Step 4；Step 4 不得在任何内部 checker 或外审脚本仍运行时开始。
 
 ## 开篇黄金协议（Ch1-3 专用，叠加在标准流程之上）
 

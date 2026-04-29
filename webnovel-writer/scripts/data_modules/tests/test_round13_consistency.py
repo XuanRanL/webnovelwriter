@@ -204,19 +204,28 @@ def test_external_review_agent_desc_uses_13_dimensions():
 
 
 # ---------------------------------------------------------------------------
-# 4. 9×dimensions 乘积数学正确（避免算错 99 vs 117）
+# 4. K×dimensions 乘积数学正确（避免算错 9×13=99 / 14×13=170 之类 typo）
+#    Round 13 v2 = 9 模型 × 13 维度 = 117 份（历史口径，仅出现在 changelog/RCA）
+#    Round 14+   = 14 模型 × 13 维度 = 182 份（当前口径）
+#    Round 21.4  = 14 模型 × 1 combined = 14 物理请求（评分点仍 182）
 # ---------------------------------------------------------------------------
 
 
-def test_nine_times_dimensions_product_correctness():
-    """所有"9 模型 × N 维度 = M 份"的表述，M 必须等于 9 × 13 = 117。"""
+def test_models_times_dimensions_product_correctness():
+    """所有"K 模型 × N 维度 = M 份"的表述，M 必须等于 K × N。
+
+    覆盖 K ∈ {9, 14}，避免：
+      - 算错（9×13 写成 99 / 14×13 写成 170）
+      - K 漂移（Round 14+ 文档遗留 9×13 旧口径未升级）
+    """
     files_to_check = [
         "agents/external-review-agent.md",
         "skills/webnovel-write/references/step-3.5-external-review.md",
         "scripts/external_review.py",
     ]
+    # 匹配 9/14 模型 × N 维度 = M 份
     pattern = re.compile(
-        r"9\s*(?:模型)?\s*[×xX]\s*(\d+)\s*(?:维度)?\s*[=＝]\s*(\d+)\s*份"
+        r"(9|14)\s*(?:模型)?\s*[×xX]\s*(\d+)\s*(?:维度)?\s*[=＝]\s*(\d+)\s*份"
     )
     violations = []
     for rel in files_to_check:
@@ -225,10 +234,31 @@ def test_nine_times_dimensions_product_correctness():
             continue
         text = path.read_text(encoding="utf-8")
         for m in pattern.finditer(text):
-            dims, product = int(m.group(1)), int(m.group(2))
-            if 9 * dims != product:
+            models = int(m.group(1))
+            dims = int(m.group(2))
+            product = int(m.group(3))
+            if models * dims != product:
                 line_no = text[: m.start()].count("\n") + 1
                 violations.append(
-                    f"{rel}:L{line_no} 算错: 9 × {dims} ≠ {product}（应 {9*dims}）"
+                    f"{rel}:L{line_no} 算错: {models} × {dims} ≠ {product}（应 {models*dims}）"
                 )
-    assert not violations, "9×N 份乘积表达式数学错误:\n  " + "\n  ".join(violations)
+    assert not violations, "K×N 份乘积表达式数学错误:\n  " + "\n  ".join(violations)
+
+
+def test_round14_plus_uses_14_models_in_current_docs():
+    """当前口径文档（SKILL.md / external-review-agent.md / step-3.5-external-review.md）
+    必须以 "14 模型" 为主口径出现至少 1 次；9 模型旧口径仅允许出现在历史/RCA 段落。
+    """
+    current_docs = [
+        "skills/webnovel-write/SKILL.md",
+        "agents/external-review-agent.md",
+        "skills/webnovel-write/references/step-3.5-external-review.md",
+    ]
+    for rel in current_docs:
+        path = _plugin_root() / rel
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        assert re.search(r"14\s*(?:个)?\s*(?:模型|models)", text), (
+            f"{rel}: 当前口径必须含 '14 模型'/'14 个模型'/'14 models' 字样"
+        )

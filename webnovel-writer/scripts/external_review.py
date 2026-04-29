@@ -2,12 +2,13 @@
 Step 3.5 External Model Review Script
 Supports two modes:
   - legacy: single prompt, 4-dimension combined review (backward compatible)
-  - dimensions: 11 separate dimension prompts (incl. reader_flow), concurrent API calls
+  - dimensions: 13-dimension review. Default strategy is combined: one request per model
+    returns all 13 dimension_reports; split remains available as fallback/debug.
 
 Architecture (2026-04-23 Round 16 · 扁平化共识机制):
-  - 3 providers: openclawroot + ark-coding (火山方舟 Coding Plan) + siliconflow (fallback)
+  - 6 providers: ticketpro + api666 + openclawroot + ark-coding (火山方舟 Coding Plan) + siliconflow + xiaomimimo
   - 14 models × 13 dimensions = 182 independent rater scores (共识机制 · 扁平化)
-  - 每个模型都跑全 13 维度（无分工）；role 字段已删除以消除"分工"误解
+  - 每个模型都跑全 13 维度（无分工）；默认每模型一次请求返回 13 维，避免重复发送大上下文
   - **Round 16 架构变更**（2026-04-23 · Ch6 RCA 最终根治 · 见 ROOT_CAUSE_GUARD_RAILS.md）：
     * **去除 core/supplemental 层级**：14 模型集体投票，任一失败不阻塞，以成功模型均分共识
     * 统一重试策略：所有 provider 最多 2 次重试（对抗 openclawroot 偶发 503/524/rate_limited）
@@ -16,7 +17,7 @@ Architecture (2026-04-23 Round 16 · 扁平化共识机制):
     * tier 字段保留但仅作历史 observability 字段 · 不再参与任何判定
   - Round 14 延续：ark-coding 火山方舟 Coding Plan 作为主力 provider 之一
   - 13 维度 = 11 工艺维度 + naturalness（汉语母语自然度）+ reader_critic（读者锐评）
-  - Heterogeneous coverage: 国产 (Doubao/GLM×2/Qwen/MiMo/MiniMax/DeepSeek) × 异构 (GPT/Gemini)
+  - Heterogeneous coverage: 国产 (Doubao/GLM×3/Qwen/MiMo/MiniMax/Kimi/DeepSeek) × 异构 (GPT/Gemini)
 
 13 dimensions: consistency/continuity/ooc/reader_pull/high_point/pacing/dialogue_quality/
 information_density/prose_quality/emotion_expression/reader_flow/naturalness/reader_critic
@@ -50,6 +51,15 @@ PROVIDERS = {
         "env_key_names": ["TICKETPRO_API_KEY"],
         "rpm": 30,
     },
+    # Round 21.5 · 2026-04-29 · Gemini 主路切换
+    # openclawroot 的 gemini-3.1-pro-high 在 Ch4/5/8/15/20 多次 0 维成功，
+    # 且 Ch14 出现 51.9 outlier。api666 使用 gemini-3.1-pro-preview 作为主路，
+    # openclawroot 保留 fallback。
+    "api666": {
+        "base_url": "https://api-666.cc/v1/chat/completions",
+        "env_key_names": ["API666_API_KEY", "API_666_API_KEY"],
+        "rpm": 30,
+    },
     "openclawroot": {
         "base_url": "https://openclawroot.com/v1/chat/completions",
         "env_key_names": ["OPENCLAWROOT_API_KEY"],
@@ -67,12 +77,20 @@ PROVIDERS = {
         "env_key_names": ["EMBED_API_KEY", "EMBEDDING_API_KEY", "SILICONFLOW_API_KEY"],
         "rpm": 30,
     },
+    # Round 21.3 · 2026-04-29 · 小米官方 token-plan-sgp（MiMo 系列原生主路）
+    # 替换原 openclawroot 中 mimo-v2-pro，升级为 MiMo-V2.5（小米官方推理）
+    "xiaomimimo": {
+        "base_url": "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions",
+        "env_key_names": ["XIAOMIMIMO_API_KEY"],
+        "rpm": 30,
+    },
 }
 
 # Default concurrency: max dimensions running in parallel per model
 # ProviderRateLimiter 用信号量限制每个供应商的同时在飞连接数（如 healwrap=10）
 # 这里控制每模型的线程数上限，从 10 降至 6 减少线程争抢
 DEFAULT_MAX_CONCURRENT = 6
+DEFAULT_HEALTHCHECK_TIMEOUT = 30
 
 
 class ProviderRateLimiter:
@@ -128,7 +146,8 @@ class ProviderRateLimiter:
 # Reasoning models: 需要更大 max_tokens 容纳 reasoning_content
 # 且解析时若 content 为空，fallback 读 reasoning_content 的最后段作为 answer
 REASONING_MODELS = {
-    "mimo-v2-pro", "minimax-m2.7-hs", "deepseek-v3.2-thinking",
+    # Round 21.3 · 2026-04-29 · mimo-v2-pro → mimo-v2.5-pro（小米官方推理 · xiaomimimo provider）
+    "mimo-v2.5-pro", "minimax-m2.7-hs", "deepseek-v3.2-thinking",
     # Round 14 · 火山方舟 coding 家族（全 thinking）
     "doubao-seed-2.0-lite", "minimax-m2.5", "glm-5.1",
     "kimi-k2.5", "kimi-k2.6",
@@ -136,7 +155,7 @@ REASONING_MODELS = {
 
 # Round 16 · 14 模型扁平架构 · 2026-04-23 最终根治
 # 架构决策：14 模型无层级（去 core/supplemental） · 任一失败不阻塞下一模型 · 以成功模型均分作共识
-# 3 供应商：openclawroot + ark-coding + siliconflow
+# 6 供应商：ticketpro + api666 + openclawroot + ark-coding + siliconflow + xiaomimimo
 # 用户方针：有重复则优先用火山方舟 Coding Plan，所有模型 thinking 全开，max_tokens 拉满上限
 # 每个模型跑全 13 维度（共识机制：14×13 = 182 份独立评分）
 #
@@ -184,6 +203,7 @@ MODELS = {
     "gemini-3.1-pro": {
         "tier": "standard",
         "providers": [
+            {"provider": "api666", "id": "gemini-3.1-pro-preview", "name": "Gemini-3.1-Pro-Preview-API666", "max_tokens": 65536},
             {"provider": "openclawroot", "id": "gemini-3.1-pro-high", "name": "Gemini-3.1-Pro-High"},
         ],
         "timeout": 300,
@@ -219,10 +239,13 @@ MODELS = {
         ],
         "timeout": 300,
     },
-    "mimo-v2-pro": {
+    # Round 21.3 · 2026-04-29 · 小米官方 xiaomimimo provider（token-plan-sgp）
+    # 替换原 mimo-v2-pro（openclawroot），升级到 mimo-v2.5-pro 官方主路
+    # 实测 /v1/models 返回 8 模型；chat 接口要求小写 id 'mimo-v2.5-pro'
+    "mimo-v2.5-pro": {
         "tier": "standard",
         "providers": [
-            {"provider": "openclawroot", "id": "mimo-v2-pro", "name": "MiMo-V2-Pro"},
+            {"provider": "xiaomimimo", "id": "mimo-v2.5-pro", "name": "MiMo-V2.5-Pro", "max_tokens": 65536},
         ],
         "timeout": 300,
     },
@@ -294,6 +317,11 @@ MODEL_ALIASES = {
     "gpt-5": "gpt-5.5",
     "doubao": "doubao-pro",
     "doubao-lite": "doubao-seed-2.0-lite",
+    # Round 21.3 · 2026-04-29 · mimo-v2-pro 升级为 mimo-v2.5-pro（小米官方主路）
+    "mimo": "mimo-v2.5-pro",
+    "mimo-v2": "mimo-v2.5-pro",
+    "mimo-v2.5": "mimo-v2.5-pro",
+    "mimo-v2-pro": "mimo-v2.5-pro",
 }
 
 DIMENSIONS = {
@@ -562,6 +590,56 @@ DIMENSIONS = {
 }
 
 
+DIMENSION_ORDER = list(DIMENSIONS.keys())
+
+DIMENSION_NAME_ALIASES = {
+    "设定一致性": "consistency",
+    "连贯性": "continuity",
+    "人物塑造": "ooc",
+    "人物塑造/OOC": "ooc",
+    "角色一致性": "ooc",
+    "追读力": "reader_pull",
+    "爽点密度": "high_point",
+    "节奏控制": "pacing",
+    "节奏平衡": "pacing",
+    "对话质量": "dialogue_quality",
+    "信息密度": "information_density",
+    "文笔质感": "prose_quality",
+    "情感表现": "emotion_expression",
+    "情感表达": "emotion_expression",
+    "汉语母语自然度": "naturalness",
+    "母语自然度": "naturalness",
+    "读者锐评": "reader_critic",
+    "读者视角流畅度": "reader_flow",
+    "reader_critic": "reader_critic",
+    "reader-flow": "reader_flow",
+}
+
+COMBINED_DIMENSION_GUIDE = {
+    "consistency": "设定一致性：战力/能力/物品/世界观/时间线是否与既有设定冲突。",
+    "continuity": "连贯性：与前章承接、因果链、伏笔回应、场景过渡是否顺畅。",
+    "ooc": "人物塑造/OOC：行为、对话、情绪反应是否符合已建立人设与当前处境。",
+    "reader_pull": "追读力：章末钩子、微兑现、未闭合问题是否让读者想看下一章。",
+    "high_point": "爽点密度：本章高光、主角收益、信息差兑现、铺垫章的微爽点是否足够。",
+    "pacing": "节奏平衡：紧松变化、信息分布、场景切换、段落长度是否影响阅读节奏。",
+    "dialogue_quality": "对话质量：角色区分度、潜台词、信息倾倒、长独白、互动推进。",
+    "information_density": "信息密度：水分、重复、内心独白比例、每段信息增量。",
+    "prose_quality": "文笔质感：句式节奏、动词精度、感官覆盖、画面感、典故/诗词融入。",
+    "emotion_expression": "情感表现：Show not Tell、情绪梯度、生理/物理锚点、情感高潮是否 earned。",
+    "naturalness": "汉语母语自然度：首句语病、AI 腔、机翻味、设计标签暴露、机械打卡感。",
+    "reader_critic": "读者锐评：以追更读者+退稿编辑角度判断是否愿意继续读、亮点与劝退点。",
+    "reader_flow": "读者视角流畅度：失忆裸读是否卡顿、信息是否顺着读者理解路径展开。",
+}
+
+COMBINED_EXTRA_FIELDS = {
+    "verdict",
+    "first_sentence_score",
+    "will_continue_reading",
+    "continue_reason",
+    "highlights",
+}
+
+
 # Known routing bugs for verification
 ROUTING_BUGS = {
     "codexcc": {
@@ -678,7 +756,7 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
     # Round 14：thinking / max_tokens 由 provider 决定
     # - ark-coding（火山方舟 Coding Plan）使用火山原生 thinking={"type":"enabled"}，
     #   max_tokens 由 provider entry 指定（deepseek-v3.2 & kimi-k2.5 上限 32768，其他 65536）
-    # - openclawroot/siliconflow 沿用原策略：按模型厂家家族设置 thinking 开关
+    # - 其他 OpenAI-compatible provider 沿用原策略：按模型厂家家族设置 thinking 开关
     payload = {
         "model": model_id,
         "messages": [
@@ -700,8 +778,8 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
         # Gemini 系 · thinking budget
         if "gemini" in model_lower:
             payload["thinking_budget"] = 16384
-        # Qwen/DeepSeek/Doubao/GLM 系 · enable_thinking 激活推理
-        if any(t in model_lower for t in ("qwen", "deepseek", "doubao", "glm", "mimo")):
+        # Qwen/DeepSeek/Doubao/GLM/MiMo/Kimi 系 · enable_thinking 激活推理
+        if any(t in model_lower for t in ("qwen", "deepseek", "doubao", "glm", "mimo", "kimi")):
             payload["enable_thinking"] = True
         # MiniMax / MiMo 推理类 · 明确开 thinking
         if any(t in model_lower for t in ("minimax", "mimo")):
@@ -845,7 +923,19 @@ def extract_json(text):
     return None
 
 
-def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, timeout):
+def _is_phantom_parsed(parsed, parse_mode="dimension"):
+    """Detect provider ghost-success payloads that contain no useful review."""
+    if not isinstance(parsed, dict):
+        return True
+    summary = str(parsed.get("summary") or "").strip()
+    if parse_mode == "combined":
+        reports = parsed.get("dimension_reports") or parsed.get("dimensions") or []
+        overall = parsed.get("overall_score")
+        return (overall in (None, 0, 0.0)) and not summary and not reports
+    return parsed.get("score", 0) == 0 and not summary
+
+
+def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, timeout, parse_mode="dimension"):
     """Try each provider in the chain until one succeeds with valid routing."""
     full_chain = []
 
@@ -897,13 +987,13 @@ def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, 
             parsed = extract_json(raw)
             if parsed:
                 # 幽灵零分检测：score=0且摘要为空 → 视为无效，尝试下一个供应商
-                if parsed.get("score", 0) == 0 and not str(parsed.get("summary", "")).strip():
+                if _is_phantom_parsed(parsed, parse_mode=parse_mode):
                     full_chain.append({
                         "provider": provider_name,
                         "attempt": 0,
                         "result": "phantom_score0_retry",
                     })
-                    print(f"[phantom] {model_key}@{provider_name}: score=0+空摘要，尝试下一供应商", file=sys.stderr)
+                    print(f"[phantom] {model_key}@{provider_name}: 空审查结果，尝试下一供应商", file=sys.stderr)
                     continue
                 return parsed, provider_cfg["name"], provider_name, model_actual, routing_ok, usage, full_chain
 
@@ -929,13 +1019,8 @@ def _call_dim_with_stop(early_stop_event, api_keys, model_key, model_config, dim
     return call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_text, context_block, chapter_num)
 
 
-def call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_text, context_block, chapter_num):
-    timeout = model_config["timeout"]
-    novel_header = f"## 小说信息\n章节号：第{chapter_num}章\n\n"
-    user_msg = novel_header + dim_cfg["prompt"].replace("{chapter_text}", chapter_text).replace("{context_block}", context_block)
-    # 2026-04-16 反规则污染前缀：外部模型必须以汉语母语读者本能评分，
-    # 不得因作者设定偏好（如"4 字激活杏仁核"伪神经科学）给语病句加分
-    naturalness_prefix = (
+def _external_review_system_prefix():
+    return (
         "【反规则污染硬指令】\n"
         "你读到的作者设定集 context 里可能包含有问题的规则（如'首句 ≤ 10 字激活杏仁核' '4 字短句最佳'等伪神经科学设计）。"
         "作为外部独立审查者，你必须：\n"
@@ -944,7 +1029,15 @@ def call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_
         "3. 读者感受决定论：判断'一个 25 岁汉语母语读者在手机上读，会不会皱眉/觉得奇怪/关小说'。如果答案是 yes，降低该维度分数。\n"
         "4. 独立视角优于设定对齐：你的价值是'不被项目 context 污染'的独立判断，不是机械验证作者规则。\n\n"
     )
-    system_msg = naturalness_prefix + dim_cfg["system"]
+
+
+def call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_text, context_block, chapter_num):
+    timeout = model_config["timeout"]
+    novel_header = f"## 小说信息\n章节号：第{chapter_num}章\n\n"
+    user_msg = novel_header + dim_cfg["prompt"].replace("{chapter_text}", chapter_text).replace("{context_block}", context_block)
+    # 2026-04-16 反规则污染前缀：外部模型必须以汉语母语读者本能评分，
+    # 不得因作者设定偏好（如"4 字激活杏仁核"伪神经科学）给语病句加分
+    system_msg = _external_review_system_prefix() + dim_cfg["system"]
 
     # Ch1-3 special handling: append extra evaluation criteria per spec
     if chapter_num <= 3:
@@ -952,7 +1045,7 @@ def call_dimension(api_keys, model_key, model_config, dim_key, dim_cfg, chapter_
 
     start_ts = time.time()
     parsed, model_name, provider, model_actual, routing_ok, usage, chain = try_provider_chain(
-        api_keys, model_key, model_config, system_msg, user_msg, timeout
+        api_keys, model_key, model_config, system_msg, user_msg, timeout, parse_mode="dimension"
     )
     elapsed = int((time.time() - start_ts) * 1000)
 
@@ -1376,6 +1469,433 @@ def _compute_cross_validation(all_issues):
     }
 
 
+class CombinedReviewError(RuntimeError):
+    """Combined per-model review failed before a usable output object existed."""
+
+
+def _coerce_score(value):
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if score < 0 or score > 100:
+        return None
+    return round(score, 1)
+
+
+def _dimension_key_from_report(report):
+    if not isinstance(report, dict):
+        return None
+    raw = (
+        report.get("dimension")
+        or report.get("key")
+        or report.get("id")
+        or report.get("name")
+        or ""
+    )
+    raw = str(raw).strip()
+    if raw in DIMENSIONS:
+        return raw
+    if raw in DIMENSION_NAME_ALIASES:
+        return DIMENSION_NAME_ALIASES[raw]
+    raw_lower = raw.lower().replace("-", "_").replace(" ", "_")
+    if raw_lower in DIMENSIONS:
+        return raw_lower
+    if raw_lower in DIMENSION_NAME_ALIASES:
+        return DIMENSION_NAME_ALIASES[raw_lower]
+    for key, cfg in DIMENSIONS.items():
+        if raw == cfg.get("name"):
+            return key
+    return None
+
+
+def _process_dimension_issues(dim_issues, resolved_key, dim_key, chapter_text):
+    clean_issues = [it for it in (dim_issues or []) if isinstance(it, dict)]
+    for issue in clean_issues:
+        issue["source_model"] = resolved_key
+        issue["source_dimension"] = dim_key
+        quote = issue.get("quote")
+        if isinstance(quote, str) and quote.strip():
+            style = _verify_quote_style(quote, chapter_text)
+            verified = style != "missing"
+            issue["quote_verified"] = verified
+            issue["quote_style"] = style
+            if style == "elision":
+                issue["quote_elision_note"] = (
+                    "quote 使用省略引用（head+tail 均在正文中），"
+                    "保留原 severity 不降级"
+                )
+            elif not verified:
+                original_severity = issue.get("severity", "medium")
+                issue["original_severity"] = original_severity
+                issue["severity"] = _downgrade_severity(original_severity)
+                issue["quote_hallucination_note"] = (
+                    "外部模型引用的 quote 未在正文中找到，severity 已降级一档"
+                )
+    return clean_issues
+
+
+def build_combined_prompt(chapter_text, context_block, chapter_num):
+    """Build one large prompt asking one model to return all 13 dimension reports."""
+    dimension_lines = []
+    for idx, key in enumerate(DIMENSION_ORDER, 1):
+        dimension_lines.append(f"{idx}. `{key}` / {DIMENSIONS[key]['name']}：{COMBINED_DIMENSION_GUIDE[key]}")
+
+    dimension_objects = []
+    for key in DIMENSION_ORDER:
+        item = {
+            "dimension": key,
+            "score": 88,
+            "issues": [
+                {
+                    "id": f"{key.upper()}_001",
+                    "type": "SETTING_CONFLICT|CONTINUITY|OOC|PACING|READER_PULL|STYLE|DIALOGUE_FLAT|DIALOGUE_INFODUMP|DIALOGUE_MONOLOGUE|PADDING|REPETITION|PROSE_FLAT|EMOTION_SHALLOW|NATURALNESS|READER_CRITIC|READER_FLOW",
+                    "severity": "critical|high|medium|low",
+                    "location": "能定位到正文的段落/句子",
+                    "description": "问题描述",
+                    "suggestion": "具体修改建议",
+                    "quote": "正文原句，必须逐字存在；没有问题时 issues=[]",
+                }
+            ],
+            "summary": "该维度一句话总评",
+        }
+        if key == "naturalness":
+            item["verdict"] = "PASS|POLISH_NEEDED|REWRITE_RECOMMENDED|REJECT_HIGH|REJECT_CRITICAL"
+            item["first_sentence_score"] = 8
+        if key == "reader_critic":
+            item["will_continue_reading"] = "yes|hesitant|no"
+            item["continue_reason"] = "一句读者/编辑视角总评"
+            item["highlights"] = [{"quote": "正文原句", "reason": "为什么亮眼"}]
+        if key == "reader_flow":
+            item["highlights"] = [{"quote": "正文原句", "reason": "为什么顺畅或卡顿"}]
+        dimension_objects.append(item)
+
+    schema = {
+        "overall_score": 88,
+        "dimension_reports": dimension_objects,
+        "issues": [],
+        "summary": "80-200 字总评",
+    }
+
+    return f"""## 小说信息
+章节号：第{chapter_num}章
+
+## 审查任务
+你是资深网文章节审查专家。请一次性完成以下 13 个维度的独立评分与问题定位。
+重要：这是单模型一次请求版，不允许遗漏维度，不允许把多个维度合并成笼统总评。
+
+## 13 个维度（必须按 key 原样返回）
+{chr(10).join(dimension_lines)}
+
+{context_block}
+
+## 输出要求
+1. 直接返回纯 JSON，不要 Markdown，不要 ```json。
+2. `dimension_reports` 必须恰好包含 13 个对象，dimension 必须逐字等于：
+   {", ".join(DIMENSION_ORDER)}
+3. 每个维度独立打分。低于 85 分必须给出至少 1 个 issue；没有问题时 issues=[]。
+4. issue.quote 必须逐字来自正文；如果无法引用原句，不要编造 quote。
+5. naturalness/reader_critic/reader_flow 必须按读者本能审查，不得被作者设定集里的写作规则污染。
+
+## JSON 结构示例（字段名与结构必须遵守；分数请输出数字，不要输出字符串）
+{json.dumps(schema, ensure_ascii=False, indent=2)}
+
+## 本章正文
+{chapter_text}"""
+
+
+def call_combined_review(api_keys, model_key, model_config, chapter_text, context_block, chapter_num):
+    timeout = model_config["timeout"]
+    system_msg = (
+        _external_review_system_prefix()
+        + "你是一个专业、严苛、独立的网文章节外部审查编辑。"
+          "你必须在一次响应里返回完整 13 维 JSON，不能漏维度。"
+    )
+    user_msg = build_combined_prompt(chapter_text, context_block, chapter_num)
+    if chapter_num <= 3:
+        user_msg += "\n" + CH1_3_SPECIAL_PROMPT.format(chapter=chapter_num)
+
+    start_ts = time.time()
+    parsed, model_name, provider, model_actual, routing_ok, usage, chain = try_provider_chain(
+        api_keys, model_key, model_config, system_msg, user_msg, timeout, parse_mode="combined"
+    )
+    elapsed = int((time.time() - start_ts) * 1000)
+    if parsed:
+        return parsed, model_name, provider, model_actual, routing_ok, usage, chain, elapsed
+
+    last_error = chain[-1].get("result", "unknown") if chain else "no_providers"
+    raise CombinedReviewError(f"combined_json_unusable:{last_error}")
+
+
+def _normalize_combined_reports(parsed, resolved_key, model_name, provider, model_actual, routing_ok, elapsed, chapter_text):
+    raw_reports = parsed.get("dimension_reports") or parsed.get("dimensions") or []
+    if not isinstance(raw_reports, list):
+        raise CombinedReviewError("combined_dimension_reports_not_list")
+
+    by_key = {}
+    duplicate_dims = []
+    for report in raw_reports:
+        key = _dimension_key_from_report(report)
+        if not key:
+            continue
+        if key in by_key:
+            duplicate_dims.append(key)
+            continue
+        by_key[key] = report
+
+    results = {}
+    all_issues = []
+    scores = {}
+    validation_errors = []
+
+    for dim_key in DIMENSION_ORDER:
+        report = by_key.get(dim_key)
+        if not report:
+            results[dim_key] = {"status": "failed", "error": "missing_dimension_in_combined"}
+            validation_errors.append(f"{dim_key}:missing")
+            continue
+
+        score = _coerce_score(report.get("score"))
+        if score is None:
+            results[dim_key] = {"status": "failed", "error": "invalid_score_in_combined"}
+            validation_errors.append(f"{dim_key}:invalid_score")
+            continue
+
+        dim_issues = _process_dimension_issues(report.get("issues") or [], resolved_key, dim_key, chapter_text)
+        all_issues.extend(dim_issues)
+        scores[dim_key] = score
+
+        dim_result = {
+            "status": "ok",
+            "score": score,
+            "issues": dim_issues,
+            "summary": report.get("summary") or report.get("comment") or "",
+            "model": model_name,
+            "model_actual": model_actual,
+            "provider": provider,
+            "routing_verified": routing_ok,
+            "elapsed_ms": elapsed,
+            "review_strategy": "combined",
+        }
+        for extra_key in COMBINED_EXTRA_FIELDS:
+            if extra_key in report:
+                dim_result[extra_key] = report[extra_key]
+        results[dim_key] = dim_result
+
+    if duplicate_dims:
+        validation_errors.append("duplicate_dimensions:" + ",".join(sorted(set(duplicate_dims))))
+
+    return results, all_issues, scores, validation_errors
+
+
+def _build_model_output(resolved_key, model_config, chapter_num, results, all_issues, full_provider_chain,
+                        final_provider, model_actual_final, routing_all_ok, total_elapsed,
+                        total_prompt_tokens, total_completion_tokens, review_strategy,
+                        strategy_fallback_reason=None, validation_errors=None):
+    valid_scores = [
+        r.get("score")
+        for r in results.values()
+        if r.get("status") == "ok" and isinstance(r.get("score"), (int, float))
+    ]
+    overall = round(sum(valid_scores) / len(valid_scores), 1) if valid_scores else 0
+    metrics = {
+        "dimensions_ok": sum(1 for r in results.values() if r.get("status") == "ok"),
+        "dimensions_failed": sum(1 for r in results.values() if r.get("status") == "failed"),
+        "dimensions_skipped": sum(1 for r in results.values() if r.get("status") == "skipped"),
+        "total_issues": len(all_issues),
+    }
+    if validation_errors:
+        metrics["validation_errors"] = validation_errors
+
+    api_meta = {
+        "final_provider": final_provider,
+        "elapsed_ms": total_elapsed,
+        "prompt_tokens": total_prompt_tokens,
+        "completion_tokens": total_completion_tokens,
+        "attempts_total": len(full_provider_chain),
+        "review_strategy": review_strategy,
+    }
+    if strategy_fallback_reason:
+        api_meta["strategy_fallback_reason"] = strategy_fallback_reason
+
+    return {
+        "agent": f"external-{resolved_key}",
+        "chapter": chapter_num,
+        "model_key": resolved_key,
+        "model_requested": model_config["providers"][0]["id"],
+        "model_actual": model_actual_final,
+        "provider": final_provider,
+        "routing_verified": routing_all_ok,
+        "overall_score": overall,
+        "pass": overall >= 75,
+        "dimension_reports": [
+            {"dimension": dk, "name": DIMENSIONS[dk]["name"], **dv}
+            for dk, dv in sorted(results.items())
+        ],
+        "issues": all_issues,
+        "cross_validation": _compute_cross_validation(all_issues),
+        "provider_chain": full_provider_chain,
+        "api_meta": api_meta,
+        "metrics": metrics,
+        "summary": (
+            f"{resolved_key} {len(DIMENSIONS)}维度审查完成，"
+            f"{len(valid_scores)}/{len(DIMENSIONS)}成功，综合{overall}分，{len(all_issues)}个问题"
+        ),
+    }
+
+
+def _save_external_review_output(args, project_root, resolved_key, chapter_num, output):
+    # Save · Round 15.3 · 2026-04-23 · Ch6 RCA Bug #5 根治：merge-partial
+    out_path = project_root / ".webnovel" / "tmp" / f"external_review_{resolved_key}_ch{chapter_num:04d}.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    merged_output = output
+    if out_path.exists() and not getattr(args, "no_merge_partial", False):
+        try:
+            existing = json.loads(out_path.read_text(encoding="utf-8"))
+            existing_dims = {d.get("dimension"): d for d in existing.get("dimension_reports", []) if isinstance(d, dict)}
+            merged_dims = []
+            for new_dim in output.get("dimension_reports", []):
+                dname = new_dim.get("dimension")
+                existing_dim = existing_dims.get(dname)
+                new_ok = new_dim.get("status") == "ok"
+                existing_ok = existing_dim and existing_dim.get("status") == "ok"
+                if not new_ok and existing_ok:
+                    merged = dict(existing_dim)
+                    merged["_merged_from"] = "previous_run"
+                    merged_dims.append(merged)
+                else:
+                    merged_dims.append(new_dim)
+            merged_output = dict(output)
+            merged_output["dimension_reports"] = merged_dims
+            ok_dims = [d for d in merged_dims if d.get("status") == "ok"]
+            merged_scores = [d["score"] for d in ok_dims if isinstance(d.get("score"), (int, float))]
+            if merged_scores:
+                merged_output["overall_score"] = round(sum(merged_scores) / len(merged_scores), 1)
+                merged_output["pass"] = merged_output["overall_score"] >= 75
+            merged_output["metrics"] = {
+                **(merged_output.get("metrics") or {}),
+                "dimensions_ok": len(ok_dims),
+                "dimensions_failed": sum(1 for d in merged_dims if d.get("status") == "failed"),
+                "dimensions_skipped": sum(1 for d in merged_dims if d.get("status") == "skipped"),
+                "merged_partial": True,
+                "preserved_from_previous": sum(1 for d in merged_dims if d.get("_merged_from") == "previous_run"),
+            }
+            if merged_output["metrics"]["preserved_from_previous"] > 0:
+                print(
+                    f"[merge-partial] 保留上次成功的 {merged_output['metrics']['preserved_from_previous']} 个维度数据",
+                    file=sys.stderr,
+                )
+        except Exception as _ex:
+            print(f"[merge-partial] 合并失败退化为覆盖: {_ex}", file=sys.stderr)
+            merged_output = output
+
+    out_path.write_text(json.dumps(merged_output, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(merged_output, ensure_ascii=False))
+    return merged_output
+
+
+def _load_single_model_inputs(args, project_root, chapter_num):
+    context_data = getattr(args, '_preloaded_context', None)
+    chapter_text = getattr(args, '_preloaded_chapter_text', None)
+
+    if context_data is None:
+        context_file = project_root / ".webnovel" / "tmp" / f"external_context_ch{chapter_num:04d}.json"
+        if not context_file.exists():
+            print(json.dumps({
+                "error": f"external_context_ch{chapter_num:04d}.json 不存在",
+                "remediation": [
+                    f"先运行: python -X utf8 scripts/build_external_context.py --project-root \"{project_root}\" --chapter {chapter_num}",
+                    "Round 21.0 H32: 禁止从空 context 启动外部审查"
+                ]
+            }, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
+        ctx_size = context_file.stat().st_size
+        try:
+            context_data = json.loads(context_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(json.dumps({"error": f"context 解析失败: {e}"}, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
+        if ctx_size < 1024 or context_data.get("_auto_generated") is True:
+            print(json.dumps({
+                "error": f"context 是 disk fallback 占位 ({ctx_size} bytes)",
+                "remediation": [f"先运行: python -X utf8 scripts/build_external_context.py --project-root \"{project_root}\" --chapter {chapter_num}"]
+            }, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
+
+    if chapter_text is None:
+        chapters_dir = project_root / "正文"
+        ch_files = list(chapters_dir.glob(f"第{chapter_num:04d}章*.md"))
+        if not ch_files:
+            print(json.dumps({"error": f"Chapter {chapter_num} not found"}))
+            sys.exit(1)
+        chapter_text = ch_files[0].read_text(encoding="utf-8")
+
+    return context_data, chapter_text
+
+
+def _run_single_model_combined(args, api_keys, save=True):
+    project_root = Path(args.project_root)
+    chapter_num = args.chapter
+    model_key = args.model_key
+    resolved_key = MODEL_ALIASES.get(model_key, model_key)
+    if resolved_key not in MODELS:
+        print(json.dumps({"error": f"Unknown model: {model_key} (resolved: {resolved_key})"}))
+        sys.exit(1)
+
+    model_config = MODELS[resolved_key]
+    context_data, chapter_text = _load_single_model_inputs(args, project_root, chapter_num)
+    context_block = build_context_block(context_data, project_root=project_root, chapter_num=chapter_num)
+
+    parsed, model_name, provider, model_actual, routing_ok, usage, chain, elapsed = call_combined_review(
+        api_keys, resolved_key, model_config, chapter_text, context_block, chapter_num
+    )
+    results, all_issues, scores, validation_errors = _normalize_combined_reports(
+        parsed, resolved_key, model_name, provider, model_actual, routing_ok, elapsed, chapter_text
+    )
+
+    output = _build_model_output(
+        resolved_key=resolved_key,
+        model_config=model_config,
+        chapter_num=chapter_num,
+        results=results,
+        all_issues=all_issues,
+        full_provider_chain=chain,
+        final_provider=provider,
+        model_actual_final=model_actual or "",
+        routing_all_ok=routing_ok,
+        total_elapsed=elapsed,
+        total_prompt_tokens=(usage or {}).get("prompt_tokens", 0),
+        total_completion_tokens=(usage or {}).get("completion_tokens", 0),
+        review_strategy="combined",
+        validation_errors=validation_errors,
+    )
+
+    if save:
+        return _save_external_review_output(args, project_root, resolved_key, chapter_num, output)
+    return output
+
+
+def _run_single_model(args, api_keys):
+    strategy = getattr(args, "dimension_strategy", "auto")
+    if strategy == "split":
+        return _run_single_model_split(args, api_keys)
+
+    try:
+        output = _run_single_model_combined(args, api_keys, save=False)
+        dims_ok = (output.get("metrics") or {}).get("dimensions_ok", 0)
+        if dims_ok == len(DIMENSIONS) or strategy == "combined":
+            return _save_external_review_output(
+                args, Path(args.project_root), output["model_key"], args.chapter, output
+            )
+        raise CombinedReviewError(f"combined_incomplete:{dims_ok}/{len(DIMENSIONS)}")
+    except CombinedReviewError as e:
+        if strategy == "combined":
+            raise
+        print(f"[combined-fallback] {args.model_key}: {e} → split 逐维兜底", file=sys.stderr)
+        setattr(args, "_strategy_fallback_reason", str(e))
+        return _run_single_model_split(args, api_keys)
+
+
 def run_dimensions_mode(args, api_keys):
     project_root = Path(args.project_root)
     chapter_num = args.chapter
@@ -1384,10 +1904,16 @@ def run_dimensions_mode(args, api_keys):
     # --model-key all: 并发执行全部模型（ProviderRateLimiter 自动控制 RPM）
     if model_key == "all":
         all_model_keys = list(MODELS.keys())
-        print(f"[all-models] 并发执行 {len(all_model_keys)} 个模型: {', '.join(all_model_keys)}", file=sys.stderr)
+        model_concurrent = max(1, int(getattr(args, "model_concurrent", 4) or 4))
+        print(
+            f"[all-models] 并发执行 {len(all_model_keys)} 个模型 "
+            f"(model_concurrent={model_concurrent}, strategy={getattr(args, 'dimension_strategy', 'auto')}): "
+            f"{', '.join(all_model_keys)}",
+            file=sys.stderr,
+        )
         all_results = {}
 
-        # 预加载共享数据（一次读取，所有线程复用，避免9次重复IO）
+        # 预加载共享数据（一次读取，所有线程复用，避免14个模型重复IO）
         # Round 21.0 · 2026-04-28 · Ch15 RCA H32 根治：
         #   旧版逻辑（"disk fallback"）允许在 context 文件缺失时落 50-byte stub，
         #   让 build_context_block 在每个 worker 内零散从磁盘读字段。这种"魔法 fallback"
@@ -1471,8 +1997,8 @@ def run_dimensions_mode(args, api_keys):
                 print(f"[all-models] 异常: {mk} — {e}", file=sys.stderr)
                 return mk, f"error: {str(e)[:80]}"
 
-        # 限制模型并发数为4，避免线程池过大（每模型内部还有维度并发）
-        with ThreadPoolExecutor(max_workers=min(len(all_model_keys), 4)) as executor:
+        # combined 默认每模型 1 个大请求；split fallback 才会在模型内部开维度并发。
+        with ThreadPoolExecutor(max_workers=min(len(all_model_keys), model_concurrent)) as executor:
             futures = {executor.submit(_run_model_safe, mk): mk for mk in all_model_keys}
             for f in as_completed(futures):
                 mk, result = f.result()
@@ -1498,6 +2024,8 @@ def run_dimensions_mode(args, api_keys):
         summary = {
             "mode": "all-models",
             "chapter": chapter_num,
+            "dimension_strategy": getattr(args, "dimension_strategy", "auto"),
+            "model_concurrent": model_concurrent,
             "total": total_count,
             "success": success_count,
             "failed": failed_count,
@@ -1516,7 +2044,7 @@ def run_dimensions_mode(args, api_keys):
     _run_single_model(args, api_keys)
 
 
-def _run_single_model(args, api_keys):
+def _run_single_model_split(args, api_keys):
     """执行单个模型的 13 维度审查（含 reader_flow）。"""
     project_root = Path(args.project_root)
     chapter_num = args.chapter
@@ -1670,6 +2198,7 @@ def _run_single_model(args, api_keys):
                     "provider": provider,
                     "routing_verified": routing_ok,
                     "elapsed_ms": elapsed,
+                    "review_strategy": "split",
                 }
             else:
                 if error == "early_stop_skipped":
@@ -1682,10 +2211,6 @@ def _run_single_model(args, api_keys):
                     if total_dim_failures >= EARLY_STOP_THRESHOLD and early_stop_event and not early_stop_event.is_set():
                         early_stop_event.set()
                         print(f"[early-stop] {resolved_key} 累计{total_dim_failures}次失败（阈值{EARLY_STOP_THRESHOLD}），触发早停", file=sys.stderr)
-
-    # Calculate overall
-    valid_scores = [s for s in scores.values() if isinstance(s, (int, float))]
-    overall = round(sum(valid_scores) / len(valid_scores), 1) if valid_scores else 0
 
     # Determine final provider (most common successful provider)
     successful_providers = [r["provider"] for r in results.values() if r.get("status") == "ok"]
@@ -1702,91 +2227,23 @@ def _run_single_model(args, api_keys):
     ok_results = [r for r in results.values() if r.get("status") == "ok"]
     routing_all_ok = all(r.get("routing_verified", False) for r in ok_results) if ok_results else False
 
-    output = {
-        "agent": f"external-{resolved_key}",
-        "chapter": chapter_num,
-        "model_key": resolved_key,
-        "model_requested": model_config["providers"][0]["id"],
-        "model_actual": model_actual_final,
-        "provider": final_provider,
-        "routing_verified": routing_all_ok,
-        "overall_score": overall,
-        "pass": overall >= 75,
-        "dimension_reports": [
-            {"dimension": dk, "name": DIMENSIONS[dk]["name"], **dv}
-            for dk, dv in sorted(results.items())
-        ],
-        "issues": all_issues,
-        "cross_validation": _compute_cross_validation(all_issues),
-        "provider_chain": full_provider_chain,
-        "api_meta": {
-            "final_provider": final_provider,
-            "elapsed_ms": total_elapsed,
-            "prompt_tokens": total_prompt_tokens,
-            "completion_tokens": total_completion_tokens,
-            "attempts_total": len(full_provider_chain),
-        },
-        "metrics": {
-            "dimensions_ok": sum(1 for r in results.values() if r.get("status") == "ok"),
-            "dimensions_failed": sum(1 for r in results.values() if r.get("status") == "failed"),
-            "dimensions_skipped": sum(1 for r in results.values() if r.get("status") == "skipped"),
-            "total_issues": len(all_issues),
-        },
-        "summary": f"{resolved_key} {len(DIMENSIONS)}维度审查完成，{len(valid_scores)}/{len(DIMENSIONS)}成功，综合{overall}分，{len(all_issues)}个问题",
-    }
-
-    # Save · Round 15.3 · 2026-04-23 · Ch6 RCA Bug #5 根治：merge-partial
-    # 问题：rerun 某个模型会覆盖 tmp/external_review_{model}_ch{NNNN}.json · 把之前 1/13 ok
-    #       的维度数据覆盖为本次 0/13 失败。丢失已有成功数据。
-    # 修复：写入前先读已有文件 · 如果已有 ok dimension 且本次相同 dimension 失败 · 保留已有
-    out_path = project_root / ".webnovel" / "tmp" / f"external_review_{resolved_key}_ch{chapter_num:04d}.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    merged_output = output
-    if out_path.exists() and not getattr(args, "no_merge_partial", False):
-        try:
-            existing = json.loads(out_path.read_text(encoding="utf-8"))
-            existing_dims = {d.get("dimension"): d for d in existing.get("dimension_reports", []) if isinstance(d, dict)}
-            merged_dims = []
-            for new_dim in output.get("dimension_reports", []):
-                dname = new_dim.get("dimension")
-                existing_dim = existing_dims.get(dname)
-                new_ok = new_dim.get("status") == "ok"
-                existing_ok = existing_dim and existing_dim.get("status") == "ok"
-                if not new_ok and existing_ok:
-                    # 本次失败但旧数据成功 · 保留旧数据 + 标记 merge
-                    merged = dict(existing_dim)
-                    merged["_merged_from"] = "previous_run"
-                    merged_dims.append(merged)
-                else:
-                    merged_dims.append(new_dim)
-            merged_output = dict(output)
-            merged_output["dimension_reports"] = merged_dims
-            # 重算 metrics 和 overall
-            ok_dims = [d for d in merged_dims if d.get("status") == "ok"]
-            merged_scores = [d["score"] for d in ok_dims if isinstance(d.get("score"), (int, float))]
-            if merged_scores:
-                merged_output["overall_score"] = round(sum(merged_scores) / len(merged_scores), 1)
-                merged_output["pass"] = merged_output["overall_score"] >= 75
-            merged_output["metrics"] = {
-                "dimensions_ok": len(ok_dims),
-                "dimensions_failed": sum(1 for d in merged_dims if d.get("status") == "failed"),
-                "dimensions_skipped": sum(1 for d in merged_dims if d.get("status") == "skipped"),
-                "total_issues": merged_output["metrics"].get("total_issues", 0),
-                "merged_partial": True,
-                "preserved_from_previous": sum(1 for d in merged_dims if d.get("_merged_from") == "previous_run"),
-            }
-            if merged_output["metrics"]["preserved_from_previous"] > 0:
-                print(
-                    f"[merge-partial] 保留上次成功的 {merged_output['metrics']['preserved_from_previous']} 个维度数据",
-                    file=sys.stderr,
-                )
-        except Exception as _ex:
-            print(f"[merge-partial] 合并失败退化为覆盖: {_ex}", file=sys.stderr)
-            merged_output = output
-
-    out_path.write_text(json.dumps(merged_output, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    print(json.dumps(merged_output, ensure_ascii=False))
+    output = _build_model_output(
+        resolved_key=resolved_key,
+        model_config=model_config,
+        chapter_num=chapter_num,
+        results=results,
+        all_issues=all_issues,
+        full_provider_chain=full_provider_chain,
+        final_provider=final_provider,
+        model_actual_final=model_actual_final,
+        routing_all_ok=routing_all_ok,
+        total_elapsed=total_elapsed,
+        total_prompt_tokens=total_prompt_tokens,
+        total_completion_tokens=total_completion_tokens,
+        review_strategy="split",
+        strategy_fallback_reason=getattr(args, "_strategy_fallback_reason", None),
+    )
+    return _save_external_review_output(args, project_root, resolved_key, chapter_num, output)
 
 
 def run_legacy_mode(args, api_keys):
@@ -1839,14 +2296,26 @@ def main():
         help=(
             "For dimensions mode: any of the 14 model keys (qwen3.6-plus/gpt-5.5/"
             "gemini-3.1-pro/doubao-pro/doubao-seed-2.0-lite/glm-5/glm-5.1/glm-4.7/"
-            "mimo-v2-pro/minimax-m2.7-hs/minimax-m2.5/deepseek-v3.2-thinking/"
+            "mimo-v2.5-pro/minimax-m2.7-hs/minimax-m2.5/deepseek-v3.2-thinking/"
             "kimi-k2.5/kimi-k2.6) or legacy aliases (qwen-plus/kimi/glm/...) or "
             "'all' to run all 14 models"
         ),
     )
     parser.add_argument("--models", default="qwen3.6-plus,kimi-k2.6,glm-5", help="For legacy mode: comma-separated")
     parser.add_argument("--max-concurrent", type=int, default=DEFAULT_MAX_CONCURRENT,
-                        help=f"Max parallel dimension calls per model (default: {DEFAULT_MAX_CONCURRENT})")
+                        help=f"Max parallel dimension calls per model in split fallback (default: {DEFAULT_MAX_CONCURRENT})")
+    parser.add_argument(
+        "--dimension-strategy",
+        choices=["auto", "combined", "split"],
+        default="auto",
+        help="Step 3.5 dimensions strategy: auto=combined first then split fallback; combined=one request/model; split=legacy 13 requests/model",
+    )
+    parser.add_argument(
+        "--model-concurrent",
+        type=int,
+        default=4,
+        help="Max models running concurrently when --model-key all (default: 4)",
+    )
     parser.add_argument("--rpm-override", type=int, default=None,
                         help="Override provider RPM limit (default: use provider config)")
     parser.add_argument("--rpm-override-provider", default="ark-coding",
@@ -1894,7 +2363,7 @@ def run_healthcheck_mode(args, api_keys):
     实现：
         - 对 MODELS 中每个 model_key 发一个最小 prompt（约 20 token）
         - 用 `--max-tokens 8` 限制输出（节省成本）
-        - 5s 超时
+        - 30s 超时（GLM-5.1 等 reasoning 模型 8s 探针会误报）
         - 返回 JSON：{model_key: {ok: bool, latency_ms: int, provider: str, error: str|None}}
         - 输出到 stdout + .webnovel/tmp/external_healthcheck_{ts}.json
     """
@@ -1922,14 +2391,14 @@ def run_healthcheck_mode(args, api_keys):
         for prov in spec.get("providers", []):
             provider_name = prov["provider"]
             try:
-                # 复用 call_with_retry 但限制极短 tokens 与超时
+                # 复用最小 prompt，但给 reasoning 模型足够首包时间，避免健康检查误报
                 # 不同实现可能函数名不同；这里采用通用 try-except
                 resp = _call_provider_simple(
                     provider_name=provider_name,
                     model_id=prov["id"],
                     messages=ping_messages,
                     api_keys=api_keys,
-                    timeout=8,
+                    timeout=DEFAULT_HEALTHCHECK_TIMEOUT,
                     max_tokens=8,
                 )
                 if resp:

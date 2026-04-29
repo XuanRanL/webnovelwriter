@@ -277,7 +277,7 @@ def main():
 
     p_search = sub.add_parser("search", help="Quick search with synthesized answer")
     p_search.add_argument("query", type=str)
-    p_search.add_argument("--max", type=int, default=5, dest="max_results")
+    p_search.add_argument("--max", type=int, default=10, dest="max_results")
     p_search.add_argument("--depth", default="advanced",
                           choices=["basic", "advanced", "fast", "ultra-fast"])
     p_search.add_argument("--answer", default="advanced",

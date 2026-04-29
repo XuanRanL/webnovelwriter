@@ -117,7 +117,7 @@ def good_project(tmp_path):
     )
     (root / ".webnovel" / "summaries" / "ch0001.md").write_text(summary, encoding="utf-8")
 
-    # 审查报告（含 11 checker + 核心 3 模型）
+    # 审查报告（含 13 checker + 14 模型 · Round 13 v2 + Round 14+ 扁平 · Round 21.4 combined）
     report = (
         "# 第0001章审查报告\n\n"
         "## 内部检查\n"
@@ -167,7 +167,7 @@ def good_project(tmp_path):
     fixture_valid_models = [
         "qwen3.6-plus", "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
         "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
-        "mimo-v2-pro", "minimax-m2.7-hs", "minimax-m2.5",
+        "mimo-v2.5-pro", "minimax-m2.7-hs", "minimax-m2.5",
         "deepseek-v3.2-thinking", "kimi-k2.5", "kimi-k2.6",
     ]
     for model_key in fixture_valid_models:
@@ -437,7 +437,7 @@ def test_A3_external_models_warn_high_when_only_5_to_7_valid(good_project):
     # invalidate 8 模型（routing_unverified）→ 只剩 6 valid → warn high
     invalidate_keys = [
         "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
-        "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7", "mimo-v2-pro",
+        "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7", "mimo-v2.5-pro",
     ]
     for key in invalidate_keys:
         p = good_project / ".webnovel" / "tmp" / f"external_review_{key}_ch0001.json"
@@ -456,7 +456,7 @@ def test_A3_external_models_fails_critical_when_under_5(good_project):
     invalidate_keys = [
         "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
         "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
-        "mimo-v2-pro", "minimax-m2.7-hs", "minimax-m2.5",
+        "mimo-v2.5-pro", "minimax-m2.7-hs", "minimax-m2.5",
     ]
     for key in invalidate_keys:
         p = good_project / ".webnovel" / "tmp" / f"external_review_{key}_ch0001.json"
@@ -1719,6 +1719,7 @@ def test_G1_score_trend_passes_when_scores_are_stable(good_project):
 
 
 def test_G2_word_count_trend_warns_when_too_short(good_project):
+    """G2 下界 warn 测试：用极短文本，远低于任意合理 hard_min。"""
     mod = _load_module()
     chapter_file = mod._find_chapter_file(good_project, 1)
     assert chapter_file is not None
@@ -1728,11 +1729,43 @@ def test_G2_word_count_trend_warns_when_too_short(good_project):
     assert r.severity == "medium"
 
 
+def test_G2_default_word_count_constants_are_in_sync_with_ssot():
+    """G2 SSOT 防御：函数 default 必须用模块常量；常量必须与 SKILL.md 字数 SSOT 对齐。
+
+    Round 21.1 字数 SSOT = 2200-3800 (hard_min/hard_max)。
+    任何此处修改必须同步：
+      1. webnovel-writer/skills/webnovel-write/SKILL.md
+      2. webnovel-writer/skills/webnovel-write/references/post-draft-gate.md
+      3. webnovel-writer/agents/context-agent.md
+      4. .webnovel/state.json fallback (CLI init 默认值)
+      5. workflow_manager 字数白名单
+    """
+    mod = _load_module()
+    assert mod.DEFAULT_WORD_COUNT_HARD_MIN == 2200, (
+        "Round 21.1 SSOT: hard_min=2200；改这里必同步 SKILL.md / agents / state.json"
+    )
+    assert mod.DEFAULT_WORD_COUNT_HARD_MAX == 3800, (
+        "Round 21.1 SSOT: hard_max=3800；改这里必同步 SKILL.md / agents / state.json"
+    )
+    # 确保函数 source 真的在用常量（不是 hardcode 数字 fallback）
+    import inspect
+    src = inspect.getsource(mod.check_G2_word_count_trend)
+    assert "DEFAULT_WORD_COUNT_HARD_MIN" in src and "DEFAULT_WORD_COUNT_HARD_MAX" in src, (
+        "check_G2_word_count_trend 必须用模块常量；禁止 hardcode 数字 fallback"
+    )
+
+
 def test_G2_word_count_trend_warns_when_too_long(good_project):
+    """G2 上界 warn 测试：字数从 SSOT 常量派生，不 hardcode 防止漂移。
+
+    Round 21.1 · 2026-04-28 · hard_max 上调 3500→3800 时此测试漏改 → fix。
+    Round 21.x 防御：从 chapter_audit.DEFAULT_WORD_COUNT_HARD_MAX + 100 派生。
+    """
     mod = _load_module()
     chapter_file = mod._find_chapter_file(good_project, 1)
     assert chapter_file is not None
-    chapter_file.write_text("长" * 3601, encoding="utf-8")
+    over_limit = mod.DEFAULT_WORD_COUNT_HARD_MAX + 100
+    chapter_file.write_text("长" * over_limit, encoding="utf-8")
     r = mod.check_G2_word_count_trend(good_project, 1)
     assert r.status == "warn"
     assert r.severity == "low"
