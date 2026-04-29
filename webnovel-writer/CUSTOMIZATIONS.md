@@ -7,6 +7,96 @@
 
 ---
 
+## [2026-04-29 · Round 21.5] Gemini 主路切到 api666 / gemini-3.1-pro-preview
+
+**Trigger**：历史外审产物显示 `gemini-3.1-pro@openclawroot` 不稳定：Ch4/5/8/15/20 为 0 维成功，Ch6/11/19 partial，Ch14 出现 51.9 outlier。主要错误是 openclawroot Gemini 路由的 503/524/400。
+
+**Fix**：
+1. `scripts/external_review.py`
+   - PROVIDERS 新增 `api666`：`https://api-666.cc/v1/chat/completions`
+   - env key 名：`API666_API_KEY` / `API_666_API_KEY`
+   - `gemini-3.1-pro` providers 调整为：
+     1. `api666 / gemini-3.1-pro-preview / Gemini-3.1-Pro-Preview-API666 / max_tokens=65536`
+     2. `openclawroot / gemini-3.1-pro-high` fallback
+   - Gemini thinking 仍走 `thinking_budget=16384`
+   - 通用 OpenAI-compatible thinking 匹配补上 `kimi`，确保 `siliconflow / Pro/moonshotai/Kimi-K2.5` fallback 也带 `enable_thinking=True`
+   - healthcheck timeout 从 8s 提升到 30s，避免 `glm-5.1` 这类 reasoning 模型首包较慢时被误报不可用
+
+2. skills / agents / cursor rules 同步：
+   - `skills/webnovel-write/references/step-3.5-external-review.md`
+   - `agents/external-review-agent.md`
+   - `.cursor/rules/webnovel-workflow.mdc`
+   - `.cursor/rules/external-review-spec.mdc`
+
+**Security**：API key 不写入 tracked 文档；本地运行时通过 `.env` 或进程环境变量 `API666_API_KEY` 注入。
+
+---
+
+## [2026-04-29 · Round 21.4] Step 3.5 combined 默认 · 根治同模型 13 次重复上下文
+
+**Trigger**：Ch20 外部审查实测 prompt tokens ≈ 12,325,450。Root cause 是 `external_review.py` 旧 dimensions 路径对同一模型按 13 个维度拆成 13 次请求，每次重复发送完整 `context_block + chapter_text`。在当前大 context window 模型下，这个拆分收益低、token/限流/失败面代价极高。
+
+**Root Cause**：
+1. `call_dimension()` 每个维度独立构造 prompt，并替换 `{context_block}` + `{chapter_text}`。
+2. `_run_single_model()` 对 `DIMENSIONS.items()` 全量提交线程池，导致单模型 13 次重复上下文。
+3. `--model-key all` 只是一键启动 14 模型，不等于每模型一次审完 13 维；模型层还被 `max_workers=4` 排队。
+4. 文档长期混有旧口径（9 模型、核心3、补充层、14 模型并发），掩盖了真实物理请求数。
+
+**Fix**：
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `scripts/external_review.py` | 新增 `--dimension-strategy auto|combined|split`，默认 `auto`；combined 每模型 1 次请求返回 13 个 `dimension_reports` |
+| 2 | `scripts/external_review.py` | 保留旧 split 路径；combined JSON 不可用/缺维度时 `auto` 记录 `strategy_fallback_reason` 并退回 split |
+| 3 | `scripts/external_review.py` | 新增 `--model-concurrent` 控制 `--model-key all` 的模型层并发；`--max-concurrent` 改为仅控制 split/fallback 维度并发 |
+| 4 | `scripts/external_review.py` | 输出 `api_meta.review_strategy`，保持 `.webnovel/tmp/external_review_{model}_chNNNN.json` 产物格式兼容 |
+| 5 | `scripts/data_modules/tests/test_external_review_combined_strategy.py` | 新增 combined 一次调用、auto fallback、强制 split 三类回归测试 |
+| 6 | `skills/webnovel-write/SKILL.md` / `skills/webnovel-write/references/step-3.5-external-review.md` / `agents/external-review-agent.md` / `.cursor/rules/*` | 同步 Round 21.4 combined 默认、14 模型扁平阈值、新 CLI 参数与旧口径清理 |
+
+**Expected Impact**：
+- 正常路径物理请求数：`14 模型 × 13 维 = 182` → `14 模型 × 1 combined = 14`。
+- Ch20 级别 prompt token 预估下降约 85%-90%。
+- provider rate limit、线程池排队、单维失败造成的 partial 文件显著减少。
+- 逻辑评分矩阵不变：仍保留 14 模型 × 13 维度 = 182 个评分点。
+
+---
+
+## [2026-04-29 · Round 21.3] mimo-v2-pro → mimo-v2.5-pro · 新增 xiaomimimo provider
+
+**Trigger**：openclawroot 上的 mimo-v2-pro 升级到小米官方主路 token-plan-sgp 的 MiMo-V2.5-Pro，文学/推理质量整体抬升。
+
+**改动**：
+
+1. **scripts/external_review.py**：
+   - PROVIDERS 新增 `xiaomimimo`（base_url=`https://token-plan-sgp.xiaomimimo.com/v1/chat/completions`，env_key=`XIAOMIMIMO_API_KEY`，rpm=30）
+   - MODELS 中 `mimo-v2-pro`（openclawroot/mimo-v2-pro）→ `mimo-v2.5-pro`（xiaomimimo/MiMo-V2.5-Pro · max_tokens=65536）
+   - REASONING_MODELS：`mimo-v2-pro` → `mimo-v2.5-pro`
+   - MODEL_ALIASES：新增 `mimo / mimo-v2 / mimo-v2.5 / mimo-v2-pro` → `mimo-v2.5-pro` 别名映射（向后兼容）
+   - --model-key help 文本同步更新
+
+2. **scripts/data_modules/chapter_audit.py**：
+   - EXTERNAL_MODELS_ALL：`mimo-v2-pro` → `mimo-v2.5-pro`
+   - phantom_zero_pattern 正则同时识别 `mimo-v2-pro` 和 `mimo-v2.5-pro`
+
+3. **agents/external-review-agent.md**：
+   - 4 供应商 → 5 供应商（新增 xiaomimimo）
+   - model_key 枚举更新
+
+4. **skills/webnovel-write/references/step-3.5-external-review.md**：
+   - 模型表更新（mimo-v2.5-pro / xiaomimimo / MiMo-V2.5-Pro）
+   - 供应商配置 4-tier → 5-tier，新增 xiaomimimo 段
+
+5. **scripts/data_modules/tests/test_chapter_audit.py**：硬编码 `mimo-v2-pro` 全部替换为 `mimo-v2.5-pro`
+
+6. **.env**：新增 `XIAOMIMIMO_API_KEY=tp-s8pxkkz0gtf73gaavfuildv22ib6c6nh96f0vfugxvc2jwxe`
+
+**思路确认**：
+- xiaomimimo 是 OpenAI-Compatible（`/v1/chat/completions`），call_api 路径 `provider != ark-coding` 走通用分支，会自动按 mimo 名称匹配 `enable_thinking=True`（已有 `if any(t in model_lower for t in (..., "mimo")): payload["enable_thinking"] = True` 逻辑）
+- max_tokens=65536（不是 ark-coding 32768 受限）
+- model_id 使用 `MiMo-V2.5-Pro`（按用户指定）
+- 旧名 mimo-v2-pro 不删除别名，老 state.json/历史 review_metrics 仍能解析
+
+---
+
 ## [2026-04-25 · Round 18.3] Ch12 RCA · post_draft H22 AI cliche + H23 破折号密度 + polish 复扫规范
 
 **Trigger**：Ch12 polish 阶段反向引入 2 个 forbidden_items 黑名单词（"轻轻放下了" + "仿佛...糖纸"），audit E3 low warn 标识但已渗入正文。

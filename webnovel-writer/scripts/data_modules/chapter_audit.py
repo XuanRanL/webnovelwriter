@@ -164,9 +164,10 @@ def normalize_checker_scores_keys(
 # 判定改为：成功模型数 ≥ 10/14 pass · 8-9/14 medium warn · <8/14 high warn（不 critical block）
 EXTERNAL_MODELS_ALL = [
     # Round 20.x · 2026-04-27 · Ch14 RCA P0-2：gpt-5.4 → gpt-5.5（ticketpro 主 provider）
+    # Round 21.3 · 2026-04-29 · mimo-v2-pro → mimo-v2.5-pro（xiaomimimo 官方主路）
     "qwen3.6-plus", "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
     "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
-    "mimo-v2-pro", "minimax-m2.7-hs", "minimax-m2.5",
+    "mimo-v2.5-pro", "minimax-m2.7-hs", "minimax-m2.5",
     "deepseek-v3.2-thinking", "kimi-k2.5", "kimi-k2.6",
 ]
 # Round 16 完整度阈值（A3 判定核心参数）
@@ -180,6 +181,13 @@ EXTERNAL_MODELS_ALL9 = EXTERNAL_MODELS_ALL
 
 DATA_AGENT_STEPS_REQUIRED = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]  # K 为 best-effort
 EXTERNAL_REVIEW_EXPECTED_DIMENSIONS = 13  # Round 13 v2: 11 工艺维度 + naturalness + reader_critic
+
+# Round 21.1 · 2026-04-28 · 字数 SSOT 上调（hard_max 3500→3800 + 弹性 ±500）
+# 真源：state.json project_info.word_count_policy；这里仅作 fallback 默认值
+# G2 测试 fixture 必须从这两个常量派生（DEFAULT_WORD_COUNT_HARD_MAX + 100），
+# 禁止 hardcode 数字，否则下次 SSOT 漂移测试会再失败（Round 21.1 G2 漂移血教训）
+DEFAULT_WORD_COUNT_HARD_MIN = 2200
+DEFAULT_WORD_COUNT_HARD_MAX = 3800
 WORKFLOW_REQUIRED_STEPS = {
     "webnovel-write": ["Step 1", "Step 2A", "Step 2B", "Step 3", "Step 3.5", "Step 4", "Step 5", "Step 6", "Step 7"],
     "webnovel-review": ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Step 6", "Step 7", "Step 8"],
@@ -843,7 +851,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
     present = [m for m in EXTERNAL_MODELS_ALL if m in text.lower() or m in text]
     phantom_hits = 0
     zero_pattern = re.compile(
-        r"(?:kimi|kimi-k2\.[56]|glm|glm-5\.1|qwen-plus|qwen3\.6-plus|minimax|minimax-m2\.[57]|minimax-m2\.7-hs|doubao|doubao-seed-2\.0-(?:pro|lite)|doubao-pro|qwen|glm4|glm-4\.7|deepseek|deepseek-v3\.2(?:-thinking)?|gpt-5\.4|gemini-3\.1-pro|mimo-v2-pro)[^\n]{0,40}[:：]\s*0(?:\.0+)?(?:\b|$)",
+        r"(?:kimi|kimi-k2\.[56]|glm|glm-5\.1|qwen-plus|qwen3\.6-plus|minimax|minimax-m2\.[57]|minimax-m2\.7-hs|doubao|doubao-seed-2\.0-(?:pro|lite)|doubao-pro|qwen|glm4|glm-4\.7|deepseek|deepseek-v3\.2(?:-thinking)?|gpt-5\.4|gemini-3\.1-pro|mimo-v2(?:\.5)?-pro|mimo-v2\.5-pro)[^\n]{0,40}[:：]\s*0(?:\.0+)?(?:\b|$)",
         re.IGNORECASE,
     )
     for match in zero_pattern.finditer(text):
@@ -1986,12 +1994,12 @@ def check_G2_word_count_trend(project_root: Path, chapter: int) -> CheckResult:
     text = _read_text(chapter_file) or ""
     word_count = len(re.findall(r"[一-鿿]", text))
     state_path = project_root / ".webnovel" / "state.json"
-    target_min, target_max = 2200, 3800
+    target_min, target_max = DEFAULT_WORD_COUNT_HARD_MIN, DEFAULT_WORD_COUNT_HARD_MAX
     try:
         s = json.loads(state_path.read_text(encoding="utf-8"))
         wcp = s.get("project_info", {}).get("word_count_policy", {})
-        target_min = int(wcp.get("hard_min", 2200))
-        target_max = int(wcp.get("hard_max", 3800))
+        target_min = int(wcp.get("hard_min", DEFAULT_WORD_COUNT_HARD_MIN))
+        target_max = int(wcp.get("hard_max", DEFAULT_WORD_COUNT_HARD_MAX))
     except Exception:
         pass
     if word_count < target_min:

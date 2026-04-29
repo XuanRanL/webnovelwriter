@@ -18,7 +18,7 @@
 | 2 | Step 1 执行包（JSON + MD）已落盘 | `H14` | `hygiene_check.py:check_execution_package_persistence` | P0 |
 | 3 | Step 2A/2B 后 `post_draft_check` exit=0 | `post_draft_check.py` 调用 | Step 2A/2B 流程 | P0 |
 | 4 | Step 3 `overall_score` 聚合 + review_metrics 落库 | `H9` (score alignment) | `hygiene_check.py:check_score_alignment` | P1 |
-| 5 | Step 3.5 外部审查（核心3模型成功） | `external_review.py` 退出码 0 | 主流程调用 | P0 |
+| 5 | Step 3.5 外部审查（≥10/14 模型有效，Round 16+ 扁平 · Round 21.4 combined 默认） | `external_review.py` 退出码 0 + `chapter_audit.check_A3_external_models` ≥ healthy 阈值 | 主流程调用 | P0 |
 | 6 | 审查报告 .md 存在 | `H15` 扩展（审查报告路径） | `hygiene_check.py` | P0 |
 | 7 | Step 4 处理全部 critical，high 有 deviation | `H15` (polish_reports 必要段落) | `hygiene_check.py:check_polish_report_persistence` | P0 |
 | 8 | Step 4 润色报告已落盘 | `H15` | `hygiene_check.py:check_polish_report_persistence` | P0 |

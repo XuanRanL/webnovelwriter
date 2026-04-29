@@ -1,13 +1,13 @@
 ---
 name: external-review-agent
-description: 外部模型审查Agent，调用外部API对章节进行13维度独立审查（11 工艺 + naturalness + reader_critic · Round 13 v2 · 含 reader_flow），输出结构化报告
+description: 外部模型审查Agent，调用外部API对章节进行13维度独立审查（10 工艺 + reader_flow + naturalness + reader_critic），Round 21.4 默认每模型一次 combined 请求输出结构化报告
 tools: Read, Grep, Bash
 model: inherit
 ---
 
 # external-review-agent (外部模型审查器)
 
-> **职责**: 读取完整项目上下文，构建 13 维度审查prompt（含 reader_flow 读者视角流畅度），调用外部模型API获取独立审查意见，交叉验证后输出结构化报告。
+> **职责**: 读取完整项目上下文，构建 13 维度审查 prompt（含 reader_flow 读者视角流畅度），调用外部模型 API 获取独立审查意见，交叉验证后输出结构化报告。Round 21.4 起默认每模型一次 combined 请求返回全部 13 维，旧 split 逐维请求仅作 fallback/debug。
 
 > **输出格式**: 遵循 `${CLAUDE_PLUGIN_ROOT}/references/checker-output-schema.md` 统一 JSON Schema
 >
@@ -20,33 +20,32 @@ model: inherit
   "chapter": 11,
   "chapter_file": "正文/第0011章-猎人公会.md",
   "project_root": "{PROJECT_ROOT}",
-  "model_key": "qwen3.6-plus|gpt-5.5|gemini-3.1-pro|doubao-pro|doubao-seed-2.0-lite|glm-5|glm-5.1|glm-4.7|mimo-v2-pro|minimax-m2.7-hs|minimax-m2.5|deepseek-v3.2-thinking|kimi-k2.5|kimi-k2.6|all",
+  "model_key": "qwen3.6-plus|gpt-5.5|gemini-3.1-pro|doubao-pro|doubao-seed-2.0-lite|glm-5|glm-5.1|glm-4.7|mimo-v2.5-pro|minimax-m2.7-hs|minimax-m2.5|deepseek-v3.2-thinking|kimi-k2.5|kimi-k2.6|all",
   "scripts_dir": "{SCRIPTS_DIR}"
 }
 ```
 
-**model_key 说明（十四模型共识架构 · Round 14+ ark-coding 并入 · Round 20.x ticketpro 加入）**:
-- **架构**：4 供应商（**ticketpro** + openclawroot + **ark-coding** + siliconflow）× 14 模型 × 13 维度 = 182 份独立评分
-- **共识机制**：每个模型都跑**全 13 维度**（无分工），多模型共识 → 真 bug；单模型孤例 → 模型偏见
+**model_key 说明（十四模型共识架构 · Round 21.4 combined 默认）**:
+- **架构**：6 供应商（**ticketpro** + **api666** + openclawroot + **ark-coding** + siliconflow + **xiaomimimo**）× 14 模型 × 13 维度 = 182 份逻辑评分（Round 21.4 正常物理请求数为 14，不再是 182）
+- **共识机制**：每个模型都跑**全 13 维度**（无分工），默认一次请求返回 13 个 `dimension_reports`；多模型共识 → 真 bug；单模型孤例 → 模型偏见
 - **所有模型 thinking 全开**
   - ark-coding：`thinking={"type":"enabled"}`（火山原生）
-  - openclawroot / ticketpro：按家族 `reasoning_effort/thinking_budget/enable_thinking`
+  - ticketpro / api666 / openclawroot / siliconflow / xiaomimimo：按家族 `reasoning_effort` / `thinking_budget` / `enable_thinking`（含 Kimi fallback）
 - **max_tokens 拉满**：火山上的 `deepseek-v3.2` / `kimi-k2.5` 限 32768；其他全部 65536
-- **核心层**（tier=core · 必须成功，异构覆盖）：
+- **模型名单（扁平投票 · 无 core/supplemental 硬耦合）**：
   - `qwen3.6-plus`（国产旗舰，文学细致度最高）
   - `gpt-5.5`（OpenAI 系，西方叙事视角，最快 2s · Round 20.x 从 gpt-5.4 升级，主 provider=ticketpro）
-  - `gemini-3.1-pro`（谷歌系，画面感审视）
-- **补充层**（tier=supplemental · 失败不阻塞，累计 3 维度失败早停）：
+  - `gemini-3.1-pro`（主 = api666 `gemini-3.1-pro-preview`，备 = openclawroot `gemini-3.1-pro-high`；谷歌系，画面感审视）
   - `doubao-pro`（主 = ark-coding doubao-seed-2.0-pro，备 = openclawroot；结构审查严苛）
   - `doubao-seed-2.0-lite` ⭐（ark-coding；豆包轻量 thinking）
   - `glm-5` / `glm-4.7`（openclawroot；中文编辑 / 文学质感）
   - `glm-5.1` ⭐（ark-coding；GLM 5.1 增量）
-  - `mimo-v2-pro`（openclawroot；小米推理）
+  - `mimo-v2.5-pro`（**xiaomimimo** 小米官方 token-plan-sgp · Round 21.3 升级，原 mimo-v2-pro/openclawroot 已替换）
   - `minimax-m2.7-hs`（openclawroot；2.7 高速对话情感推理）
   - `minimax-m2.5` ⭐（ark-coding；交错 thinking）
   - `deepseek-v3.2-thinking`（主 = ark-coding deepseek-v3.2 mt=32768，备 = openclawroot/siliconflow；技术考据）
-  - `kimi-k2.5` ⭐（ark-coding mt=32768；Moonshot K2.5 thinking）
-  - `kimi-k2.6` ⭐（ark-coding mt=65536；Moonshot K2.6 旗舰）
+  - `kimi-k2.5` ⭐（主 = ark-coding mt=32768，备 = siliconflow Kimi-K2.5；Moonshot K2.5 thinking）
+  - `kimi-k2.6` ⭐（主 = ark-coding mt=65536，备 = siliconflow Kimi-K2.5 fallback mt=32768；Moonshot K2.6 旗舰）
 
 ⭐ = Round 14 新增
 
@@ -73,7 +72,8 @@ python -X utf8 "${scripts_dir}/external_review.py" \
   --project-root "${project_root}" \
   --chapter {chapter} \
   --model-key all \
-  --mode dimensions
+  --mode dimensions \
+  --dimension-strategy auto
 ```
 
 脚本会自动从 `{project_root}/.webnovel/tmp/external_context_ch{NNNN}.json` 加载上下文。调用前，agent必须先将收集到的上下文写入该文件：
@@ -96,7 +96,7 @@ EOF
 
 > **注意**：脚本对每个字段有磁盘 fallback——如果 JSON 中某字段缺失或为空，会自动从 `设定集/`、`正文/`、`.webnovel/` 目录读取。但 agent 应尽量填充完整以减少磁盘 I/O。
 
-脚本会对 13 个维度（11 工艺维度 + naturalness + reader_critic · Round 13 v2 · 含 reader_flow）并发调用外部模型API，返回 13 份维度报告合并为每模型一个 JSON。Round 14+ 下 ark-coding 和 openclawroot 两个主 provider 并行工作，ProviderRateLimiter 自动控制 RPM。
+脚本默认对每个模型发起 1 次 combined 请求，要求模型一次返回 13 个维度报告并合并为每模型一个 JSON；若 combined JSON 不可用或缺维度，`--dimension-strategy auto` 自动退回 split 逐维请求。ProviderRateLimiter 继续控制各 provider RPM。
 
 ### 第三步: 交叉验证（不可省略）
 
@@ -148,17 +148,21 @@ EOF
     "elapsed_ms": 25000,
     "prompt_tokens": 5000,
     "completion_tokens": 3000,
-    "attempts_total": 10
+    "attempts_total": 10,
+    "review_strategy": "combined|split",
+    "strategy_fallback_reason": "仅 auto fallback 时出现"
   },
   "metrics": {
-    "dimensions_ok": 11,
+    "dimensions_ok": 13,
     "dimensions_failed": 0,
     "dimensions_skipped": 0
   }
 }
 ```
 
-## 审查维度（11个）
+`api_meta.review_strategy` 必须为 `combined` 或 `split`；当 `auto` 因缺维度/坏 JSON 退回 split 时，必须记录 `api_meta.strategy_fallback_reason`。
+
+## 审查维度（13个）
 
 1. **consistency** — 设定一致性
 2. **continuity** — 连贯性
@@ -170,15 +174,18 @@ EOF
 8. **information_density** — 信息密度
 9. **prose_quality** — 文笔质感
 10. **emotion_expression** — 情感表现
-11. **reader_flow** — 读者视角流畅度（**读者体验视角**：失忆裸读，7 类卡点——JUMP_LOGIC/MISSING_MOTIVE/UNGROUNDED_TERM/ABRUPT_TRANSITION/VAGUE_REFERENCE/RHYTHM_JOLT/META_BREAK）
+11. **naturalness** — 汉语母语自然度（首句语病、AI 腔、机翻味、设计标签暴露、机械打卡感）
+12. **reader_critic** — 读者锐评（追更读者 + 退稿编辑视角：是否愿意继续读、亮点与劝退点）
+13. **reader_flow** — 读者视角流畅度（**读者体验视角**：失忆裸读，7 类卡点——JUMP_LOGIC/MISSING_MOTIVE/UNGROUNDED_TERM/ABRUPT_TRANSITION/VAGUE_REFERENCE/RHYTHM_JOLT/META_BREAK）
 
 > **reader_flow vs reader_pull 互补性**：两者视角不同——`reader_pull` 查"作者工艺是否到位"（钩子强度/微兑现达标），`reader_flow` 查"读者能否读懂、不卡顿"（失忆裸读解码成本）。Ch4 实测两者呈反相（flow 高/pull 低），证明**真正互补**。Step 4 润色优先级：`reader_flow` 共识 high/medium > `reader_pull` issues。
 
 ## 失败处理
 
-- 单个维度API调用失败：按 provider fallback 链自动重试（ark-coding/healwrap/nextapi 重试2次，openclawroot/siliconflow fail-fast 切下一 provider），仍失败则标记该维度为 `"status": "failed"`
-- 幽灵零分（score=0 + 空摘要）：provider 层自动切下一供应商重试；所有供应商都返回 phantom 则标记 `"status": "failed", "error": "phantom_success_score0_empty"`
-- 补充层早停：累计 3 个维度失败后触发 `threading.Event`，跳过剩余排队维度（`"status": "skipped", "error": "early_stop_skipped"`）
+- combined JSON 不可用、`dimension_reports` 不是数组、或缺失任一 canonical 维度：`auto` 记录 `strategy_fallback_reason` 并退回 split。
+- split 单个维度 API 调用失败：按 provider fallback 链自动重试（所有 provider 最多 2 次），仍失败则标记该维度为 `"status": "failed"`。
+- 幽灵零分（score=0 + 空摘要 / combined 空 reports）：provider 层自动切下一供应商重试；所有供应商都返回 phantom 则标记失败。
+- split 早停：累计 6 个维度失败后触发 `threading.Event`，跳过剩余排队维度（`"status": "skipped", "error": "early_stop_skipped"`）。
 - 全部 13 个维度失败：输出 `"pass": false, "error": "all_dimensions_failed"`
 - JSON解析失败：标记 `"status": "failed", "error": "json_parse_failed"`
 - **reader_flow 特殊校验**：主流程对每个 issue 的 quote 做 compact grep（去空白后模糊匹配）；quote 不在原文 → issue 降级为 low（允许保留作为线索）。

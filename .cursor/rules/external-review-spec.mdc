@@ -6,19 +6,32 @@ alwaysApply: true
 
 # Step 3.5 外部模型审查规范
 
-> **Round 16 架构（2026-04-23 · Ch6 RCA 最终根治）**：
+> **Round 21.4 架构（2026-04-29 · combined 默认 · token 重复消耗根治）**：
 > - 14 模型扁平共识 · 无 core / supplemental 层级
-> - 统一重试 2 次 · 统一早停阈值 4
+> - 默认每模型 1 次 combined 请求返回 13 个 `dimension_reports`
+> - combined 坏 JSON / 缺维度时 `auto` 退回 split；split 统一重试 2 次 · 早停阈值 6
 > - Step 6 A3 判定：≥ 10/14 有效 pass · 8-9 medium warn · 5-7 high warn（仍不阻塞） · <5 critical
 > - 详见 `webnovel-writer/skills/webnovel-write/references/step-3.5-external-review.md`
 
 ## 一、外审 Prompt 模板
 
-调用外部模型时，system 消息使用以下模板（`{context}` 替换为章节特定描述）：
+调用外部模型时，默认 combined：一个模型一次请求必须返回完整 13 维审查矩阵。system/user 消息按脚本 `build_combined_prompt()` 生成，核心结构如下：
 
 ```
-你是一个资深网文章节审查专家。请从以下10个维度对章节进行严格审查并打分（0-100）：
-1.设定一致性 2.连贯性 3.人物塑造 4.追读力 5.爽点密度 6.节奏控制 7.对话质量 8.信息密度 9.文笔质感 10.情感表现
+你是一个资深网文章节审查专家。请一次性从以下13个维度对章节进行严格审查并打分（0-100）：
+1.consistency 设定一致性
+2.continuity 连贯性
+3.ooc 人物塑造/OOC
+4.reader_pull 追读力
+5.high_point 爽点密度
+6.pacing 节奏平衡
+7.dialogue_quality 对话质量
+8.information_density 信息密度
+9.prose_quality 文笔质感
+10.emotion_expression 情感表现
+11.naturalness 汉语母语自然度
+12.reader_critic 读者锐评
+13.reader_flow 读者视角流畅度
 
 {context}
 
@@ -26,19 +39,19 @@ alwaysApply: true
 
 {
   "overall_score": <0-100的数字>,
-  "dimensions": [
+  "dimension_reports": [
     {
-      "name": "<维度名>",
+      "dimension": "<上述13个 canonical key 之一>",
       "score": <0-100>,
-      "comment": "<该维度的整体评语，2-3句>",
+      "summary": "<该维度一句话总评>",
       "issues": [
         {
-          "type": "<SETTING_CONFLICT|CONTINUITY|OOC|PACING|READER_PULL|STYLE>",
+          "type": "<SETTING_CONFLICT|CONTINUITY|OOC|PACING|READER_PULL|STYLE|DIALOGUE_FLAT|DIALOGUE_INFODUMP|DIALOGUE_MONOLOGUE|PADDING|REPETITION|PROSE_FLAT|EMOTION_SHALLOW|NATURALNESS|READER_CRITIC|READER_FLOW>",
           "severity": "<critical|high|medium|low>",
-          "location": "<定位到具体段落，如'第3段陆衍与韩远对话处'>",
+          "location": "<定位到具体段落>",
           "description": "<问题描述>",
           "suggestion": "<具体修改建议，给出改写方向或示例>",
-          "quote": "<引用正文中的原句，便于定位>"
+          "quote": "<引用正文中的原句，必须逐字存在>"
         }
       ]
     }
@@ -67,6 +80,9 @@ issue 的 type 分类说明：
 - DIALOGUE_MONOLOGUE: 单人连续独白过长（超过200字），缺少互动打断
 - PADDING: 段落无信息增量，不推进剧情/角色/情绪，属于水分填充
 - REPETITION: 同一信息已通过其他方式传达后再次重复描述
+- NATURALNESS: 首句语病/AI 腔/机翻味/设计标签暴露/机械打卡感
+- READER_CRITIC: 追更读者或退稿编辑视角的劝退点
+- READER_FLOW: 读者裸读卡点/理解路径不顺
 ```
 
 ## 一·一、开篇章节特殊处理（Ch1-3）
@@ -167,7 +183,9 @@ issue 的 type 分类说明：
     "elapsed_ms": 8500,
     "prompt_tokens": 2300,
     "completion_tokens": 1800,
-    "attempts_total": 2
+    "attempts_total": 2,
+    "review_strategy": "combined|split",
+    "strategy_fallback_reason": "仅 auto fallback 时出现"
   },
   "summary": "..."
 }
@@ -207,7 +225,7 @@ issue 的 type 分类说明：
 ```markdown
 # 第{N}章审查报告
 
-## 内部审查（10 checker）
+## 内部审查（13 checker）
 - 综合评分: {score}
 - 严重/高: {N}个
 
@@ -231,14 +249,14 @@ issue 的 type 分类说明：
 | 模型 | 供应商 | 设定 | 连贯 | 人物 | 追读 | 爽点 | 节奏 | 对话 | 密度 | 文笔 | 情感 | 流畅 | 母语 | 锐评 | 总分 | 路由 |
 |------|--------|------|------|------|------|------|------|------|------|------|------|------|------|------|------|------|
 | qwen3.6-plus | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
-| gpt-5.4 | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
-| gemini-3.1-pro | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
+| gpt-5.5 | ticketpro | | | | | | | | | | | | | | | ✅/❌ |
+| gemini-3.1-pro | api666 | | | | | | | | | | | | | | | ✅/❌ |
 | doubao-pro | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
 | doubao-seed-2.0-lite | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
 | glm-5 | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
 | glm-5.1 | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
 | glm-4.7 | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
-| mimo-v2-pro | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
+| mimo-v2.5-pro | xiaomimimo | | | | | | | | | | | | | | | ✅/❌ |
 | minimax-m2.7-hs | openclawroot | | | | | | | | | | | | | | | ✅/❌ |
 | minimax-m2.5 | ark-coding | | | | | | | | | | | | | | | ✅/❌ |
 | deepseek-v3.2-thinking | ark-coding | | | | | | | | | | | | | | | ✅/❌ |

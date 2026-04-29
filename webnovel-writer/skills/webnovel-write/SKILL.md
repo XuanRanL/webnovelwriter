@@ -63,7 +63,7 @@ allowed-tools: Read Write Edit Grep Bash Task
 在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
 
 1. Step 3 的内部 checker 全部返回并汇总出 overall_score。**术语固定**（见 `feedback_checker_count_13`）：`checker` = 跑的 subagent 数量 = 评分维度数量（**Round 13 v2 取消 veto 架构**，全部 checker 平等参与评分）。标准/`--fast` = **13 checker / 13 评分维度**（2 读者视角维度：naturalness + reader-critic，11 工艺维度含 flow-checker）。`--minimal` = **5 checker**（naturalness + reader-critic + consistency + continuity + ooc）。`overall_score = avg(所有评分维度)`。**两个读者视角 checker 不 block 流程**，其 problems 和其他 checker 同等进入 Step 4 定向修复。极端情况（Step 4 修复后 critical 仍未消除）才回 Step 2A 重写。
-2. Step 3.5 的 9 个外部模型审查完成（核心3模型 kimi/glm/qwen-plus 必须成功，补充6模型失败不阻塞），每模型审查 **13 个维度**（11 工艺维度 + naturalness_dim + reader_critic_dim，Round 13 v2 新增后 2 个，让外部模型也做读者视角评估）（`--minimal` 模式跳过此条件）
+2. Step 3.5 的 14 个外部模型审查已完成；健康线为 ≥10/14 有效，8-9/14 degraded_ok，5-7/14 degraded_warn，<5/14 critical。每个模型审查 **13 个维度**（10 工艺维度 + reader_flow + naturalness + reader_critic）；Round 21.4 默认每模型一次 combined 请求返回 13 维，失败才 split fallback（`--minimal` 模式跳过此条件）
 3. 所有 critical 问题已修复，high 问题已修复或有 deviation 记录
 4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 14 模型×13 维度评分矩阵（Round 14+）；`--minimal` 模式仅含内部 5 评分维度分数）
 5. Step 4 的 `anti_ai_force_check=pass`
@@ -688,8 +688,9 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 ```
 
 硬要求：
-- **必须使用 `--model-key all` 一次性执行全部 14 模型（Round 14+）**，禁止手动逐个调用（防止遗漏模型）。
-- 核心3模型必须全部成功，补充6模型失败不阻塞。
+- **必须使用 `--model-key all --dimension-strategy auto` 一次性执行全部 14 模型（Round 21.4）**，禁止手动逐个调用（防止遗漏模型）。
+- 默认 combined：每个模型 1 次请求返回 13 个 `dimension_reports`，避免 13 次重复发送完整上下文；JSON 不可用或维度缺失时自动 split fallback。
+- 不再有核心3必成硬耦合；Step 6 A3 按 ≥10/14 有效模型判定健康。
 - 按 reference 文件中的 Prompt 模板构建 system 消息。
 - 每次 API 调用后验证路由（检查 response.model 字段）。
 - Round 14+ 3-tier fallback 链：ark-coding（火山，主 · 重试 2 次）/ openclawroot（主 · fail-fast）→ siliconflow（兜底，仅 glm-5/glm-4.7/deepseek 备用）。
@@ -722,12 +723,13 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter {chapter_num} \
   --mode dimensions \
-  --model-key all
+  --model-key all \
+  --dimension-strategy auto
 ```
-⚠️ 脚本仅支持：`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--max-concurrent`, `--rpm-override`。不要传其他参数。
+⚠️ 脚本仅支持：`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--dimension-strategy`, `--model-concurrent`, `--max-concurrent`, `--rpm-override`, `--rpm-override-provider`, `--no-merge-partial`, `--healthcheck`。不要传其他参数。
 
 输出：
-- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共9个文件）
+- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共14个文件；combined 正常路径每文件由 1 次模型请求生成）
 - 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 14 模型 × 13 维度矩阵（Round 14+），包括 reader_flow + naturalness + reader_critic · Round 13 v2）
 
 ### Step 3+3.5 完成闸门（进入 Step 4 前必须通过）
@@ -736,7 +738,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 
 验证方式：
 1. 逐一检查所有 Step 3 内部 checker 的 Task 状态（`TaskOutput` 或等价轮询），确认每个 checker 都已返回结果（非空输出）。
-2. 确认 Step 3.5 外部审查脚本已退出且 9 个 `external_review_{model_key}_ch{NNNN}.json` 文件已生成。
+2. 确认 Step 3.5 外部审查脚本已退出且 14 个 `external_review_{model_key}_ch{NNNN}.json` 文件已生成。
 3. 按 `step-3-review-gate.md` 的“内外部分数合并规则”计算 `overall_score`（需要内部 + 外部都有分数）。
 4. 生成审查报告（含内部 13 评分维度 + 外部 14 模型×13 维度矩阵（Round 14+），内外均含 reader_flow + naturalness + reader_critic · Round 13 v2 读者视角双维度进入外部模型评分体系）。
 5. 落库 `review_metrics`。
@@ -745,7 +747,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 
 **Step 3→4 闸门强制验证**（在标记 Step 3 完成前必须执行）：
 1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，每批最多等待10分钟，总超时20分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。注意：0+6+5 三段模式下，Batch 0（2 个读者视角 checker 并行：naturalness + reader-critic · Round 13 v2）先跑，两个都返回后启动 Batch 1（6 个含 flow-checker），Batch 1 全部返回后再启动 Batch 2（5 个），每段独立计时。Round 13 v2 取消 veto block——Batch 0 的结果直接合并进聚合，不单独 block。
-2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：核心3模型文件必须存在且非空，补充模型缺失可接受。
+2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：统计有效模型数；≥10/14 为健康，8-9/14 degraded_ok，5-7/14 degraded_warn，<5/14 critical。
 3. 聚合分数：内部 13 个评分维度取平均（含 flow-checker + naturalness + reader-critic · Round 13 v2）；外部已成功模型取平均（13 维度）；合并 `round(internal * 0.6 + external * 0.4)`。
 4. 写审查报告 + 落库 review_metrics。
 **违规后果**：跳过此验证直接进入 Step 4，Step 6 审计 A2 检查项将检测到 checker 坍缩并可能 block 提交。
@@ -1172,7 +1174,7 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 2. **Step 1 执行包已落盘**：`.webnovel/context/ch{chapter_padded}_context.json` 与 `.webnovel/context/ch{chapter_padded}_context.md` 同时存在且非空
 3. **Step 2A/2B 后 `post_draft_check.py` exit=0**（2026-04-15 新增 · 7 类硬检查通过）
 4. Step 3 已产出 `overall_score`（聚合 **13 评分维度** · Round 13 v2）且 `review_metrics` 成功落库；`naturalness_verdict` / `reader_critic_verdict` 作为报告字段记录，不 block 流程；其 problems 与其他 checker 的 issues 合并进入 Step 4 修复
-5. Step 3.5 外部审查已完成（核心3模型必须成功）（`--minimal` 模式跳过此条件）
+5. Step 3.5 外部审查已完成且有效模型数达到健康/可降级阈值（`--minimal` 模式跳过此条件）
 6. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 14 模型×13 维度评分矩阵（Round 14+），内外均含 reader_flow + naturalness + reader_critic · Round 13 v2；`--minimal` 模式含内部 5 评分维度分数）
 7. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
 8. **Step 4 润色报告已落盘**：`.webnovel/polish_reports/ch{chapter_padded}.md` 存在且非空，含 `anti_ai_force_check` 字段
