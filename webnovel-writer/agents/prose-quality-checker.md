@@ -27,6 +27,8 @@ model: inherit
 
 **输出**: 文笔质感分析、句式节奏评估、比喻质量审核、感官覆盖报告、具象化程度检测。
 
+> **【Round 21.2 P0 强制 disk write】** JSON 必须落盘到 `.webnovel/tmp/prose_quality_check_ch{NNNN}.json`。**没有 disk JSON 视为执行失败**；H35 + A2 会强制比对。
+
 ## 执行流程
 
 ### 第一步: 加载上下文

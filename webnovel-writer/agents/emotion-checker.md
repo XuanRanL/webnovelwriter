@@ -28,6 +28,8 @@ model: inherit
 
 **输出**: 情感表达质量分析、Show vs Tell 比率、情感梯度评估、锚点覆盖度、共鸣设计质量。
 
+> **【Round 21.2 P0 强制 disk write】** JSON 必须落盘到 `.webnovel/tmp/emotion_check_ch{NNNN}.json`。**没有 disk JSON 视为执行失败**；H35 + A2 会强制比对。
+
 ## 执行流程
 
 ### 第一步: 加载上下文

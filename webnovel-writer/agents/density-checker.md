@@ -17,6 +17,8 @@ model: inherit
 
 **输出**: 信息密度分析、段落质量分布、冗余检测结果与优化建议。
 
+> **【Round 21.2 P0 强制 disk write】** JSON 必须落盘到 `.webnovel/tmp/density_check_ch{NNNN}.json`。**没有 disk JSON 视为执行失败**；H35 + A2 会强制比对。
+
 ## 执行流程
 
 ### 第一步: 加载上下文

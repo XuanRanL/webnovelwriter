@@ -148,6 +148,7 @@ EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印�
 - `.webnovel/context_snapshots/`: 上下文快照（优先复用）
 - `.webnovel/editor_notes/ch{NNNN}_prep.md`：**上章 Step 6 审计闸门写入的下章准备单**（必读，若存在）。包含上章未兑现承诺、carry_forward_warnings、跨章趋势建议、Step-specific 改进建议。context-agent 必须把这些内容转化为本章任务书的“接住上章”与“禁止事项”。
   - **字数 SSOT 冲突时以 state.json 为准（2026-04-22 Round 15.1 新增）**：editor_notes 里任何字数建议（如“2800-3500”/“avg 3000 硬目标”）若与 `state.project_info.word_count_policy` 不一致，context-agent 必须**静默覆盖为 SSOT 值**，并在执行包的 `warnings[]` 追加 `{"type": "EDITOR_NOTES_WORD_COUNT_DRIFT", "from": "editor_notes_x-y", "replaced_with": "ssot_hard_min-hard_max", "severity": "medium"}`。下章审计会把此 warning 回溯归因到上章 audit-agent
+  - **【Round 21.2 P0 Patch 3 · SSOT auto-backfill 强化】**：context-agent 检测到 editor_notes 与最新 SSOT 漂移时，**除了在 warnings 记录，还必须在 context.json 的 `context_contract.warnings[]` 顶层加一条人读警告 `editor_notes word count {old} 是旧值（pre-Round 21.x），以 state.json SSOT {new} 为准`**（Ch16 实测验证此格式生效）。同时 `word_count_target` / `word_count_hard_min` / `word_count_hard_max` 三字段必须以 SSOT 当前值落写，禁止保留 editor_notes 旧值。
   - **任何字数区间字面 MUST 来自 SSOT 子区间白名单（Round 17.5 · 2026-04-24 · Ch9 RCA P0-2 根治）**：合法子区间 = `{(hard_min, hard_max), 以及 chapter_type_guide 中所有显式给出的子区间}`。禁止自由编造（如"2700-3200"不在白名单 → 必须用推进章对应的"2700-3300"或 SSOT "2200-3800"覆盖 · Round 21.1）。post_draft_check 会扫描执行包的字面区间漂移并 warn。
 - `大纲/` 与 `设定集/`
 - **`大纲/第{volume_id}卷-v[N]-前NN章覆盖大纲.md`（Round 17.5 · 2026-04-24 · Ch9 RCA P0-1 根治）**：若存在 v[N] 覆盖大纲（v2/v3/v4 等），**必读最新版本** 对应章节段（如 Ch9 行）。

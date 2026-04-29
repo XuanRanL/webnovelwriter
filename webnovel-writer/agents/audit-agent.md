@@ -101,6 +101,35 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
 - 若接近预算，缩减 Layer E/F 的检查细度（保留 critical 项）
 - 超时时输出已完成部分 + 标记 `time_exhausted=true`
 
+**【Round 21.2 P0 Patch 2 · A2 升级 · checker disk artifact 强制核对】**
+
+Layer A 的 A2「13 checker 独立调用」必须**双重验证**：
+1. （旧）`chapter_meta.checker_scores` 字段计数 = 13
+2. （新）**`.webnovel/tmp/` 下 13 个 checker 的 disk JSON 全部存在**：
+   - 5 个 deep-research：`reader_naturalness_ch{NNNN}.json` / `reader_critic_ch{NNNN}.json` / `reader_pull_ch{NNNN}.json` / `flow_ch{NNNN}.json`（兼容 `flow_check_*`）/ `reader_thrill_ch{NNNN}.json`（额外 14th）
+   - 9 个 standard：`consistency_check_ch{NNNN}.json` / `continuity_check_ch{NNNN}.json` / `ooc_check_ch{NNNN}.json` / `high_point_check_ch{NNNN}.json` / `dialogue_check_ch{NNNN}.json` / `pacing_check_ch{NNNN}.json` / `emotion_check_ch{NNNN}.json` / `density_check_ch{NNNN}.json` / `prose_quality_check_ch{NNNN}.json`
+3. **disk JSON 缺失数 ≥ 1 → A2 降级 high warn（severity=high），≥ 3 → block**
+4. measured 字段必须含 `disk_json_count`（实际） / `disk_json_expected: 13` / `disk_json_missing: [...]`
+
+**理由**：Ch16 血教训——9 个 standard checker 没写 disk JSON，旧 A2 仅看 state 字段计数 → false pass。后果是 score 无法独立验证，下章 audit 拿不到结构化依据。
+
+**【Round 21.2 P1 Patch 6 · A5 evidence 字段必须显式声明】**
+
+A5 「Subagent fallback 检测」依赖 `call_trace.jsonl`，但当前 call_trace 只记录 `step_started` / `step_completed` 边界事件，**不记 Task() subagent dispatch**。所以 `fallback_count=0` 既可能是「真没 fallback」也可能是「根本没采集 fallback 事件」。
+
+evidence 字段必须显式标注 trace 的覆盖度：
+- `evidence_caveat: "call_trace 仅记 step boundary，不记 subagent dispatch 事件；fallback_count=0 不能证明所有 13 checker 都真实经过 Task agent，需要配合 A2 的 disk_json 核对（上一条）做联合判断"`
+- 后续 Patch（Round 22 候选）：在 SKILL Step 3 主流程末尾，对每个 13 checker 跑一次 `tail .webnovel/tmp/{checker}_*_ch{NNNN}.json` 写入 trace，作为 dispatch fingerprint。
+
+**【Round 21.2 P2 Patch 8 · DB 旧表 deprecation 提示】**
+
+`index.db` 的 `chapters` 表与 `appearances` 表自 state.json 切换为真源后已 deprecated，但保留未删。审计层不依赖这两张表，但若有 fallback 查询命中空表会得 0 行（Ch16 验证：chapters 0 行 / appearances 0 行）。
+
+A 层增加 A-DB-DEP（low warn，不阻断）：
+- 检测：执行 `SELECT COUNT(*) FROM chapters` 与 `SELECT COUNT(*) FROM appearances WHERE chapter={N}`
+- 期望：state.json 已是真源 → 这两张表的零结果是预期；若有非零结果但与 state.json 不一致则 medium warn
+- evidence: `chapters_table_deprecated_count=0 (expected), appearances_ch{N}_count=0 (expected, state.json is canonical)`
+
 **Layer C 扩展执行要点（C13/C14/C15）**：
 - **C13 聚合输入源**（2 个文件/组）：
   - **本地 A 层 flow-checker 产物**：`.webnovel/tmp/flow_check_ch{NNNN}.json`（由 Step 3 flow-checker subagent 写入；若缺失视为 A 层 skipped）

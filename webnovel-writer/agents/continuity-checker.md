@@ -17,6 +17,8 @@ model: inherit
 
 **输出**: 场景过渡、情节线、伏笔管理、逻辑流的连贯性分析。
 
+> **【Round 21.2 P0 强制 disk write】** JSON 必须落盘到 `.webnovel/tmp/continuity_check_ch{NNNN}.json`。**没有 disk JSON 视为执行失败**；H35 + A2 会强制比对。
+
 ## 执行流程
 
 ### 第一步: 加载上下文

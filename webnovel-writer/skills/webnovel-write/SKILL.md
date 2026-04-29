@@ -841,8 +841,13 @@ hard_max 超限会直接 fail，回 Step 4 继续压缩。
 - 本次 Ch7 后追加复测：pacing 58→90（+32），真实 overall 应为 88 而非 85
 - **后果**：chapter_meta 存的是修前数据，下章 trend 监控误判“Ch7 pacing 突降”
 
-**触发规则（硬约束）**：
-如果 Step 3 任一 checker 首次分数 `< 75`，Step 4 polish 后**必须**重跑该 checker。
+**触发规则（硬约束 · Round 21.2 P1 Patch 4 放宽）**：
+- **强制复测档**：Step 3 任一 checker 首次分数 `< 75` → Step 4 polish 后**必须**重跑该 checker（旧规则保留）
+- **【新】近线复测档**：Step 3 任一 checker 首次分数 `< 80` 且该次 polish 报告含针对此 checker 的 fix（PACE_/FLOW_/EMO_/HP_/PRO_/OOC_/CONT_/CONS_/DIA_/DEN_ 任一前缀）→ **必须**重跑该 checker（验证修复真效）
+- **【新】下滑复测档**：Step 3 任一 checker 首次分数与上一章同维度差 `≥ 5` 且 polish 含此 checker 修法 → **必须**重跑（验证回归是否被止住）
+- 复测均使用 `_recheck_ch{NNNN}.json` 作为输出文件名
+
+**Round 21.2 血教训背景**：Ch16 的 emotion 78 / pacing 78 / high-point 79 / prose 82 / ooc 81 五个维度全部相对 Ch15 下滑 8-16 分，但因为都 ≥75，旧 trigger 不命中，post_polish_recheck 整章未触发，结果 polish 是否真起效完全不可验证。新档命中后，下次再发生类似 −10 量级回归会被 Step 4.5 强制兜住。
 
 **执行模板**（Round 17.2 · Ch8 P0-R3 根治后实装 · 2026-04-24）：
 ```bash

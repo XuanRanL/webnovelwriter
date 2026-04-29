@@ -22,6 +22,8 @@ model: inherit
 
 **输出**: 爽点密度、类型覆盖、执行质量的结构化报告。
 
+> **【Round 21.2 P0 强制 disk write】** JSON 必须落盘到 `.webnovel/tmp/high_point_check_ch{NNNN}.json`。**没有 disk JSON 视为执行失败**；H35 + A2 会强制比对。
+
 ## 执行流程
 
 ### 第一步: 加载目标章节

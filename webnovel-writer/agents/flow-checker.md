@@ -21,7 +21,7 @@ model: inherit
 
 1. Read 读 `chapter_file` 全文（首章无前章尾段；非首章可一并传入 `prev_chapter_tail`）
 2. 把章节正文作为 `{章节小说}` 代入下方 Prompt 执行
-3. 把结果按输出 Schema 落盘到 `.webnovel/tmp/flow_ch{NNNN}.json`
+3. 把结果按输出 Schema 落盘到 `.webnovel/tmp/flow_ch{NNNN}.json` **同时**复制一份到 `.webnovel/tmp/flow_check_ch{NNNN}.json`（Round 21.2 P2 Patch 7 · audit-agent 期望 `flow_check_*` 命名 · 兼容双名）
 
 ## Prompt（原文，不改写不包装）
 

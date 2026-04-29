@@ -17,6 +17,8 @@ model: inherit
 
 **输出**: 设定违规、战力冲突、逻辑不一致的结构化报告。
 
+> **【Round 21.2 P0 强制 disk write】** JSON 必须落盘到 `.webnovel/tmp/consistency_check_ch{NNNN}.json`（NNNN 是 4 位章节号，不足补 0）。**没有 disk JSON 视为本次执行失败**，主 agent 不得仅用 stdout 文本返回值。post_draft_check H35 与 audit-agent A2 会强制比对 disk artifact。
+
 ## 执行流程
 
 ### 第一步: 加载参考资料

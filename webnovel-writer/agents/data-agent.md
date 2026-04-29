@@ -624,6 +624,14 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 > **Round 17.2 · Ch8 P1-R6 根治（2026-04-24）**：`overall_score` 虽然放在 Extended 层，但**与 Core 层的 `checker_scores.overall` 必须强制相等**（hygiene H9 阻断不一致）。data-agent 写 `checker_scores.overall=88` 时**必须**同步写 `overall_score=88`。`state_manager.py --set-chapter-meta-field overall_score` 会自动反向同步 `checker_scores.overall`。
 
+> **【Round 21.2 P1 Patch 5 · 4-source 单源同步】**：写 chapter_meta 评分时，data-agent **必须同步刷新**这 4 个字段到一致值：
+> 1. `chapter_meta.{NNNN}.review_score`（report 加权分 = round(internal*0.6 + external*0.4)）
+> 2. `chapter_meta.{NNNN}.overall_score`（= internal_avg round，用于 audit B4）
+> 3. `chapter_meta.{NNNN}.checker_scores.overall`（= overall_score）
+> 4. `index.db.review_metrics.overall_score`（= overall_score，DB 同步）
+> 同时 `last_stable_state.artifacts.{overall_score, internal_avg, external_avg, word_count}` 必须刷新（若 polish 后字数变化）。
+> Ch16 血教训：polish 后 last_stable_state.word_count=3234 但 chapter_meta.word_count=3322（漂移 88 字），report=85 但 chapter_meta.overall_score=83（语义混淆）。修法：data-agent process-chapter 末尾必须 emit 一次 sync-summary 行 `[SYNC] review_score={A} overall_score={B} word_count={C} → 4 sources aligned`。
+
 > **Round 17.2 · Ch8 P0-R2 根治（2026-04-24）**：`post_polish_recheck` 字段的 `before` 值**硬禁止编造**：
 > - `before` 必须来自 `.webnovel/tmp/{checker}_check_ch{NNNN}.json` 的 `overall_score`
 > - `after` 必须来自 `.webnovel/tmp/{checker}_recheck_ch{NNNN}.json` 的 `overall_score`
