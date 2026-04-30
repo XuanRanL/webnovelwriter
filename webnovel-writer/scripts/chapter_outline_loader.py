@@ -98,9 +98,20 @@ def _find_volume_outline_file(project_root: Path, chapter_num: int) -> Path | No
 
 
 def _extract_outline_section(content: str, chapter_num: int) -> str | None:
+    # Round 21.6 (2026-04-30 · Ch21 RCA): 支持多种章节标题格式：
+    #   - "### 第21章：标题" / "### 第21章: 标题"（标准中文格式）
+    #   - "### 第 21 章：标题"（带空格）
+    #   - "### Ch21 · 异常扩散" / "### Ch21·异常扩散"（短英文格式 + 中点）
+    #   - "### Ch21 - 异常扩散"（短英文格式 + 短破折号）
+    # 章末分隔符同样支持上述四种格式
+    chapter_marker = rf"(?:第\s*\d+\s*章|Ch\s*\d+)"
+    title_chapter = rf"(?:第\s*{chapter_num}\s*章|Ch\s*{chapter_num})"
+    separator = r"[·\-：:]"
     patterns = [
-        rf"###\s*第\s*{chapter_num}\s*章[：:]\s*(.+?)(?=###\s*第\s*\d+\s*章|##\s|$)",
-        rf"###\s*第{chapter_num}章[：:]\s*(.+?)(?=###\s*第\d+章|##\s|$)",
+        # 优先匹配带 ### 标题的章节，标题分隔符可以是 中点·/ 短横-/ 中文/英文冒号
+        rf"###\s*{title_chapter}\s*{separator}?\s*(.+?)(?=###\s*{chapter_marker}|##\s|\Z)",
+        # 兼容 "###第21章：" 无空格格式
+        rf"###\s*第{chapter_num}章[：:]\s*(.+?)(?=###\s*第\d+章|##\s|\Z)",
     ]
     for pattern in patterns:
         match = re.search(pattern, content, re.DOTALL)
