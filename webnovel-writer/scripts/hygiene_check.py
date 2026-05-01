@@ -2153,16 +2153,41 @@ def check_no_meta_narrative_leak(root: Path, chapter: int, rep: HygieneReport):
         - 任一出现 → P0 fail（必须改成自然话术）
     """
     META_PATTERNS = [
+        # 章节编号元叙述
         (r"Ch\d+", "Ch{N} 元叙述"),
         (r"chapter\s*\d+", "chapter 元叙述"),
-        (r"第\d+章(?!-)", "第N章 元叙述"),
+        (r"第\d+章(?!-)", "第N章 元叙述（指代）"),
         (r"Round\s*\d", "Round 元叙述"),
         (r"\bStep\s*\d", "Step 元叙述"),
-        (r"金手指", "'金手指' 创作术语 (改用'那一份能力')"),
-        (r"工具人", "'工具人' 创作术语 (改用具体行为)"),
-        (r"(?:仇恨|情感|信息|危机|追读)钩", "'X钩' 创作术语 (用人物内心或场景)"),
-        (r"大爆破", "'大爆破' 创作术语 (改'质变')"),
-        (r"承诺兑现|签约节点|伏笔回收|伏笔埋设", "商业/伏笔 meta (用场景描写)"),
+        (r"v[0-9]\.[0-9]", "vX.X 版本号"),
+        # 创作能力术语
+        (r"金手指", "'金手指' (改 '那一份能力')"),
+        (r"工具人", "'工具人' (改具体行为)"),
+        # 结构钩子
+        (r"(?:仇恨|情感|信息|危机|追读|开篇|章末|第一)钩", "'X钩' (用人物内心或场景)"),
+        # 升级修辞
+        (r"大爆破", "'大爆破' (改'质变')"),
+        # 商业/伏笔 meta
+        (r"承诺兑现|签约节点|伏笔回收|伏笔埋设|爆点章|高潮章", "商业/伏笔 meta"),
+        # 套路术语
+        (r"反套路|套路化|开挂|主角光环", "套路术语"),
+        # 角色定位 meta
+        (r"男主角|女主角|男配\d|女配\d|男一号|女一号", "角色定位 meta"),
+        # 文档 meta
+        (r"设定集|节拍表|事件索引|大纲文件", "文档 meta"),
+        # 结构 meta
+        (r"埋梗|铺梗|铺垫感|节奏感|代入感", "结构 meta"),
+        # 爽文术语
+        (r"打脸|装比|装逼|爆种|金大腿|抽卡SSR", "爽文术语"),
+        # 游戏术语
+        (r"\bNPC\b|\bBUFF\b|\bdebuff\b|增益效果|减益效果", "游戏术语"),
+        # 本章/读者 meta
+        (r"本章\s*[要将]\s|本章末|本章开头", "本章 meta"),
+        (r"读者会|读者一定|读者能感受", "读者 meta"),
+        # Strand Weave 系统术语
+        (r"Strand\s*Weave|Quest\s*主线|Fire\s*关系|Constellation\s*揭示", "Strand meta"),
+        # 创作流程
+        (r"polish_log|chapter_meta|editor_notes|审查报告", "流程 meta"),
     ]
     chapters_dir = root / "正文"
     cur_files = sorted(chapters_dir.glob(f"第{chapter:04d}章*.md"))
@@ -2256,8 +2281,15 @@ def check_signature_word_overuse(root: Path, chapter: int, rep: HygieneReport):
         - 默认词表（项目可通过 .webnovel/signature_words.json 覆盖）
     """
     DEFAULT_WORDS = {
+        # Round 21.8 原 8 词
         "存储位": 5, "手册": 5, "生机值": 5, "这一次": 5,
         "停了一拍": 3, "沉默了三秒": 3, "耳朵尖": 3, "见牙不见眼": 3,
+        # Round 22.x 第 5 份锐评新增 5 词（高频模板词全卷扫描确认）
+        "笑了一下": 4,    # 全卷 62 次（章均 2.8）
+        "点头": 4,        # 全卷 60 次（章均 2.7）
+        "印记跳": 2,      # 全卷 11 次（章均 0.5 但集中爆发）
+        "耳朵尖红": 2,    # 全卷 9 次（<female-lead>专属，过分女性化）
+        "心里": 6,        # 心里把/心里记/心里压 等 内心 verb 高频
     }
     config_file = root / ".webnovel" / "signature_words.json"
     words_limit = DEFAULT_WORDS.copy()

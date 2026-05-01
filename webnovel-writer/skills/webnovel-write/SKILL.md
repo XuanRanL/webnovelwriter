@@ -121,6 +121,10 @@ git log --oneline -1 | grep "第${chapter_num}章"
 - `references/polish-guide.md`
   - 用途：Step 4 问题修复、Anti-AI 与 No-Poison 规则。
   - 触发：Step 4 必读。
+- `references/no-meta-leak.md`（Round 22.x · 2026-05-01 · 跨项目永久防御）
+  - 用途：正文严禁创作术语 / 元叙述泄漏（28 类禁止词全表 + 11 个修复模板 + self-check 清单）。
+  - 触发：Step 2A 起草前必读 + Step 4 polish 必检 + 任何项目都适用（<example-project> / <example-project-A> / <example-project-B> 等）。
+  - hygiene H40 P0 闸门自动检测（commit 前阻断）。
 - `references/writing/typesetting.md`
   - 用途：Step 4 移动端阅读排版与发布前速查。
   - 触发：Step 4 必读。
