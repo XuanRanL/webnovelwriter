@@ -2188,6 +2188,13 @@ def check_no_meta_narrative_leak(root: Path, chapter: int, rep: HygieneReport):
         (r"Strand\s*Weave|Quest\s*主线|Fire\s*关系|Constellation\s*揭示", "Strand meta"),
         # 创作流程
         (r"polish_log|chapter_meta|editor_notes|审查报告", "流程 meta"),
+        # Round 22.x 第六份锐评新增 (2026-05-01)
+        (r"卷[一二三四五六七八九十]\b|卷[1-9]\b", "卷X 元叙述（人物不该用'卷一'指代）"),
+        (r"（待打）|（待修）|（待补）|（待证）|TODO|todo", "TODO/待办 元叙述"),
+        (r"功能验证|信半，?记一|账上记[一二三四五]笔", "测试/账册术语"),
+        (r"\b反派\b|\b主角\b(?![之的])", "反派/主角 元叙述（用具体名字）"),
+        (r"正式入伙|外围成员|核心成员", "成员定位 meta（用关系或行为）"),
+        (r"坐实|盖章|画押(?!.*合同)", "确认动作 meta"),
     ]
     chapters_dir = root / "正文"
     cur_files = sorted(chapters_dir.glob(f"第{chapter:04d}章*.md"))
