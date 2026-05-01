@@ -1888,6 +1888,171 @@ def check_checker_scores_consistency(root: Path, chapter: int, rep: HygieneRepor
         )
 
 
+def check_chapter_meta_overstep(root: Path, chapter: int, rep: HygieneReport):
+    """H35: state.json chapter_meta 一刀切越权检测（Round 21.7 · Ch22 P0 根治 · 2026-04-30）
+
+    Why（Ch22 血教训）：
+        audit-agent Step 6 越权把 state.json 中 22 章的 chapter_meta.NNNN.narrative_version
+        全部一刀切刷成 'v7.1'（混淆 Canon Bible 文档版本号 v7.1 与 chapter_meta
+        narrative_version 字段的版本计数 v1/v2/v3）。同时把 progress.total_words 从
+        62357（22 章累计）覆盖成 2587（仅 Ch22 单章）。这两个 bug 都不在现有 H29
+        （正文）/ H30（Canon）/ H31（checker_scores 一致性）的检测范围内。
+
+    检测策略：
+        1. git diff 工作区 + staged 找 .webnovel/state.json
+        2. 解析 diff 中 chapter_meta.{NNNN} 同字段被改成相同值的章数
+        3. 触发条件：narrative_version / overall_score / review_score / naturalness_verdict
+           / reader_critic_verdict / thrill_score 任一字段同值改动 ≥ 3 章
+           且不在 polish_cycle 历史（commit message 含 [polish:...]）
+           且当前不在 chore(state-rebase) / chore(round*-data-repair) / [round*-rebase]
+           豁免清单 → P0 fail（典型 audit/data-agent 越权或 LLM 一刀切模式）
+    """
+    import subprocess
+    state_file = ".webnovel/state.json"
+    try:
+        out = subprocess.run(
+            ["git", "diff", "HEAD", "--", state_file],
+            cwd=root, capture_output=True, timeout=10,
+        )
+    except Exception as exc:
+        rep.record("P2", "H35", f"git diff state.json 失败: {exc}", True)
+        return
+
+    diff_text = out.stdout.decode("utf-8", errors="replace") if out.stdout else ""
+    if not diff_text.strip():
+        rep.record("P0", "H35", "state.json chapter_meta 无一刀切越权", True)
+        return
+
+    # 解析 diff：找 chapter block + 各字段改动
+    PROTECTED_META_FIELDS = (
+        "narrative_version", "overall_score", "review_score",
+        "naturalness_verdict", "reader_critic_verdict", "thrill_score",
+    )
+    field_value_chapters = {}  # {(field, new_value): set(chapters)}
+    current_chapter = None
+    for line in diff_text.splitlines():
+        m_ch = re.match(r'^[+\- ]*"(\d{4})":\s*\{', line)
+        if m_ch:
+            current_chapter = m_ch.group(1)
+            continue
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        if current_chapter is None:
+            continue
+        line_stripped = line[1:].strip().rstrip(",")
+        for field in PROTECTED_META_FIELDS:
+            m_f = re.match(rf'"{field}":\s*(.+)$', line_stripped)
+            if m_f:
+                value = m_f.group(1).strip().strip('"').rstrip(",").strip().strip('"')
+                key = (field, value)
+                field_value_chapters.setdefault(key, set()).add(current_chapter)
+                break
+
+    # 检测一刀切（≥ 3 章同字段改成相同值）
+    overstep_groups = []
+    for (field, value), chapters in field_value_chapters.items():
+        if len(chapters) >= 3:
+            overstep_groups.append((field, value, sorted(chapters)))
+
+    if not overstep_groups:
+        rep.record("P0", "H35", "state.json chapter_meta 无一刀切越权", True)
+        return
+
+    # 豁免：commit message / 当前 commit 在 polish/rebase 路径
+    # 检查最近一次 commit message（HEAD~..HEAD 不存在则跳）
+    try:
+        last_msg = subprocess.run(
+            ["git", "log", "-1", "--format=%s"],
+            cwd=root, capture_output=True, timeout=5,
+        ).stdout.decode("utf-8", errors="replace").strip()
+    except Exception:
+        last_msg = ""
+    exempted_keywords = ("[polish:", "chore(state-rebase)", "chore(round", "data-repair", "[rebase]", "round21.7")
+    is_exempted = any(kw in last_msg for kw in exempted_keywords)
+
+    detail = "; ".join(
+        f"{field}={value!r}@{len(chs)}章({','.join(chs[:3])}...)"
+        for field, value, chs in overstep_groups[:3]
+    )
+
+    if is_exempted:
+        rep.record(
+            "P1", "H35",
+            f"state.json chapter_meta 一刀切检测到 {len(overstep_groups)} 组改动 ({detail})，"
+            f"但当前 commit 在豁免路径 ({last_msg[:80]})；仍提示自查",
+            True,
+        )
+    else:
+        rep.record(
+            "P0", "H35",
+            f"state.json chapter_meta 一刀切越权: {len(overstep_groups)} 组字段改成同值跨 ≥3 章 "
+            f"({detail})。这是典型的 audit-agent / data-agent 越权或 LLM 一刀切模式。"
+            f" 修复：git checkout HEAD -- .webnovel/state.json 回滚；"
+            f" 如确需批量改动，必须用 chore(state-rebase) commit 前缀豁免",
+            False,
+        )
+
+
+def check_total_words_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H36: progress.total_words 与 chapter_meta 一致性（Round 21.7 · Ch22 P0 根治）
+
+    Why（Ch22 血教训）：
+        data-agent Step D 直接 Edit state.json 把 progress.total_words 覆盖成
+        本章字数（2587）而非累加。Round 18.2 已加 state update --add-words CLI
+        从 chapter_meta 全表幂等重算，但 data-agent 没用 CLI，绕过守卫直接覆盖。
+
+    检测策略：
+        progress.total_words ≈ sum(chapter_meta.*.word_count)（容差 ±1%，至少 ±100 字）
+        否则 P0 fail，提示用 state update --add-words 重算
+    """
+    state_file = root / ".webnovel" / "state.json"
+    if not state_file.exists():
+        rep.record("P2", "H36", "state.json 不存在", True)
+        return
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        rep.record("P1", "H36", f"state.json 解析失败: {exc}", True)
+        return
+
+    progress = state.get("progress") or {}
+    chapter_meta = state.get("chapter_meta") or {}
+    if not chapter_meta:
+        rep.record("P0", "H36", "chapter_meta 为空，跳过", True)
+        return
+
+    total_actual = sum(
+        int(v.get("word_count", 0) or 0)
+        for v in chapter_meta.values()
+        if isinstance(v, dict)
+    )
+    total_recorded = int(progress.get("total_words", 0) or 0)
+    if total_actual == 0:
+        rep.record("P2", "H36", "chapter_meta 字数全 0，跳过", True)
+        return
+
+    diff = abs(total_recorded - total_actual)
+    tolerance = max(int(total_actual * 0.01), 100)
+
+    if diff > tolerance:
+        rep.record(
+            "P0", "H36",
+            f"progress.total_words={total_recorded} 与 sum(chapter_meta.*.word_count)={total_actual} "
+            f"差 {diff} > 容差 {tolerance}。"
+            f" 这是 data-agent Step D 直接覆盖 total_words 的典型 bug。"
+            f" 修复：python webnovel.py state update --add-words "
+            f"'{{\"chapter\":{chapter},\"words\":{chapter_meta.get(f'{chapter:04d}', {}).get('word_count', 0)}}}'",
+            False,
+        )
+    else:
+        rep.record(
+            "P0", "H36",
+            f"progress.total_words={total_recorded} ≈ sum(chapter_meta.*.word_count)={total_actual} "
+            f"(diff={diff}, tolerance={tolerance})",
+            True,
+        )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("chapter", type=int, help="章号")
@@ -1910,6 +2075,8 @@ def main():
     check_cross_chapter_overstep(root, args.chapter, rep)  # H29 · Round 20.x · Ch13 P0
     check_canon_overstep(root, args.chapter, rep)  # H30 · Round 20.x · Ch13 P0
     check_checker_scores_consistency(root, args.chapter, rep)  # H31 · Round 20.x · Ch13 P0
+    check_chapter_meta_overstep(root, args.chapter, rep)  # H35 · Round 21.7 · Ch22 P0
+    check_total_words_consistency(root, args.chapter, rep)  # H36 · Round 21.7 · Ch22 P0
 
     # P1 检查
     check_root_layout(root, rep)
