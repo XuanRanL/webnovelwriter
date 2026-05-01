@@ -280,6 +280,23 @@ overall_decision =
 2. **每个 check 必须有 evidence 字段**，包含具体文件路径 + 行号 / 具体字符串 / 具体数值
 3. **不得凭印象给分**，所有分数来自 check 结果聚合
 4. **不得修改任何文件**（除了写 audit 产物）— audit 是只读审计员
+   - **`tools` 仅声明 Read/Grep/Bash**；Bash 内部也**严禁**通过 `python -c "..."` / `sed -i` /
+     `tee` / heredoc 等方式间接写入 `.webnovel/state.json` / `.webnovel/workflow_state.json`
+     / `chapter_meta` / 设定集 / 大纲 / 项目 CLAUDE.md / Canon Bible / 任何已 commit 的
+     正文（除 `editor_notes_for_next_chapter/ch{N+1}_prep.md` 与 `audit_reports/ch{NNNN}.json`）
+   - **典型违例**（Round 21.7 · Ch22 血教训）：audit-agent 把 22 章的
+     `chapter_meta.NNNN.narrative_version` 一刀切刷成 'v7.1'（混淆 Canon Bible 文档版本号
+     v7.1 与 chapter_meta 字段语义）；同时把 `progress.total_words` 从 62357 覆盖成 2587
+     （仅 Ch22 单章）。两 bug 都通过 `python -c "...state.json..."` 路径绕过 PROTECTED_FIELDS。
+   - **运行时自检（Round 21.7 必做）**：audit Step 6 结束前必须 Bash 校验：
+     ```
+     # state.json 不得在 audit 期间被改
+     git diff --name-only HEAD .webnovel/state.json .webnovel/workflow_state.json | wc -l
+     # 期望输出 0；非 0 → audit 自动 critical_fail，写入 audit_reports/ch{NNNN}.json 的
+     # blocking_issues 字段并 exit 1
+     ```
+     这条自检不可跳过。任何涉及 state.json 的修改必须通过专门的 chore(state-rebase)
+     commit 路径，不能附在 chapter audit 流程里。
 5. **block 决议必须列出可执行修复命令**，不允许“需要调查”之类的模糊话术
 6. **time_exhausted=true 时必须记录未完成的 layer**，不得假装通过
 7. **JSON schema 不符 = 自动视为 fail**，主流程应拒绝该审计结果

@@ -499,7 +499,17 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 4. **资产变动**：
    - 扫描正文中的信用点交易
    - 追加到 `设定集/资产变动表.md`
-   - 更新 `state.json` 的 `progress.total_words`（累加本章字数）
+   - 更新 `state.json` 的 `progress.total_words`：**必须**走 CLI（不得直接 Edit/Write）
+     ```bash
+     python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+       state update --add-words '{"chapter":{N},"words":{word_count}}'
+     ```
+     该 CLI 会从 `chapter_meta.*.word_count` 全表幂等重算 `progress.total_words`。
+     **禁止**直接通过 `python -c "...state.json..."` / `sed -i` / Edit / Write 工具
+     覆写 `progress.total_words`（典型违例：Ch1-Ch4 / Ch22 复现的把 total_words
+     覆盖成本章字数 bug · 见 memory:feedback_no_manual_state_edits）。
+     违反此条 → hygiene_check H36 阻断 commit + processing_report.errors
+     记录 `STEP_D_TOTAL_WORDS_DIRECT_WRITE`。
 
 5. **调研笔记归档**：
    - 如果本章写作过程中使用了 Tavily 搜索获取专业信息
