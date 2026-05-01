@@ -2136,6 +2136,65 @@ def check_chapter_date_anchor_continuity(root: Path, chapter: int, rep: HygieneR
         )
 
 
+def check_no_meta_narrative_leak(root: Path, chapter: int, rep: HygieneReport):
+    """H40: 正文禁用创作术语 / 元叙述泄漏（Round 22.x · Ch8 锐评 P0 根治 · 2026-05-01）
+
+    Why（Ch8 血教训）：
+        Ch8:325 出现 "Ch1 那一格之后没再动过沙漏" — "Ch1" 是创作术语，
+        不是小说叙述语言。复扫 22 章发现 11 处类似泄漏：
+        Ch{N} / 金手指 / 工具人 / 仇恨钩 / 大爆破 / 承诺兑现 / 签约节点 等。
+        这些是作者创作笔记里的术语，进正文 = 立刻破坏读者沉浸感，编辑直接退稿。
+
+    检测策略：
+        正则匹配以下创作术语模式（排除 ``` code fence + > blockquote 系统消息）：
+        - Ch{N} / chapter {N} / 第N章 / Round X / Step X / vX.X
+        - 金手指 / 工具人 / 仇恨钩 / 情感钩 / 信息钩 / 危机钩 / 大爆破
+        - 承诺兑现 / 签约节点 / 伏笔回收 / 伏笔埋设
+        - 任一出现 → P0 fail（必须改成自然话术）
+    """
+    META_PATTERNS = [
+        (r"Ch\d+", "Ch{N} 元叙述"),
+        (r"chapter\s*\d+", "chapter 元叙述"),
+        (r"第\d+章(?!-)", "第N章 元叙述"),
+        (r"Round\s*\d", "Round 元叙述"),
+        (r"\bStep\s*\d", "Step 元叙述"),
+        (r"金手指", "'金手指' 创作术语 (改用'那一份能力')"),
+        (r"工具人", "'工具人' 创作术语 (改用具体行为)"),
+        (r"(?:仇恨|情感|信息|危机|追读)钩", "'X钩' 创作术语 (用人物内心或场景)"),
+        (r"大爆破", "'大爆破' 创作术语 (改'质变')"),
+        (r"承诺兑现|签约节点|伏笔回收|伏笔埋设", "商业/伏笔 meta (用场景描写)"),
+    ]
+    chapters_dir = root / "正文"
+    cur_files = sorted(chapters_dir.glob(f"第{chapter:04d}章*.md"))
+    if not cur_files:
+        rep.record("P2", "H40", "找不到正文", True)
+        return
+    text = cur_files[0].read_text(encoding="utf-8", errors="replace")
+    hits = []
+    in_code = False
+    for i, line in enumerate(text.split("\n"), 1):
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code or stripped.startswith(">"):
+            continue
+        for pat, label in META_PATTERNS:
+            for m in re.finditer(pat, line):
+                hits.append((i, label, m.group()))
+    if hits:
+        sample = "; ".join(f"L{i}: [{lbl}] {tok!r}" for i, lbl, tok in hits[:3])
+        rep.record(
+            "P0", "H40",
+            f"Ch{chapter} 正文出现 {len(hits)} 处创作术语 / 元叙述泄漏 ({sample})。"
+            f" 这些是作者笔记术语，不是小说叙述。"
+            f" 修复：改成自然话术，参考 memory:feedback_round22.x_critic4_6fixes 与 memory:no_meta_leak",
+            False,
+        )
+    else:
+        rep.record("P0", "H40", "正文无元叙述/创作术语泄漏", True)
+
+
 def check_no_markdown_bold_in_prose(root: Path, chapter: int, rep: HygieneReport):
     """H38: 正文禁用 **加粗** markdown 标记（Round 21.8 · Ch15 锐评 P0）
 
@@ -2281,6 +2340,7 @@ def main():
     check_chapter_meta_overstep(root, args.chapter, rep)  # H35 · Round 21.7 · Ch22 P0
     check_total_words_consistency(root, args.chapter, rep)  # H36 · Round 21.7 · Ch22 P0
     check_no_markdown_bold_in_prose(root, args.chapter, rep)  # H38 · Round 21.8 · Ch15 P0
+    check_no_meta_narrative_leak(root, args.chapter, rep)  # H40 · Round 22.x · Ch8 P0
 
     # P1 检查
     check_root_layout(root, rep)
