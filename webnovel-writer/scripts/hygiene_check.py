@@ -2053,6 +2053,209 @@ def check_total_words_consistency(root: Path, chapter: int, rep: HygieneReport):
         )
 
 
+def check_chapter_date_anchor_continuity(root: Path, chapter: int, rep: HygieneReport):
+    """H37: 章首 D-N 时间锚连续性（Round 21.8 · Ch1-22 锐评跳日 P1）
+
+    Why（外部锐评 Ch1-22 5 处跳日血教训）：
+        Ch4 D-27 → Ch5 D-25（跳 D-26）/ Ch10 D-20 → Ch11 D-18（跳 D-19）/
+        Ch14 D-15 → Ch15 D-13（跳 D-14）/ Ch20 D-8 → Ch21 D-6（跳 D-7）。
+        倒计时是核心紧张感，跳日必须文中显式 callback（"D-N 这天他在地窖..."）。
+
+    检测策略：
+        - 当前章首行 D-N · YYYY-MM-DD · 重生第 K 天 解析得 N_curr / K_curr
+        - 上一章首行同样解析得 N_prev / K_prev
+        - 期望: N_curr == N_prev - 1 且 K_curr == K_prev + 1
+        - 跳日（≥ 2 天）→ 扫描当前章正文前 30 行是否含 "D-{N_prev-1}" 显式 callback
+        - 没 callback → P1 warn（不阻断 commit，但要求作者补一句过渡）
+    """
+    if chapter <= 1:
+        rep.record("P1", "H37", "首章无前序章节，跳过 D-N 连续性检查", True)
+        return
+
+    def _parse_date_anchor(text: str):
+        """解析 'D-N · 日期 · 重生第 K 天' 首行"""
+        first_line = text.split("\n", 1)[0].strip()
+        m = re.match(r"D-(\d+)\s*[·•・]\s*\d{4}-\d{2}-\d{2}.*?重生第\s*(\d+)\s*天", first_line)
+        if not m:
+            return None, None
+        return int(m.group(1)), int(m.group(2))
+
+    chapters_dir = root / "正文"
+    if not chapters_dir.exists():
+        rep.record("P2", "H37", "正文目录不存在", True)
+        return
+
+    cur_files = sorted(chapters_dir.glob(f"第{chapter:04d}章*.md"))
+    prev_files = sorted(chapters_dir.glob(f"第{chapter-1:04d}章*.md"))
+    if not cur_files or not prev_files:
+        rep.record("P2", "H37", f"找不到 Ch{chapter} 或 Ch{chapter-1} 正文", True)
+        return
+
+    cur_text = cur_files[0].read_text(encoding="utf-8", errors="replace")
+    prev_text = prev_files[0].read_text(encoding="utf-8", errors="replace")
+    n_cur, k_cur = _parse_date_anchor(cur_text)
+    n_prev, k_prev = _parse_date_anchor(prev_text)
+
+    if n_cur is None or n_prev is None:
+        rep.record("P2", "H37", f"D-N 锚解析失败 (cur={n_cur}, prev={n_prev})", True)
+        return
+
+    expected_gap = 1
+    actual_gap = n_prev - n_cur  # 倒计时减少 = N 递减
+    if actual_gap == expected_gap:
+        rep.record("P0", "H37", f"D-N 连续: Ch{chapter-1} D-{n_prev} → Ch{chapter} D-{n_cur}", True)
+        return
+    if actual_gap < expected_gap:
+        rep.record(
+            "P1", "H37",
+            f"D-N 倒退或重复: Ch{chapter-1} D-{n_prev} → Ch{chapter} D-{n_cur} "
+            f"(gap={actual_gap}; 期望 1)。检查是否同日多事件",
+            False,
+        )
+        return
+
+    # 跳日 ≥ 2 天 → 扫 callback
+    skipped_dns = [n_cur + i for i in range(1, actual_gap)]
+    head_text = "\n".join(cur_text.split("\n")[:30])
+    has_callback = all(f"D-{dn}" in head_text for dn in skipped_dns)
+    if has_callback:
+        rep.record(
+            "P0", "H37",
+            f"Ch{chapter-1} D-{n_prev} → Ch{chapter} D-{n_cur} 跳 {actual_gap-1} 天，"
+            f"前 30 行已 callback {skipped_dns}",
+            True,
+        )
+    else:
+        missing = [dn for dn in skipped_dns if f"D-{dn}" not in head_text]
+        rep.record(
+            "P1", "H37",
+            f"Ch{chapter-1} D-{n_prev} → Ch{chapter} D-{n_cur} 跳 {actual_gap-1} 天，"
+            f"前 30 行缺 callback: {missing}。倒计时是核心紧张感，"
+            f"必须在章首加一句 'D-N 这天他在...' 过渡说明",
+            False,
+        )
+
+
+def check_no_markdown_bold_in_prose(root: Path, chapter: int, rep: HygieneReport):
+    """H38: 正文禁用 **加粗** markdown 标记（Round 21.8 · Ch15 锐评 P0）
+
+    Why（Ch15 血教训）：
+        Ch15 正文出现 5 处 **加粗** markdown 笔记残留（L121/L161/L181/L187/L243），
+        像写作备注或强调笔记，破坏网文沉浸感，编辑视角直接退稿。
+
+    检测策略：
+        正文文件中匹配 ``\\*\\*[^\\s\\*]`` (start) 或 ``[^\\s\\*]\\*\\*`` (end)，
+        排除三个 markdown 例外区: ``` 代码块、> blockquote 引用、$...$ 数学公式。
+        任一 ** 出现 → P0 fail。
+    """
+    chapters_dir = root / "正文"
+    cur_files = sorted(chapters_dir.glob(f"第{chapter:04d}章*.md"))
+    if not cur_files:
+        rep.record("P2", "H38", "找不到正文", True)
+        return
+    text = cur_files[0].read_text(encoding="utf-8", errors="replace")
+    # 行级扫描：跳过 code fence + blockquote + 行首 `>`
+    bold_lines = []
+    in_code_fence = False
+    for i, line in enumerate(text.split("\n"), 1):
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_code_fence = not in_code_fence
+            continue
+        if in_code_fence:
+            continue
+        if stripped.startswith(">"):
+            continue
+        # 至少要有一对 ** ... **，且中间非空
+        if re.search(r"\*\*[^\*\n]+\*\*", line):
+            bold_lines.append((i, line.strip()[:80]))
+
+    if bold_lines:
+        sample = "; ".join(f"L{i}: {s}" for i, s in bold_lines[:3])
+        rep.record(
+            "P0", "H38",
+            f"Ch{chapter} 正文出现 markdown 加粗 {len(bold_lines)} 处 ({sample})。"
+            f" 网文正文禁用 **...**（破坏沉浸感）。"
+            f" 修复：删除 ** 改为普通行文",
+            False,
+        )
+    else:
+        rep.record("P0", "H38", "正文无 markdown 加粗", True)
+
+
+def check_signature_word_overuse(root: Path, chapter: int, rep: HygieneReport):
+    """H39: 跨章签名词频率上限（Round 21.8 · Ch1-22 锐评模板感 P1）
+
+    Why（外部锐评血教训）：
+        Ch1-22 模板词高频：存储位 45 / 手册 42 / 生机值 36 / 这一次 35 /
+        晓得 18 / 停了一拍 16 / 沉默了三秒 9 / 耳朵尖 10。
+        重复不是不能用，但形成模板感会让读者觉得"作者在套路"。
+
+    检测策略：
+        - 单章高频词 ≥ 5 次 → P1 warn (本章超载)
+        - 5 章累计 ≥ 25 次 → P1 warn (滑窗过载)
+        - 默认词表（项目可通过 .webnovel/signature_words.json 覆盖）
+    """
+    DEFAULT_WORDS = {
+        "存储位": 5, "手册": 5, "生机值": 5, "这一次": 5,
+        "停了一拍": 3, "沉默了三秒": 3, "耳朵尖": 3, "见牙不见眼": 3,
+    }
+    config_file = root / ".webnovel" / "signature_words.json"
+    words_limit = DEFAULT_WORDS.copy()
+    if config_file.exists():
+        try:
+            words_limit.update(json.loads(config_file.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+
+    chapters_dir = root / "正文"
+    cur_files = sorted(chapters_dir.glob(f"第{chapter:04d}章*.md"))
+    if not cur_files:
+        rep.record("P2", "H39", "找不到正文", True)
+        return
+    cur_text = cur_files[0].read_text(encoding="utf-8", errors="replace")
+
+    # 单章超载
+    over_chapter = []
+    for w, lim in words_limit.items():
+        cnt = cur_text.count(w)
+        if cnt > lim:
+            over_chapter.append((w, cnt, lim))
+
+    # 5 章滑窗
+    window_files = []
+    for ch_n in range(max(1, chapter - 4), chapter + 1):
+        files = sorted(chapters_dir.glob(f"第{ch_n:04d}章*.md"))
+        if files:
+            window_files.append(files[0])
+    over_window = []
+    for w, lim in words_limit.items():
+        total = sum(f.read_text(encoding="utf-8", errors="replace").count(w) for f in window_files)
+        win_lim = lim * 5
+        if total > win_lim:
+            over_window.append((w, total, win_lim))
+
+    msgs = []
+    if over_chapter:
+        msgs.append(
+            "本章超载: " + ", ".join(f"{w}={c}>{l}" for w, c, l in over_chapter[:3])
+        )
+    if over_window:
+        msgs.append(
+            "5 章累计超载: " + ", ".join(f"{w}={c}>{l}" for w, c, l in over_window[:3])
+        )
+
+    if msgs:
+        rep.record(
+            "P1", "H39",
+            f"签名词模板感警报 · " + "; ".join(msgs) +
+            f" · 用其它表达替换或删除冗余念叨（参考: 用'那本书'代'手册'/用'手心冷'代'生机值'）",
+            False,
+        )
+    else:
+        rep.record("P1", "H39", "签名词频率正常", True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("chapter", type=int, help="章号")
@@ -2077,6 +2280,7 @@ def main():
     check_checker_scores_consistency(root, args.chapter, rep)  # H31 · Round 20.x · Ch13 P0
     check_chapter_meta_overstep(root, args.chapter, rep)  # H35 · Round 21.7 · Ch22 P0
     check_total_words_consistency(root, args.chapter, rep)  # H36 · Round 21.7 · Ch22 P0
+    check_no_markdown_bold_in_prose(root, args.chapter, rep)  # H38 · Round 21.8 · Ch15 P0
 
     # P1 检查
     check_root_layout(root, rep)
@@ -2093,6 +2297,8 @@ def main():
     check_cross_chapter_cadence(root, args.chapter, rep)  # H23 · Round 17.1 · Ch7 RCA P1.5
     check_hook_trend(root, args.chapter, rep)  # H25 · Round 19 Phase G · 章末钩子 4 类跨章趋势
     check_polish_sunk_cost(root, args.chapter, rep)  # H27 · Round 20.1 · sunk cost 警报
+    check_chapter_date_anchor_continuity(root, args.chapter, rep)  # H37 · Round 21.8 · Ch1-22 跳日 P1
+    check_signature_word_overuse(root, args.chapter, rep)  # H39 · Round 21.8 · Ch1-22 模板感 P1
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
