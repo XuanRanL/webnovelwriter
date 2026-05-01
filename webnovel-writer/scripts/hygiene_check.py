@@ -2194,7 +2194,7 @@ def check_no_meta_narrative_leak(root: Path, chapter: int, rep: HygieneReport):
         (r"功能验证|信半，?记一|账上记[一二三四五]笔", "测试/账册术语"),
         (r"\b反派\b|\b主角\b(?![之的])", "反派/主角 元叙述（用具体名字）"),
         (r"正式入伙|外围成员|核心成员", "成员定位 meta（用关系或行为）"),
-        (r"坐实|盖章|画押(?!.*合同)", "确认动作 meta"),
+        (r"坐实|盖章(?![位处])|画押(?![合同字])", "确认动作 meta（合同里'盖章位'/'画押合同'豁免）"),
     ]
     chapters_dir = root / "正文"
     cur_files = sorted(chapters_dir.glob(f"第{chapter:04d}章*.md"))
