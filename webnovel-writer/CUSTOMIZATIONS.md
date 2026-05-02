@@ -7,6 +7,43 @@
 
 ---
 
+## [2026-05-02 · Round 23.1] Plugin 单源化：cool-points-guide stub 清理
+
+**Trigger**：Context window 根治审计发现 `skills/webnovel-plan/references/cool-points-guide.md` 与 `skills/webnovel-review/references/cool-points-guide.md` 是完全相同的 11 行 deprecated stub（写着 "use ${CLAUDE_PLUGIN_ROOT}/references/shared/cool-points-guide.md"），但全 plugin 代码库 grep 这两个路径 0 命中。
+
+**Fix**：
+- 删除 `skills/webnovel-plan/references/cool-points-guide.md`
+- 删除 `skills/webnovel-review/references/cool-points-guide.md`
+- 唯一真源回归 `references/shared/cool-points-guide.md`（314 行完整指南）
+- `python webnovel.py sync-cache --prune` 同步 cache（cache 端 -2 残留清理）
+
+**Security**：纯文档清理，无功能影响。pytest 448 全过。
+
+---
+
+## [2026-05-02 · Round 23.1] 项目侧 hygiene_check 新增 redundancy_signals_check
+
+**Trigger**：经审计发现项目目录长期积累 5 类历史冗余（每章 polish 后产生 .bak 备份/state 历史快照/.webnovel/tmp 调试遗留/archive 目录）。一次性清理 41 MB 后，需要防御机制防止再发生。
+
+**Fix**（项目侧 `.webnovel/hygiene_check.py`）：
+- 新增 `5/5 · redundancy_signals_check` warn-only 段（不阻塞 commit）
+- 5.1 正文/.bak* 累积 >3 个 → warn
+- 5.2 `.webnovel/state.json.before_*` / `.bak*` / `workflow_state.json.bak*` 累积 >3 个 → warn
+- 5.3 `.webnovel/backup/` 或 `backups/` 目录非空 → warn
+- 5.4 `设定集/archive` 或 `大纲/archive` 体积 >200 KB → warn
+- 5.5 `.webnovel/tmp/` 体积 >15 MB 或 ch{<current-1} 残留 >5 → warn
+
+**Verification**：
+- 规划模式：`python .webnovel/hygiene_check.py` → "✅ 无冗余信号"
+- Ch22 模式：5/5 段正常输出，不阻塞（Ch22 P0 阻塞是历史 META_DRIFT 与本规则无关）
+
+**Why warn-only**：
+- `.webnovel/tmp/` 是工作目录每章正常累积 ch 产物，硬阻塞会误报
+- `.webnovel/backup/` 在 init_project 中创建，存在合法理由
+- 提醒模式让用户自主决定清理时机
+
+---
+
 ## [2026-04-29 · Round 21.5] Gemini 主路切到 api666 / gemini-3.1-pro-preview
 
 **Trigger**：历史外审产物显示 `gemini-3.1-pro@openclawroot` 不稳定：Ch4/5/8/15/20 为 0 维成功，Ch6/11/19 partial，Ch14 出现 51.9 outlier。主要错误是 openclawroot Gemini 路由的 503/524/400。
