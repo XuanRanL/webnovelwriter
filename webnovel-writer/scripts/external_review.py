@@ -171,6 +171,17 @@ REASONING_MODELS = {
 #   max_tokens: 该 provider 下的 max_tokens 上限（可选，默认继承 model.max_tokens_default
 #               或全局 65536）。火山 coding 的 deepseek-v3.2 / kimi-k2.5 上限是 32768。
 MODELS = {
+    # ─── Round 24 · 2026-05-01 · ark-coding 全面首选（实测 9/14 模型短别名直接可用）───
+    # 实测 https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions 短别名:
+    #   ✅ ark 支持 (9): doubao-seed-2.0-pro / doubao-seed-2.0-lite / glm-4.7 / glm-5.1 /
+    #      minimax-m2.5 / minimax-m2.7 / minimax-m2.7-hs / kimi-k2.5 / kimi-k2.6 /
+    #      deepseek-v3.2 (= deepseek-v3.2-thinking model_key)
+    #   ❌ ark 不支持 (5)，走原 provider:
+    #      - gpt-5.5 / gpt-5 → openclawroot
+    #      - gemini-3.1-pro → api666
+    #      - qwen3.6-plus → openclawroot 单通道
+    #      - glm-5 → siliconflow（ark 只有 glm-5.1 / glm-4.7）
+    #      - mimo-v2.5-pro → xiaomimimo
     # ─── 国产旗舰 ───
     "qwen3.6-plus": {
         "tier": "standard",
@@ -183,19 +194,16 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "doubao-seed-2.0-pro", "name": "Doubao-Seed-2.0-pro-Ark", "max_tokens": 65536},
-            {"provider": "openclawroot", "id": "Doubao-Seed-2.0-pro", "name": "Doubao-Seed-2.0-pro"},
+            {"provider": "openclawroot", "id": "Doubao-Seed-2.0-pro", "name": "Doubao-Seed-2.0-pro-OC-fallback"},
         ],
         "timeout": 300,
     },
-    # ─── 西方异构视角 ───
-    # Round 20.x · 2026-04-27 · Ch14 RCA P0-2 修复：gpt-5.4 替换为 gpt-5.5（更新版本）
-    # 主 provider 从 openclawroot（间歇性 forbidden）切到 ticketpro（实测无授权问题）
-    # 保留 openclawroot 作 fallback，gpt-5.4 改名为 gpt-5.5 但 model_key 维持向下兼容（别名映射）
+    # ─── 西方异构视角（ark-coding 不提供，保留原 chain）───
     "gpt-5.5": {
         "tier": "standard",
         "providers": [
-            {"provider": "ticketpro", "id": "gpt-5.5", "name": "GPT-5.5"},
-            {"provider": "openclawroot", "id": "gpt-5.5", "name": "GPT-5.5-OC-fallback"},
+            {"provider": "openclawroot", "id": "gpt-5.5", "name": "GPT-5.5-OC"},
+            {"provider": "ticketpro", "id": "gpt-5.5", "name": "GPT-5.5-TP"},
             {"provider": "openclawroot", "id": "gpt-5.4", "name": "GPT-5.4-OC-legacy"},
         ],
         "timeout": 180,
@@ -204,23 +212,24 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "api666", "id": "gemini-3.1-pro-preview", "name": "Gemini-3.1-Pro-Preview-API666", "max_tokens": 65536},
-            {"provider": "openclawroot", "id": "gemini-3.1-pro-high", "name": "Gemini-3.1-Pro-High"},
+            {"provider": "openclawroot", "id": "gemini-3.1-pro-high", "name": "Gemini-3.1-Pro-High-OC-fallback"},
         ],
         "timeout": 300,
     },
-    # ─── 国产补充 + 推理深度（火山 coding 优先） ───
+    # ─── ark-coding 全面首选（短别名直接 OK）───
     "doubao-seed-2.0-lite": {
         "tier": "standard",
         "providers": [
-            {"provider": "ark-coding", "id": "doubao-seed-2.0-lite", "name": "Doubao-Seed-2.0-lite", "max_tokens": 65536},
+            {"provider": "ark-coding", "id": "doubao-seed-2.0-lite", "name": "Doubao-Seed-2.0-lite-Ark", "max_tokens": 65536},
         ],
         "timeout": 300,
     },
     "glm-5": {
+        # 注：ark-coding 没有 glm-5，仅 glm-5.1 和 glm-4.7。glm-5 走 siliconflow 主路
         "tier": "standard",
         "providers": [
             {"provider": "siliconflow", "id": "Pro/zai-org/GLM-5", "name": "GLM-5-SF"},
-            {"provider": "openclawroot", "id": "GLM-5", "name": "GLM-5"},
+            {"provider": "openclawroot", "id": "GLM-5", "name": "GLM-5-OC-fallback"},
         ],
         "timeout": 300,
     },
@@ -228,21 +237,21 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "glm-5.1", "name": "GLM-5.1-Ark", "max_tokens": 65536},
+            {"provider": "openclawroot", "id": "GLM-5.1", "name": "GLM-5.1-OC-fallback"},
         ],
         "timeout": 300,
     },
     "glm-4.7": {
         "tier": "standard",
         "providers": [
-            {"provider": "openclawroot", "id": "GLM-4.7", "name": "GLM-4.7"},
-            {"provider": "siliconflow", "id": "Pro/zai-org/GLM-4.7", "name": "GLM-4.7-SF"},
+            {"provider": "ark-coding", "id": "glm-4.7", "name": "GLM-4.7-Ark", "max_tokens": 65536},
+            {"provider": "siliconflow", "id": "Pro/zai-org/GLM-4.7", "name": "GLM-4.7-SF-fallback"},
+            {"provider": "openclawroot", "id": "GLM-4.7", "name": "GLM-4.7-OC-fallback"},
         ],
         "timeout": 300,
     },
-    # Round 21.3 · 2026-04-29 · 小米官方 xiaomimimo provider（token-plan-sgp）
-    # 替换原 mimo-v2-pro（openclawroot），升级到 mimo-v2.5-pro 官方主路
-    # 实测 /v1/models 返回 8 模型；chat 接口要求小写 id 'mimo-v2.5-pro'
     "mimo-v2.5-pro": {
+        # 注：ark-coding 不支持 mimo（HTTP 404 UnsupportedModel），仅 xiaomimimo 提供
         "tier": "standard",
         "providers": [
             {"provider": "xiaomimimo", "id": "mimo-v2.5-pro", "name": "MiMo-V2.5-Pro", "max_tokens": 65536},
@@ -252,9 +261,9 @@ MODELS = {
     "minimax-m2.7-hs": {
         "tier": "standard",
         "providers": [
-            {"provider": "openclawroot", "id": "MiniMax-M2.7-highspeed", "name": "MiniMax-M2.7-HS"},
-            # Round 20.x · 2026-04-27 · Ch14 RCA P0 修复：M2.7-HS 偶发 503，加普通 M2.7 作 fallback
-            {"provider": "openclawroot", "id": "MiniMax-M2.7", "name": "MiniMax-M2.7"},
+            {"provider": "ark-coding", "id": "minimax-m2.7-hs", "name": "MiniMax-M2.7-HS-Ark", "max_tokens": 65536},
+            {"provider": "ark-coding", "id": "minimax-m2.7", "name": "MiniMax-M2.7-Ark", "max_tokens": 65536},
+            {"provider": "openclawroot", "id": "MiniMax-M2.7-highspeed", "name": "MiniMax-M2.7-HS-OC-fallback"},
         ],
         "timeout": 300,
     },
@@ -269,8 +278,8 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "deepseek-v3.2", "name": "DeepSeek-V3.2-Ark", "max_tokens": 32768},
-            {"provider": "openclawroot", "id": "DeepSeek-V3.2-Thinking", "name": "DeepSeek-V3.2-Thinking"},
-            {"provider": "siliconflow", "id": "Pro/deepseek-ai/DeepSeek-V3.2", "name": "DeepSeek-V3.2-SF"},
+            {"provider": "openclawroot", "id": "DeepSeek-V3.2-Thinking", "name": "DeepSeek-V3.2-Thinking-OC-fallback"},
+            {"provider": "siliconflow", "id": "Pro/deepseek-ai/DeepSeek-V3.2", "name": "DeepSeek-V3.2-SF-fallback"},
         ],
         "timeout": 300,
     },
@@ -278,9 +287,7 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "kimi-k2.5", "name": "Kimi-K2.5-Ark", "max_tokens": 32768},
-            # Round 20.x · 2026-04-27 · Ch14 RCA P0-1 修复：ark-coding 偶发 phantom score=0,
-            # 加 siliconflow Pro/moonshotai/Kimi-K2.5 作 fallback (siliconflow models list 验证存在精准版本)
-            {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF", "max_tokens": 32768},
+            {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF-fallback", "max_tokens": 32768},
         ],
         "timeout": 300,
     },
@@ -288,8 +295,6 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "kimi-k2.6", "name": "Kimi-K2.6-Ark", "max_tokens": 65536},
-            # Round 20.x · 2026-04-27 · Ch14 RCA P0-1 修复：siliconflow Pro/moonshotai/Kimi-K2.6 实测 timeout,
-            # 降级用 Pro/moonshotai/Kimi-K2.5 作 fallback（实测 9.9s 稳定 + score 92）
             {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF-fallback-for-K2.6", "max_tokens": 32768},
         ],
         "timeout": 300,
