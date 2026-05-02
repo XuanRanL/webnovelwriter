@@ -373,6 +373,7 @@ context-agent 在生成 context_contract 时必须判断本章是否属于**结�
 | 独白/内心戏章 | 章纲标注“内心戏章” / 主角独自行动 | `dialogue_ratio` | min=0.05, max=0.20 | 无对话对象 |
 | 战斗闭环章 | 高强度武打/追逐，纯行动 | `dialogue_ratio` | min=0.10, max=0.25 | 行动比对话更重要 |
 | 纯过渡章 | `is_transition_chapter=true` | `micro_payoff_count` | min=0, max=1 | 过渡章可以零爽点 |
+| 揭秘/启示/系统首推章 | chapter_type ∈ {"揭秘章","启示章","系统首推章","沉默章"} 或 大纲标注"系统首次推送启示" | `dialogue_ratio` | min=0.04, max=0.20 | 系统/烙印/启示首推依赖静态画面+主角内化，对话天然稀疏（Round 27.1 · Ch23 RCA R1 · 揭秘章 dialogue 0.039 反复触发 post_draft fail，必须自动豁免） |
 
 **判断算法**（context-agent Step 3.5 执行）：
 

@@ -511,6 +511,39 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
                 f"建议 polish 降到 < {sig_cfg['warn']}"
             )
 
+    # 11b. Round 27.1 · 否定签名累计上限（2026-05-02 · Ch23 RCA R4 根治）
+    # 引入背景：Ch16/17/23 三次复发"没X→未X"替换循环：
+    #   - 用户 polish 把"没X"压下来 → 替换池退到"未X" → 触发 未X block
+    #   - 再压"未X" → 替换池退到"不曾" → 累计仍超
+    # 单类阈值各自独立判断，无法防御"分散到多个否定式各自不超阈，但累计仍是 AI signature"的
+    # 跨类外溢。根治：no_xx_aggregate ≤ 25 / 千字 (warn 20 / 千字)，捕获 polish 替换循环。
+    # 配置：`.webnovel/signature_density_config.json` 可在 "_aggregate" 键覆盖默认阈值。
+    aggr_patterns = [r"没[一-鿿]", r"未[一-鿿]", r"不曾[一-鿿]?", r"无[回信法]"]
+    aggr_count = sum(len(re.findall(p, text)) for p in aggr_patterns)
+    chinese_count = max(1, len(re.findall(r"[一-鿿]", text)))
+    aggr_per_kchar = aggr_count / (chinese_count / 1000.0)
+    aggr_cfg = {"warn": 20.0, "block": 25.0}
+    if sig_cfg_path.exists():
+        try:
+            sig_cfg_all = json.loads(sig_cfg_path.read_text(encoding="utf-8"))
+            if isinstance(sig_cfg_all.get("_aggregate"), dict):
+                aggr_cfg.update(
+                    {kk: vv for kk, vv in sig_cfg_all["_aggregate"].items() if kk in ("warn", "block")}
+                )
+        except Exception:
+            pass
+    if aggr_per_kchar >= aggr_cfg["block"]:
+        errors.append(
+            f"[SIGNATURE_AGGREGATE] 否定签名累计 {aggr_count} 次 ({aggr_per_kchar:.1f}/千字) "
+            f">= block {aggr_cfg['block']}/千字 · 没/未/不曾/无回信 累计外溢 (Round 27.1 · Ch23 RCA R4) · "
+            f"polish 不得只在 没X/未X/不曾 之间互换，必须用 不/重写句式"
+        )
+    elif aggr_per_kchar >= aggr_cfg["warn"]:
+        warnings.append(
+            f"[SIGNATURE_AGGREGATE_WARN] 否定签名累计 {aggr_count} 次 ({aggr_per_kchar:.1f}/千字) "
+            f">= warn {aggr_cfg['warn']}/千字 · 建议改用动作/感官实写避免单调否定"
+        )
+
     # 10. Round 17.1 · 元标识符扫描（2026-04-24 · Ch7 RCA F6 根治）
     # 引入背景：Ch7 首稿 L183 "一次是 Ch1 那个清晨，一次是 Ch4 <power-faction>系统的第一次登录"
     # 元标识符 Ch{N} 不应出现在正文（小说人物不知道章号）。

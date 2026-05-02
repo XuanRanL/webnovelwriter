@@ -151,6 +151,21 @@ for f in ctx['step_2a_write_prompt']['forbidden_items']:
 2. polish 完成后再跑一次 post_draft_check；任一签名仍 ≥ block → anti_ai_force_check=fail
 3. 若某签名因剧情必要超 warn（如连续对峙章印记跳必须 5 次），必须在 polish_reports.md 写 deviation（位置 + 原因 + 代价）
 
+**否定签名替换池禁词**（Round 27.1 · Ch23 RCA R4 根治 · 2026-05-02 · Ch16/17/23 三次复发血教训）：
+
+⚠️ **没X 减少时禁止用 未X / 不曾 / 无X 替换**——这些都是同源 AI signature，只是搬家不是减负。
+
+| 错误替换 | 正确替换 |
+|---|---|
+| 没回 → 未回 | → 还没回信 / 一直没动静 (保留 "没" 但用动作锚) / 删 |
+| 没动 → 未动 | → 立着 / 静着 / 站在那里 / 屏住呼吸 |
+| 没说 → 未说 / 不曾出声 | → 闭口 / 不响 / 喉结动一下 / 一言不发 |
+| 没看 → 未看 | → 移开视线 / 转身 / 把目光放在别处 |
+| 没碰 → 未碰 | → 不动手 / 收手 / 指肚悬在半寸 |
+
+**post_draft_check H38 SIGNATURE_AGGREGATE 闸门**：没/未/不曾/无回信 累计 ≥ 25/千字 → block; ≥ 20/千字 → warn。
+project 层可在 `.webnovel/signature_density_config.json._aggregate` 覆盖默认阈值。
+
 ---
 
 ## 自然化程度标准（建议）

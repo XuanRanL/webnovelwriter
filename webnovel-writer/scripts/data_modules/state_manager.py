@@ -1147,6 +1147,21 @@ class StateManager:
             if scores:
                 chapter_meta["checker_scores"] = scores
 
+        # --- 7. narrative_version：首次落库 default v1 ---
+        # Round 27.1 · Ch23 RCA R6 根治 · 2026-05-02
+        # 现象：data-agent 跑完后 chapter_meta.NNNN.narrative_version 仍为 None,
+        # 必须手动 set-chapter-meta-field --field narrative_version --value v1。
+        # 根因：PROTECTED_FIELDS 含 narrative_version → R21.7 真源保护过严，
+        # data-agent 不写默认值"v1"。但 None 不是合法 polish_log 起点。
+        # 防御：检测 narrative_version is None / "" / 缺失时, 自动写 v1
+        # （这是合理的 default，不算越权改 polish 字段，且 PROTECTED_FIELDS
+        # 的 None/空检查会让 set-checker-score 等真源 CLI 优先生效）。
+        nv = chapter_meta.get("narrative_version")
+        if nv in (None, "", "null"):
+            existing_nv = existing.get("narrative_version")
+            if existing_nv in (None, "", "null"):
+                chapter_meta["narrative_version"] = "v1"
+
     def process_chapter_result(self, chapter: int, result: Dict) -> List[str]:
         """
         处理 Data Agent 的章节处理结果（v5.1 引入，v5.4 沿用）
@@ -1715,6 +1730,46 @@ def main():
             if not fid:
                 emit_error("INVALID_ARG", "--add-foreshadowing 需要 id 字段")
                 return
+            # Round 27.1 · Ch23 RCA R3 根治 · 2026-05-02
+            # 跨章承诺 evidence 检查滞后到 continuity critical 常态。
+            # 现象: Ch22 全文 0 处 "<character-S>", 但 audit/data-agent 在 Ch22 落库 F-CH22-02
+            #       "<character-S>电话埋点 active" → Ch23 line 7 "短信发给<character-S>" 凭空起钩
+            #       → continuity-checker CONT_002 critical → continuity 0/100。
+            # 根因: data-agent 信任 audit 标记, 未实际 grep 上章正文确认锚点存在。
+            # 防御: 当 payload 提供 anchor_text + planted_chapter 时, grep 该章正文,
+            #       若 anchor_text 不在正文 → emit warning + 标 evidence_missing=true
+            #       (软警告, 不 reject, 因可能是泛化锚点; 硬冲突则 audit 兜底)。
+            anchor_text = payload.get("anchor_text") or payload.get("anchor_keyword")
+            planted_ch = payload.get("planted_chapter")
+            if anchor_text and planted_ch:
+                try:
+                    ch_int = int(planted_ch)
+                    proj = Path(args.project_root) if args.project_root else Path.cwd()
+                    text_dir = proj / "正文"
+                    if text_dir.is_dir():
+                        anchor_found = False
+                        for cf in text_dir.glob(f"第{ch_int:04d}章*.md"):
+                            try:
+                                ct = cf.read_text(encoding="utf-8", errors="replace")
+                                if anchor_text in ct:
+                                    anchor_found = True
+                                    break
+                            except Exception:
+                                pass
+                        if not anchor_found:
+                            payload["evidence_missing"] = True
+                            payload["evidence_warning"] = (
+                                f"anchor_text='{anchor_text}' 在 ch{ch_int:04d} 正文 0 命中"
+                            )
+                            warnings_list = locals().get("warnings", []) or []
+                            print(
+                                f"⚠️  [R3] foreshadowing {fid} anchor_text='{anchor_text}' "
+                                f"在 ch{ch_int:04d} 正文不存在 → 标记 evidence_missing=true "
+                                f"(下游 audit 可降级 active→pending_evidence)",
+                                file=sys.stderr,
+                            )
+                except (ValueError, TypeError):
+                    pass
             plot_threads = manager._state.setdefault("plot_threads", {})
             fs_list = plot_threads.setdefault("foreshadowing", [])
             # Replace if exists
