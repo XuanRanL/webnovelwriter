@@ -2227,6 +2227,131 @@ def check_no_meta_narrative_leak(root: Path, chapter: int, rep: HygieneReport):
         rep.record("P0", "H40", "正文无元叙述/创作术语泄漏", True)
 
 
+def check_canon_timeline_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H58: Canon §3 + 08-连续性锁死表 + 大纲时间线 三处真源 D-X 锚点一致性
+    （Round 27.1 · Ch23 RCA R2 根治 · 2026-05-02）
+
+    Why（Ch23 血教训）：
+        Ch23 正文 D-4，但 Canon §3 写 D-5、08 SSOT 写 D-5、大纲时间线表 D-4。
+        三处不一致导致 continuity-checker CONT_001 critical (0/100)。
+        editor_notes 与 Canon Bible 字段独立，无 cross-reference 校验。
+
+    防御策略（warn-only · 不阻 commit）：
+        1. 读 设定集/00-Canon-Bible.md §3 章节-D-X 表
+        2. 读 设定集/08-连续性锁死表.md 第一节倒计时表
+        3. 读 大纲/第N卷-时间线.md 第N章 = D-X
+        4. 三处对当前章 D-X 不一致 → P1 warn (附 Round 推送同步建议)
+
+    豁免：项目无对应文件 → silently skip
+    """
+    canon = root / "设定集" / "00-Canon-Bible.md"
+    sso8 = root / "设定集" / "08-连续性锁死表.md"
+    if not canon.exists() and not sso8.exists():
+        rep.record("P1", "H58", "canon/08 SSOT 不存在 - 跳过", True)
+        return
+    import re as _re
+    sources: dict[str, str] = {}
+    pat = _re.compile(rf"(?:第\s*{chapter}\s*章|Ch{chapter}|ch{chapter:04d}).{{0,50}}?[Dd]-?(\d+)")
+    for label, p in (("Canon", canon), ("08-SSOT", sso8)):
+        if p.exists():
+            try:
+                t = p.read_text(encoding="utf-8", errors="replace")
+                m = pat.search(t)
+                if m:
+                    sources[label] = f"D-{m.group(1)}"
+            except Exception:
+                pass
+    timelines = list((root / "大纲").glob("第*卷-时间线.md")) if (root / "大纲").is_dir() else []
+    for tl in timelines:
+        try:
+            t = tl.read_text(encoding="utf-8", errors="replace")
+            m = pat.search(t)
+            if m:
+                sources[f"时间线-{tl.stem}"] = f"D-{m.group(1)}"
+                break
+        except Exception:
+            pass
+    if len(sources) < 2:
+        rep.record("P1", "H58", f"真源不足 ({len(sources)} 个) 无法对比", True)
+        return
+    distinct = set(sources.values())
+    if len(distinct) > 1:
+        msg_pairs = ", ".join(f"{k}={v}" for k, v in sources.items())
+        rep.record(
+            "P1", "H58",
+            f"Canon/08-SSOT/时间线 D-X 锚点不一致: {msg_pairs} · "
+            f"建议 Round 同步真源 (Ch23 RCA R2)",
+            False,
+        )
+    else:
+        rep.record("P1", "H58", f"真源一致: 全部 {next(iter(distinct))} ({len(sources)} 源)", True)
+
+
+def check_beat_overrun(root: Path, chapter: int, rep: HygieneReport):
+    """H59: chapter_beats[].voice_rules 段字数硬上限校验
+    （Round 27.1 · Ch23 RCA R5 根治 · 2026-05-02）
+
+    Why（Ch23 血教训）：
+        执行包 voice_rules 写"<antagonist>段必须 ≤80 字"，但 Step 2A 起草 264 字（5x 超载）→
+        ooc-checker 66/100 critical。Step 2A writer 没有 per-beat 字数硬上限校验。
+
+    检测策略（warn-only · 不阻 commit）：
+        1. 读 .webnovel/context/ch{NNNN}_context.json 的 step_2a_write_prompt.chapter_beats
+        2. 对每个 beat 的 voice_rules 文本 grep 数字 + 字 模式: "≤?\\s*(\\d+)\\s*字"
+        3. 在正文中找到对应段落 (按 beat 顺序近似切片), 实测中文字符数
+        4. 实测 > 上限 1.5x → P1 warn; > 1.2x → INFO; ≤ 上限 → PASS
+
+    豁免：执行包/正文不存在 → silently skip
+    """
+    ctx_file = root / ".webnovel" / "context" / f"ch{chapter:04d}_context.json"
+    text_files = list((root / "正文").glob(f"第{chapter:04d}章*.md"))
+    if not ctx_file.exists() or not text_files:
+        rep.record("P1", "H59", "执行包或正文缺失 - 跳过", True)
+        return
+    import re as _re
+    try:
+        ctx = json.loads(ctx_file.read_text(encoding="utf-8"))
+        beats = ctx.get("step_2a_write_prompt", {}).get("chapter_beats", [])
+    except Exception:
+        rep.record("P1", "H59", "执行包解析失败 - 跳过", True)
+        return
+    if not beats:
+        rep.record("P1", "H59", "执行包无 chapter_beats - 跳过", True)
+        return
+    text = text_files[0].read_text(encoding="utf-8", errors="replace")
+    overruns: list[str] = []
+    for beat in beats:
+        vr = beat.get("voice_rules", "")
+        if not isinstance(vr, str):
+            continue
+        # 匹配 "<antagonist>段 ≤80 字" / "≤ 80 字" / "上限 80 字" / "不超过 80 字"
+        for m in _re.finditer(r"(?:≤|不超过|不得超过|上限|最多)\s*(\d+)\s*字", vr):
+            max_words = int(m.group(1))
+            # 查找在正文中匹配的段 (用 beat title / location 关键词近似定位)
+            beat_title = beat.get("title", "")[:8]
+            if not beat_title:
+                continue
+            # 简化: 找正文中包含 title 关键字附近的段落字数
+            # (精准定位需要更复杂逻辑, 这里 best-effort)
+            for chunk in text.split("\n\n"):
+                if any(k in chunk for k in [beat_title[:4], beat_title[-4:]] if len(k) >= 2):
+                    chunk_chars = len(_re.findall(r"[一-鿿]", chunk))
+                    if chunk_chars > max_words * 1.5:
+                        overruns.append(
+                            f"beat={beat.get('beat','?')} '{beat_title}' "
+                            f"上限{max_words}字 实测{chunk_chars}字 (>{max_words*1.5:.0f}x1.5)"
+                        )
+                    break
+    if overruns:
+        rep.record(
+            "P1", "H59",
+            "段字数超 voice_rules 上限 1.5x: " + "; ".join(overruns[:3]),
+            False,
+        )
+    else:
+        rep.record("P1", "H59", "voice_rules 段字数全部在 1.5x 上限内", True)
+
+
 def check_no_markdown_bold_in_prose(root: Path, chapter: int, rep: HygieneReport):
     """H38: 正文禁用 **加粗** markdown 标记（Round 21.8 · Ch15 锐评 P0）
 
@@ -2380,6 +2505,8 @@ def main():
     check_total_words_consistency(root, args.chapter, rep)  # H36 · Round 21.7 · Ch22 P0
     check_no_markdown_bold_in_prose(root, args.chapter, rep)  # H38 · Round 21.8 · Ch15 P0
     check_no_meta_narrative_leak(root, args.chapter, rep)  # H40 · Round 22.x · Ch8 P0
+    check_canon_timeline_consistency(root, args.chapter, rep)  # H58 · Round 27.1 · Ch23 R2
+    check_beat_overrun(root, args.chapter, rep)  # H59 · Round 27.1 · Ch23 R5
 
     # P1 检查
     check_root_layout(root, rep)
