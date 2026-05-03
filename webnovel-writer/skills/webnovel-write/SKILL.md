@@ -63,9 +63,9 @@ allowed-tools: Read Write Edit Grep Bash Task
 在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
 
 1. Step 3 的内部 checker 全部返回并汇总出 overall_score。**术语固定**（见 `feedback_checker_count_13`）：`checker` = 跑的 subagent 数量 = 评分维度数量（**Round 13 v2 取消 veto 架构**，全部 checker 平等参与评分）。标准/`--fast` = **13 checker / 13 评分维度**（2 读者视角维度：naturalness + reader-critic，11 工艺维度含 flow-checker）。`--minimal` = **5 checker**（naturalness + reader-critic + consistency + continuity + ooc）。`overall_score = avg(所有评分维度)`。**两个读者视角 checker 不 block 流程**，其 problems 和其他 checker 同等进入 Step 4 定向修复。极端情况（Step 4 修复后 critical 仍未消除）才回 Step 2A 重写。
-2. Step 3.5 的 14 个外部模型审查已完成；健康线为 ≥10/14 有效，8-9/14 degraded_ok，5-7/14 degraded_warn，<5/14 critical。每个模型审查 **13 个维度**（10 工艺维度 + reader_flow + naturalness + reader_critic）；Round 21.4 默认每模型一次 combined 请求返回 13 维，失败才 split fallback（`--minimal` 模式跳过此条件）
+2. Step 3.5 的 15 个外部模型审查已完成；健康线为 ≥10/15 有效，8-9/15 degraded_ok，5-7/15 degraded_warn，<5/15 critical。每个模型审查 **13 个维度**（10 工艺维度 + reader_flow + naturalness + reader_critic）；Round 21.4 默认每模型一次 combined 请求返回 13 维，失败才 split fallback（`--minimal` 模式跳过此条件）
 3. 所有 critical 问题已修复，high 问题已修复或有 deviation 记录
-4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 14 模型×13 维度评分矩阵（Round 14+）；`--minimal` 模式仅含内部 5 评分维度分数）
+4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 15 模型×13 维度评分矩阵（Round 14+ / Round 25 含 V4-Flash）；`--minimal` 模式仅含内部 5 评分维度分数）
 5. Step 4 的 `anti_ai_force_check=pass`
 6. Step 5 Data Agent 已完成
 7. Step 6 Audit Gate 决议 ∈ {approve, approve_with_warnings}（block 禁止进入 Step 7）
@@ -104,7 +104,7 @@ git log --oneline -1 | grep "第${chapter_num}章"
   - 用途：Step 3 审查调用模板、汇总格式、落库 JSON 规范。
   - 触发：Step 3 必读。
 - `references/step-3.5-external-review.md`
-  - 用途：Step 3.5 外部模型审查完整规范（14模型架构/供应商 fallback 链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
+  - 用途：Step 3.5 外部模型审查完整规范（15模型架构 · Round 25/供应商 fallback 链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
   - 触发：Step 3.5 必读。
 - `references/step-5-debt-switch.md`
   - 用途：Step 5 债务利息开关规则（默认关闭）。
@@ -359,7 +359,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 | Step 2A | `word_count` | 正文字数（整数，>0） |
 | Step 2B | `style_applied` / `deviation_notes` | 正常执行填 `style_applied: true`；跳过则填 `deviation_notes: "..."` |
 | Step 3 | `overall_score` / `checker_count` / `internal_avg` / `review_score` / `naturalness_verdict` / `naturalness_score` / `reader_critic_verdict` / `reader_critic_score` | 内部 13 checker = 13 评分维度（Batch 0 的 2 个读者视角维度：naturalness + reader-critic；Batch 1 的 6 含 flow-checker；Batch 2 的 5）；`overall_score = avg(13 维度)`。**Round 13 v2 取消 veto 架构**：两个读者视角 checker 输出 score + problems 与其他 checker 同等进入 Step 4 修复，不 block 流程。`naturalness_verdict ∈ {PASS, POLISH_NEEDED, REWRITE_RECOMMENDED, REJECT_HIGH, REJECT_CRITICAL}` / `reader_critic_verdict ∈ {yes, hesitant, no}` 作为严重度信号记录（不 block） |
-| Step 3.5 | `external_avg` / `models_ok` / `external_models_ok` | 外部多模型均分（Round 14 = 14 模型） + 成功模型列表 |
+| Step 3.5 | `external_avg` / `models_ok` / `external_models_ok` | 外部多模型均分（Round 14 = 14 模型 / Round 25 = 15 模型 +V4-Flash） + 成功模型列表 |
 | Step 4 | `anti_ai_force_check` / `polish_report` / `fixes` | `pass`/`fail`, 润色报告路径, 修复项列表 |
 | Step 5 | `state_modified` / `entities` / `foreshadowing` / `scene_count` / `chapter_meta_fields` | data-agent 写库确认 + 实体/伏笔/场景计数 |
 | Step 6 | `decision` / `audit_report` / `audit_decision` | `approve` / `approve_with_warnings` / `block` |
@@ -692,14 +692,14 @@ cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
 ```
 
 硬要求：
-- **必须使用 `--model-key all --dimension-strategy auto` 一次性执行全部 14 模型（Round 21.4）**，禁止手动逐个调用（防止遗漏模型）。
+- **必须使用 `--model-key all --dimension-strategy auto` 一次性执行全部 15 模型（Round 21.4 / Round 25 含 V4-Flash）**，禁止手动逐个调用（防止遗漏模型）。
 - 默认 combined：每个模型 1 次请求返回 13 个 `dimension_reports`，避免 13 次重复发送完整上下文；JSON 不可用或维度缺失时自动 split fallback。
-- 不再有核心3必成硬耦合；Step 6 A3 按 ≥10/14 有效模型判定健康。
+- 不再有核心3必成硬耦合；Step 6 A3 按 ≥10/15 有效模型判定健康。
 - 按 reference 文件中的 Prompt 模板构建 system 消息。
 - 每次 API 调用后验证路由（检查 response.model 字段）。
-- Round 14+ 3-tier fallback 链：ark-coding（火山，主 · 重试 2 次）/ openclawroot（主 · fail-fast）→ siliconflow（兜底，仅 glm-5/glm-4.7/deepseek 备用）。
+- Round 14+ 3-tier fallback 链：ark-coding（火山，主 · 重试 2 次）/ openclawroot（主 · fail-fast）→ siliconflow（兜底，仅 glm-5/glm-4.7/deepseek/V4-Flash 备用或主路）。
 - 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
-- 生成审查报告必须包含 14 模型 × 13 维度（Round 14+）（含 reader_flow + naturalness + reader_critic · Round 13 v2）评分矩阵 + 共识问题 + Step 4 修复清单。
+- 生成审查报告必须包含 15 模型 × 13 维度（Round 14+ / Round 25 +V4-Flash）（含 reader_flow + naturalness + reader_critic · Round 13 v2）评分矩阵 + 共识问题 + Step 4 修复清单。
 
 **上下文文件准备（调用脚本前必须完成）**：
 
@@ -719,7 +719,7 @@ python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
 - 状态：protagonist_state（来自 state.json）
 - 前章：前 N-1 章正文（最多 15000 字）
 
-若脚本失败，手动从设定集文件读取并用 `Write` 工具写入 JSON。**禁止跳过此步骤直接调用 external_review.py**。**禁止回退到旧的 9 字段内联脚本，否则外部 14 个模型将盲评无法看到作者要求的克制风格、情感蓝图、典故伏笔等关键信息。**
+若脚本失败，手动从设定集文件读取并用 `Write` 工具写入 JSON。**禁止跳过此步骤直接调用 external_review.py**。**禁止回退到旧的 9 字段内联脚本，否则外部 15 个模型将盲评无法看到作者要求的克制风格、情感蓝图、典故伏笔等关键信息。**
 
 调用命令：
 ```bash
@@ -733,8 +733,8 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 ⚠️ 脚本仅支持：`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--dimension-strategy`, `--model-concurrent`, `--max-concurrent`, `--rpm-override`, `--rpm-override-provider`, `--no-merge-partial`, `--healthcheck`。不要传其他参数。
 
 输出：
-- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共14个文件；combined 正常路径每文件由 1 次模型请求生成）
-- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 14 模型 × 13 维度矩阵（Round 14+），包括 reader_flow + naturalness + reader_critic · Round 13 v2）
+- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共15个文件；combined 正常路径每文件由 1 次模型请求生成）
+- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 15 模型 × 13 维度矩阵（Round 14+ / Round 25 +V4-Flash），包括 reader_flow + naturalness + reader_critic · Round 13 v2）
 
 ### Step 3+3.5 完成闸门（进入 Step 4 前必须通过）
 
@@ -742,16 +742,16 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 
 验证方式：
 1. 逐一检查所有 Step 3 内部 checker 的 Task 状态（`TaskOutput` 或等价轮询），确认每个 checker 都已返回结果（非空输出）。
-2. 确认 Step 3.5 外部审查脚本已退出且 14 个 `external_review_{model_key}_ch{NNNN}.json` 文件已生成。
+2. 确认 Step 3.5 外部审查脚本已退出且 15 个 `external_review_{model_key}_ch{NNNN}.json` 文件已生成。
 3. 按 `step-3-review-gate.md` 的“内外部分数合并规则”计算 `overall_score`（需要内部 + 外部都有分数）。
-4. 生成审查报告（含内部 13 评分维度 + 外部 14 模型×13 维度矩阵（Round 14+），内外均含 reader_flow + naturalness + reader_critic · Round 13 v2 读者视角双维度进入外部模型评分体系）。
+4. 生成审查报告（含内部 13 评分维度 + 外部 15 模型×13 维度矩阵（Round 14+ / Round 25 +V4-Flash），内外均含 reader_flow + naturalness + reader_critic · Round 13 v2 读者视角双维度进入外部模型评分体系）。
 5. 落库 `review_metrics`。
 
 **以上 5 步全部完成后，方可进入 Step 4。等待是流程的一部分。**
 
 **Step 3→4 闸门强制验证**（在标记 Step 3 完成前必须执行）：
 1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，每批最多等待10分钟，总超时20分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。注意：0+6+5 三段模式下，Batch 0（2 个读者视角 checker 并行：naturalness + reader-critic · Round 13 v2）先跑，两个都返回后启动 Batch 1（6 个含 flow-checker），Batch 1 全部返回后再启动 Batch 2（5 个），每段独立计时。Round 13 v2 取消 veto block——Batch 0 的结果直接合并进聚合，不单独 block。
-2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：统计有效模型数；≥10/14 为健康，8-9/14 degraded_ok，5-7/14 degraded_warn，<5/14 critical。
+2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：统计有效模型数；≥10/15 为健康，8-9/15 degraded_ok，5-7/15 degraded_warn，<5/15 critical。
 3. 聚合分数：内部 13 个评分维度取平均（含 flow-checker + naturalness + reader-critic · Round 13 v2）；外部已成功模型取平均（13 维度）；合并 `round(internal * 0.6 + external * 0.4)`。
 4. 写审查报告 + 落库 review_metrics。
 **违规后果**：跳过此验证直接进入 Step 4，Step 6 审计 A2 检查项将检测到 checker 坍缩并可能 block 提交。
@@ -1179,7 +1179,7 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 3. **Step 2A/2B 后 `post_draft_check.py` exit=0**（2026-04-15 新增 · 7 类硬检查通过）
 4. Step 3 已产出 `overall_score`（聚合 **13 评分维度** · Round 13 v2）且 `review_metrics` 成功落库；`naturalness_verdict` / `reader_critic_verdict` 作为报告字段记录，不 block 流程；其 problems 与其他 checker 的 issues 合并进入 Step 4 修复
 5. Step 3.5 外部审查已完成且有效模型数达到健康/可降级阈值（`--minimal` 模式跳过此条件）
-6. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 14 模型×13 维度评分矩阵（Round 14+），内外均含 reader_flow + naturalness + reader_critic · Round 13 v2；`--minimal` 模式含内部 5 评分维度分数）
+6. 审查报告 `.md` 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 15 模型×13 维度评分矩阵（Round 14+ / Round 25 +V4-Flash），内外均含 reader_flow + naturalness + reader_critic · Round 13 v2；`--minimal` 模式含内部 5 评分维度分数）
 7. Step 4 已处理全部 `critical`，`high` 未修项有 deviation 记录
 8. **Step 4 润色报告已落盘**：`.webnovel/polish_reports/ch{chapter_padded}.md` 存在且非空，含 `anti_ai_force_check` 字段
 9. Step 4 的 `anti_ai_force_check=pass`（基于全文检查；fail 时不得进入 Step 5）
@@ -1199,6 +1199,11 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 23. **H28 hook_close 版本新鲜度**（2026-04-26 Round 20.5 新增 · hygiene `H28` P0/P1）：`set-hook-close` 必须写入 `source_narrative_version`；若当前 `chapter_meta.NNNN.narrative_version` 与 `hook_close.source_narrative_version` 不一致 → P0 fail，说明 Step 8 polish 后未重跑 reader-pull/未回填章末钩子，会污染 H25 hook trend。老数据缺 source 但有 polish_log → P1 提醒回填。
 24. **polish_cycle 自动 hook_close 同步契约**（2026-04-26 Round 20.6 新增 · 防漂移闭环根治）：`polish_cycle.update_state_after_polish` 末尾必须自动：(a) 抽取章末最后 4 段 200 字内作为 `hook_close.text_excerpt`；(b) `hook_close.source_narrative_version=new_version`；(c) `hook_close.needs_reclassify=True`；(d) `hook_close.polish_synced_at=now`。下游 hygiene H28 检测 `needs_reclassify==True` 直接 P0 fail，迫使作者/AI 阅读章末后立即跑 `state update --set-hook-close` 重新分类（决策钩 / 信息钩 / 情绪钩 / 动作钩），重分类后 set-hook-close 自动清 needs_reclassify=False 解锁 commit。这是从"H28 detect → 人工修"升级到"polish 自动标 stale → 必须重分类才能 commit"的强闭环。
 25. **H21 dialogue_ratio_override_chapters 豁免**（2026-04-26 Round 20.6 修复 · hygiene `H21` ）：post_draft_check 已读 `post_draft_config.json` 的 `dialogue_ratio_override_chapters`，hygiene `H21` 之前漏读，导致项目级豁免章仍报"对话占比连 3 章 < 0.20" P1 假阳。现 H21 同读该字段，豁免章不计入连续低占比 streak（Ch3 空间种田激活章 / Ch2 金融操盘+前世独白章等）。
+26. **H18 升级 13 canonical 必齐**（2026-05-03 Round 28 新增 · hygiene `H18` P0 · Ch24 RCA）：`chapter_meta.{NNNN}.checker_scores` 必须包含全部 13 个 canonical key（11 工艺 + naturalness + reader-critic），缺任一 P0 阻断。Ch24 漏 reader-naturalness-checker 血教训：原 H18 只查"已存在 key 是否 canonical"不查完整性，导致下游 audit 静默错算 overall。
+27. **H58 真源对账**（2026-05-03 Round 28 新增 · hygiene `H58` P1 · Ch24 RCA）：`chapter_meta.checker_scores` 与 `review_metrics.dimension_scores` 13 个 canonical 项漂移 ≤±1。例外：`post_polish_recheck` 中的 checker（Step 4.5 合法 polish 真值改）。Ch24 实测 9 项漂移最大 14 分（prose-quality 89 vs 75 真源），P1 警告。
+28. **H59 静默改分检测**（2026-05-03 Round 28 新增 · hygiene `H59` P1 · Ch24 RCA）：任一 checker 与 review_metrics 漂移 >1 必须在 `post_polish_recheck` 留 before/after 记录；无记录则 P1 警告。`state update --set-checker-score` 必须配套 `--append-recheck`，违反 Step 3+4.5 真源不可篡改原则。
+29. **H61 progress 字段对齐**（2026-05-03 Round 28 新增 · hygiene `H61` P1 · Ch24 RCA）：`state.last_completed_chapter` 与 `state.current_chapter` 必须 == max(chapter_meta keys)。Ch24 写到 24 但二字段停在 20（连续 4 章累积漂移），P1 警告。
+30. **post_draft 那一X 阈值收紧**（2026-05-03 Round 28 修复 · post_draft_check）：`那一X` block 阈值 18→12（warn 仍 10）。Ch24 实测 14 次仍只 warn 不 block，整章 polish 回避了这个签名。≥12 直接 block 阻止 commit。
 
 ## 验证与交付
 
