@@ -64,6 +64,14 @@ result = apply_overall_floor(checker_scores_dict, chapter_int)
 - **THRILL_HARD_002 金手指吝啬连续 3 章**：连续 3 章 golden_finger_release ≤ 50 → critical（前 5 章为 high）
 - **THRILL_HARD_003 主角无决策**：连续 3 章 plot_momentum ≤ 50 + decisions_by_protagonist = 0 → high
 
+**第 4 道硬约束（Round 28.1 · Ch25 RCA）**：
+- **THRILL_HARD_004 climax/卷末/世界观转折章金手指零释放 = P0**：
+  - **触发条件**（任一）：本章是 outline 标识的 climax/world-shift/卷末/title-promise milestone（如末世爆发、卷末决战、boss 战、<golden-finger-space>开放等）
+  - **判定**：reader-thrill `golden_finger_release < 50` 同时 verdict ∈ (`tepid`, `frustrating`)
+  - **后果**：原 polish-guide P2 自动升级 P0 BLOCK，必须修到 ≥50 才能进 Step 7
+  - **微兑现路径**（不消耗主线资源）：取已有储存品/被动信号触发/侧面信息差兑现 — 见 reader-thrill-checker.md `unconsumed_micro_payoff` 列表
+  - **根因（Ch25）**：Ch25 是末世第 0 天爆发章（卷一 climax），<golden-finger-space>金手指 release=45/Verdict=neutral，全章无金手指出场。Step 4 polish 把 THRILL_SOFT_GF 标 P2 优化版，导致 climax 关节"基地建好了但金手指没用"。读者期待全卷攒了 25 章爆发，最高潮章金手指零释放 = 情绪退场。
+
 **与既有 checker 的差异**：
 
 | | reader-pull | reader-critic | high-point | **reader-thrill** |

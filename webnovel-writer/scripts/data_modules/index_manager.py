@@ -1193,11 +1193,49 @@ def main():
 
     elif args.command == "save-review-metrics":
         data = load_json_arg(args.data)
+        # Round 28.1 · Ch25 RCA：dimension_scores 必须含 13 个 canonical key
+        # 根因（Ch25）：data-agent 写 11 维度（缺 reader-naturalness + reader-critic），
+        # B4 audit warn 累积，跨章趋势查询数据残缺。
+        REQUIRED_DIMENSIONS = {
+            "consistency", "continuity", "ooc", "reader_pull", "high_point",
+            "flow", "pacing", "dialogue", "density", "prose_quality",
+            "emotion", "naturalness", "reader_critic",
+        }
+        # 兼容 canonical 长名 → 短名映射
+        CANONICAL_TO_SHORT = {
+            "consistency-checker": "consistency",
+            "continuity-checker": "continuity",
+            "ooc-checker": "ooc",
+            "reader-pull-checker": "reader_pull",
+            "high-point-checker": "high_point",
+            "flow-checker": "flow",
+            "pacing-checker": "pacing",
+            "dialogue-checker": "dialogue",
+            "density-checker": "density",
+            "prose-quality-checker": "prose_quality",
+            "emotion-checker": "emotion",
+            "reader-naturalness-checker": "naturalness",
+            "reader-critic-checker": "reader_critic",
+        }
+        ds_raw = data.get("dimension_scores", {}) or {}
+        # 自动归一：长名 → 短名
+        ds_norm = {}
+        for k, v in ds_raw.items():
+            short = CANONICAL_TO_SHORT.get(k, k)
+            ds_norm[short] = v
+        missing = REQUIRED_DIMENSIONS - set(ds_norm.keys())
+        if missing:
+            emit_error(
+                "MISSING_DIMENSIONS",
+                f"dimension_scores 缺 {len(missing)}/13 必填维度: {sorted(missing)}。"
+                f"修：data-agent Phase F 必须填全 13 个 canonical key（含 naturalness + reader_critic）",
+            )
+            return
         metrics = ReviewMetrics(
             start_chapter=data["start_chapter"],
             end_chapter=data["end_chapter"],
             overall_score=data.get("overall_score", 0.0),
-            dimension_scores=data.get("dimension_scores", {}),
+            dimension_scores=ds_norm,
             severity_counts=data.get("severity_counts", {}),
             critical_issues=data.get("critical_issues", []),
             report_file=data.get("report_file", ""),

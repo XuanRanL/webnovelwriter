@@ -42,7 +42,32 @@ purpose: 章节生成后的润色阶段加载，基于审查报告修复问题 +
 3. 执行 Phase 1 Anti-AI 终检并改写
 4. 执行 No-Poison 毒点规避检查
 5. **polish 后复扫 forbidden_items（Round 18.3 · Ch12 RCA P0 根治 · 2026-04-25）**
-6. 输出润色结果与 deviation（若有）
+6. **reader-thrill 兑现回扫（Round 28.1 · Ch25 RCA · climax 章 P0）**
+7. 输出润色结果与 deviation（若有）
+
+### 2.0a reader-thrill 兑现回扫（Round 28.1 · climax/卷末/世界观转折章 P0）
+
+**为什么必要（Ch25 血教训）：** Ch25 是末世第 0 天爆发章（卷一 climax · title-promise milestone），reader_thrill_ch0025.json 输出 `golden_finger_release=45 · verdict=neutral · pass=false`，THRILL_SOFT_GF 标 HIGH（"<golden-finger-space>本章未出手，末世第一天无金手指兑现"）。Step 4 priority list 误标 P2 optional，未实施。结果：读者攒了 25 章对<golden-finger-space>的期待，最高潮章金手指零释放 = 情绪退场。
+
+**新硬规则（THRILL_HARD_004）：**
+
+判定章是否为 climax/world-shift：
+- 大纲 `golden_finger_release_plan` 标该章为 `medium/large/milestone`
+- 或 `title_promise_payoff_plan` 标该章为 `large/milestone`
+- 或大纲卷骨架显式列为本卷 climax / 转折点 / 卷末 / 世界观切换章
+
+若本章命中 climax 标记 + reader-thrill `golden_finger_release < 50` 同时 `verdict ∈ (tepid, frustrating)`：
+1. **THRILL_SOFT_GF / THRILL_HARD_004 自动 P0**（不再 P2）
+2. **必须** Step 4 注入 micro 兑现，达到 `golden_finger_release ≥ 50`
+3. **micro 兑现路径**（不消耗主线资源；无须改剧情走向）：
+   - 取已有空间储存品（不消耗生机值/无主动催化），用于救人/疗伤/抑制威胁
+   - 被动信号触发（沙漏温度变化/印记跳动/感应反馈），让金手指"在场"但不发力
+   - 信息差兑现（主角通过金手指认知差跨过一个困境）
+4. 修完必须 reader-thrill-checker 复测，新分写入 `chapter_meta.thrill_score`，再进 Step 7
+
+**例外**：若大纲 `golden_finger_release_plan` 显式标该章为 `none`（明确零释放设计），可豁免，但必须在 Step 4 deviation 记录"按计划零释放"。
+
+
 
 ### 2.5 polish 后复扫 forbidden_items（必做 · Round 18.3）
 

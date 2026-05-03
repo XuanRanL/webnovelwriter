@@ -50,6 +50,18 @@ model: inherit
   data-agent 即使误填这些字段也会被忽略并 warning。但 data-agent 应**主动避免**
   在输出 JSON 的 chapter_meta 中包含这些字段
 
+### Round 28.1 · Ch25 RCA · save-review-metrics 必须 13 维度
+
+**根因（Ch25）：** save-review-metrics 调用 dimension_scores 只写 11 维度（缺 naturalness + reader_critic），
+触发 B4 audit warn，跨章趋势查询失真，severity_counts/report_file/notes 全空。
+
+**新硬规则：**
+1. `dimension_scores` 必须含 13 个短名 key: `consistency / continuity / ooc / reader_pull / high_point / flow / pacing / dialogue / density / prose_quality / emotion / naturalness / reader_critic`
+2. `severity_counts` 必须填 `{"critical": N, "high": N, "medium": N, "low": N}`（从审查报告统计）
+3. `report_file` 必须填 `审查报告/第{NNNN}章审查报告.md`（路径必须存在）
+4. `notes` 必须填 `f"internal_avg={I} external_avg={E} (models_ok={K}/15) anti_ai={pass|fail} hook={action|info|...}"` 至少 4 字段
+5. CLI 验证：缺任一必填维度 → MISSING_DIMENSIONS error，必须修复后重试
+
 ### 禁忌 6：禁止修改 review_metrics 评分数据
 - index.db 的 review_metrics.overall_score / dimension_scores 由 set-checker-score
   CLI 自动维护
@@ -627,7 +639,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `foreshadowing_paid` | list[str] | 本章兑现的伏笔 |
 | `strand_dominant` | str | 主导情节线（quest/fire/constellation） |
 | `review_score` | float | 审查综合分 |
-| `checker_scores` | dict | 各 checker 分数。**key 必须是 11 个 canonical 英文 checker 名**（见 CHECKER_NAMES）+ `"overall"` 键（= `review_score`）。**禁用中文 key**（“设定一致性”/“钩子强度”/“Anti-AI” 等是 hygiene H18 P1 警告）。示例: `{"consistency-checker": 92, "continuity-checker": 91, "ooc-checker": 88, "reader-pull-checker": 94, "high-point-checker": 89, "pacing-checker": 91, "dialogue-checker": 91, "density-checker": 97, "prose-quality-checker": 92, "emotion-checker": 95, "flow-checker": 90, "overall": 91}` |
+| `checker_scores` | dict | 各 checker 分数。**key 必须是 13 个 canonical 英文 checker 名**（11 工艺 + reader-naturalness-checker + reader-critic-checker）+ `"overall"` 键（= `review_score`）。**禁用中文 key**。示例: `{"consistency-checker": 92, "continuity-checker": 91, "ooc-checker": 88, "reader-pull-checker": 94, "high-point-checker": 89, "pacing-checker": 91, "dialogue-checker": 91, "density-checker": 97, "prose-quality-checker": 92, "emotion-checker": 95, "flow-checker": 90, "reader-naturalness-checker": 86, "reader-critic-checker": 84, "overall": 90}` |
 | `allusions_used` | list[dict] | **本章引用的典故列表（Step B.5 产出），每条含 id/snippet/type/source/carrier/function/is_original 字段；无引用库或无引用时为空数组** |
 
 ### 第二层 · Extended 26 扩展字段（允许但不强制；B9 不检查；为长线质量积累服务）
@@ -735,7 +747,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
 | `chapter_title` | str | title 的别名；只在迁移期保留，二选一即可 |
 | `overall_score` | int/float | 合并后加权分（int(internal*0.6 + external*0.4)）；**与 `checker_scores.overall` 强制相等**（R17.2 P1-R6） |
 | `post_polish_recheck` | dict | Step 4.5 选择性复测记录：`{checker: {before, after, delta, reason}}` · **before/after 必须来自 tmp JSON 不得编造**（R17.2 P0-R2） |
-| `external_avg` | float | Step 3.5 外部多模型平均分（Round 14：14 模型共识，排除 failed 模型） |
+| `external_avg` | float | Step 3.5 外部多模型平均分（Round 14/25：15 模型共识，排除 failed 模型） |
 | `anti_ai_force_check` | str | Step 4 终检结果：pass / fail |
 | `mode` | str | 写作模式：standard / fast / minimal |
 | `narrative_version` | str | 当前叙事版本（v1/v2/v3） |
