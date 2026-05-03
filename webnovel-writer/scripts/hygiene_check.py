@@ -884,6 +884,101 @@ def check_progress_chapter_consistency(root: Path, chapter: int, rep: HygieneRep
         rep.record("P1", "H61", f"progress 字段对齐 (chapter={max_ch})", True)
 
 
+def check_archive_layer_freshness(root: Path, chapter: int, rep: HygieneReport):
+    """H65 (Round 28.2 · Ch25 RCA wave 2): polish_cycle 后 5 层归档必须刷新
+
+    根因（Ch25 v8→v11）：polish_cycle 改正文 + bump narrative_version，但不会刷新：
+      - .webnovel/summaries/ch{NNNN}.md（仍写 v8.0）
+      - .webnovel/audit_reports/ch{NNNN}.json（v8 时期 6 warnings）
+      - 审查报告/第{NNNN}章审查报告.md（仍写 v8 字数）
+      - .webnovel/editor_notes/ch{NNNN+1}_prep.md（基于 v8 状态）
+      - .webnovel/workflow_state.json.last_stable_state.artifacts.word_count（停在草稿值）
+    后果：下章 context-agent 读到 stale 数据 → 承接错误。
+
+    检查规则：
+      - 章节正文 mtime 之后必须有归档刷新（容差 600s = 10 分钟）
+      - 任一归档落后 > 1800s（30 分钟）→ P1 warn
+      - 同时检测 narrative_version 是否同步
+    """
+    text_files = list((root / "正文").glob(f"第{chapter:04d}章*.md"))
+    if not text_files:
+        return
+    text_mtime = text_files[0].stat().st_mtime
+    archives = {
+        "summaries": root / ".webnovel" / "summaries" / f"ch{chapter:04d}.md",
+        "audit_reports": root / ".webnovel" / "audit_reports" / f"ch{chapter:04d}.json",
+        "审查报告": root / "审查报告" / f"第{chapter:04d}章审查报告.md",
+    }
+    stale_layers = []
+    for name, p in archives.items():
+        if not p.exists():
+            continue
+        diff = text_mtime - p.stat().st_mtime
+        if diff > 1800:
+            stale_layers.append(f"{name}(落后{int(diff)}s)")
+    # narrative_version sync check on summary
+    sm_p = archives["summaries"]
+    if sm_p.exists():
+        sm_text = sm_p.read_text(encoding="utf-8")
+        try:
+            state_p = root / ".webnovel" / "state.json"
+            if state_p.exists():
+                s = json.loads(state_p.read_text(encoding="utf-8"))
+                meta_nv = (s.get("chapter_meta") or {}).get(f"{chapter:04d}", {}).get("narrative_version")
+                if meta_nv and meta_nv != "v1":
+                    if f'narrative_version: "{meta_nv}"' not in sm_text and f"narrative_version: {meta_nv}" not in sm_text:
+                        stale_layers.append(f"summaries narrative_version不匹配(state={meta_nv})")
+        except Exception:
+            pass
+    if stale_layers:
+        rep.record(
+            "P1",
+            "H65",
+            f"归档层 stale {len(stale_layers)} 项: {stale_layers}（修：polish_cycle 后必须刷新；"
+            f"参考 polish-guide §archive-refresh-hook）",
+            False,
+        )
+    else:
+        rep.record("P1", "H65", "归档层时间戳与正文一致（容差 1800s）", True)
+
+
+def check_last_stable_state_drift(root: Path, chapter: int, rep: HygieneReport):
+    """H66 (Round 28.2 · Ch25 RCA wave 2): last_stable_state.artifacts.word_count 必须等于
+    chapter_meta.NNNN.word_count
+
+    根因（Ch25）：Step 2A 写 last_stable_state.artifacts.word_count=3042（草稿），
+    Step 4 polish 后 chapter_meta.0025.word_count=3096 但 last_stable_state 永不刷新。
+    """
+    wf_p = root / ".webnovel" / "workflow_state.json"
+    state_p = root / ".webnovel" / "state.json"
+    if not wf_p.exists() or not state_p.exists():
+        return
+    try:
+        wf = json.loads(wf_p.read_text(encoding="utf-8"))
+        state = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    last_state = wf.get("last_stable_state") or {}
+    if last_state.get("chapter_num") != chapter:
+        return  # different chapter, skip
+    arts = last_state.get("artifacts") or {}
+    arts_wc = arts.get("word_count")
+    meta = (state.get("chapter_meta") or {}).get(f"{chapter:04d}", {})
+    meta_wc = meta.get("word_count")
+    if arts_wc is None or meta_wc is None:
+        return
+    if abs(arts_wc - meta_wc) > 50:
+        rep.record(
+            "P1",
+            "H66",
+            f"last_stable_state.artifacts.word_count={arts_wc} ≠ chapter_meta.{chapter:04d}.word_count={meta_wc}（"
+            f"漂移 {abs(arts_wc - meta_wc)} 字 > 容差 50；修：polish 后手动刷新或 fork 加自动 hook）",
+            False,
+        )
+    else:
+        rep.record("P1", "H66", f"last_stable_state 与 chapter_meta word_count 对齐（{arts_wc}≈{meta_wc}）", True)
+
+
 def check_no_implicit_start_in_step5(root: Path, chapter: int, rep: HygieneReport):
     """H64 (Round 28.1 · Ch25 RCA): Step 5 必须显式 start-step
 
@@ -2898,6 +2993,10 @@ def main():
     check_curly_quote_pairing(root, args.chapter, rep)  # H62
     check_thirteen_checker_jsons_present(root, args.chapter, rep)  # H63
     check_no_implicit_start_in_step5(root, args.chapter, rep)  # H64
+
+    # Round 28.2 · Ch25 RCA wave 2 · polish 后归档刷新 + last_stable_state drift
+    check_archive_layer_freshness(root, args.chapter, rep)  # H65
+    check_last_stable_state_drift(root, args.chapter, rep)  # H66
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
