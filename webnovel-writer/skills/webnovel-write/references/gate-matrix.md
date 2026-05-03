@@ -18,7 +18,7 @@
 | 2 | Step 1 执行包（JSON + MD）已落盘 | `H14` | `hygiene_check.py:check_execution_package_persistence` | P0 |
 | 3 | Step 2A/2B 后 `post_draft_check` exit=0 | `post_draft_check.py` 调用 | Step 2A/2B 流程 | P0 |
 | 4 | Step 3 `overall_score` 聚合 + review_metrics 落库 | `H9` (score alignment) | `hygiene_check.py:check_score_alignment` | P1 |
-| 5 | Step 3.5 外部审查（≥10/14 模型有效，Round 16+ 扁平 · Round 21.4 combined 默认） | `external_review.py` 退出码 0 + `chapter_audit.check_A3_external_models` ≥ healthy 阈值 | 主流程调用 | P0 |
+| 5 | Step 3.5 外部审查（≥10/15 模型有效，Round 16/25 扁平 +V4-Flash · Round 21.4 combined 默认） | `external_review.py` 退出码 0 + `chapter_audit.check_A3_external_models` ≥ healthy 阈值 | 主流程调用 | P0 |
 | 6 | 审查报告 .md 存在 | `H15` 扩展（审查报告路径） | `hygiene_check.py` | P0 |
 | 7 | Step 4 处理全部 critical，high 有 deviation | `H15` (polish_reports 必要段落) | `hygiene_check.py:check_polish_report_persistence` | P0 |
 | 8 | Step 4 润色报告已落盘 | `H15` | `hygiene_check.py:check_polish_report_persistence` | P0 |
@@ -83,6 +83,10 @@ SKILL.md 充分性闸门除了上述 15 条，再增加：
 16. **polish_log schema 合规**（Round 14.5.2 · `H20`）：若 `chapter_meta.{NNNN}.polish_log` 存在，每条必须含 `version/timestamp/notes` 三字段，version 匹配 `vN` 或 `vN.M.K`，timestamp 为 ISO-8601
 17. **polish drift 零 P0**（Round 14.5.2 · preflight `polish_drift`）：Step 0 preflight 必须报告 `polish_drift: ok=True`；P0 drift 视为 preflight 失败
 18. **hook_close 版本新鲜度**（Round 20.5 · hygiene `H28`）：`hook_close.source_narrative_version` 必须与当前 `chapter_meta.NNNN.narrative_version` 一致；不一致说明 Step 8 polish 后章末钩子未重算，会污染 H25 跨章趋势，P0 阻断。
+19. **checker_scores 13 canonical 必齐**（Round 28 · hygiene `H18` 升级 · Ch24 RCA）：`chapter_meta.{NNNN}.checker_scores` 必须包含全部 13 个 canonical key（11 工艺 + naturalness + reader-critic），缺任一 P0 阻断。Ch24 漏 reader-naturalness-checker 血教训：原 H18 只查"已存在 key 是否 canonical"，不查完整性。
+20. **checker_scores 与 review_metrics 一致性**（Round 28 · hygiene `H58` · Ch24 RCA）：`chapter_meta.checker_scores` 与 `review_metrics.dimension_scores` 13 个 canonical 项漂移 ≤±1。例外：`post_polish_recheck` 中的 checker（Step 4.5 合法 polish 真值改）。Ch24 实测 9 项漂移最大 14 分（prose-quality 89 vs 75），P1 警告。
+21. **post_polish 静默改分检测**（Round 28 · hygiene `H59` · Ch24 RCA）：任一 checker 与 review_metrics 漂移 >1 必须在 `post_polish_recheck` 留 before/after 记录；无记录则视为静默改分，P1 警告。`state update --set-checker-score` 必须配套 `--append-recheck`。
+22. **progress.last_completed_chapter 对齐**（Round 28 · hygiene `H61` · Ch24 RCA）：`state.last_completed_chapter` 与 `state.current_chapter` 必须 == max(chapter_meta keys)。Ch24 写到 24 但二字段停在 20（连续 4 章累积漂移），P1 警告。
 
 ## 同步维护规则
 

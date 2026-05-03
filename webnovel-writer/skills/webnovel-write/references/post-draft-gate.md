@@ -7,7 +7,7 @@ purpose: Step 2A/2B 后与 Step 7 前的硬闸门规范
 
 > 本文件规定 `scripts/post_draft_check.py` 与 `scripts/pre_commit_step_k.py` 的职责、配置与使用方式。两个脚本都是 **通用版**（随 plugin 分发到所有项目），通过项目侧的 JSON 配置文件做项目特化。
 >
-> 引入背景（2026-04-15）：Ch1 write 流程审计发现 13 个问题，其中 7 类属于"起草期机械污染"或"commit 前设定集脱节"。原先只能靠 Step 3 内部 13 checker + 外部多模型审查（Round 13 v2 = 9 模型；Round 14+ = 14 模型）被动发现，浪费审查算力。引入双硬闸门后，这 7 类问题在起草/commit 的 1 秒内即被拦截。
+> 引入背景（2026-04-15）：Ch1 write 流程审计发现 13 个问题，其中 7 类属于"起草期机械污染"或"commit 前设定集脱节"。原先只能靠 Step 3 内部 13 checker + 外部多模型审查（Round 13 v2 = 9 模型；Round 14+ = 14 模型；Round 25+ = 15 模型 +V4-Flash）被动发现，浪费审查算力。引入双硬闸门后，这 7 类问题在起草/commit 的 1 秒内即被拦截。
 
 ## 一、Step 2A/2B 后硬闸门 · `post_draft_check.py`
 
@@ -31,6 +31,17 @@ purpose: Step 2A/2B 后与 Step 7 前的硬闸门规范
 | 5 | 破例预算 | 项目配置 | `break_budget_by_chapter.{N}` |
 | 6 | 必须伏笔种子（正则） | 项目配置 | `required_seeds_by_chapter.{N}` |
 | 7 | 字数区间 | state.json | `average_words_per_chapter_min/max` |
+
+### Anti-AI 签名密度阈值（默认 lint，不可关闭）
+
+| 签名 | warn | block | 备注 |
+|---|---|---|---|
+| 没X | 15 | 20 | 否定签名累积，单章 ≥20 触发 block |
+| 那一X | 10 | **12** | Round 28 收紧（原 18 太松，Ch24 实测 14 仍逃过 block） |
+| 笑了一下 / 停了半秒 | 5 | 8 | 复合动作签名 |
+| 半秒/一秒/三秒 | 3 | 6 | 精确秒级时间词 |
+| 扶眼镜 | 4 | 6 | 个人标志动作 |
+| 未X | 3 | 5 | 没X→未X 替换迁移防御 |
 
 ### 项目侧配置：`.webnovel/post_draft_config.json`
 
@@ -148,7 +159,7 @@ python -X utf8 "${SCRIPTS_DIR}/pre_commit_step_k.py" ${chapter_num} \
 ### 前置拦截 > 事后修复
 
 - 起草污染在 Step 2A 后 1 秒被抓 vs Step 3 审查后 2 分钟才抓
-- 节省 13 checker + 外部多模型（Round 14+ = 14 模型）的算力在软质量（文笔/情感 · Round 13 v2）
+- 节省 13 checker + 外部多模型（Round 14+ = 14 模型 / Round 25+ = 15 模型 +V4-Flash）的算力在软质量（文笔/情感 · Round 13 v2）
 - 节省 Step 4 润色的人工注意力
 
 ### 硬 block 的哲学
