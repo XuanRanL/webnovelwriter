@@ -45,6 +45,35 @@ purpose: 章节生成后的润色阶段加载，基于审查报告修复问题 +
 6. **reader-thrill 兑现回扫（Round 28.1 · Ch25 RCA · climax 章 P0）**
 7. 输出润色结果与 deviation（若有）
 
+### 2.0b polish_cycle 后 5 层归档必须刷新（Round 28.2 · Ch25 RCA wave 2 · H65/H66 配套）
+
+**为什么必要（Ch25 v8→v11 血教训）：** polish_cycle 改正文 + bump narrative_version 后，5 层归档**没有**自动刷新：
+- `summaries/ch{NNNN}.md`（仍写 v8 状态）
+- `audit_reports/ch{NNNN}.json`（仍是 v8 时期 6 warnings）
+- `审查报告/第{NNNN}章审查报告.md`（仍写 v8 字数 / 签名密度）
+- `editor_notes/ch{NNNN+1}_prep.md`（基于 v8 状态写的下章建议）
+- `workflow_state.json.last_stable_state.artifacts.word_count`（停在 Step 2A 草稿值）
+
+后果：下章 context-agent 读到 stale 数据 → 漏掉 v 后续版本的关键改进 → 承接错误 → 后续章节连环漂移。
+
+**刷新硬规则：**
+
+每次 `polish_cycle.py` 执行 commit 之后，**必须**执行以下 5 个刷新动作（顺序固定）：
+
+1. **重写 summary**：`summaries/ch{NNNN}.md` frontmatter `narrative_version:` 必须 = `chapter_meta.narrative_version`，正文摘要补 polish 期新增/修改的关键场景
+2. **附加审查报告附录**：`审查报告/第{NNNN}章审查报告.md` 末尾追加 `## 附录 · v{X} Polish 后真实指标`，含修复矩阵 + 推算分数
+3. **重写 audit_reports json**：`audit_reports/ch{NNNN}.json` 的 v8 warnings 标 `status: remediated_at_polish` + 新增 `warnings_resolved_in_v11` 字段记录每条修复方式
+4. **重写 editor_notes/ch{NNNN+1}_prep.md**：删除 polish 已修复的 v8 旧条目，加入 polish 期新埋的伏笔 + 新成立的承接路径
+5. **刷新 last_stable_state.artifacts**：`workflow_state.json.last_stable_state.artifacts.{word_count, overall_score, narrative_version, refreshed_at}` 必须等于 `chapter_meta.{NNNN}` 当前值
+
+**hygiene 闸门**：
+- **H65 P1 warn**：归档层 mtime 落后正文 mtime > 1800s（30 分钟）→ 提醒刷新
+- **H66 P1 warn**：last_stable_state.artifacts.word_count ≠ chapter_meta.NNNN.word_count（容差 50 字）→ 提醒同步
+
+**fork 永久根治**：未来计划在 polish_cycle.py 加 `--refresh-archives` 自动执行 5 个刷新动作；当前 Round 28.2 先用 H65/H66 hygiene warn 提醒。
+
+---
+
 ### 2.0a reader-thrill 兑现回扫（Round 28.1 · climax/卷末/世界观转折章 P0）
 
 **为什么必要（Ch25 血教训）：** Ch25 是末世第 0 天爆发章（卷一 climax · title-promise milestone），reader_thrill_ch0025.json 输出 `golden_finger_release=45 · verdict=neutral · pass=false`，THRILL_SOFT_GF 标 HIGH（"<golden-finger-space>本章未出手，末世第一天无金手指兑现"）。Step 4 priority list 误标 P2 optional，未实施。结果：读者攒了 25 章对<golden-finger-space>的期待，最高潮章金手指零释放 = 情绪退场。

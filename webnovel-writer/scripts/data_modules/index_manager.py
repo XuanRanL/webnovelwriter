@@ -793,6 +793,27 @@ def main():
     review_save_parser = subparsers.add_parser("save-review-metrics")
     review_save_parser.add_argument("--data", required=True, help="JSON 格式的审查指标数据")
 
+    # Round 28.2 · Ch25 RCA wave 2: backfill review_metrics from chapter_meta
+    # 根因：fork 加 13 维度 validation 只防新写入，旧记录（11 维度/score 不一致/字段空）无 CLI 可改
+    review_backfill_parser = subparsers.add_parser("backfill-review-metrics")
+    review_backfill_parser.add_argument("--chapter", type=int, required=True, help="章节号")
+    review_backfill_parser.add_argument(
+        "--report-file", default="", help="审查报告路径，默认 审查报告/第NNNN章审查报告.md",
+    )
+    review_backfill_parser.add_argument(
+        "--external-avg", type=float, default=None, help="外部 avg（不传则不写 combined）",
+    )
+    review_backfill_parser.add_argument(
+        "--models-ok", type=int, default=None, help="external models ok 计数",
+    )
+    review_backfill_parser.add_argument(
+        "--severity-counts", default="",
+        help='JSON: {"critical":N,"high":N,"medium":N,"low":N}（不传则查 .webnovel/tmp/*_check_*.json 自动统计）',
+    )
+    review_backfill_parser.add_argument(
+        "--polish-round", default="", help="polish round 标识（如 R28.1）",
+    )
+
     review_recent_parser = subparsers.add_parser("get-recent-review-metrics")
     review_recent_parser.add_argument("--limit", type=int, default=5)
 
@@ -1245,6 +1266,113 @@ def main():
         emit_success(
             {"start_chapter": metrics.start_chapter, "end_chapter": metrics.end_chapter},
             message="review_metrics_saved",
+        )
+
+    elif args.command == "backfill-review-metrics":
+        # Round 28.2 · Ch25 RCA wave 2: 从 state.chapter_meta + tmp/*_check_*.json
+        # 重建 review_metrics DB 行（13 维度 + severity_counts + report_file + notes）
+        chapter = args.chapter
+        # 1. Read state to get checker_scores + overall + word_count
+        from pathlib import Path as _P
+        state_p = _P(args.project_root or ".") / ".webnovel" / "state.json"
+        if not state_p.exists():
+            emit_error("STATE_NOT_FOUND", f"state.json 不存在: {state_p}")
+            return
+        state = json.loads(state_p.read_text(encoding="utf-8"))
+        meta = (state.get("chapter_meta") or {}).get(f"{chapter:04d}", {})
+        if not meta:
+            emit_error("META_NOT_FOUND", f"chapter_meta.{chapter:04d} 不存在")
+            return
+        cs = meta.get("checker_scores") or {}
+        overall = meta.get("overall_score")
+        if overall is None:
+            emit_error("OVERALL_MISSING", f"chapter_meta.{chapter:04d}.overall_score 缺失")
+            return
+        # 2. Map canonical -> short
+        CANONICAL_TO_SHORT = {
+            "consistency-checker": "consistency",
+            "continuity-checker": "continuity",
+            "ooc-checker": "ooc",
+            "reader-pull-checker": "reader_pull",
+            "high-point-checker": "high_point",
+            "flow-checker": "flow",
+            "pacing-checker": "pacing",
+            "dialogue-checker": "dialogue",
+            "density-checker": "density",
+            "prose-quality-checker": "prose_quality",
+            "emotion-checker": "emotion",
+            "reader-naturalness-checker": "naturalness",
+            "reader-critic-checker": "reader_critic",
+        }
+        ds = {}
+        for long_name, short_name in CANONICAL_TO_SHORT.items():
+            v = cs.get(long_name)
+            if v is not None:
+                ds[short_name] = v
+        if len(ds) < 13:
+            missing = set(CANONICAL_TO_SHORT.values()) - set(ds.keys())
+            emit_error(
+                "DIMENSIONS_INCOMPLETE",
+                f"chapter_meta.checker_scores 仅 {len(ds)}/13，缺 {sorted(missing)}。"
+                f"修：先用 state update --set-checker-score 补齐再 backfill",
+            )
+            return
+        # 3. Severity counts (auto-collect from tmp/*_check_*.json or use provided)
+        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        if args.severity_counts:
+            try:
+                provided = json.loads(args.severity_counts)
+                if isinstance(provided, dict):
+                    severity_counts = provided
+            except Exception:
+                pass
+        else:
+            # auto-collect from tmp JSON
+            tmp_dir = _P(args.project_root or ".") / ".webnovel" / "tmp"
+            for fp in tmp_dir.glob(f"*ch{chapter:04d}.json"):
+                try:
+                    j = json.loads(fp.read_text(encoding="utf-8"))
+                    for issue in (j.get("issues") or j.get("problems") or []):
+                        if isinstance(issue, dict):
+                            sev = issue.get("severity")
+                            if sev in severity_counts:
+                                severity_counts[sev] += 1
+                except Exception:
+                    pass
+        # 4. Build notes
+        notes_parts = [f"backfilled at v{meta.get('narrative_version', '?')}"]
+        if args.external_avg is not None:
+            notes_parts.append(f"external_avg={args.external_avg}")
+        if args.models_ok is not None:
+            notes_parts.append(f"models_ok={args.models_ok}/15")
+        if args.polish_round:
+            notes_parts.append(f"polish_round={args.polish_round}")
+        notes_parts.append(f"word_count={meta.get('word_count', '?')}")
+        notes_parts.append(f"hook={meta.get('hook_type', '?')}")
+        notes = " · ".join(notes_parts)
+        # 5. Report file
+        report_file = args.report_file or f"审查报告/第{chapter:04d}章审查报告.md"
+        # 6. Save
+        metrics = ReviewMetrics(
+            start_chapter=chapter,
+            end_chapter=chapter,
+            overall_score=float(overall),
+            dimension_scores=ds,
+            severity_counts=severity_counts,
+            critical_issues=[],
+            report_file=report_file,
+            notes=notes,
+        )
+        manager.save_review_metrics(metrics)
+        emit_success(
+            {
+                "chapter": chapter,
+                "dimensions": len(ds),
+                "overall_score": overall,
+                "severity_counts": severity_counts,
+                "notes": notes,
+            },
+            message="review_metrics_backfilled",
         )
 
     elif args.command == "get-recent-review-metrics":
