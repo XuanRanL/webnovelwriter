@@ -884,6 +884,83 @@ def check_progress_chapter_consistency(root: Path, chapter: int, rep: HygieneRep
         rep.record("P1", "H61", f"progress 字段对齐 (chapter={max_ch})", True)
 
 
+def check_canon_locked_terms(root: Path, chapter: int, rep: HygieneReport):
+    """H67 (Round 28.3 · Ch25 RCA wave 3): polish 引入新专有名词必须 canon 已锁
+
+    根因（Ch25 v11）：polish 加 micro 兑现段时凭空发明：
+      - 金银花 / 银耳（凭空作物，0 处 in canon）
+      - 灶屋木匣（凭空容器，0 处 in canon）
+      - 空气在脱水（凭空物理机制，canon-bible 未定义）
+    后果：未来章节如果引用这些名词，找不到 canon 来源 → 世界观破碎
+
+    检查规则：
+      - 当前章节的"高敏感"专有名词（作物名 / 容器名 / 物理设定关键词）
+      - 必须在以下任一来源出现过：
+        * 之前章节正文（Ch1...N-1）
+        * 设定集/*.md
+        * 大纲/*.md
+      - 未出现 → P0 BLOCK 提示用户先进 canon
+
+    实现：当前作为 warn-only（避免误伤），列出本章新增的高敏感词供人工审核。
+    """
+    text_files = list((root / "正文").glob(f"第{chapter:04d}章*.md"))
+    if not text_files:
+        return
+    cur_text = text_files[0].read_text(encoding="utf-8")
+
+    # 收集 canon-known 名词集合（来自之前章节 + 设定集 + 大纲）
+    canon_corpus = []
+    for prev_ch in range(1, chapter):
+        for f in (root / "正文").glob(f"第{prev_ch:04d}章*.md"):
+            try:
+                canon_corpus.append(f.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+    for sub in ["设定集", "大纲"]:
+        sub_dir = root / sub
+        if sub_dir.exists():
+            for f in sub_dir.rglob("*.md"):
+                try:
+                    canon_corpus.append(f.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+    canon_text = "\n".join(canon_corpus)
+
+    # 提取本章可能新增的高敏感名词（2-4 字中文专有名词）
+    # 简化策略：扫描已知模式（X瓤 / X盘 / X匣 / X盒 / X片 / X水 / X花 / X耳 等）
+    import re
+    sensitive_patterns = [
+        r"[一-鿿]{2,4}瓤",       # 瓜瓤等
+        r"[一-鿿]{1,3}木匣",      # 木匣
+        r"[一-鿿]{1,3}搪瓷盒",    # 搪瓷盒
+        r"灵泉[一-鿿]{0,2}",      # 灵泉相关
+        r"[一-鿿]{2,3}叶子",      # 叶子相关
+        r"[一-鿿]{1,2}银花",      # 金银花/银花类
+        r"[一-鿿]{0,2}银耳",      # 银耳类
+        r"空气在[一-鿿]{1,3}",    # 空气在 X
+    ]
+    candidates = set()
+    for pat in sensitive_patterns:
+        for m in re.findall(pat, cur_text):
+            if isinstance(m, str) and len(m) >= 2:
+                candidates.add(m)
+
+    # 过滤：在 canon 已出现过的剔除
+    new_terms = sorted([t for t in candidates if t not in canon_text])
+
+    if new_terms:
+        rep.record(
+            "P1",
+            "H67",
+            f"本章引入 {len(new_terms)} 个 canon 未锁的高敏感名词: {new_terms[:6]}（"
+            f"如系新设定 → 需要先进设定集；如系临时表述 → 改用 canon 已有的等价词；"
+            f"polish 凭空发明 = canon violation 高风险。修：见 polish-guide §canon-check）",
+            False,
+        )
+    else:
+        rep.record("P1", "H67", "本章高敏感名词全部 canon 已锁", True)
+
+
 def check_archive_layer_freshness(root: Path, chapter: int, rep: HygieneReport):
     """H65 (Round 28.2 · Ch25 RCA wave 2): polish_cycle 后 5 层归档必须刷新
 
@@ -2997,6 +3074,9 @@ def main():
     # Round 28.2 · Ch25 RCA wave 2 · polish 后归档刷新 + last_stable_state drift
     check_archive_layer_freshness(root, args.chapter, rep)  # H65
     check_last_stable_state_drift(root, args.chapter, rep)  # H66
+
+    # Round 28.3 · Ch25 RCA wave 3 · canon 锁定（polish 不许凭空发明专有名词）
+    check_canon_locked_terms(root, args.chapter, rep)  # H67
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)

@@ -45,6 +45,40 @@ purpose: 章节生成后的润色阶段加载，基于审查报告修复问题 +
 6. **reader-thrill 兑现回扫（Round 28.1 · Ch25 RCA · climax 章 P0）**
 7. 输出润色结果与 deviation（若有）
 
+### 2.0c canon-check：polish 禁止凭空发明专有名词（Round 28.3 · Ch25 RCA wave 3 · H67 配套）
+
+**为什么必要（Ch25 v8→v11 血教训）：** Ch25 v11 polish 为了让 reader_thrill THRILL_SOFT_GF 通过，凭空发明了 3 项 canon 元素：
+- 金银花 / 银耳（凭空作物，0 处 in canon）
+- 灶屋木匣（凭空容器，0 处 in canon）
+- 空气在脱水（凭空物理机制，canon-bible 未定义）
+
+后果：未来章节如果引用这些名词，找不到 canon 来源 → 世界观破碎；同时违反 core-constraints "发明需识别"硬约束。
+
+**正确做法（Round 28.3 强制）：**
+
+polish 涉及的所有 micro 兑现 / 设定补充 / 物理机制描述，**必须**先在以下来源中找到原型：
+1. 之前章节正文（Ch1...N-1）
+2. `设定集/00-Canon-Bible.md`
+3. `设定集/*.md` 全部
+4. `大纲/*.md`
+
+**实操检查清单**（Step 4 polish 前必读）：
+
+- [ ] 我加的"X 作物"是否 canon 已有？（grep 之前章节 + 设定集）
+- [ ] 我加的"X 容器/储物"是否 canon 已有？
+- [ ] 我加的"X 物理机制"是否 canon-bible 已定义？
+- [ ] 我加的"X 行为"是否之前章节做过？
+
+**找不到原型时的两种合法路径**：
+1. **改用 canon 已有等价物**：例如本想加"金银花"，发现 canon 没有 → 改用 canon 已有的"变异南瓜瓤"（Ch15 救老张验证）
+2. **先进 canon 再用**：如果新设定确实必要，先在 `设定集/` 加锚定文档，标 `[Ch25 引入]`，再在正文用
+
+**禁止路径**：直接在正文中创造一个全新名词，没有任何 canon 引用。这是 v11 polish 犯的错，禁止再犯。
+
+**hygiene 闸门 H67**：扫描本章高敏感名词模式（瓤/匣/盒/叶/银花/银耳/空气在X 等），与 canon 对比，未匹配则 P1 warn 提示人工审核。当前 P1（提醒）级别，未来可升级 P0。
+
+---
+
 ### 2.0b polish_cycle 后 5 层归档必须刷新（Round 28.2 · Ch25 RCA wave 2 · H65/H66 配套）
 
 **为什么必要（Ch25 v8→v11 血教训）：** polish_cycle 改正文 + bump narrative_version 后，5 层归档**没有**自动刷新：
