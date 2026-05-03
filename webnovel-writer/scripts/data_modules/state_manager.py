@@ -628,6 +628,37 @@ class StateManager:
         if words > 0:
             self._pending_progress_words_delta += int(words)
 
+    def set_progress_chapter(self, chapter: int) -> dict:
+        """Round 28.1 · Ch25 RCA: 同时更新 progress.current_chapter（嵌套）+
+        last_completed_chapter / current_chapter（顶层）四个字段。
+
+        根因：H61 检查的是 state 顶层 last_completed_chapter / current_chapter，
+        但 update_progress 只写嵌套 progress.current_chapter。AI 必须手动改
+        state.json 才能修 H61，违反 no_manual_state_edits 原则。
+
+        Args:
+            chapter: 当前完成的章节号
+
+        Returns:
+            {"changes": [list of changed fields]}
+        """
+        changes = []
+        if "progress" not in self._state:
+            self._state["progress"] = {}
+        old_nested = self._state["progress"].get("current_chapter")
+        if old_nested != chapter:
+            self._state["progress"]["current_chapter"] = chapter
+            changes.append(f"progress.current_chapter={old_nested}->{chapter}")
+        old_top_last = self._state.get("last_completed_chapter")
+        if old_top_last != chapter:
+            self._state["last_completed_chapter"] = chapter
+            changes.append(f"last_completed_chapter={old_top_last}->{chapter}")
+        old_top_curr = self._state.get("current_chapter")
+        if old_top_curr != chapter:
+            self._state["current_chapter"] = chapter
+            changes.append(f"current_chapter={old_top_curr}->{chapter}")
+        return {"changes": changes}
+
     # ==================== 实体管理 (v5.1 SQLite-first) ====================
 
     def get_entity(self, entity_id: str, entity_type: str = None) -> Optional[Dict]:
@@ -1481,6 +1512,13 @@ def main():
         "--add-words",
         help='JSON: {"chapter":N,"words":2443}（追加 progress.total_words；幂等：同章节多次调用以最后一次为准）',
     )
+    # Round 28.1 · Ch25 RCA: 顶层 last_completed_chapter / current_chapter 无 CLI 入口
+    # 根因：H61 检查顶层字段，但 update_progress 只写嵌套 progress.current_chapter。
+    # AI 必须手动改 state.json，违反 no_manual_state_edits。本补丁同时写 4 字段。
+    update_parser.add_argument(
+        "--set-progress-chapter",
+        help='JSON: {"chapter":N}（同时写 progress.current_chapter + 顶层 last_completed_chapter / current_chapter）',
+    )
     # Round 19 · 2026-04-25 · Phase C：reader-naturalness 5 子维度入口
     # 借鉴 upstream@5339e83 reviewer.md 5 子维度 rubric（不引入 reviewer.md 整体）。
     # data-agent 读 tmp/naturalness_check_ch{NNNN}.json.subdimensions 后写入 chapter_meta；
@@ -1692,10 +1730,11 @@ def main():
                 or args.add_words
                 or args.set_checker_subdimensions
                 or args.set_hook_close
+                or getattr(args, "set_progress_chapter", None)
             ):
                 emit_error(
                     "MISSING_ARG",
-                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck / --add-words / --set-checker-subdimensions / --set-hook-close）",
+                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck / --add-words / --set-checker-subdimensions / --set-hook-close / --set-progress-chapter）",
                 )
                 return
         changes: list[str] = []
@@ -1889,10 +1928,23 @@ def main():
                     new_overall = round(sum(present) / len(present))
                     floor_note = ""
                 cs["overall"] = new_overall
-                entry["overall_score"] = new_overall
+                # Round 28.1 · Ch25 RCA：与 entry.overall_score 解耦
+                # 根因（Ch25）：set-checker-score 自动重算 entry.overall_score = avg(13)
+                # 覆盖了 Step 3.5 通过 set-chapter-meta-field 写入的 combined（internal*0.6+external*0.4）。
+                # 修法：只在 entry.overall_score 为空/0/None 时初始化；非空时尊重已有值。
+                # 显式 --set-chapter-meta-field overall_score 是唯一权威 setter。
+                existing_overall = entry.get("overall_score")
+                if existing_overall in (None, 0, ""):
+                    entry["overall_score"] = new_overall
+                    overall_note = f", overall_score 初始化={new_overall}"
+                else:
+                    overall_note = (
+                        f", overall_score={existing_overall} 保留"
+                        f"（避免覆盖 combined 公式；如需更新请用 --set-chapter-meta-field overall_score）"
+                    )
                 changes.append(
                     f"chapter_meta.{key}.checker_scores.{checker}={score} "
-                    f"(overall 重算={new_overall}{floor_note})"
+                    f"(overall 重算={new_overall}{floor_note}{overall_note})"
                 )
                 # Round 18 · 2026-04-24 · Ch10 P1-7 根治：Step 4.5 复测后自动同步 review_metrics
                 # 旧逻辑：review_metrics.overall_score 在 Step 3 首次写入后不更新，
@@ -1994,6 +2046,21 @@ def main():
             changes.append(
                 f"progress.total_words={cur_total}->{new_total} (chapter {ch} word_count={words}; recomputed from chapter_meta)"
             )
+            if applied_chapter is None:
+                applied_chapter = ch
+
+        # Round 28.1 · Ch25 RCA：set-progress-chapter 同时写 4 字段
+        if getattr(args, "set_progress_chapter", None):
+            payload = load_json_arg(args.set_progress_chapter)
+            ch = int(payload.get("chapter", 0))
+            if not ch:
+                emit_error("INVALID_ARG", "--set-progress-chapter 需要 {chapter:int}")
+                return
+            result = manager.set_progress_chapter(ch)
+            for ch_change in result.get("changes", []):
+                changes.append(ch_change)
+            manager._pending_raw_state_mutations.add("progress")
+            manager._pending_raw_state_mutations.add("__top__")
             if applied_chapter is None:
                 applied_chapter = ch
 

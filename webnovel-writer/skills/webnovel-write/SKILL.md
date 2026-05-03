@@ -847,11 +847,14 @@ hard_max 超限会直接 fail，回 Step 4 继续压缩。
 - 本次 Ch7 后追加复测：pacing 58→90（+32），真实 overall 应为 88 而非 85
 - **后果**：chapter_meta 存的是修前数据，下章 trend 监控误判“Ch7 pacing 突降”
 
-**触发规则（硬约束 · Round 21.2 P1 Patch 4 放宽）**：
+**触发规则（硬约束 · Round 28.1 Ch25 RCA 第 4 档加入）**：
 - **强制复测档**：Step 3 任一 checker 首次分数 `< 75` → Step 4 polish 后**必须**重跑该 checker（旧规则保留）
-- **【新】近线复测档**：Step 3 任一 checker 首次分数 `< 80` 且该次 polish 报告含针对此 checker 的 fix（PACE_/FLOW_/EMO_/HP_/PRO_/OOC_/CONT_/CONS_/DIA_/DEN_ 任一前缀）→ **必须**重跑该 checker（验证修复真效）
-- **【新】下滑复测档**：Step 3 任一 checker 首次分数与上一章同维度差 `≥ 5` 且 polish 含此 checker 修法 → **必须**重跑（验证回归是否被止住）
+- **近线复测档（Round 21.2）**：Step 3 任一 checker 首次分数 `< 80` 且该次 polish 报告含针对此 checker 的 fix（PACE_/FLOW_/EMO_/HP_/PRO_/OOC_/CONT_/CONS_/DIA_/DEN_ 任一前缀）→ **必须**重跑该 checker（验证修复真效）
+- **下滑复测档（Round 21.2）**：Step 3 任一 checker 首次分数与上一章同维度差 `≥ 5` 且 polish 含此 checker 修法 → **必须**重跑（验证回归是否被止住）
+- **HIGH-issue 全面复测档（Round 28.1 · Ch25 RCA · NEW）**：Step 3 任一 checker 输出含 `severity=high` 的 issue → Step 4 polish 后**必须**重跑该 checker，且复测分数必须比修前 **≥ +3**（验证 HIGH 问题真正修复，不是表面替换）。即使首次分数已 ≥ 80 也强制走，因为 Ch25 血教训：prose_quality 81 含 3 HIGH，polish 后仍 81——显示修复无效但因 ≥75 跳过复测。
 - 复测均使用 `_recheck_ch{NNNN}.json` 作为输出文件名
+
+**Ch25 血教训补充（Round 28.1）**：Step 3 prose-quality=81 含 3 HIGH（PRO_001/PRO_002/PRO_003），polish 后名义"修了"但 不是X是Y 16→14、像 16→11、D-3/D-2/D-1 仅替换标签——量化未达 target，复测会暴露分数不动甚至下滑。HIGH 全面复测档会在所有这种情况触发，通过对比 before/after 分数来 GATE 真伪修复。
 
 **Round 21.2 血教训背景**：Ch16 的 emotion 78 / pacing 78 / high-point 79 / prose 82 / ooc 81 五个维度全部相对 Ch15 下滑 8-16 分，但因为都 ≥75，旧 trigger 不命中，post_polish_recheck 整章未触发，结果 polish 是否真起效完全不可验证。新档命中后，下次再发生类似 −10 量级回归会被 Step 4.5 强制兜住。
 
@@ -894,6 +897,19 @@ Ch8 血教训：writer 首稿 1930 字（-33% 预算 2900）· 对话占比 0.12
 - **chapter_type 特例**：空间视觉章/纯动作章可将 dialogue_min 降到 0.10，必须在 `context_contract.structural_exemptions.dialogue_ratio_override` 声明
 
 ### Step 5：Data Agent（状态与索引回写）
+
+> **🔴 Round 28.1 · Ch25 RCA · 必须显式 start-step（H64/A6 防累积）**
+>
+> 调用 data-agent 之**前**，必须先显式登记 Step 5 开始：
+>
+> ```bash
+> python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+>   workflow start-step --step-id "Step 5" --step-name "Data Agent"
+> ```
+>
+> **根因**：Ch17/Ch25 都犯过同一错——直接调 data-agent → workflow_manager 兜底 implicit_start=True → audit A6 HIGH warn 累积。
+> 设环境变量 `WEBNOVEL_STRICT_WORKFLOW=1` 后，complete-step 会直接 reject 没预先 start-step 的调用。
+> hygiene H64 检测到 implicit_start=True 会标 P1 warn。
 
 使用 Task 调用 `data-agent`，参数：
 - `chapter`

@@ -884,6 +884,149 @@ def check_progress_chapter_consistency(root: Path, chapter: int, rep: HygieneRep
         rep.record("P1", "H61", f"progress 字段对齐 (chapter={max_ch})", True)
 
 
+def check_no_implicit_start_in_step5(root: Path, chapter: int, rep: HygieneReport):
+    """H64 (Round 28.1 · Ch25 RCA): Step 5 必须显式 start-step
+
+    根因（Ch25）：Step 5（data-agent）调用前未显式 workflow start-step --step-id "Step 5"，
+    workflow_manager 兜底 implicit_start=True，audit A6 HIGH warn 累积。
+    """
+    wf_p = root / ".webnovel" / "workflow_state.json"
+    if not wf_p.exists():
+        return
+    try:
+        wf = json.loads(wf_p.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    # Find ch task in history
+    target = None
+    for task in wf.get("history", []):
+        if task.get("chapter") == chapter:
+            target = task
+            break
+    if not target:
+        return
+    completed = target.get("completed_steps") or target.get("steps") or []
+    impl5 = None
+    for st in completed:
+        if str(st.get("id", "")).startswith("Step 5") and st.get("implicit_start"):
+            impl5 = st
+            break
+    if impl5:
+        rep.record(
+            "P1",
+            "H64",
+            f"Step 5 implicit_start=True · workflow start-step 未显式调用。"
+            f" 修：下章 Step 5 前调 `workflow start-step --step-id \"Step 5\" --step-name \"Data Agent\"`。"
+            f" 避免 audit A6 HIGH 累积。",
+            False,
+        )
+        return
+    rep.record("P1", "H64", "Step 5 显式 start-step（无 implicit_start）", True)
+
+
+def check_thirteen_checker_jsons_present(root: Path, chapter: int, rep: HygieneReport):
+    """H63 (Round 28.1 · Ch25 RCA): Step 3 必须落盘全部 13 个 checker JSON
+
+    根因（Ch25）：reader_pull_ch0025.json 缺失但分数 87 进了 chapter_meta，
+    说明 subagent 可能 fallback 到 general-purpose 静默通过，或未按规范写盘。
+    后果：A2 audit warn 累积、H26 hook_close 验证失效、跨章趋势数据残缺。
+
+    检查规则：
+      - 13 个 canonical checker 在 .webnovel/tmp/ 下必须有对应 JSON
+      - 命名兼容：{name}_ch{NNNN}.json 或 {name}_check_ch{NNNN}.json
+      - 缺失任意一个 → P0 BLOCK
+    """
+    tmp_dir = root / ".webnovel" / "tmp"
+    if not tmp_dir.exists():
+        rep.record("P0", "H63", ".webnovel/tmp 不存在，跳过 13 checker 落盘检查", True)
+        return
+    expected = [
+        ("consistency", "consistency-checker"),
+        ("continuity", "continuity-checker"),
+        ("ooc", "ooc-checker"),
+        ("reader_pull", "reader-pull-checker"),
+        ("high_point", "high-point-checker"),
+        ("flow", "flow-checker"),
+        ("pacing", "pacing-checker"),
+        ("dialogue", "dialogue-checker"),
+        ("density", "density-checker"),
+        ("prose_quality", "prose-quality-checker"),
+        ("emotion", "emotion-checker"),
+        ("reader_naturalness", "reader-naturalness-checker"),
+        ("reader_critic", "reader-critic-checker"),
+    ]
+    missing = []
+    pad = f"{chapter:04d}"
+    for prefix, canonical in expected:
+        candidates = [
+            tmp_dir / f"{prefix}_ch{pad}.json",
+            tmp_dir / f"{prefix}_check_ch{pad}.json",
+        ]
+        if not any(p.exists() for p in candidates):
+            missing.append(canonical)
+    if missing:
+        rep.record(
+            "P0",
+            "H63",
+            f"Step 3 落盘缺失 {len(missing)}/13 checker JSON: {missing}（修：Step 3 重跑缺失 checker，"
+            f"确保写到 .webnovel/tmp/{{prefix}}_ch{pad}.json）",
+            False,
+        )
+        return
+    rep.record("P0", "H63", "Step 3 全 13 checker JSON 落盘完整", True)
+
+
+def check_curly_quote_pairing(root: Path, chapter: int, rep: HygieneReport):
+    """H62 (Round 28.x · Ch25 RCA): 中文弯引号配对方向必须正确
+
+    根因（Ch25 v1）：用户明令"必须用中文弯引号"，但 Step 4 polish 只检查
+    ASCII 引号 = 0，未检查弯引号方向。Ch25 出现两处反向：
+      L25: 用的词是"不可逆转"——  （首引号 U+201D 应是 U+201C）
+      L63: 他看了一圈，"进来。"  （首引号 U+201D 应是 U+201C）
+    左右数量平衡（37/41）也无法捕获，因为只多 4 个右引号。
+
+    检查规则（状态机）：
+      - 全文扫描，遇 U+201C balance += 1，遇 U+201D balance -= 1
+      - 任何时刻 balance 不能为负（出现"右引号在左引号之前"即为反向）
+      - 全文扫完后 balance 必须 == 0（左右配对）
+    """
+    chap_files = list((root / "正文").glob(f"第{chapter:04d}章*.md"))
+    if not chap_files:
+        return
+    text = chap_files[0].read_text(encoding="utf-8")
+    balance = 0
+    reversed_positions = []
+    for i, c in enumerate(text):
+        if c == "“":  # “ left
+            balance += 1
+        elif c == "”":  # ” right
+            balance -= 1
+            if balance < 0:
+                # 右引号出现在左引号之前 = 反向
+                line_num = text[:i].count("\n") + 1
+                ctx = text[max(0, i - 15) : min(len(text), i + 15)].replace("\n", "|")
+                reversed_positions.append((line_num, ctx))
+                balance = 0  # 复位继续扫
+    if reversed_positions:
+        details = "; ".join(f"L{ln}: ...{ctx}..." for ln, ctx in reversed_positions[:5])
+        rep.record(
+            "P0",
+            "H62",
+            f"中文弯引号方向反向 {len(reversed_positions)} 处：{details}（修：将首引号 U+201D 改为 U+201C）",
+            False,
+        )
+        return
+    if balance != 0:
+        rep.record(
+            "P0",
+            "H62",
+            f"中文弯引号配对失衡 net={balance}（左 - 右 = {balance}）",
+            False,
+        )
+        return
+    rep.record("P0", "H62", "弯引号配对方向正确", True)
+
+
 def check_allusions_schema(root: Path, chapter: int, rep: HygieneReport):
     """H17: allusions_used 必须 list[dict] with 7 required fields"""
     state_p = root / ".webnovel" / "state.json"
@@ -1699,7 +1842,16 @@ def check_hook_close_persistence(root: Path, chapter: int, rep: HygieneReport):
         return
     rp_p = root / ".webnovel" / "tmp" / f"reader_pull_ch{chapter:04d}.json"
     if not rp_p.exists():
-        rep.record("P0", "H26", f"reader_pull_ch{chapter:04d}.json 不存在，跳过", True)
+        # Round 28.1 · Ch25 RCA: 不再 SKIP success；reader_pull JSON 缺失意味着
+        # reader-pull-checker 未真正落盘 → hook_close 验证全失效，必须 BLOCK
+        rep.record(
+            "P0",
+            "H26",
+            f"reader_pull_ch{chapter:04d}.json 不存在 → hook_close 一致性无法验证，"
+            f"reader-pull-checker 未落盘 disk artifact。修复：Step 3 重跑 reader-pull-checker"
+            f" 并确保写出 .webnovel/tmp/reader_pull_ch{chapter:04d}.json",
+            False,
+        )
         return
     try:
         rp = json.loads(rp_p.read_text(encoding="utf-8"))
@@ -2741,6 +2893,11 @@ def main():
     check_checker_scores_review_metrics_consistency(root, args.chapter, rep)  # H58
     check_silent_score_change(root, args.chapter, rep)  # H59
     check_progress_chapter_consistency(root, args.chapter, rep)  # H61
+
+    # Round 28.1 · Ch25 RCA · 弯引号方向 + reader_pull JSON 必存 + 13 checker 落盘 + Step 5 显式 start
+    check_curly_quote_pairing(root, args.chapter, rep)  # H62
+    check_thirteen_checker_jsons_present(root, args.chapter, rep)  # H63
+    check_no_implicit_start_in_step5(root, args.chapter, rep)  # H64
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)

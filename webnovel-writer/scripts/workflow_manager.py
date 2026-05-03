@@ -558,6 +558,21 @@ def complete_step(step_id, artifacts_json=None):
         pending_steps = task.get("pending_steps", []) or []
         completed_ids = {row.get("id") for row in task.get("completed_steps", [])}
         if step_id in pending_steps and step_id not in completed_ids:
+            # Round 28.1 · Ch25 RCA：strict mode 拒绝 implicit_start
+            # 根因：Ch25 Step 5 implicit_start=True 导致 audit A6 HIGH warn 累积。
+            # 修法：设环境变量 WEBNOVEL_STRICT_WORKFLOW=1 → implicit_start 直接 reject。
+            # 默认仍允许 fallback 兼容历史，但 print 加红字提醒。
+            strict = os.environ.get("WEBNOVEL_STRICT_WORKFLOW") == "1"
+            if strict:
+                print(
+                    f"❌ STRICT_WORKFLOW: {step_id} 没有预先 start-step。"
+                    f" 修：先调 `workflow start-step --step-id \"{step_id}\"` 再调 complete-step。"
+                )
+                safe_append_call_trace(
+                    "step_complete_rejected_strict",
+                    {"requested_step_id": step_id, "reason": "implicit_start_blocked_by_strict_mode"},
+                )
+                return
             implicit_start_iso = now_iso()
             target_step = {
                 "id": step_id,
@@ -579,7 +594,10 @@ def complete_step(step_id, artifacts_json=None):
                     "fallback": "round15.2_implicit_start",
                 },
             )
-            print(f"⚠️ {step_id} 没有预先 start-step（本次自动 synthesize 隐式起点）· call_trace.step_implicit_start 已记录")
+            print(
+                f"\033[91m⚠️ AUDIT-A6 HIGH: {step_id} implicit_start=True\033[0m"
+                f" · 下次写章前 SKILL.md Step 5 必须先调 start-step（避免 A6 累积警告）"
+            )
         else:
             print(f"⚠️ 未找到待完成 Step {step_id}（当前活跃: {active_ids}）")
             safe_append_call_trace(
@@ -969,7 +987,7 @@ def analyze_recovery_options(interrupt_info):
                 "option": "A",
                 "label": "重新执行外部审查",
                 "risk": "medium",
-                "description": "重新调用外部审查（14 模型 · 核心模型按 fallback 链重试）",
+                "description": "重新调用外部审查（15 模型 · 核心模型按 fallback 链重试）",
                 "actions": ["重新执行外部模型审查", "合并内外部分数", "继续 Step 4 润色"],
             },
             {
