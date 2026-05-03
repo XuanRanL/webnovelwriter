@@ -304,23 +304,49 @@ def _write_minimal_state(root: Path, checker_scores: dict) -> None:
 def test_hygiene_H18_canonical_passes(tmp_path: Path):
     _ensure_scripts_on_path()
     import hygiene_check as hc
+    from data_modules.chapter_audit import CHECKER_NAMES
 
-    _write_minimal_state(tmp_path, {"consistency-checker": 90, "overall": 90})
+    # Round 28 · Ch24 RCA: H18 现在要求 13 canonical 全齐
+    cs = {name: 90 for name in CHECKER_NAMES}
+    cs["overall"] = 90
+    _write_minimal_state(tmp_path, cs)
     rep = hc.HygieneReport()
     hc.check_checker_scores_canonical(tmp_path, 1, rep)
-    # All clean — one pass recorded, no fails
     assert "H18" in rep.passes
 
 
 def test_hygiene_H18_chinese_alias_passes_with_warning_noted(tmp_path: Path):
     _ensure_scripts_on_path()
     import hygiene_check as hc
+    from data_modules.chapter_audit import CHECKER_NAMES, CHECKER_ALIASES
 
-    _write_minimal_state(tmp_path, {"设定一致性": 90, "overall": 90})
+    # 用中文别名提供 13 项（normalize 后等价于 canonical）
+    cs = {}
+    for name in CHECKER_NAMES:
+        aliases = CHECKER_ALIASES.get(name, [])
+        if aliases:
+            cs[aliases[0]] = 90  # use first alias
+        else:
+            cs[name] = 90
+    cs["overall"] = 90
+    _write_minimal_state(tmp_path, cs)
     rep = hc.HygieneReport()
     hc.check_checker_scores_canonical(tmp_path, 1, rep)
-    # 中文别名是合法但不推荐 → record pass (audit 会 normalize)
     assert "H18" in rep.passes
+
+
+def test_hygiene_H18_missing_canonical_fails(tmp_path: Path):
+    """Round 28 · Ch24 RCA: 缺 canonical key 必须 P0 fail（Ch24 漏 reader-naturalness 血教训）"""
+    _ensure_scripts_on_path()
+    import hygiene_check as hc
+
+    # 只给 1 个 canonical（缺 12 个）
+    _write_minimal_state(tmp_path, {"consistency-checker": 90, "overall": 90})
+    rep = hc.HygieneReport()
+    hc.check_checker_scores_canonical(tmp_path, 1, rep)
+    # 应该 P0 fail
+    assert any("H18" in f for f in rep.p0_fails), \
+        f"Expected P0 H18 fail, got: passes={rep.passes}, p0_fails={rep.p0_fails}"
 
 
 def test_hygiene_H18_banned_key_fails(tmp_path: Path):

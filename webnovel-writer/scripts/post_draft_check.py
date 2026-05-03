@@ -478,8 +478,9 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         # Round 18.2 · 2026-04-25 · Ch11 RCA #2 根治
         # Ch10 polish 把"没X"压下来后，Ch11 起草时签名迁移到"那一X"18 次（reader-naturalness +
         # prose-quality 双独立 grep 证实）。post_draft 没有相应扫描，导致 Step 3 才被发现。
-        # 根治：把"那一X"加入默认签名 lint，warn ≥10 / block ≥18。
-        "那一X": {"pattern": r"那一[一-鿿]", "warn": 10, "block": 18},
+        # Round 28 · Ch24 RCA 收紧：block 18→12（Ch24 实测 14 次仍只 warn 不 block，
+        # 导致整章 polish 回避了这个签名，commit 后 deep research 才暴露）。
+        "那一X": {"pattern": r"那一[一-鿿]", "warn": 10, "block": 12},
         # 同期发现：精确秒级时间词外溢（叙事声音约束 ≤3）。Ch11 polish 前 5 次。
         "半秒|一秒|三秒": {"pattern": r"(?:半秒|一秒|三秒)", "warn": 3, "block": 6},
         # 段落首"他"开头连续（叙事声音约束 0 容忍）。Ch11 polish 前 2 处。

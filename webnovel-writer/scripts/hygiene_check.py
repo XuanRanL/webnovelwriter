@@ -628,15 +628,19 @@ def check_polish_report_persistence(root: Path, chapter: int, rep: HygieneReport
 
 
 def check_checker_scores_canonical(root: Path, chapter: int, rep: HygieneReport):
-    """H18: checker_scores key 必须 canonical
+    """H18: checker_scores key 必须 canonical 且 13 个全齐
 
-    规则：
-    - 合法 key = 11 CHECKER_NAMES ∪ {"overall"}
+    规则（Round 28 升级 · Ch24 RCA）：
+    - 合法 key = 13 CHECKER_NAMES ∪ {"overall"}
+    - 13 个 canonical 必须全部存在（Ch24 漏 reader-naturalness-checker 血教训）
     - 支持通过 CHECKER_ALIASES 映射的中文/legacy 别名（映射后等价于 canonical）
     - 非法 key（Anti-AI/钩子强度/伏笔埋设 等 AI 手写常见 fallback）→ P1 fail
+    - 缺 canonical key（≥1 个）→ P0 fail（升级，Ch24 RCA）
 
-    根因：AI 受 data-agent.md 历史示例 `{"设定一致性": 82}` 诱导写中文 key，
-    而 chapter_audit 只认英文 canonical，导致 silent mismatch（Ch1 血教训）。
+    根因：
+    - Ch1 血教训：AI 受 data-agent.md 历史示例 `{"设定一致性": 82}` 诱导写中文 key
+    - Ch24 血教训：H18 只验证已存在 key 的 canonicality，不验证完整性，
+      导致 reader-naturalness-checker 漏入 chapter_meta，下游 audit 静默错算 overall。
     """
     state_p = root / ".webnovel" / "state.json"
     if not state_p.exists():
@@ -649,7 +653,7 @@ def check_checker_scores_canonical(root: Path, chapter: int, rep: HygieneReport)
     # 延迟 import 防循环依赖（hygiene_check 是独立脚本）
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        from data_modules.chapter_audit import normalize_checker_scores_keys
+        from data_modules.chapter_audit import normalize_checker_scores_keys, CHECKER_NAMES
     except Exception as exc:
         rep.record("P1", "H18", f"无法加载 normalize_checker_scores_keys: {exc}", False)
         return
@@ -661,7 +665,20 @@ def check_checker_scores_canonical(root: Path, chapter: int, rep: HygieneReport)
             f"checker_scores 含非 canonical key {len(invalid)} 个: {invalid[:5]}（修：改成 CHECKER_NAMES 英文 key）",
             False,
         )
-    elif renamed:
+        return
+    # Ch24 RCA: 必须 13 个 canonical 全齐（normalize 后比对）
+    norm_keys = set(_norm.keys()) - {"overall"}
+    expected = set(CHECKER_NAMES)
+    missing = expected - norm_keys
+    if missing:
+        rep.record(
+            "P0",
+            "H18",
+            f"checker_scores 缺 canonical key {len(missing)}/{len(expected)}: {sorted(missing)}（修：补齐到 13 个 checker）",
+            False,
+        )
+        return
+    if renamed:
         rep.record(
             "P1",
             "H18",
@@ -669,7 +686,202 @@ def check_checker_scores_canonical(root: Path, chapter: int, rep: HygieneReport)
             True,
         )
     else:
-        rep.record("P1", "H18", f"checker_scores {len(cs)} 个 key 全部 canonical", True)
+        rep.record("P1", "H18", f"checker_scores {len(cs)} 个 key 全部 canonical 且 13 项齐", True)
+
+
+def check_checker_scores_review_metrics_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H58 (Round 28 · Ch24 RCA): chapter_meta.checker_scores 与 review_metrics.dimension_scores 必须一致
+
+    规则：
+    - 13 个 canonical key 在两份 store 之间最多容忍 ±1 分（rounding 容差）
+    - 若任一 key 漂移 >1 → P1 fail
+    - Step 4.5 post_polish_recheck 记录的 checker 不参与漂移检查（其值已被合法更新）
+
+    根因（Ch24）：Step 4 polish 后 7 个 checker 分数被静默改写到 chapter_meta，
+    review_metrics 仍保留 Step 3 原始值，两份真源分裂，造成 prose-quality 89 vs 75 漂移 14 分。
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    cs = meta.get("checker_scores")
+    if not isinstance(cs, dict) or not cs:
+        return
+    # Read review_metrics from index.db
+    db_p = root / ".webnovel" / "index.db"
+    if not db_p.exists():
+        return
+    import sqlite3
+    try:
+        conn = sqlite3.connect(str(db_p))
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT dimension_scores FROM review_metrics WHERE start_chapter=? ORDER BY rowid DESC LIMIT 1",
+            (chapter,),
+        )
+        row = cur.fetchone()
+        conn.close()
+    except Exception as exc:
+        rep.record("P1", "H58", f"无法读取 review_metrics: {exc}", False)
+        return
+    if not row or not row[0]:
+        rep.record("P1", "H58", "review_metrics 无记录（Step 3 未落库）", False)
+        return
+    try:
+        ds = json.loads(row[0])
+    except Exception:
+        return
+    # Map review_metrics short keys to canonical names
+    short_to_canonical = {
+        "naturalness": "reader-naturalness-checker",
+        "reader_critic": "reader-critic-checker",
+        "consistency": "consistency-checker",
+        "continuity": "continuity-checker",
+        "ooc": "ooc-checker",
+        "reader_pull": "reader-pull-checker",
+        "high_point": "high-point-checker",
+        "flow": "flow-checker",
+        "pacing": "pacing-checker",
+        "dialogue": "dialogue-checker",
+        "density": "density-checker",
+        "prose_quality": "prose-quality-checker",
+        "emotion": "emotion-checker",
+    }
+    # Step 4.5 recheck whitelist (these checkers may legitimately diverge)
+    recheck = meta.get("post_polish_recheck", {}) or {}
+    recheck_set = set(recheck.keys()) if isinstance(recheck, dict) else set()
+    drifts = []
+    for short, canonical in short_to_canonical.items():
+        if canonical in recheck_set:
+            continue  # legitimately rechecked, divergence allowed
+        cm_v = cs.get(canonical)
+        rm_v = ds.get(short)
+        if cm_v is None or rm_v is None:
+            continue  # missing handled by H18
+        try:
+            diff = abs(float(cm_v) - float(rm_v))
+        except (TypeError, ValueError):
+            continue
+        if diff > 1:
+            drifts.append(f"{canonical}: chapter_meta={cm_v} vs review_metrics={rm_v} (Δ={diff:.0f})")
+    if drifts:
+        rep.record(
+            "P1",
+            "H58",
+            f"checker_scores 与 review_metrics 漂移 {len(drifts)} 项（>1分）: {drifts[:3]}（修：post_polish 改分必须走 --append-recheck）",
+            False,
+        )
+    else:
+        rep.record("P1", "H58", "checker_scores 与 review_metrics 一致（容差±1）", True)
+
+
+def check_silent_score_change(root: Path, chapter: int, rep: HygieneReport):
+    """H59 (Round 28 · Ch24 RCA): post_polish 改分必须有 post_polish_recheck 记录
+
+    规则：
+    - 任一 chapter_meta.checker_scores key 与 review_metrics 漂移 >1
+    - 且 post_polish_recheck 没有该 checker 的记录
+    - → P1 fail（静默改分）
+
+    根因（Ch24）：Step 4 polish 后 7 个 checker 分数偷偷改了，
+    只有 reader-critic + high-point 走了 --append-recheck 留档。
+    其他静默改分无 audit trail，违反 Step 3+4.5 真源不可篡改原则。
+    """
+    # 已与 H58 集成，此处作为独立的 P1 重声明
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    cs = meta.get("checker_scores", {})
+    recheck = meta.get("post_polish_recheck", {}) or {}
+    # Read review_metrics
+    db_p = root / ".webnovel" / "index.db"
+    if not db_p.exists():
+        return
+    import sqlite3
+    try:
+        conn = sqlite3.connect(str(db_p))
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT dimension_scores FROM review_metrics WHERE start_chapter=? ORDER BY rowid DESC LIMIT 1",
+            (chapter,),
+        )
+        row = cur.fetchone()
+        conn.close()
+    except Exception:
+        return
+    if not row or not row[0]:
+        return
+    try:
+        ds = json.loads(row[0])
+    except Exception:
+        return
+    short_to_canonical = {
+        "naturalness": "reader-naturalness-checker", "reader_critic": "reader-critic-checker",
+        "consistency": "consistency-checker", "continuity": "continuity-checker",
+        "ooc": "ooc-checker", "reader_pull": "reader-pull-checker",
+        "high_point": "high-point-checker", "flow": "flow-checker",
+        "pacing": "pacing-checker", "dialogue": "dialogue-checker",
+        "density": "density-checker", "prose_quality": "prose-quality-checker",
+        "emotion": "emotion-checker",
+    }
+    silent_changes = []
+    for short, canonical in short_to_canonical.items():
+        cm_v = cs.get(canonical)
+        rm_v = ds.get(short)
+        if cm_v is None or rm_v is None:
+            continue
+        try:
+            diff = abs(float(cm_v) - float(rm_v))
+        except (TypeError, ValueError):
+            continue
+        if diff > 1 and canonical not in recheck:
+            silent_changes.append(f"{canonical}: {rm_v}→{cm_v} (Δ={diff:.0f})")
+    if silent_changes:
+        rep.record(
+            "P1",
+            "H59",
+            f"post_polish 静默改分 {len(silent_changes)} 项（无 post_polish_recheck 记录）: {silent_changes[:3]}",
+            False,
+        )
+    else:
+        rep.record("P1", "H59", "无静默改分", True)
+
+
+def check_progress_chapter_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H61 (Round 28 · Ch24 RCA): progress.last_completed_chapter 必须 == max(chapter_meta keys)
+
+    根因（Ch24）：写到 Ch24，但 state.last_completed_chapter / state.current_chapter 还停在 20，
+    连续 4 章累积漂移。
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    cm = s.get("chapter_meta", {})
+    if not cm:
+        return
+    try:
+        max_ch = max(int(k) for k in cm.keys() if k.isdigit())
+    except ValueError:
+        return
+    last = s.get("last_completed_chapter")
+    current = s.get("current_chapter")
+    issues = []
+    if last is not None and last != max_ch:
+        issues.append(f"last_completed_chapter={last} ≠ max(chapter_meta)={max_ch}")
+    if current is not None and current != max_ch:
+        issues.append(f"current_chapter={current} ≠ max(chapter_meta)={max_ch}")
+    if issues:
+        rep.record(
+            "P1", "H61",
+            f"progress 字段漂移: {'; '.join(issues)}（修：写完章节后 update last_completed_chapter）",
+            False,
+        )
+    else:
+        rep.record("P1", "H61", f"progress 字段对齐 (chapter={max_ch})", True)
 
 
 def check_allusions_schema(root: Path, chapter: int, rep: HygieneReport):
@@ -2525,6 +2737,10 @@ def main():
     check_polish_sunk_cost(root, args.chapter, rep)  # H27 · Round 20.1 · sunk cost 警报
     check_chapter_date_anchor_continuity(root, args.chapter, rep)  # H37 · Round 21.8 · Ch1-22 跳日 P1
     check_signature_word_overuse(root, args.chapter, rep)  # H39 · Round 21.8 · Ch1-22 模板感 P1
+    # Round 28 · Ch24 RCA · 真源分裂 + 静默改分 + progress 漂移根治
+    check_checker_scores_review_metrics_consistency(root, args.chapter, rep)  # H58
+    check_silent_score_change(root, args.chapter, rep)  # H59
+    check_progress_chapter_consistency(root, args.chapter, rep)  # H61
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
