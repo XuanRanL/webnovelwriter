@@ -363,7 +363,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 | Step 4 | `anti_ai_force_check` / `polish_report` / `fixes` | `pass`/`fail`, 润色报告路径, 修复项列表 |
 | Step 5 | `state_modified` / `entities` / `foreshadowing` / `scene_count` / `chapter_meta_fields` | data-agent 写库确认 + 实体/伏笔/场景计数 |
 | Step 6 | `decision` / `audit_report` / `audit_decision` | `approve` / `approve_with_warnings` / `block` |
-| Step 7 | `commit` / `branch` / `commit_sha` | git commit SHA + 分支名 |
+| Step 7 | `commit` / `branch` / `commit_sha` / `word_count` | git commit SHA + 分支名 + 最终字数（Round 28.6 Ch29 RCA：Step 2A 只记草稿字数，polish 后字数需在 Step 7 更新；缺少则触发 H66 word_count 漂移 P1 警告）|
 
 **占位字段（不能单独存在）**：`v2`, `ok`, `chapter_completed`, `committed` 只有在至少一个语义字段存在时才被允许。单独用这些字段会被 `workflow_manager.complete_step` 直接 reject，参考 `_validate_artifact_has_semantic_field` 源码。
 

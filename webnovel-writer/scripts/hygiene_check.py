@@ -1204,15 +1204,23 @@ def check_disk_state_score_consistency(root: Path, chapter: int, rep: HygieneRep
         if cm_v is None:
             continue
         # 找 disk JSON
-        candidates = [
+        # Round 28.6 Ch29 RCA: _recheck_ 文件优先 — Step 4.5 recheck 写入 _recheck_ 后缀文件
+        # H68 必须先用 recheck 文件对比，否则 Step 4.5 每章触发虚假漂移（Ch29 血教训）
+        recheck_candidates = [
+            tmp_dir / f"{prefix}_recheck_ch{pad}.json",
+        ]
+        original_candidates = [
             tmp_dir / f"{prefix}_ch{pad}.json",
             tmp_dir / f"{prefix}_check_ch{pad}.json",
         ]
-        disk_path = next((p for p in candidates if p.exists()), None)
+        disk_path = (
+            next((p for p in recheck_candidates if p.exists()), None)
+            or next((p for p in original_candidates if p.exists()), None)
+        )
         if disk_path is None:
             continue
         try:
-            disk_data = json.loads(disk_path.read_text(encoding="utf-8"))
+            disk_data = json.loads(disk_path.read_text(encoding="utf-8-sig"))
         except Exception:
             continue  # H71 抓非法 JSON
         # disk JSON 里 score 字段名兼容多种
@@ -1234,7 +1242,9 @@ def check_disk_state_score_consistency(root: Path, chapter: int, rep: HygieneRep
             "P0",
             "H68",
             f"checker_scores 与 disk JSON 漂移 {len(drifts)} 项（>1分）: {drifts[:5]}（"
-            f"修：state.checker_scores 必须 mirror disk · 跑 webnovel.py state mirror-disk-scores --chapter {chapter}）",
+            f"修：① 若有 _recheck_ 文件 → H68 应自动用 recheck 文件对比（已在 Round 28.6 修复）；"
+            f"② 若无 recheck 文件 → 先确认 state 分数正确性，再跑 mirror-disk-scores --chapter {chapter}；"
+            f"⚠️ 警告：Step 4.5 polish 后直接跑 mirror-disk-scores 会把 state 降分回旧值）",
             False,
         )
     else:

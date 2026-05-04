@@ -1902,6 +1902,11 @@ def main():
                 "dialogue_ratio",  # F2 对话占比闸门
                 "signature_density",  # 签名句式跨章扫描
                 "reader_thrill_score",  # Round 20.x A9 floor（数字版，与 thrill_score dict 字段共存）
+                # Round 28.6 Ch29 RCA Bug 4：updated_at/created_at 不在白名单 → H2 恢复时无法 CLI 修复
+                # 根因：_backfill_chapter_meta 自动写这两个字段，但 process-chapter 后若数据缺失需手动补填时无路径
+                # 修复：加入白名单使其可通过 set-chapter-meta-field 兜底设置
+                "updated_at",  # ISO 时间戳（章节最后更新时间）
+                "created_at",  # ISO 时间戳（章节首次创建时间）
             }
             if not ch or not field:
                 emit_error("INVALID_ARG", "--set-chapter-meta-field 需要 chapter + field 字段")
