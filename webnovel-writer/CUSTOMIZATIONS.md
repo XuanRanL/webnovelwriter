@@ -7,6 +7,37 @@
 
 ---
 
+## [2026-05-04 · Round 28.6续] Ch29 deep research RCA · 5 根因永久根治
+
+**Trigger**：用户 Ch29《外院与内院》全流程跑完后做 deep research，暴露 5 类 bug：
+
+- **Bug 1 (P0)**: H68 虚假漂移 — Step 4.5 recheck 写 `_recheck_` 后缀文件，H68 不查该文件，拿旧 `_check_` 文件比 state → 每章 Step 4.5 都触发假阳
+- **Bug 2 (P0)**: H68 error message 误导用户跑 `mirror-disk-scores` → disk→state 方向把 state 评分降回 polish 前旧值（79→68 / 86→74 / 78→62）
+- **Bug 3 (P0)**: data-agent 只输出 13/23 Core 字段，hygiene H2 阻断，需多次手动补填
+- **Bug 4 (P1)**: `set-chapter-meta-field` 白名单不含 `updated_at`/`created_at`，H2 修复时无 CLI 路径
+- **Bug 5 (P1)**: Step 7 artifact 无 `word_count`，polish 后字数不更新，H66 每章触发 word_count 漂移 P1 warn
+
+**Architecture change**：
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `scripts/hygiene_check.py` | **Bug 1** H68 先查 `_recheck_candidates`，有则用 recheck；无则回退 original；encoding 改 `utf-8-sig` 兼容 BOM |
+| 2 | `scripts/hygiene_check.py` | **Bug 2** H68 error message 加 ⚠️ 警告：Step 4.5 后直接跑 mirror-disk-scores 会降分，正确顺序是先更新 disk JSON |
+| 3 | `agents/data-agent.md` | **Bug 3** process-chapter 前加硬规则：23 Core 字段必须自检，允许为空 list 的字段列出，若无法推断用占位值不得省略 |
+| 4 | `scripts/data_modules/state_manager.py` | **Bug 4** CHAPTER_META_FIELD_WHITELIST 加 `updated_at`/`created_at` |
+| 5 | `skills/webnovel-write/SKILL.md` | **Bug 5** Step 7 artifact 表格加 `word_count` 字段，说明必须是 polish 后最终字数 |
+
+**Validation**：
+- 515 单测全过（无回归）
+- sync-cache: 4 文件更新 · sync-agents: data-agent.md 更新
+
+**Why it matters for novel quality**：
+- Bug 1+2 让 H68 成为假阳机关，每章 polish 后必须手动修复才能过 hygiene，浪费大量 debug 时间
+- Bug 3 让 data-agent 每章都缺 H2 字段，audit B9 持续 warn，chapter_meta 质量数据不完整
+- Bug 4+5 让特定字段无法通过 CLI 安全修复，被迫绕过保护机制
+
+---
+
 ## [2026-05-04 · Round 28.6] Ch28 deep research RCA · 4 类根因永久根治
 
 **Trigger**：用户 Ch28《秩序初立》全流程跑完后做 deep research，暴露 4 类真实 bug：
