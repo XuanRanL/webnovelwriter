@@ -159,9 +159,10 @@ def normalize_checker_scores_keys(
     return normalized, renamed, invalid
 
 # 2026-04-23 Round 16 · 14 模型扁平化（根治 Ch6 RCA Bug #4 + core 概念过度耦合）
+# 2026-05-02 Round 25 · 15 模型扩展（新增 deepseek-v4-flash · siliconflow 单 provider）
 # 根因：core 3 模型硬要求 + openclawroot 单 provider 脆弱 → Ch3-6 连续 4 章 DEV 事故
-# 根治：去 core/supplemental 层级 · 14 模型集体投票 · 任一失败不阻塞
-# 判定改为：成功模型数 ≥ 10/14 pass · 8-9/14 medium warn · <8/14 high warn（不 critical block）
+# 根治：去 core/supplemental 层级 · 15 模型集体投票 · 任一失败不阻塞
+# 判定改为：成功模型数 ≥ 10/15 pass · 8-9/15 medium warn · 5-7/15 high warn（仍不 critical block）
 EXTERNAL_MODELS_ALL = [
     # Round 20.x · 2026-04-27 · Ch14 RCA P0-2：gpt-5.4 → gpt-5.5（ticketpro 主 provider）
     # Round 21.3 · 2026-04-29 · mimo-v2-pro → mimo-v2.5-pro（xiaomimimo 官方主路）
@@ -169,11 +170,13 @@ EXTERNAL_MODELS_ALL = [
     "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
     "mimo-v2.5-pro", "minimax-m2.7-hs", "minimax-m2.5",
     "deepseek-v3.2-thinking", "kimi-k2.5", "kimi-k2.6",
+    # Round 25 · 2026-05-02 · siliconflow 实验性扩展 · 不稳定但参数全开试探最高质量
+    "deepseek-v4-flash",
 ]
-# Round 16 完整度阈值（A3 判定核心参数）
-EXTERNAL_MODELS_HEALTHY_MIN = 10    # ≥ 10/14 → pass
-EXTERNAL_MODELS_DEGRADED_MIN = 8    # 8-9/14 → warn medium
-EXTERNAL_MODELS_HIGH_WARN_MIN = 5   # 5-7/14 → warn high（仍不 critical block）
+# Round 16/25 完整度阈值（A3 判定核心参数 · 阈值保持绝对数 · 单模型 outage 不再敏感）
+EXTERNAL_MODELS_HEALTHY_MIN = 10    # ≥ 10/15 → pass
+EXTERNAL_MODELS_DEGRADED_MIN = 8    # 8-9/15 → warn medium
+EXTERNAL_MODELS_HIGH_WARN_MIN = 5   # 5-7/15 → warn high（仍不 critical block）
 # 向后兼容 aliases（历史代码/外部引用 · 保留避免其他模块 ImportError）
 EXTERNAL_MODELS_CORE3 = []  # Round 16 置空 · 不再有 core 概念
 EXTERNAL_MODELS_SUPPLEMENTAL = list(EXTERNAL_MODELS_ALL)
@@ -425,6 +428,21 @@ def check_A1_contract_completeness(project_root: Path, chapter: int) -> CheckRes
                         pass
                 contract = {k: True for k in contract_fields_found}
             contract_fields = len(contract) if isinstance(contract, dict) else 0
+            # Round 28.4 · Ch26 RCA · P1-6 根治：v2 contract 真源在 context/ch{NNNN}_context.json
+            # 不在 context_snapshots（snapshot 是缓存，contract 字段已迁移到 writer-facing JSON）。
+            # 老逻辑只看 snapshot.payload.contract（永远空）+ markers 扫描，导致 Ch26 实测 22 字段
+            # 被识别为 4 字段（A1 高警告假阳）。
+            if contract_fields < contract_fields_min:
+                ctx_json = project_root / ".webnovel" / "context" / f"ch{_pad(chapter)}_context.json"
+                if ctx_json.exists():
+                    try:
+                        ctx_data = json.loads(ctx_json.read_text(encoding="utf-8"))
+                        ctx_contract = ctx_data.get("context_contract") or {}
+                        if isinstance(ctx_contract, dict) and len(ctx_contract) > contract_fields:
+                            contract = ctx_contract
+                            contract_fields = len(ctx_contract)
+                    except Exception:
+                        pass
         else:
             # --- 格式 C: v1 — 8 个顶级 key ---
             expected_panels = ["state", "outline", "settings", "previous_summaries", "style_guide",
@@ -639,12 +657,12 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
 def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
     """A3: external review must have durable JSON evidence, not just markdown mentions.
 
-    Round 16 · 2026-04-23 · 扁平化共识机制（去 core 硬要求）：
+    Round 16/25 · 2026-05-02 · 扁平化共识机制（去 core 硬要求 · 15 模型）：
         判定逻辑基于"有效模型数"而非"是否齐全 core 3"：
-          - ≥ 10/14 有效 → pass（healthy · 14 模型共识充分）
-          - 8-9/14 有效 → warn medium（degraded_ok · 不阻塞）
-          - 5-7/14 有效 → warn high（degraded_warn · 仍不 critical block · 因为 5+ 模型已够共识）
-          - < 5/14 有效 → fail critical（实际几乎不会发生 · 多家 provider 同时挂）
+          - ≥ 10/15 有效 → pass（healthy · 15 模型共识充分）
+          - 8-9/15 有效 → warn medium（degraded_ok · 不阻塞）
+          - 5-7/15 有效 → warn high（degraded_warn · 仍不 critical block · 因为 5+ 模型已够共识）
+          - < 5/15 有效 → fail critical（实际几乎不会发生 · 多家 provider 同时挂）
         保留：routing_verified 校验 · phantom_zero 检测 · score_spread alert
     """
     report = _find_review_report(project_root, chapter)
@@ -765,7 +783,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
 
         # Round 16 扁平判定：
         if valid_count < EXTERNAL_MODELS_HIGH_WARN_MIN:
-            # < 5/14 有效：多家 provider 同时挂 · 真正的 critical
+            # < 5/15 有效：多家 provider 同时挂 · 真正的 critical
             missing_models = [m for m in EXTERNAL_MODELS_ALL if m not in valid_models]
             return CheckResult(
                 id="A3", name="外部模型覆盖", layer="A",
@@ -782,7 +800,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
                 ],
             )
         if valid_count < EXTERNAL_MODELS_DEGRADED_MIN:
-            # 5-7/14：warn high · 不 block（共识仍足够）
+            # 5-7/15：warn high · 不 block（共识仍足够）
             missing_models = [m for m in EXTERNAL_MODELS_ALL if m not in valid_models]
             extra = []
             if spread_alert_note:
@@ -792,7 +810,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
                 status="warn", severity="high",
                 evidence=(
                     f"external review coverage degraded: {valid_count}/{total_expected} models valid "
-                    f"(Round 16 扁平阈值：5-7 为 warn high · 不阻塞). "
+                    f"(Round 16/25 扁平阈值：5-7/15 为 warn high · 不阻塞). "
                     f"missing/invalid={sorted(missing_models)}"
                     + (f". {' | '.join(extra)}" if extra else "")
                 ),
@@ -803,7 +821,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
                 ] + (["人工复核最低分模型的 high/medium issues"] if spread_alert_note else []),
             )
         if valid_count < EXTERNAL_MODELS_HEALTHY_MIN:
-            # 8-9/14：warn medium
+            # 8-9/15：warn medium
             # Round 18 · 2026-04-24 · Ch10 P1-5 根治：明确严格 valid vs 宽松 success 口径差异
             # external_review.py 报 coverage 用宽松判定（API 响应有 JSON 即 success），
             # audit A3 用严格判定（routing_verified + 全维度 OK + 0 phantom），两者口径必然不同。
@@ -830,7 +848,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
                     ["人工复核最低分模型的 high/medium issues"] if spread_alert_note else []
                 ),
             )
-        # ≥ 10/14 有效：healthy pass
+        # ≥ 10/15 有效：healthy pass
         if spread_alert_note:
             return CheckResult(
                 id="A3", name="外部模型覆盖", layer="A",
@@ -842,7 +860,7 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
         return CheckResult(
             id="A3", name="外部模型覆盖", layer="A",
             status="pass", severity="high",
-            evidence=f"{valid_count}/{total_expected} external review JSON files are valid (healthy · Round 16 扁平共识)",
+            evidence=f"{valid_count}/{total_expected} external review JSON files are valid (healthy · Round 16/25 扁平共识)",
             measured=measured,
         )
 

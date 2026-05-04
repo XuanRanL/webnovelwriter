@@ -1,26 +1,26 @@
-# Step 3.5 外部模型审查规范（Round 21.4 · combined 默认 · 14 模型扁平共识）
+# Step 3.5 外部模型审查规范（Round 21.4 · combined 默认 · Round 25 · 15 模型扁平共识）
 
-## 十四模型扁平共识架构 · 6 供应商
+## 十五模型扁平共识架构 · 6 供应商
 
-**Round 16 架构决策（2026-04-23 · Ch6 RCA 最终根治）**：
-- **去 core / supplemental 层级**：14 模型集体投票 · 任一失败不阻塞 · 以成功模型均分作共识
+**Round 16 架构决策（2026-04-23 · Ch6 RCA 最终根治）+ Round 25 扩展（2026-05-02 · +deepseek-v4-flash）**：
+- **去 core / supplemental 层级**：15 模型集体投票 · 任一失败不阻塞 · 以成功模型均分作共识
 - **统一重试策略**：所有 provider 最多 2 次重试（对抗 openclawroot 偶发 503/524/rate_limited）
-- **统一早停阈值**：任一模型累计 4 个维度失败 → 跳过该模型剩余维度（节省 API 配额给其他 13 模型）
-- **Step 6 A3 完整度阈值**：
-  - ≥ 10/14 有效 → pass（healthy · 绿线通过）
-  - 8-9/14       → warn medium（degraded_ok · 不阻塞）
-  - 5-7/14       → warn high（degraded_warn · 仍不 critical · 共识已足够）
-  - < 5/14       → fail critical（多家 provider 同时挂 · 真正需要介入）
+- **统一早停阈值**：任一模型累计 4 个维度失败 → 跳过该模型剩余维度（节省 API 配额给其他 14 模型）
+- **Step 6 A3 完整度阈值**（绝对数 · V4-Flash 单模型 outage 不影响判定）：
+  - ≥ 10/15 有效 → pass（healthy · 绿线通过）
+  - 8-9/15       → warn medium（degraded_ok · 不阻塞）
+  - 5-7/15       → warn high（degraded_warn · 仍不 critical · 共识已足够）
+  - < 5/15       → fail critical（多家 provider 同时挂 · 真正需要介入）
 
-**历史背景**：Round 15.3 将 core 3 改为异构 provider（qwen+doubao+glm）仍有单 provider 脆弱性——Ch3-6 连续 4 章 openclawroot outage（gpt-5.4/gemini-3.1-pro 全挂）。Round 16 彻底去掉 "必须 X 模型成功" 的硬耦合，以 14 模型投票为共识根据，任意 4 家 provider 故障都不影响主流程。
+**历史背景**：Round 15.3 将 core 3 改为异构 provider（qwen+doubao+glm）仍有单 provider 脆弱性——Ch3-6 连续 4 章 openclawroot outage（gpt-5.4/gemini-3.1-pro 全挂）。Round 16 彻底去掉 "必须 X 模型成功" 的硬耦合，以 14 模型投票为共识根据，任意 4 家 provider 故障都不影响主流程。Round 25 加入 deepseek-v4-flash（siliconflow 单 provider · 实验性 · max-config）扩展为 15 模型。
 
 **Round 21.4 根治（2026-04-29 · token 重复消耗）**：
 - 旧路径：每个模型按 13 个维度拆成 13 次 API 请求，每次都重复发送完整 `context_block + chapter_text`；Ch20 实测 prompt tokens ≈ 12,325,450。
 - 新默认：`--dimension-strategy auto`，先用 **combined**（每模型 1 次请求返回 13 个 `dimension_reports`），仅在 JSON 不可用/维度缺失时自动 fallback 到 legacy **split**。
-- 物理请求数从正常情况下 `14 × 13 = 182` 降到 `14 × 1 = 14`；逻辑评分矩阵仍是 `14 模型 × 13 维度 = 182 份评分`。
+- 物理请求数从正常情况下 `15 × 13 = 195` 降到 `15 × 1 = 15`；逻辑评分矩阵仍是 `15 模型 × 13 维度 = 195 份评分`。
 - 旧 split 路径保留：`--dimension-strategy split` 用于 debug、provider context window 异常、或 combined JSON 质量事故。
 
-### 14 模型名单 · 6 供应商统一表
+### 15 模型名单 · 6 供应商统一表
 
 | 模型 key | 主 provider | 请求 id | max_tokens | 备用 provider | 特点 |
 |---|---|---|---|---|---|
@@ -38,6 +38,7 @@
 | `deepseek-v3.2-thinking` | ark-coding | `deepseek-v3.2` | 32768 | openclawroot → siliconflow | 技术考据 + 深度推理 |
 | `kimi-k2.5` | ark-coding | `kimi-k2.5` | 32768 | siliconflow/Pro/moonshotai/Kimi-K2.5 | Moonshot K2.5 thinking |
 | `kimi-k2.6` | ark-coding | `kimi-k2.6` | 65536 | siliconflow/Pro/moonshotai/Kimi-K2.5 (K2.6 fallback) | Moonshot K2.6 旗舰 |
+| `deepseek-v4-flash` 🆕 | siliconflow | `deepseek-ai/DeepSeek-V4-Flash` | 65536 | — | DeepSeek V4 Flash · Round 25 实验性 · 全开 reasoning_effort=max + thinking_budget=32768 · timeout=1500s |
 
 ## 供应商配置（6-tier · Round 21.5 api666 Gemini 主路加入）
 
@@ -50,7 +51,7 @@
 
 ## 共识机制（核心设计）
 
-- **14 模型 × 13 维度 = 182 份独立评分**（Round 14）
+- **15 模型 × 13 维度 = 195 份独立评分**（Round 14 = 14 模型 / Round 25 = 15 模型 +V4-Flash）
 - 每个模型都跑**全 13 维度**（无分工！role 字段已删除 2026-04-16 Round 11）；Round 21.4 起默认**每模型一次请求**返回 13 维，避免重复发送大上下文
 - 多模型命中同一 issue → 真 bug；单模型孤例 → 模型偏见（cross_validation 自动过滤）
 - 异构覆盖：国产（Doubao×2 / GLM×3 / Qwen / MiMo / MiniMax×2 / DeepSeek / Kimi×2）+ 西方（GPT / Gemini）
@@ -81,14 +82,14 @@
 
 ## 并发控制
 
-- `--model-key all` 模式：默认 `--model-concurrent 4`，一次提交全部 14 模型，线程池最多 4 个模型同时运行。
+- `--model-key all` 模式：默认 `--model-concurrent 4`，一次提交全部 15 模型，线程池最多 4 个模型同时运行。
 - 默认 `--dimension-strategy auto`：每模型先走 combined（1 次请求返回全部 13 维）；combined 完整时不会启动维度线程池。
 - `--dimension-strategy split` 或 auto fallback 时才使用旧维度并发：每模型最多 `min(--max-concurrent, 3)` 个维度请求并发。
 - CLI 参数：`--dimension-strategy auto|combined|split`、`--model-concurrent N`、`--max-concurrent N`、`--rpm-override N`
 - `--healthcheck` 使用最小 prompt + `max_tokens=8`，但 timeout 为 30s，避免 GLM-5.1 等 reasoning 模型被 8s 探针误报。
 
 **推荐调用策略：**
-- **首选**：`--model-key all --dimension-strategy auto` 一次性跑全部 14 模型；正常路径每模型只发 1 次大上下文请求。
+- **首选**：`--model-key all --dimension-strategy auto` 一次性跑全部 15 模型；正常路径每模型只发 1 次大上下文请求。
 - 单模型调用：`--model-key kimi-k2.6 --dimension-strategy auto`（调试或补跑单个模型时使用）
 - `--dimension-strategy combined`：强制每模型 1 次请求，不自动 fallback；只用于调试 combined prompt/schema。
 - `--dimension-strategy split`：强制旧 13 次维度请求；只用于排查 combined 质量问题。
@@ -96,7 +97,7 @@
 
 **脚本调用命令（Agent 必须使用以下格式）：**
 ```bash
-# 推荐：一次跑全部 14 模型
+# 推荐：一次跑全部 15 模型
 python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --project-root "${PROJECT_ROOT}" \
   --chapter {chapter_num} \
@@ -118,7 +119,7 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 不支持 `--chapter-file`、`--outline-file` 等参数，传入会导致脚本直接报错退出。
 
 **早停机制（仅 split/fallback 路径）：**
-- 14 模型一视同仁 · split 时每模型维度并发固定 cap 到 3（使排队维度可被 event 拦截）
+- 15 模型一视同仁 · split 时每模型维度并发固定 cap 到 3（使排队维度可被 event 拦截）
 - 任一模型累计 **6** 个维度失败 → 触发 `threading.Event`，排队中的该模型维度立即跳过
 - 只影响该单模型 · 不影响其他 13 模型
 - 设计目标：避免单一 provider 连接中断时的无意义重试，节省 API 配额给其他健康模型
@@ -410,8 +411,8 @@ python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
 
 `审查报告/第{NNNN}章审查报告.md` 必须包含：
 
-1. **14模型评分矩阵**（Round 14+ · 可用模型 × 13维度 + 总分 + 路由状态 + 供应商，Round 13 v2 · 含 reader_flow + naturalness + reader_critic）
-2. **共识问题**（>=3个模型指出的同类问题 = 真问题；14 模型下建议阈值可调至 ≥4）
+1. **15模型评分矩阵**（Round 14+ / Round 25 +V4-Flash · 可用模型 × 13维度 + 总分 + 路由状态 + 供应商，Round 13 v2 · 含 reader_flow + naturalness + reader_critic）
+2. **共识问题**（>=3个模型指出的同类问题 = 真问题；15 模型下建议阈值可调至 ≥4）
 3. **Step 4 修复清单**（从共识问题 + severity >= medium + verified 中筛选，按优先级排序）
 4. **模型路由验证结果**（每个模型的请求/实际/通过状态）
 5. **润色记录**（Step 4 修复后填写 anti_ai_force_check 和毒点检查结果）

@@ -7,6 +7,95 @@
 
 ---
 
+## [2026-05-03 · Round 28.4] Ch26 deep research RCA · 12 处根因 + 6 道护栏 + 2 个新 CLI
+
+**Trigger**：用户对 Ch26《爆发后第一夜》做 deep research，暴露 4 个 P0 + 8 个 P1 真实 bug：
+- P0-1: data-agent 静默改 11 处 checker 分数（emotion 91→81 / reader-pull 94→83 等）
+- P0-2: chapter_meta 缺 7 个核心字段
+- P0-3: chapter_type 误标导致 hard_min 矛盾
+- P0-4: high_point JSON 因 ASCII " 内嵌字符串值非法
+- P1-5 ~ P1-12: stale FP / audit A1 路径 / narrative_version 不 bump / hook taxonomy / aggregate 不刷新 / type drift / Step K 推责 / Step 4.5 step-id
+
+**Architecture change**：H68-H73 六道新护栏 + 2 个新 CLI（`mirror-disk-scores` / `bump-narrative-version`）+ alias 映射 + aggregate 自动刷新。
+
+**Fix**：
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `scripts/hygiene_check.py` | **H68** disk-state checker 分数一致性（P0 block · ±1 容差 · post_polish_recheck 白名单跳过） |
+| 2 | `scripts/hygiene_check.py` | **H69** chapter_meta 扩展 10 字段必填（P1 warn · total_words/dialogue_ratio/signature_density/naturalness/reader_critic 顶层/reader_thrill/external_avg/hook_close） |
+| 3 | `scripts/hygiene_check.py` | **H70** chapter_type vs word_count 区间匹配（P1 warn · 4 类区间表 · 误标后建议正确分类） |
+| 4 | `scripts/hygiene_check.py` | **H71** disk JSON 解析合法性（P0 block · 防 ASCII " 撞 JSON 字符串边界） |
+| 5 | `scripts/hygiene_check.py` | **H72** Step 4 polish 后 narrative_version 必须 bump（P1 warn · 检查 fixes 非空且 nv=v1） |
+| 6 | `scripts/hygiene_check.py` | **H73** failure_reason 时钟漂移检测（P2 信息 · 抓 "X 分钟" 与实际经过时间差 >5 min） |
+| 7 | `scripts/hygiene_check.py` | **H26** alias-aware 比较（reader_pull '危机钩' ≡ state '动作钩' 不再误报） |
+| 8 | `scripts/data_modules/state_manager.py` | 新 CLI `--mirror-disk-scores` (P0-1 根治 · 13 个 disk JSON 一键 mirror · 重算 overall · 跳 recheck) |
+| 9 | `scripts/data_modules/state_manager.py` | 新 CLI `--bump-narrative-version` (P1-7 根治 · v1→v2 + polish_log 三必填字段 version/timestamp/notes + 兼容字段) |
+| 10 | `scripts/data_modules/state_manager.py` | `--set-hook-close` alias 自动映射（危机钩→动作钩 / 悬念钩→信息钩 / 反转钩→信息钩 / 意外钩→信息钩 / 决断钩→决策钩 / 情境钩→动作钩） |
+| 11 | `scripts/data_modules/state_manager.py` | `_backfill_chapter_meta` review_score/overall_score float→int 统一（P1-10） |
+| 12 | `scripts/data_modules/state_manager.py` | `--set-progress-chapter` 显式登记顶层 last_completed_chapter / current_chapter 到 _pending_raw_state_mutations（修 save_state mirror 漏写 bug） |
+| 13 | `scripts/data_modules/chapter_audit.py` | A1 v2 contract 兼容 fallback：snapshot.payload.contract 空 → 回退读 context/ch{NNNN}_context.json:context_contract（P1-6 audit 假阳根治） |
+| 14 | `scripts/external_review.py` | 新函数 `refresh_external_aggregate`（P1-9 · 扫盘单模型 JSON 重算 external_avg/models_ok/coverage · 自动写 aggregate 文件） |
+| 15 | `scripts/external_review.py` | run_dimensions_mode 末尾自动调 refresh_external_aggregate（all-models + 单模型路径都覆盖） |
+| 16 | `scripts/workflow_manager.py` | REQUIRED_ARTIFACT_FIELDS 新增 `Step 4.5`（P1-12 · 终结复用 "Step 4" 重名） |
+| 17 | `agents/data-agent.md` | Step K markdown 追加禁止"推给主 agent"硬规则（P1-11 · 核心 3 文件不得进 proposed_additions · 失败立即报错） |
+| 18 | `scripts/data_modules/tests/test_ch26_round28_4_rca_fixes.py` | 17 个新单测（H68 3 个 / H69 2 个 / H70 2 个 / H71 2 个 / H72 2 个 / H73 1 个 / mirror-disk-scores / bump-narrative-version / hook alias / type unification / aggregate refresh） |
+
+**Validation**：
+- 503 单测全过（含新增 17 个 Round 28.4 测试）
+- Ch26 实际命中验证：H68 抓出 9 处 silent drift（emotion 81→91 / reader-pull 83→94 / consistency 84→88 / etc）；H70 抓出战斗章误标
+- Ch26 hot-fix 后 hygiene exit_code=2（P1/P2 only · 0 P0）
+- Ch26 真分提升：overall 82→85（disk-truth 重算）；external 88.2→88.4（含 deepseek-v4-flash 90.5）
+
+**Why it matters for novel quality**：data-agent 静默改分让作者读到的"82 分"比实际低 3 分，跨章趋势数据全是失真的；chapter_type 误标导致字数预算挤压（被迫扩到 3200+ 注水）；JSON 非法让下游分析工具拿到 fallback 估算分数。这三层污染叠加，长期会把作者引向错误的修改方向。Round 28.4 把这三个根因从源头堵住，state.json 的每一个分数都可追溯到 disk JSON，**从此 review_metrics / chapter_meta / disk JSON 三方一致**。
+
+---
+
+## [2026-05-02 · Round 25] Step 3.5 加入 deepseek-v4-flash · 14→15 模型扁平共识 · 全开 reasoning_effort=max
+
+**Trigger**：用户测试 SiliconFlow 上的 `deepseek-ai/DeepSeek-V4-Flash` 模型在 Step 3.5 外部审查中的表现，要求"参数全开 · 展现最好的表现 · 加入外审 14 模型扩展为 15"。Deep research 确认 SF V4-Flash 接受 `reasoning_effort=max` + `thinking_budget=32768` + `enable_thinking=true` + `max_tokens=65536` 全开配置。
+
+**Architecture change**：14 模型扁平共识 → 15 模型扁平共识。新增 `deepseek-v4-flash` 不在 ark-coding 短别名列表（实测 9/15 ark 直连，V4-Flash 仅 SF），单 provider · 实验性。
+
+**Fix**：
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `scripts/external_review.py` | MODELS 新增 `deepseek-v4-flash`（siliconflow 单 provider · max_tokens=65536 · extra_payload max-config · timeout=1500s）；REASONING_MODELS 加入 `deepseek-v4-flash` |
+| 2 | `scripts/external_review.py` | `call_api` 新增 `extra_payload` 参数；`try_provider_chain` 透传 provider entry 的 `extra_payload`；非 ark provider entry 可注入 `reasoning_effort` / `thinking_budget` 覆盖 call_api 默认 |
+| 3 | `scripts/external_review.py` | Gemini api666 entry 注入 `extra_payload={"thinking_budget": 32768}`（覆盖默认 16384）；deepseek-v3.2-thinking SF/openclawroot fallback 注入 `extra_payload={"reasoning_effort": "max", "thinking_budget": 32768}`；Kimi K2.5/K2.6 SF fallback 注入 `extra_payload={"reasoning_effort": "high"}`。ark-coding entry 一律不动（原生 thinking 字段，注入未知字段会 400） |
+| 4 | `scripts/external_review.py` | docstring/help/healthcheck/threshold 注释 14→15；`coverage_thresholds` 字段从 `>= 10/14` 改为 `>= 10/15` 等；`--model-key` help 加入 `deepseek-v4-flash`；`--model-key all` 自动覆盖 15 模型 |
+| 5 | `scripts/data_modules/chapter_audit.py` | `EXTERNAL_MODELS_ALL` 新增 `deepseek-v4-flash`；阈值绝对数 10/8/5 不变（V4-Flash 单点 outage 不应影响 healthy 判定）；A3 evidence 文案 14→15 |
+| 6 | `scripts/workflow_manager.py` | resume 选项 description 14→15 |
+| 7 | `scripts/build_external_context.py` | 注释 14→15 |
+| 8 | agents：`external-review-agent.md` / `audit-agent.md` / `data-agent.md` / `reader-thrill-checker.md` | 14→15 + V4-Flash 名单/阈值/Round 25 标识 |
+| 9 | skills：`webnovel-write/SKILL.md` / `webnovel-init/SKILL.md` / `webnovel-write/references/step-3.5-external-review.md` / `gate-matrix.md` / `post-draft-gate.md` / `webnovel-resume/references/workflow-resume.md` / `webnovel-query/references/system-data-flow.md` | 14→15 + V4-Flash 名单/阈值/195 评分点；模型表格新增 V4-Flash 行 |
+| 10 | `.cursor/rules/external-review-spec.mdc` / `.cursor/rules/webnovel-workflow.mdc` | description / 阈值 / 模型列表 14→15；新增 V4-Flash |
+| 11 | tests：`test_round13_consistency.py` / `test_chapter_audit.py` | "14 模型"/"15 模型"双口径接受；fixture 14→15 模型；K×N pattern 接受 K=15 |
+
+**Ch22 实测对比（V4-Flash · 单跑）**：
+- Default 配置（reasoning_effort 不传 / thinking_budget 不传）：overall=89.3 / 1 issue / 12 min（attempt 1+2 timeout 300s · attempt 3 success 135s）
+- Maxed 配置（reasoning_effort=max + thinking_budget=32768 + max_tokens=65536）：overall=85.8 / 9 issues / 17 min（attempt 1 timeout 902s · attempt 2 success 134s）
+- Maxed 模式让 V4-Flash 思考更深 · 找出更多问题（9 vs 1）· 总分降但反映"最高表现"——批评力度更强
+
+**其他 13 模型 max-config 同步（仅 SF/openclawroot/api666 fallback 路径）**：
+- Gemini-3.1-Pro @ api666：thinking_budget 16384→32768
+- DeepSeek-V3.2-Thinking @ SF/OC fallback：reasoning_effort=max + thinking_budget=32768
+- Kimi K2.5/K2.6 @ SF fallback：reasoning_effort=high
+- Ark-coding entries：**不改**（火山方舟会 400 unknown_field · 原生 thinking={"type":"enabled"} 已是火山最高档）
+
+**Why threshold 不调比例**：HEALTHY_MIN=10 / DEGRADED_MIN=8 / HIGH_WARN_MIN=5 保持绝对数。Reason：V4-Flash 实测稳定性差（2/3 SF timeout），单模型 outage 不应影响 healthy 判定。10/15 = 67% 略低于历史 10/14 = 71%，但共识质量主要看"成功模型数 ≥ 10"而非"占比"。
+
+**Skipped**：
+- `dashboard/frontend/dist/assets/index-BBNQa2sX.js`（构建产物 · 重新 build 后自动覆盖）
+- 历史诊断报告 `docs/diagnostics/2026-04-XX-*.md` / `docs/Ch14_*.md` / `docs/superpowers/plans/*.md`（带日期的快照 · 保留作为历史记录）
+- `EXTERNAL_MODELS_ALL9` / `EXTERNAL_MODELS_CORE3` / `EXTERNAL_MODELS_SUPPLEMENTAL` 别名保留（向后兼容）
+
+**Verification**：
+- `python webnovel-writer/scripts/external_review.py --project-root . --chapter 22 --mode dimensions --model-key deepseek-v4-flash --dimension-strategy auto` → JSON 落盘 + overall_score 输出
+- 烟雾测试确认 SF 接受 4 字段全开（无 400 unknown_field）
+
+---
+
 ## [2026-05-02 · Round 23.1] Plugin 单源化：cool-points-guide stub 清理
 
 **Trigger**：Context window 根治审计发现 `skills/webnovel-plan/references/cool-points-guide.md` 与 `skills/webnovel-review/references/cool-points-guide.md` 是完全相同的 11 行 deprecated stub（写着 "use ${CLAUDE_PLUGIN_ROOT}/references/shared/cool-points-guide.md"），但全 plugin 代码库 grep 这两个路径 0 命中。

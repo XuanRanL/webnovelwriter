@@ -117,7 +117,7 @@ def good_project(tmp_path):
     )
     (root / ".webnovel" / "summaries" / "ch0001.md").write_text(summary, encoding="utf-8")
 
-    # 审查报告（含 13 checker + 14 模型 · Round 13 v2 + Round 14+ 扁平 · Round 21.4 combined）
+    # 审查报告（含 13 checker + 15 模型 · Round 13 v2 + Round 14+/Round 25 扁平 +V4-Flash · Round 21.4 combined）
     report = (
         "# 第0001章审查报告\n\n"
         "## 内部检查\n"
@@ -160,15 +160,17 @@ def good_project(tmp_path):
         "reader_critic",     # Round 13 v2
     ]
     # Round 20 · Ch12 RCA P1: A3 fixture 升级到 14 模型
-    # Round 16 阈值（healthy ≥10/14, degraded_ok ≥8, degraded_warn ≥5, fail <5）
+    # Round 25 · 2026-05-02：扩展到 15 模型（+deepseek-v4-flash）
+    # Round 16/25 阈值（healthy ≥10/15, degraded_ok ≥8, degraded_warn ≥5, fail <5）
     # 之前 fixture 只造 3 模型 → check_A3 返回 fail critical → test_A3_external_models_pass 失败。
-    # 修法：good_project 默认提供 10 个 valid 模型（healthy），覆盖 healthy pass 路径。
+    # 修法：good_project 默认提供全部 15 个 valid 模型（healthy），覆盖 healthy pass 路径。
     # 单独需要 partial 场景的 test 自行删除模型。
     fixture_valid_models = [
         "qwen3.6-plus", "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
         "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
         "mimo-v2.5-pro", "minimax-m2.7-hs", "minimax-m2.5",
         "deepseek-v3.2-thinking", "kimi-k2.5", "kimi-k2.6",
+        "deepseek-v4-flash",  # Round 25 新增
     ]
     for model_key in fixture_valid_models:
         payload = {
@@ -452,11 +454,12 @@ def test_A3_external_models_warn_high_when_only_5_to_7_valid(good_project):
 def test_A3_external_models_fails_critical_when_under_5(good_project):
     """Round 20 · Ch12 RCA P1 新增：< 5 valid 才 fail critical（多家 provider 同时挂）."""
     mod = _load_module()
-    # invalidate 10 模型 → 只剩 4 valid → fail critical
+    # Round 25：fixture 升级到 15 模型 → invalidate 11 模型 → 只剩 4 valid → fail critical
     invalidate_keys = [
         "doubao-pro", "gpt-5.5", "gemini-3.1-pro",
         "doubao-seed-2.0-lite", "glm-5", "glm-5.1", "glm-4.7",
         "mimo-v2.5-pro", "minimax-m2.7-hs", "minimax-m2.5",
+        "deepseek-v4-flash",  # Round 25 新增
     ]
     for key in invalidate_keys:
         p = good_project / ".webnovel" / "tmp" / f"external_review_{key}_ch0001.json"

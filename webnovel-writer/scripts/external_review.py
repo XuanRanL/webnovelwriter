@@ -7,13 +7,13 @@ Supports two modes:
 
 Architecture (2026-04-23 Round 16 · 扁平化共识机制):
   - 6 providers: ticketpro + api666 + openclawroot + ark-coding (火山方舟 Coding Plan) + siliconflow + xiaomimimo
-  - 14 models × 13 dimensions = 182 independent rater scores (共识机制 · 扁平化)
+  - 15 models × 13 dimensions = 195 independent rater scores (共识机制 · 扁平化 · Round 25 +V4-Flash)
   - 每个模型都跑全 13 维度（无分工）；默认每模型一次请求返回 13 维，避免重复发送大上下文
   - **Round 16 架构变更**（2026-04-23 · Ch6 RCA 最终根治 · 见 ROOT_CAUSE_GUARD_RAILS.md）：
-    * **去除 core/supplemental 层级**：14 模型集体投票，任一失败不阻塞，以成功模型均分共识
+    * **去除 core/supplemental 层级**：15 模型集体投票，任一失败不阻塞，以成功模型均分共识
     * 统一重试策略：所有 provider 最多 2 次重试（对抗 openclawroot 偶发 503/524/rate_limited）
     * 统一早停阈值：任一模型累计 4 个维度失败 → 跳过该模型剩余维度
-    * 健康判定基于成功模型数：≥10/14 pass · 8-9/14 medium warn · <8/14 high warn（不阻塞）
+    * 健康判定基于成功模型数：≥10/15 pass · 8-9/15 medium warn · 5-7/15 high warn · <5/15 critical（不阻塞）
     * tier 字段保留但仅作历史 observability 字段 · 不再参与任何判定
   - Round 14 延续：ark-coding 火山方舟 Coding Plan 作为主力 provider 之一
   - 13 维度 = 11 工艺维度 + naturalness（汉语母语自然度）+ reader_critic（读者锐评）
@@ -29,7 +29,8 @@ History:
   Round 11+: 2-tier × 9 新模型（openclawroot 实测 9/9 路由正确），供应商精简 2x
   Round 14:  并入火山方舟 · 14 模型架构 · 维持 core 3 / supplemental 11
   Round 15.3: core 3 异构 provider（qwen+doubao+glm）· 仍有单 provider 脆弱
-  Round 16:  **去 core/supp 层级 · 14 模型扁平投票 · 本次根治**
+  Round 16:  **去 core/supp 层级 · 14 模型扁平投票**
+  Round 25:  **新增 deepseek-v4-flash · 15 模型扁平投票 · 当前口径（2026-05-02）**
 """
 import json
 import time
@@ -39,6 +40,7 @@ import argparse
 import re
 import threading
 import requests
+from datetime import datetime, timezone
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -151,18 +153,21 @@ REASONING_MODELS = {
     # Round 14 · 火山方舟 coding 家族（全 thinking）
     "doubao-seed-2.0-lite", "minimax-m2.5", "glm-5.1",
     "kimi-k2.5", "kimi-k2.6",
+    # 2026-05-02 临时测试 · DeepSeek V4 Flash（deepseek 系自动启用 enable_thinking）
+    "deepseek-v4-flash",
 }
 
 # Round 16 · 14 模型扁平架构 · 2026-04-23 最终根治
-# 架构决策：14 模型无层级（去 core/supplemental） · 任一失败不阻塞下一模型 · 以成功模型均分作共识
+# Round 25 · 15 模型扩展 · 2026-05-02 · 新增 deepseek-v4-flash（siliconflow 单 provider · 实验性）
+# 架构决策：15 模型无层级（去 core/supplemental） · 任一失败不阻塞下一模型 · 以成功模型均分作共识
 # 6 供应商：ticketpro + api666 + openclawroot + ark-coding + siliconflow + xiaomimimo
 # 用户方针：有重复则优先用火山方舟 Coding Plan，所有模型 thinking 全开，max_tokens 拉满上限
-# 每个模型跑全 13 维度（共识机制：14×13 = 182 份独立评分）
+# 每个模型跑全 13 维度（共识机制：15×13 = 195 份独立评分）
 #
 # tier 字段保留但**仅作 observability 标签**（历史兼容），不再参与任何判定：
 #   - 路由成功时 routing_verified=True 计入成功
 #   - 累计 4 个维度失败 → 该模型早停 · 不影响其他 13 模型
-#   - Step 6 A3 完整度阈值：成功 ≥ 10/14 pass · 8-9 medium warn · <8 high warn（不阻塞）
+#   - Step 6 A3 完整度阈值：成功 ≥ 10/15 pass · 8-9 medium warn · 5-7 high warn · <5 critical（不阻塞）
 #
 # provider entry 字段说明：
 #   provider: provider key（PROVIDERS 字典）
@@ -171,7 +176,7 @@ REASONING_MODELS = {
 #   max_tokens: 该 provider 下的 max_tokens 上限（可选，默认继承 model.max_tokens_default
 #               或全局 65536）。火山 coding 的 deepseek-v3.2 / kimi-k2.5 上限是 32768。
 MODELS = {
-    # ─── Round 24 · 2026-05-01 · ark-coding 全面首选（实测 9/14 模型短别名直接可用）───
+    # ─── Round 24 · 2026-05-01 · ark-coding 全面首选（实测 9/15 模型短别名直接可用 · 含 V4-Flash 不在内）───
     # 实测 https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions 短别名:
     #   ✅ ark 支持 (9): doubao-seed-2.0-pro / doubao-seed-2.0-lite / glm-4.7 / glm-5.1 /
     #      minimax-m2.5 / minimax-m2.7 / minimax-m2.7-hs / kimi-k2.5 / kimi-k2.6 /
@@ -211,7 +216,9 @@ MODELS = {
     "gemini-3.1-pro": {
         "tier": "standard",
         "providers": [
-            {"provider": "api666", "id": "gemini-3.1-pro-preview", "name": "Gemini-3.1-Pro-Preview-API666", "max_tokens": 65536},
+            # Round 25 max-config：thinking_budget 16384→32768（覆盖 call_api 默认）
+            {"provider": "api666", "id": "gemini-3.1-pro-preview", "name": "Gemini-3.1-Pro-Preview-API666",
+             "max_tokens": 65536, "extra_payload": {"thinking_budget": 32768}},
             {"provider": "openclawroot", "id": "gemini-3.1-pro-high", "name": "Gemini-3.1-Pro-High-OC-fallback"},
         ],
         "timeout": 300,
@@ -277,17 +284,48 @@ MODELS = {
     "deepseek-v3.2-thinking": {
         "tier": "standard",
         "providers": [
+            # ark-coding 首选 · 不能注入未知字段（火山方舟会 400）· 用原生 thinking={"type":"enabled"}
             {"provider": "ark-coding", "id": "deepseek-v3.2", "name": "DeepSeek-V3.2-Ark", "max_tokens": 32768},
-            {"provider": "openclawroot", "id": "DeepSeek-V3.2-Thinking", "name": "DeepSeek-V3.2-Thinking-OC-fallback"},
-            {"provider": "siliconflow", "id": "Pro/deepseek-ai/DeepSeek-V3.2", "name": "DeepSeek-V3.2-SF-fallback"},
+            # Round 25 max-config（仅 OpenAI-compatible fallback 路径注入，避免污染 ark）
+            {"provider": "openclawroot", "id": "DeepSeek-V3.2-Thinking", "name": "DeepSeek-V3.2-Thinking-OC-fallback",
+             "extra_payload": {"reasoning_effort": "max", "thinking_budget": 32768}},
+            {"provider": "siliconflow", "id": "Pro/deepseek-ai/DeepSeek-V3.2", "name": "DeepSeek-V3.2-SF-fallback",
+             "extra_payload": {"reasoning_effort": "max", "thinking_budget": 32768}},
         ],
         "timeout": 300,
+    },
+    # Round 25 · 2026-05-02 · 加入 15-model consensus · siliconflow 单 provider
+    # 参数全开（基于 SF + DeepSeek 官方 thinking_mode 文档）：
+    #   - max_tokens 65536（SF chat-completions 上限）
+    #   - reasoning_effort=max（DeepSeek thinking_mode 指南最高档 · "xhigh" 别名）
+    #   - thinking_budget=32768（SF 文档允许的上限 128-32768）
+    #   - enable_thinking=True 由 call_api 自动注入（model 名含 "deepseek"）
+    #   - timeout 1500s（实测 maxed 配置首次需 ~900s，bump 到 1500s 避免边界 timeout）
+    # Ch22 实测：default 配置 overall=89.3 / 1 issue / 12min；
+    #            maxed 配置 overall=85.8 / 9 issues / 17min（更挑剔 → 更深的批评 = 最高表现）
+    "deepseek-v4-flash": {
+        "tier": "experimental",
+        "providers": [
+            {
+                "provider": "siliconflow",
+                "id": "deepseek-ai/DeepSeek-V4-Flash",
+                "name": "DeepSeek-V4-Flash-SF",
+                "max_tokens": 65536,
+                "extra_payload": {
+                    "reasoning_effort": "max",
+                    "thinking_budget": 32768,
+                },
+            },
+        ],
+        "timeout": 1500,
     },
     "kimi-k2.5": {
         "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "kimi-k2.5", "name": "Kimi-K2.5-Ark", "max_tokens": 32768},
-            {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF-fallback", "max_tokens": 32768},
+            # Round 25 max-config · Kimi 官方 reasoning_effort 仅 low/medium/high
+            {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF-fallback",
+             "max_tokens": 32768, "extra_payload": {"reasoning_effort": "high"}},
         ],
         "timeout": 300,
     },
@@ -295,7 +333,8 @@ MODELS = {
         "tier": "standard",
         "providers": [
             {"provider": "ark-coding", "id": "kimi-k2.6", "name": "Kimi-K2.6-Ark", "max_tokens": 65536},
-            {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF-fallback-for-K2.6", "max_tokens": 32768},
+            {"provider": "siliconflow", "id": "Pro/moonshotai/Kimi-K2.5", "name": "Kimi-K2.5-SF-fallback-for-K2.6",
+             "max_tokens": 32768, "extra_payload": {"reasoning_effort": "high"}},
         ],
         "timeout": 300,
     },
@@ -756,7 +795,7 @@ def verify_routing(model_key, provider_name, response_model, requested_model_id=
 
 
 def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max_retries=2,
-             provider_name=None, max_tokens=65536):
+             provider_name=None, max_tokens=65536, extra_payload=None):
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     # Round 14：thinking / max_tokens 由 provider 决定
     # - ark-coding（火山方舟 Coding Plan）使用火山原生 thinking={"type":"enabled"}，
@@ -792,6 +831,9 @@ def call_api(base_url, api_key, model_id, system_msg, user_msg, timeout=300, max
         # Anthropic 风格（claude-opus 等）· thinking budget_tokens
         if "claude" in model_lower:
             payload["thinking"] = {"type": "enabled", "budget_tokens": 16384}
+    # provider entry 的 extra_payload 直接合并到顶层（model entry 显式指定优先）
+    if extra_payload:
+        payload.update(extra_payload)
     # 整个重试链只占一个 limiter slot（acquire 一次，return/fail 后 release 一次）
     limiter = ProviderRateLimiter.get(provider_name) if provider_name else None
     provider_chain = []
@@ -964,11 +1006,13 @@ def try_provider_chain(api_keys, model_key, model_config, system_msg, user_msg, 
         max_retries = 2
         # Round 14 · max_tokens 优先从 provider 读（火山 coding 的 deepseek/kimi-k2.5 限 32768）
         provider_max_tokens = provider_cfg.get("max_tokens", 65536)
+        provider_extra_payload = provider_cfg.get("extra_payload")
 
         raw, error, model_actual, usage, attempts = call_api(
             base_url, api_keys[provider_name], provider_cfg["id"],
             system_msg, user_msg, timeout, max_retries=max_retries,
             provider_name=provider_name, max_tokens=provider_max_tokens,
+            extra_payload=provider_extra_payload,
         )
 
         for a in attempts:
@@ -1918,13 +1962,13 @@ def run_dimensions_mode(args, api_keys):
         )
         all_results = {}
 
-        # 预加载共享数据（一次读取，所有线程复用，避免14个模型重复IO）
+        # 预加载共享数据（一次读取，所有线程复用，避免15个模型重复IO）
         # Round 21.0 · 2026-04-28 · Ch15 RCA H32 根治：
         #   旧版逻辑（"disk fallback"）允许在 context 文件缺失时落 50-byte stub，
         #   让 build_context_block 在每个 worker 内零散从磁盘读字段。这种"魔法 fallback"
         #   表面上可工作，但：
         #     1. SKILL.md 明确写"若文件不存在，脚本将报错退出（exit 1）"，code 与 doc 不一致
-        #     2. 14 个并发 worker 各自从磁盘碎片化读字段，无法保证读到的是 build_external_context.py
+        #     2. 15 个并发 worker 各自从磁盘碎片化读字段，无法保证读到的是 build_external_context.py
         #        生成的"14 字段结构化上下文"（含 narrative_voice / emotional_blueprint / classical_references）
         #     3. Ch15 实战：disk fallback 50-byte stub 让 6 个完成的模型实际是"盲评"
         #   新规则：
@@ -1937,7 +1981,7 @@ def run_dimensions_mode(args, api_keys):
                 "error": f"external_context_ch{chapter_num:04d}.json 不存在",
                 "remediation": [
                     f"先运行: python -X utf8 scripts/build_external_context.py --project-root \"{project_root}\" --chapter {chapter_num}",
-                    "build_external_context.py 会落盘 14 字段真上下文 (~250KB)，让 14 个外部模型有据可依地评分",
+                    "build_external_context.py 会落盘 14 字段真上下文 (~250KB)，让 15 个外部模型有据可依地评分",
                     "禁止从空 context 启动外部审查（Round 21.0 H32 根治）"
                 ]
             }, ensure_ascii=False), file=sys.stderr)
@@ -2012,11 +2056,11 @@ def run_dimensions_mode(args, api_keys):
         success_count = sum(1 for v in all_results.values() if v == "success")
         failed_count = sum(1 for v in all_results.values() if v != "success")
         total_count = len(all_model_keys)
-        # Round 16 · 2026-04-23 · 14 模型扁平健康判定：
-        #   ≥ 10/14 成功 → healthy（绿线通过）
-        #   8-9/14      → degraded_ok（warn medium · 仍可继续）
-        #   5-7/14      → degraded_warn（warn high · 但不阻塞 · 14 模型共识足够）
-        #   < 5/14      → critical（多家 provider 同时挂 · 实际基本不会发生）
+        # Round 16/25 · 2026-05-02 · 15 模型扁平健康判定（V4-Flash 加入后阈值保持绝对数）：
+        #   ≥ 10/15 成功 → healthy（绿线通过）
+        #   8-9/15      → degraded_ok（warn medium · 仍可继续）
+        #   5-7/15      → degraded_warn（warn high · 但不阻塞 · 15 模型共识足够）
+        #   < 5/15      → critical（多家 provider 同时挂 · 实际基本不会发生）
         if success_count >= 10:
             coverage_status = "healthy"
         elif success_count >= 8:
@@ -2036,17 +2080,103 @@ def run_dimensions_mode(args, api_keys):
             "failed": failed_count,
             "coverage_status": coverage_status,
             "coverage_thresholds": {
-                "healthy": ">= 10/14",
-                "degraded_ok": "8-9/14",
-                "degraded_warn": "5-7/14",
-                "critical": "< 5/14",
+                "healthy": ">= 10/15",
+                "degraded_ok": "8-9/15",
+                "degraded_warn": "5-7/15",
+                "critical": "< 5/15",
             },
             "details": all_results,
         }
+        # Round 28.4 · Ch26 RCA · P1-9 根治：all-models 完成后必须重算 aggregate
+        # 根因（Ch26）：单模型补跑（如 deepseek-v4-flash 后台 retry）后
+        # external_review_ch{NNNN}.json 永远不刷新，state.external_avg 始终用旧值。
+        try:
+            refresh_external_aggregate(project_root, chapter_num)
+        except Exception as exc:
+            print(f"[all-models] aggregate refresh 失败（不阻断）: {exc}", file=sys.stderr)
         print(json.dumps(summary, ensure_ascii=False))
         return
 
     _run_single_model(args, api_keys)
+    # Round 28.4 · Ch26 RCA · P1-9：单模型路径也要在写盘后刷新 aggregate
+    try:
+        refresh_external_aggregate(Path(args.project_root), args.chapter)
+    except Exception as exc:
+        print(f"[single-model] aggregate refresh 失败（不阻断）: {exc}", file=sys.stderr)
+
+
+def refresh_external_aggregate(project_root, chapter_num):
+    """Round 28.4 · Ch26 RCA · P1-9 根治：扫描 .webnovel/tmp/external_review_*_ch{NNNN}.json
+    重算 external_avg / models_ok / models_failed / coverage_status 写到 aggregate 文件。
+
+    根因（Ch26）：单模型补跑后 aggregate 永远不更新，state.external_avg 始终用旧值。
+    本函数是 single source of truth：只读 disk 单模型 JSON，不依赖任何运行时变量。
+
+    Returns dict with refreshed aggregate data.
+    """
+    tmp_dir = project_root / ".webnovel" / "tmp"
+    if not tmp_dir.exists():
+        return None
+    pad = f"{chapter_num:04d}"
+    pattern = f"external_review_*_ch{pad}.json"
+    # 排除 aggregate 文件本身（命名 external_review_ch{NNNN}.json，无中间 model key）
+    aggregate_path = tmp_dir / f"external_review_ch{pad}.json"
+    model_files = [
+        p for p in tmp_dir.glob(pattern) if p.name != aggregate_path.name
+    ]
+    if not model_files:
+        return None
+    models_ok = []
+    models_failed = []
+    scores = []
+    for mf in model_files:
+        # 提取 model key: external_review_{key}_ch{NNNN}.json → key
+        name = mf.name
+        prefix = "external_review_"
+        suffix = f"_ch{pad}.json"
+        if not (name.startswith(prefix) and name.endswith(suffix)):
+            continue
+        mkey = name[len(prefix):-len(suffix)]
+        try:
+            d = json.loads(mf.read_text(encoding="utf-8"))
+        except Exception:
+            models_failed.append(mkey)
+            continue
+        ok_dims = [r for r in d.get("dimension_reports") or [] if r.get("status") == "ok"]
+        if d.get("error") or not ok_dims:
+            models_failed.append(mkey)
+            continue
+        score = d.get("overall_score")
+        if isinstance(score, (int, float)) and score > 0:
+            models_ok.append(mkey)
+            scores.append(float(score))
+        else:
+            models_failed.append(mkey)
+    external_avg = round(sum(scores) / len(scores), 1) if scores else None
+    n_ok = len(models_ok)
+    if n_ok >= 10:
+        coverage_status = "healthy"
+    elif n_ok >= 8:
+        coverage_status = "degraded_ok"
+    elif n_ok >= 5:
+        coverage_status = "degraded_warn"
+    else:
+        coverage_status = "critical"
+    aggregate = {
+        "chapter": chapter_num,
+        "external_avg": external_avg,
+        "models_ok": models_ok,
+        "models_failed": models_failed,
+        "models_ok_count": n_ok,
+        "models_failed_count": len(models_failed),
+        "coverage_status": coverage_status,
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    aggregate_path.write_text(
+        json.dumps(aggregate, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return aggregate
 
 
 def _run_single_model_split(args, api_keys):
@@ -2111,9 +2241,9 @@ def _run_single_model_split(args, api_keys):
     total_prompt_tokens = 0
     total_completion_tokens = 0
 
-    # Round 16 · 2026-04-23 · 统一早停阈值（14 模型扁平化）：
-    # 任一模型累计 N 个维度失败 → 该模型早停（节省 API 配额给其他 13 模型）
-    # 不再按 core/supplemental 区分 · 14 模型一视同仁
+    # Round 16/25 · 统一早停阈值（15 模型扁平化）：
+    # 任一模型累计 N 个维度失败 → 该模型早停（节省 API 配额给其他 14 模型）  # Round 25 仍按"该模型外的其他 14"
+    # 不再按 core/supplemental 区分 · 15 模型一视同仁
     # 维度并发降至 3 使排队维度可被 early_stop_event 拦截
     #
     # Round 20.x · 2026-04-27 · Ch14 RCA P0-1 修复：
@@ -2212,7 +2342,7 @@ def _run_single_model_split(args, api_keys):
                     total_dim_failures += 1
                     results[dim_key] = {"status": "failed", "error": error}
 
-                    # Round 16 · 2026-04-23 · 统一早停（14 模型扁平化）：累计达阈值 → 设置 event，排队中的维度立即跳过
+                    # Round 16/25 · 统一早停（15 模型扁平化）：累计达阈值 → 设置 event，排队中的维度立即跳过
                     if total_dim_failures >= EARLY_STOP_THRESHOLD and early_stop_event and not early_stop_event.is_set():
                         early_stop_event.set()
                         print(f"[early-stop] {resolved_key} 累计{total_dim_failures}次失败（阈值{EARLY_STOP_THRESHOLD}），触发早停", file=sys.stderr)
@@ -2299,11 +2429,11 @@ def main():
     parser.add_argument(
         "--model-key", default="qwen3.6-plus",
         help=(
-            "For dimensions mode: any of the 14 model keys (qwen3.6-plus/gpt-5.5/"
+            "For dimensions mode: any of the 15 model keys (qwen3.6-plus/gpt-5.5/"
             "gemini-3.1-pro/doubao-pro/doubao-seed-2.0-lite/glm-5/glm-5.1/glm-4.7/"
             "mimo-v2.5-pro/minimax-m2.7-hs/minimax-m2.5/deepseek-v3.2-thinking/"
-            "kimi-k2.5/kimi-k2.6) or legacy aliases (qwen-plus/kimi/glm/...) or "
-            "'all' to run all 14 models"
+            "kimi-k2.5/kimi-k2.6/deepseek-v4-flash) or legacy aliases (qwen-plus/kimi/glm/...) or "
+            "'all' to run all 15 models"
         ),
     )
     parser.add_argument("--models", default="qwen3.6-plus,kimi-k2.6,glm-5", help="For legacy mode: comma-separated")
@@ -2334,7 +2464,7 @@ def main():
     parser.add_argument(
         "--healthcheck",
         action="store_true",
-        help="Round 20.x · Ch13 P1 根治：仅探测全部 14 模型可达性（每个模型发 1 个最小请求 / 'ping'），"
+        help="Round 20.x · Ch13 P1 根治：仅探测全部 15 模型可达性（每个模型发 1 个最小请求 / 'ping'），"
              "返回 health_report JSON。不触发 13 维度 review。用于 Step 3.5 调用前快速识别 outage 模型。",
     )
     args = parser.parse_args()
@@ -2359,7 +2489,7 @@ def main():
 
 
 def run_healthcheck_mode(args, api_keys):
-    """Round 20.x · Ch13 P1 根治：14 模型 healthcheck
+    """Round 20.x · Ch13 P1 根治：15 模型 healthcheck
 
     Why（Ch13 血教训）：
         gpt-5.4 14 维度全 http_403（账户/key 失效），每章浪费 5+ 秒跑必定失败

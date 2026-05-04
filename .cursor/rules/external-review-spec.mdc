@@ -1,5 +1,5 @@
 ---
-description: Step 3.5 外部模型审查的 Prompt 模板、输出 Schema 和审查报告格式（Round 16 · 14 模型扁平共识）
+description: Step 3.5 外部模型审查的 Prompt 模板、输出 Schema 和审查报告格式（Round 16/25 · 15 模型扁平共识 +V4-Flash）
 globs: "**/审查报告/**,**/.webnovel/tmp/external_review_*.json,<example-project>*/**,<example-project-C>*/**"
 alwaysApply: true
 ---
@@ -7,10 +7,10 @@ alwaysApply: true
 # Step 3.5 外部模型审查规范
 
 > **Round 21.4 架构（2026-04-29 · combined 默认 · token 重复消耗根治）**：
-> - 14 模型扁平共识 · 无 core / supplemental 层级
+> - 15 模型扁平共识 · 无 core / supplemental 层级（Round 25 +deepseek-v4-flash）
 > - 默认每模型 1 次 combined 请求返回 13 个 `dimension_reports`
 > - combined 坏 JSON / 缺维度时 `auto` 退回 split；split 统一重试 2 次 · 早停阈值 6
-> - Step 6 A3 判定：≥ 10/14 有效 pass · 8-9 medium warn · 5-7 high warn（仍不阻塞） · <5 critical
+> - Step 6 A3 判定：≥ 10/15 有效 pass · 8-9/15 medium warn · 5-7/15 high warn（仍不阻塞） · <5/15 critical
 > - 详见 `webnovel-writer/skills/webnovel-write/references/step-3.5-external-review.md`
 
 ## 一、外审 Prompt 模板
@@ -242,7 +242,7 @@ issue 的 type 分类说明：
 | 文笔质感 | {score} |
 | 情感表现 | {score} |
 
-## 外部审查（14 模型 × 13 维度评分矩阵 · Round 14+）
+## 外部审查（15 模型 × 13 维度评分矩阵 · Round 14+ / Round 25 +V4-Flash）
 
 > 13 维度 = 10 工艺维度 + reader_flow + naturalness + reader_critic
 

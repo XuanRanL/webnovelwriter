@@ -547,6 +547,26 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 这是 **Data Agent 失职**——主 agent 必须人工补一次，
 并在 polish_log notes 注明 “step_k_md_append_recovered_by_main_agent” 用于跨章追溯。
 
+**Round 28.4 · 2026-05-03 · Ch26 RCA · P1-11 根治硬规则**：
+
+> Step K 不允许"推给主 agent"。data-agent 在 chapter_meta 写库后必须 *直接*
+> 用 Edit 工具追加 `[Ch{N}]` 标注到 3 个核心文件，而非把它们列入
+> `proposed_additions` 让主 agent 后补。
+
+旧问题：data-agent 多次返回 `step_k_status.proposed_additions=[3 entries]` 但
+`executed=false`，主 agent 一直要在 Step 7 hygiene_check 拦截后手动补，
+跨 Ch24/Ch25/Ch26 反复出现。
+
+新硬规则：
+1. **Edit 工具追加是必做项**，不是 best-effort。
+2. 失败立即报错（不要 `try/except` 静默吞掉）。
+3. `step_k_status.proposed_additions` 仅用于"信息不全的次要文件"（如新设定文件需要主 agent 决策结构），
+   核心 3 文件不允许进 proposed_additions。
+4. 完成后必须通过自检：再次 grep `[Ch{N}]` 在 3 个文件里都能找到 → 才能 return success。
+
+主 agent 在 Step 7 commit 前的 hygiene_check 是最后防线；如果触发到说明 data-agent
+违规了，主 agent 必须 fail Step 5 重跑 data-agent，而不是手补。
+
 ## 审查报告持久化（扩展）
 
 > 将每章的审查结果持久化存储，支持趋势分析。

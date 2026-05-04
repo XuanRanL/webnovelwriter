@@ -204,28 +204,29 @@ def test_external_review_agent_desc_uses_13_dimensions():
 
 
 # ---------------------------------------------------------------------------
-# 4. K×dimensions 乘积数学正确（避免算错 9×13=99 / 14×13=170 之类 typo）
+# 4. K×dimensions 乘积数学正确（避免算错 9×13=99 / 14×13=170 / 15×13=180 之类 typo）
 #    Round 13 v2 = 9 模型 × 13 维度 = 117 份（历史口径，仅出现在 changelog/RCA）
-#    Round 14+   = 14 模型 × 13 维度 = 182 份（当前口径）
-#    Round 21.4  = 14 模型 × 1 combined = 14 物理请求（评分点仍 182）
+#    Round 14+   = 14 模型 × 13 维度 = 182 份（历史口径，仅出现在 changelog/RCA）
+#    Round 25+   = 15 模型 × 13 维度 = 195 份（当前口径 · +deepseek-v4-flash）
+#    Round 21.4  = 15 模型 × 1 combined = 15 物理请求（评分点仍 195）
 # ---------------------------------------------------------------------------
 
 
 def test_models_times_dimensions_product_correctness():
     """所有"K 模型 × N 维度 = M 份"的表述，M 必须等于 K × N。
 
-    覆盖 K ∈ {9, 14}，避免：
-      - 算错（9×13 写成 99 / 14×13 写成 170）
-      - K 漂移（Round 14+ 文档遗留 9×13 旧口径未升级）
+    覆盖 K ∈ {9, 14, 15}，避免：
+      - 算错（9×13 写成 99 / 14×13 写成 170 / 15×13 写成 180）
+      - K 漂移（Round 25+ 文档遗留 14×13 旧口径未升级）
     """
     files_to_check = [
         "agents/external-review-agent.md",
         "skills/webnovel-write/references/step-3.5-external-review.md",
         "scripts/external_review.py",
     ]
-    # 匹配 9/14 模型 × N 维度 = M 份
+    # 匹配 9/14/15 模型 × N 维度 = M 份
     pattern = re.compile(
-        r"(9|14)\s*(?:模型)?\s*[×xX]\s*(\d+)\s*(?:维度)?\s*[=＝]\s*(\d+)\s*份"
+        r"(9|14|15)\s*(?:模型)?\s*[×xX]\s*(\d+)\s*(?:维度)?\s*[=＝]\s*(\d+)\s*份"
     )
     violations = []
     for rel in files_to_check:
@@ -245,9 +246,9 @@ def test_models_times_dimensions_product_correctness():
     assert not violations, "K×N 份乘积表达式数学错误:\n  " + "\n  ".join(violations)
 
 
-def test_round14_plus_uses_14_models_in_current_docs():
+def test_round25_plus_uses_15_models_in_current_docs():
     """当前口径文档（SKILL.md / external-review-agent.md / step-3.5-external-review.md）
-    必须以 "14 模型" 为主口径出现至少 1 次；9 模型旧口径仅允许出现在历史/RCA 段落。
+    必须以 "15 模型" 为主口径出现至少 1 次；9/14 模型旧口径仅允许出现在历史/RCA 段落。
     """
     current_docs = [
         "skills/webnovel-write/SKILL.md",
@@ -259,6 +260,6 @@ def test_round14_plus_uses_14_models_in_current_docs():
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")
-        assert re.search(r"14\s*(?:个)?\s*(?:模型|models)", text), (
-            f"{rel}: 当前口径必须含 '14 模型'/'14 个模型'/'14 models' 字样"
+        assert re.search(r"15\s*(?:个)?\s*(?:模型|models)", text), (
+            f"{rel}: 当前口径必须含 '15 模型'/'15 个模型'/'15 models' 字样"
         )
