@@ -371,6 +371,11 @@ def check_A1_contract_completeness(project_root: Path, chapter: int) -> CheckRes
     if not payload:
         payload = data
 
+    # Round 28.6 · Ch28 RCA · P0 根治：contract_fields_min 必须在 v2 分支前先赋值，
+    # 否则 v2 path 第 435 行 `if contract_fields < contract_fields_min` 会 UnboundLocalError。
+    # Round 28.4 P1-6 引入 v2 ctx_json fallback 时漏移此常量，Ch28 触发硬阻断。
+    contract_fields_min = 8
+
     # --- 格式 A: 直接 panels dict（context-agent 紧凑格式） ---
     direct_panels = payload.get("panels")
     if isinstance(direct_panels, dict) and len(direct_panels) >= 4:
@@ -454,7 +459,7 @@ def check_A1_contract_completeness(project_root: Path, chapter: int) -> CheckRes
             contract = payload.get("contract") or payload.get("Contract") or {}
             contract_fields = len(contract) if isinstance(contract, dict) else 0
 
-    contract_fields_min = 8
+    # contract_fields_min 已在函数顶部初始化（Round 28.6 P0 根治）
     min_panels = 6
     if panels_count < min_panels:
         return CheckResult(
