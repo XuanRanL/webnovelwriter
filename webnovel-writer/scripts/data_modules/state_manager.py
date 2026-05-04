@@ -1881,6 +1881,16 @@ def main():
                 "chapter_type", "review_score",
                 "thrill_score",  # Round 20.1 · Ch1-12 体检 Bug 1：reader-thrill-checker 6 子维度结构
                 "ending_form_class",  # Round 20.x · Ch14 RCA P1-5：12 NEW form 类别记录（与 X1 ending form taxonomy 配合）
+                # Round 28.5 · Ch27 RCA · H69 4 字段 + external_avg 持续缺失根治
+                # 根因：H69 检查这 7 个字段，但 CLI 白名单不含 → data-agent 走 process-chapter 写入失败时无法 fallback 修复
+                # 修复：加入白名单使其可通过 set-chapter-meta-field 兜底设置
+                "external_avg",  # Step 3.5 多模型均分（必须能被 mirror-disk-scores 后手动校正）
+                "external_models_ok",  # Step 3.5 成功模型列表（list[str]）
+                "external_models_count",  # 成功模型数量
+                "total_words",  # post_draft 累计字数 SSOT（可与 word_count 不同，记录全章工序前后变化）
+                "dialogue_ratio",  # F2 对话占比闸门
+                "signature_density",  # 签名句式跨章扫描
+                "reader_thrill_score",  # Round 20.x A9 floor（数字版，与 thrill_score dict 字段共存）
             }
             if not ch or not field:
                 emit_error("INVALID_ARG", "--set-chapter-meta-field 需要 chapter + field 字段")
@@ -2331,11 +2341,36 @@ def main():
                 cs["overall"] = overall_new
                 entry["overall_score"] = overall_new
                 entry["review_score"] = overall_new
+            # Round 28.5 · Ch27 RCA · H72 根治：mirror-disk-scores 同时刷新 external_avg
+            # 根因：Step 3.5 完成时部分模型未返回 → workflow artifact 记录陈旧值（如 12/15）
+            #       后续 aggregate 文件被刷新（15/15）但 chapter_meta.external_avg 永不更新
+            # 修复：mirror 时优先读 external_review_ch{NNNN}.json aggregate 文件
+            ext_path = tmp_dir / f"external_review_ch{pad}.json"
+            ext_drift = None
+            if ext_path.exists():
+                try:
+                    ext_data = json.loads(ext_path.read_text(encoding="utf-8"))
+                    new_ext_avg = ext_data.get("external_avg")
+                    new_models_ok = ext_data.get("models_ok") or []
+                    new_models_count = ext_data.get("models_ok_count")
+                    if new_ext_avg is not None:
+                        old_ext = entry.get("external_avg")
+                        old_count = entry.get("external_models_count")
+                        if old_ext != new_ext_avg or old_count != new_models_count:
+                            entry["external_avg"] = float(new_ext_avg)
+                            if new_models_ok:
+                                entry["external_models_ok"] = new_models_ok
+                            if new_models_count is not None:
+                                entry["external_models_count"] = int(new_models_count)
+                            ext_drift = f"external_avg {old_ext}→{new_ext_avg} (models_ok {old_count}→{new_models_count})"
+                except Exception:
+                    pass
             manager._pending_raw_state_mutations.add("chapter_meta")
             changes.append(
                 f"chapter_meta.{key} mirror disk: 改 {mirrored_count} 项 "
                 + (f"({mirrored[:3]})" if mirrored else "(0 drift)")
                 + (f" / 跳过 recheck: {skipped_recheck}" if skipped_recheck else "")
+                + (f" / {ext_drift}" if ext_drift else "")
             )
             if applied_chapter is None:
                 applied_chapter = ch
