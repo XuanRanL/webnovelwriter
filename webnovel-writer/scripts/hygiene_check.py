@@ -1148,6 +1148,350 @@ def check_thirteen_checker_jsons_present(root: Path, chapter: int, rep: HygieneR
     rep.record("P0", "H63", "Step 3 全 13 checker JSON 落盘完整", True)
 
 
+def check_disk_state_score_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H68 (Round 28.4 · Ch26 RCA): disk JSON checker 分数 必须 == state.checker_scores 分数
+
+    根因（Ch26）：data-agent 跑出 state.checker_scores 与 .webnovel/tmp 下
+    {checker}_ch{NNNN}.json 真实分数不一致，且差异最大达到 11 分（reader-pull 94→83）。
+    H58 只对比 state vs review_metrics（同源），不能抓 state vs disk JSON 漂移。
+    H59 检测 silent change 但需要 post_polish_recheck 信号。
+    Ch26 实测：emotion 91→81 / reader-pull 94→83 / consistency 88→84 / prose 86→84 /
+    naturalness 84→82 / pacing 82→79 / continuity 87→86 / high-point 82→80 全部 silent drift。
+
+    检查规则：
+      - 13 个 canonical checker 在两份 store 之间最多容忍 ±1 分（rounding 容差）
+      - 漂移 >1 → P0 fail（不是 P1，因为这是真源问题）
+      - post_polish_recheck 中已记录的 checker 跳过（合法 polish 改分）
+      - 缺失任意一边的 checker 跳过（H63 抓落盘，H58 抓 review_metrics）
+      - 解析失败的 disk JSON 跳过（H71 抓非法 JSON）
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    cs = meta.get("checker_scores")
+    if not isinstance(cs, dict) or not cs:
+        return
+    tmp_dir = root / ".webnovel" / "tmp"
+    if not tmp_dir.exists():
+        return
+
+    # disk file → canonical checker name 映射（兼容 _check 和 无 _check 两种命名）
+    disk_to_canonical = {
+        "consistency": "consistency-checker",
+        "continuity": "continuity-checker",
+        "ooc": "ooc-checker",
+        "reader_pull": "reader-pull-checker",
+        "high_point": "high-point-checker",
+        "flow": "flow-checker",
+        "pacing": "pacing-checker",
+        "dialogue": "dialogue-checker",
+        "density": "density-checker",
+        "prose_quality": "prose-quality-checker",
+        "emotion": "emotion-checker",
+        "reader_naturalness": "reader-naturalness-checker",
+        "reader_critic": "reader-critic-checker",
+    }
+    recheck = meta.get("post_polish_recheck", {}) or {}
+    recheck_set = set(recheck.keys()) if isinstance(recheck, dict) else set()
+    pad = f"{chapter:04d}"
+    drifts = []
+    for prefix, canonical in disk_to_canonical.items():
+        if canonical in recheck_set:
+            continue
+        cm_v = cs.get(canonical)
+        if cm_v is None:
+            continue
+        # 找 disk JSON
+        candidates = [
+            tmp_dir / f"{prefix}_ch{pad}.json",
+            tmp_dir / f"{prefix}_check_ch{pad}.json",
+        ]
+        disk_path = next((p for p in candidates if p.exists()), None)
+        if disk_path is None:
+            continue
+        try:
+            disk_data = json.loads(disk_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue  # H71 抓非法 JSON
+        # disk JSON 里 score 字段名兼容多种
+        disk_v = (
+            disk_data.get("score")
+            or disk_data.get("overall_score")
+            or disk_data.get("verdict_score")
+        )
+        if disk_v is None:
+            continue
+        try:
+            diff = abs(float(cm_v) - float(disk_v))
+        except (TypeError, ValueError):
+            continue
+        if diff > 1:
+            drifts.append(f"{canonical}: state={cm_v} vs disk={disk_v} (Δ={diff:.0f})")
+    if drifts:
+        rep.record(
+            "P0",
+            "H68",
+            f"checker_scores 与 disk JSON 漂移 {len(drifts)} 项（>1分）: {drifts[:5]}（"
+            f"修：state.checker_scores 必须 mirror disk · 跑 webnovel.py state mirror-disk-scores --chapter {chapter}）",
+            False,
+        )
+    else:
+        rep.record("P0", "H68", "checker_scores 与 disk JSON 一致（容差±1）", True)
+
+
+def check_extended_meta_fields(root: Path, chapter: int, rep: HygieneReport):
+    """H69 (Round 28.4 · Ch26 RCA): 扩展 chapter_meta 字段必须填齐
+
+    根因（Ch26）：H2 只检查 22 core 字段，但 Round 21+ 引入了更多字段：
+      - total_words / dialogue_ratio / signature_density（post_draft 闸门依赖）
+      - naturalness_score / naturalness_verdict（Round 17.2）
+      - reader_critic_score / reader_critic_verdict（顶层，非 post_polish_recheck.x.after）
+      - reader_thrill_score（Round 20.x A9 floor）
+      - external_avg / hook_close（H26 依赖）
+
+    Ch26 实测缺失 7 个：total_words / dialogue_ratio / signature_density /
+    reader_thrill_score / reader_critic_score / reader_critic_verdict 顶层 +
+    naturalness 顶层都齐但部分 derivative 字段空。
+
+    检查规则：每个字段 P1 warn（不阻断），便于 data-agent 迁移期容忍。
+    """
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    if not meta:
+        return
+    extended_fields = [
+        ("total_words", "post_draft 累计字数 SSOT"),
+        ("dialogue_ratio", "F2 对话占比闸门"),
+        ("signature_density", "签名句式跨章扫描"),
+        ("naturalness_score", "Round 17.2 评分"),
+        ("naturalness_verdict", "naturalness verdict"),
+        ("reader_critic_score", "顶层 reader-critic"),
+        ("reader_critic_verdict", "顶层 reader-critic verdict"),
+        ("reader_thrill_score", "Round 20.x A9 floor"),
+        ("external_avg", "Step 3.5 多模型均分"),
+        ("hook_close", "H26 hook_close 依赖"),
+    ]
+    missing = [(f, desc) for f, desc in extended_fields
+               if f not in meta or meta[f] in (None, "", [], {})]
+    if missing:
+        miss_names = [m[0] for m in missing]
+        rep.record(
+            "P1",
+            "H69",
+            f"chapter_meta 扩展字段缺失 {len(missing)}: {miss_names[:8]}（"
+            f"修：data-agent 必须在 chapter_meta 输出全部扩展字段）",
+            False,
+        )
+    else:
+        rep.record("P1", "H69", "chapter_meta 扩展 10 字段齐全", True)
+
+
+def check_chapter_type_word_count_match(root: Path, chapter: int, rep: HygieneReport):
+    """H70 (Round 28.4 · Ch26 RCA): context_contract.chapter_type 必须与实际 word_count 区间匹配
+
+    根因（Ch26）：context-agent 把 Ch26 标为 "战斗章/高潮章延续" (3200-3800)，
+    但实际正文 3063 字符（推进章 2700-3300 区间）。post_draft_check 因 SSOT
+    hard_min=2200 没拦住，但 context 级 hard_min=3200 已被 violate。
+
+    误标根因：context-agent 看到 Ch25 末尾是<apocalypse-event>爆发（高强度），按"延续"逻辑给
+    Ch26 也打了战斗章标签，没读详细大纲明确标注的章型。
+
+    检查规则：
+      - 读 context_contract.chapter_type 和 context_contract.word_count_hard_min
+      - 比较实际 word_count 是否落在 chapter_type 推荐区间
+      - 不匹配 → P1 warn（建议 context-agent 重新分类）
+    """
+    ctx_p = root / ".webnovel" / "context" / f"ch{chapter:04d}_context.json"
+    if not ctx_p.exists():
+        return
+    try:
+        cd = json.loads(ctx_p.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    cc = cd.get("context_contract", {})
+    chapter_type = cc.get("chapter_type", "")
+    ctx_min = cc.get("word_count_hard_min")
+    ctx_max = cc.get("word_count_hard_max")
+    state_p = root / ".webnovel" / "state.json"
+    if not state_p.exists():
+        return
+    s = json.loads(state_p.read_text(encoding="utf-8"))
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    wc = meta.get("word_count")
+    if not isinstance(wc, int) or not isinstance(ctx_min, int):
+        return
+    # context_contract 区间硬下限被 violate
+    if wc < ctx_min:
+        # 找出 word_count 实际落在哪类区间
+        type_ranges = {
+            "过渡章/铺垫章": (2200, 2900),
+            "推进章/日常章": (2700, 3300),
+            "情感章/揭秘章": (2900, 3500),
+            "战斗章/高潮章/卷末章": (3200, 3800),
+        }
+        actual_match = None
+        for tname, (tmin, tmax) in type_ranges.items():
+            if tmin <= wc <= tmax:
+                actual_match = tname
+                break
+        rep.record(
+            "P1",
+            "H70",
+            f"chapter_type='{chapter_type}' 设定 hard_min={ctx_min} 但 word_count={wc} 不达标"
+            + (f"（实际更接近 '{actual_match}'）" if actual_match else "")
+            + "（修：context-agent 必须按详细大纲读 chapter_type，不要按前章外推）",
+            False,
+        )
+    else:
+        rep.record("P1", "H70", f"chapter_type='{chapter_type}' 与 word_count={wc} 匹配", True)
+
+
+def check_disk_json_validity(root: Path, chapter: int, rep: HygieneReport):
+    """H71 (Round 28.4 · Ch26 RCA): 所有 .webnovel/tmp/{checker}_ch{NNNN}.json 必须可被 json.loads 解析
+
+    根因（Ch26）：high_point_check_ch0026.json 含 ASCII " 在 JSON 字符串值里，
+    "形成"余波"——例如" 这种结构会让 JSON parser 在 char 450 报错（双引号撞车）。
+    后果：下游任何 parse 这个文件的工具拿不到分数，state 用 fallback 估算。
+
+    检查规则：
+      - 扫描 .webnovel/tmp/{prefix}_ch{NNNN}.json 和 _check 命名变体
+      - 每个文件 try json.loads，失败列入 P0
+      - 修复建议：subagent prompt 加硬规则「JSON 字符串值内禁用 ASCII " 和 '」
+    """
+    tmp_dir = root / ".webnovel" / "tmp"
+    if not tmp_dir.exists():
+        return
+    pad = f"{chapter:04d}"
+    invalid = []
+    for jf in tmp_dir.glob(f"*_ch{pad}.json"):
+        try:
+            json.loads(jf.read_text(encoding="utf-8"))
+        except Exception as exc:
+            invalid.append(f"{jf.name}: {str(exc)[:60]}")
+    if invalid:
+        rep.record(
+            "P0",
+            "H71",
+            f"{len(invalid)} 个 disk JSON 解析失败: {invalid[:3]}（"
+            f"修：subagent prompt 强制 JSON 字符串值禁用 ASCII \" 和 '，改用 「」）",
+            False,
+        )
+    else:
+        rep.record("P0", "H71", "所有 disk JSON 解析合法", True)
+
+
+def check_polish_narrative_version_bump(root: Path, chapter: int, rep: HygieneReport):
+    """H72 (Round 28.4 · Ch26 RCA): Step 4 polish 后 narrative_version 必须 > v1
+
+    根因（Ch26）：手动 Step 4 polish（不走 polish_cycle.py）不会自动 bump
+    narrative_version，章节停留在 v1。但 hook_close.source_narrative_version 也是
+    v1，下游 H28 hook_close 跨章 stale 检测不准。Round 21.7 H35 设计是 polish 必 bump。
+
+    检查规则：
+      - workflow_state.history 末项 completed_steps 找 Step 4
+      - artifacts.fixes 非空（确实做了 polish）
+      - state.chapter_meta.NNNN.narrative_version == "v1" → P1 warn
+    """
+    ws_p = root / ".webnovel" / "workflow_state.json"
+    state_p = root / ".webnovel" / "state.json"
+    if not ws_p.exists() or not state_p.exists():
+        return
+    try:
+        ws = json.loads(ws_p.read_text(encoding="utf-8"))
+        s = json.loads(state_p.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    hist = ws.get("history", [])
+    if not hist:
+        return
+    last = hist[-1]
+    if last.get("chapter") != chapter:
+        return
+    step4_polished = False
+    for st in last.get("completed_steps", []):
+        if st.get("id") == "Step 4" and st.get("name", "").startswith("Polish"):
+            arts = st.get("artifacts", {})
+            fixes = arts.get("fixes")
+            if isinstance(fixes, list) and len(fixes) > 0:
+                step4_polished = True
+                break
+    if not step4_polished:
+        return
+    meta = s.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    nv = meta.get("narrative_version", "v1")
+    if nv == "v1" or nv in (None, ""):
+        rep.record(
+            "P1",
+            "H72",
+            f"Step 4 polish 完成（fixes 非空）但 narrative_version='{nv}' 未 bump（"
+            f"修：python webnovel.py state bump-narrative-version --chapter {chapter} "
+            f"--reason 'Step 4 polish'）",
+            False,
+        )
+    else:
+        rep.record("P1", "H72", f"Step 4 polish 后 narrative_version='{nv}'（已 bump）", True)
+
+
+def check_stale_failure_reason_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H73 (Round 28.4 · Ch26 RCA · P1-5): 失败步骤的 failure_reason 时间数字必须与
+    实际 (failed_at - started_at) 一致。
+
+    根因（Ch26）：workflow_state.history[-1].failed_steps[0].failure_reason 写
+    "Step 5 stale: process died after 241 min, restarting data-agent"
+    但实际 started_at=13:25:02 → failed_at=13:25:52 仅 50 秒。
+    241 min 来自 agent 自己估算的"前一次启动到现在"（跨 shell 时钟错误）。
+
+    本检查抓"failure_reason 中的分钟数 vs 实际经过时间" 漂移 > 5 min。
+    P2 warn（不阻断），主要为审计可见性。
+    """
+    ws_p = root / ".webnovel" / "workflow_state.json"
+    if not ws_p.exists():
+        return
+    try:
+        ws = json.loads(ws_p.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    hist = ws.get("history", [])
+    if not hist:
+        return
+    last = hist[-1]
+    if last.get("chapter") != chapter:
+        return
+    import re as _re
+    from datetime import datetime as _dt
+    drifts = []
+    for fs in last.get("failed_steps", []):
+        reason = fs.get("failure_reason", "") or ""
+        m = _re.search(r"(\d+)\s*(?:分钟|min)", reason)
+        if not m:
+            continue
+        claimed_min = int(m.group(1))
+        try:
+            started = _dt.fromisoformat(fs.get("started_at"))
+            failed = _dt.fromisoformat(fs.get("failed_at"))
+            actual_min = (failed - started).total_seconds() / 60.0
+        except Exception:
+            continue
+        if claimed_min > actual_min + 5:
+            drifts.append(
+                f"{fs.get('id')}: 报 {claimed_min} 分钟 但实际 {actual_min:.1f} 分钟"
+            )
+    if drifts:
+        rep.record(
+            "P2",
+            "H73",
+            f"failure_reason 时钟漂移 {len(drifts)} 项: {drifts[:2]}（信息性 · 不阻断）",
+            False,
+        )
+    else:
+        rep.record("P2", "H73", "失败 step 时钟自洽（如有）", True)
+
+
 def check_curly_quote_pairing(root: Path, chapter: int, rep: HygieneReport):
     """H62 (Round 28.x · Ch25 RCA): 中文弯引号配对方向必须正确
 
@@ -2055,14 +2399,34 @@ def check_hook_close_persistence(root: Path, chapter: int, rep: HygieneReport):
             False,
         )
         return
-    if state_primary != src_primary:
+    # Round 28.4 · P1-8 根治：alias-aware 比较
+    # reader-pull-checker 经常输出 '危机钩'/'悬念钩' 等扩展类型，state CLI 自动映射到 4 类。
+    # 直接字符串比较会误报；改为映射后比较。
+    HOOK_ALIASES = {
+        "危机钩": "动作钩",
+        "悬念钩": "信息钩",
+        "反转钩": "信息钩",
+        "意外钩": "信息钩",
+        "决断钩": "决策钩",
+        "情境钩": "动作钩",
+    }
+    src_canonical = HOOK_ALIASES.get(src_primary, src_primary)
+    if state_primary != src_canonical:
         rep.record(
             "P1", "H26",
-            f"reader_pull primary='{src_primary}' 与 state primary='{state_primary}' 不一致，请核对",
+            f"reader_pull primary='{src_primary}'"
+            + (f"→canonical='{src_canonical}'" if src_canonical != src_primary else "")
+            + f" 与 state primary='{state_primary}' 不一致，请核对",
             False,
         )
         return
-    rep.record("P0", "H26", f"hook_close 落库一致（primary='{src_primary}'）", True)
+    rep.record(
+        "P0", "H26",
+        f"hook_close 落库一致（primary='{src_primary}'"
+        + (f"→canonical='{src_canonical}'" if src_canonical != src_primary else "")
+        + ")",
+        True,
+    )
 
 
 def check_hook_close_freshness(root: Path, chapter: int, rep: HygieneReport):
@@ -3077,6 +3441,14 @@ def main():
 
     # Round 28.3 · Ch25 RCA wave 3 · canon 锁定（polish 不许凭空发明专有名词）
     check_canon_locked_terms(root, args.chapter, rep)  # H67
+
+    # Round 28.4 · Ch26 RCA · disk-state 漂移 + 字段缺失 + chapter_type 误标 + JSON 非法 + narrative bump
+    check_disk_state_score_consistency(root, args.chapter, rep)  # H68
+    check_extended_meta_fields(root, args.chapter, rep)  # H69
+    check_chapter_type_word_count_match(root, args.chapter, rep)  # H70
+    check_disk_json_validity(root, args.chapter, rep)  # H71
+    check_polish_narrative_version_bump(root, args.chapter, rep)  # H72
+    check_stale_failure_reason_consistency(root, args.chapter, rep)  # H73
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)

@@ -25,8 +25,8 @@ model: inherit
 }
 ```
 
-**model_key 说明（十四模型共识架构 · Round 21.4 combined 默认）**:
-- **架构**：6 供应商（**ticketpro** + **api666** + openclawroot + **ark-coding** + siliconflow + **xiaomimimo**）× 14 模型 × 13 维度 = 182 份逻辑评分（Round 21.4 正常物理请求数为 14，不再是 182）
+**model_key 说明（十五模型共识架构 · Round 25 含 deepseek-v4-flash · Round 21.4 combined 默认）**:
+- **架构**：6 供应商（**ticketpro** + **api666** + openclawroot + **ark-coding** + siliconflow + **xiaomimimo**）× 15 模型 × 13 维度 = 195 份逻辑评分（Round 21.4 combined 默认 · 正常物理请求数为 15，不再是 195）
 - **共识机制**：每个模型都跑**全 13 维度**（无分工），默认一次请求返回 13 个 `dimension_reports`；多模型共识 → 真 bug；单模型孤例 → 模型偏见
 - **所有模型 thinking 全开**
   - ark-coding：`thinking={"type":"enabled"}`（火山原生）
@@ -46,10 +46,11 @@ model: inherit
   - `deepseek-v3.2-thinking`（主 = ark-coding deepseek-v3.2 mt=32768，备 = openclawroot/siliconflow；技术考据）
   - `kimi-k2.5` ⭐（主 = ark-coding mt=32768，备 = siliconflow Kimi-K2.5；Moonshot K2.5 thinking）
   - `kimi-k2.6` ⭐（主 = ark-coding mt=65536，备 = siliconflow Kimi-K2.5 fallback mt=32768；Moonshot K2.6 旗舰）
+  - `deepseek-v4-flash` 🆕（siliconflow 单 provider · Round 25 实验性 · max_tokens=65536 + reasoning_effort=max + thinking_budget=32768 全开 · timeout=1500s）
 
-⭐ = Round 14 新增
+⭐ = Round 14 新增 · 🆕 = Round 25 新增
 
-- **推荐**：使用 `--model-key all` 自动遍历全部 14 模型
+- **推荐**：使用 `--model-key all` 自动遍历全部 15 模型
 - **老模型兼容别名**：`qwen-plus/kimi/glm/qwen/deepseek/minimax/doubao/glm4/minimax-m2.7/doubao-lite` 自动映射到新 key（见 MODEL_ALIASES）；`kimi` 现在指向 `kimi-k2.6`
 
 ## 执行流程

@@ -1178,6 +1178,14 @@ class StateManager:
             if scores:
                 chapter_meta["checker_scores"] = scores
 
+        # --- 6.5. review_score / overall_score 类型统一（Round 28.4 · P1-10）---
+        # 根因（Ch26）：data-agent 写 review_score=82.0 (float) 但 overall_score=82 (int)
+        # 下游 ETL 出 type mismatch warning。统一为 int。
+        for fld in ("overall_score", "review_score"):
+            v = chapter_meta.get(fld)
+            if isinstance(v, float):
+                chapter_meta[fld] = int(round(v))
+
         # --- 7. narrative_version：首次落库 default v1 ---
         # Round 27.1 · Ch23 RCA R6 根治 · 2026-05-02
         # 现象：data-agent 跑完后 chapter_meta.NNNN.narrative_version 仍为 None,
@@ -1534,6 +1542,21 @@ def main():
         "--set-hook-close",
         help='JSON: {"chapter":N,"primary":"信息钩|情绪钩|决策钩|动作钩","secondary":null,"strength":88,"text":"章末最后 200 字"}',
     )
+    # Round 28.4 · 2026-05-03 · Ch26 RCA：disk JSON → state.checker_scores 一键 mirror
+    # 根因：Ch26 实测 emotion 91→81 / reader-pull 94→83 等 8 处 silent drift。
+    # 修复：扫描 .webnovel/tmp/{checker}_ch{NNNN}.json 取 score 字段直接 mirror 到
+    # state.chapter_meta.NNNN.checker_scores，跳过 post_polish_recheck 中的 checker。
+    update_parser.add_argument(
+        "--mirror-disk-scores",
+        help='JSON: {"chapter":N}（从 .webnovel/tmp 扫描 13 个 checker JSON，把 score 字段 mirror 到 state.checker_scores · 跳过 post_polish_recheck 中的 checker）',
+    )
+    # Round 28.4 · 2026-05-03 · Ch26 RCA：narrative_version bump
+    # 根因：手动 Step 4 polish 不走 polish_cycle.py，narrative_version 永远 v1。
+    # 修复：bump-narrative-version --chapter N --reason "Step 4 polish" 自动 v1→v2 等。
+    update_parser.add_argument(
+        "--bump-narrative-version",
+        help='JSON: {"chapter":N,"reason":"Step 4 polish"}（v1→v2 v2→v3 etc · 同时写 polish_log entry）',
+    )
 
     # Round 19 Phase E · 跨卷规划数据：get-hook-trend 与 get-recent-meta 同级
     # Round 19 Phase G · 跨章钩子趋势查询：取最近 N 章 hook_close.primary_type 序列 + 自动判定
@@ -1731,10 +1754,12 @@ def main():
                 or args.set_checker_subdimensions
                 or args.set_hook_close
                 or getattr(args, "set_progress_chapter", None)
+                or getattr(args, "mirror_disk_scores", None)
+                or getattr(args, "bump_narrative_version", None)
             ):
                 emit_error(
                     "MISSING_ARG",
-                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck / --add-words / --set-checker-subdimensions / --set-hook-close / --set-progress-chapter）",
+                    "state update 需要至少一个参数（--strand-dominant / --add-foreshadowing / --resolve-foreshadowing / --set-chapter-meta-field / --sync-protagonist-display / --set-checker-score / --append-recheck / --add-words / --set-checker-subdimensions / --set-hook-close / --set-progress-chapter / --mirror-disk-scores / --bump-narrative-version）",
                 )
                 return
         changes: list[str] = []
@@ -2060,7 +2085,11 @@ def main():
             for ch_change in result.get("changes", []):
                 changes.append(ch_change)
             manager._pending_raw_state_mutations.add("progress")
-            manager._pending_raw_state_mutations.add("__top__")
+            # Round 28.4 · Ch26 RCA：save_state 只 mirror `k in self._state` 的 key，
+            # 必须显式把顶层 key 加入 pending，否则 last_completed_chapter / current_chapter
+            # 会在 save 时被 disk 旧值覆盖（Ch26 实测漂移根因）。
+            manager._pending_raw_state_mutations.add("last_completed_chapter")
+            manager._pending_raw_state_mutations.add("current_chapter")
             if applied_chapter is None:
                 applied_chapter = ch
 
@@ -2109,15 +2138,45 @@ def main():
             ch = int(payload.get("chapter", 0))
             primary = str(payload.get("primary", "")).strip()
             VALID_HOOK_TYPES = {"信息钩", "情绪钩", "决策钩", "动作钩"}
+            # Round 28.4 · 别名映射前置（reader-pull-checker 常输出 "危机钩" 等扩展类型）
+            HOOK_ALIASES_PRIMARY = {
+                "危机钩": "动作钩",
+                "悬念钩": "信息钩",
+                "反转钩": "信息钩",
+                "意外钩": "信息钩",
+                "决断钩": "决策钩",
+                "情境钩": "动作钩",
+            }
+            primary_alias_used = None
+            if primary in HOOK_ALIASES_PRIMARY:
+                primary_alias_used = primary
+                primary = HOOK_ALIASES_PRIMARY[primary]
             if not ch or primary not in VALID_HOOK_TYPES:
                 emit_error(
                     "INVALID_ARG",
-                    f"--set-hook-close 需要 chapter(int) + primary∈{sorted(VALID_HOOK_TYPES)}",
+                    f"--set-hook-close 需要 chapter(int) + primary∈{sorted(VALID_HOOK_TYPES)}（"
+                    f"别名映射: {sorted(HOOK_ALIASES_PRIMARY.keys())}→canonical）",
                 )
                 return
             sec = payload.get("secondary")
             if sec and sec not in VALID_HOOK_TYPES:
                 sec = None
+            # Round 28.4 · Ch26 RCA · P1-8: hook taxonomy alias 自动映射
+            # reader-pull-checker 经常输出 "危机钩"/"悬念钩"/"反转钩" 但 CLI 只接受 4 类。
+            # 在严格 reject 之外提供别名映射（向后兼容旧报告 + 减少 hygiene H26 mismatch）。
+            HOOK_ALIASES = {
+                "危机钩": "动作钩",
+                "悬念钩": "信息钩",
+                "反转钩": "信息钩",
+                "意外钩": "信息钩",
+                "决断钩": "决策钩",
+                "情境钩": "动作钩",
+            }
+            # 注意：这一段在 primary 校验之后；若 primary 已是 4 类直通，
+            # 但 secondary 可能是别名 → 映射；同时把 alias 命中也写入 source 字段以便审计。
+            if sec and sec in HOOK_ALIASES:
+                payload.setdefault("alias_mapping", {})["secondary"] = sec
+                sec = HOOK_ALIASES[sec]
             cm = manager._state.setdefault("chapter_meta", {})
             key = f"{ch:04d}"
             entry = cm.setdefault(key, {})
@@ -2195,6 +2254,129 @@ def main():
                 cd["current"] = str(payload["countdown_current"])
                 changes.append(f"countdown.current={payload['countdown_current']}")
             manager._pending_raw_state_mutations.add("protagonist_state")
+
+        # Round 28.4 · Ch26 RCA · P0-1 · disk JSON → state.checker_scores 一键 mirror
+        if getattr(args, "mirror_disk_scores", None):
+            payload = load_json_arg(args.mirror_disk_scores)
+            ch = int(payload.get("chapter", 0))
+            if not ch:
+                emit_error("INVALID_ARG", "--mirror-disk-scores 需要 {chapter:int}")
+                return
+            from pathlib import Path as _Path
+            tmp_dir = _Path(manager.config.project_root) / ".webnovel" / "tmp"
+            disk_to_canonical = {
+                "consistency": "consistency-checker",
+                "continuity": "continuity-checker",
+                "ooc": "ooc-checker",
+                "reader_pull": "reader-pull-checker",
+                "high_point": "high-point-checker",
+                "flow": "flow-checker",
+                "pacing": "pacing-checker",
+                "dialogue": "dialogue-checker",
+                "density": "density-checker",
+                "prose_quality": "prose-quality-checker",
+                "emotion": "emotion-checker",
+                "reader_naturalness": "reader-naturalness-checker",
+                "reader_critic": "reader-critic-checker",
+            }
+            cm = manager._state.setdefault("chapter_meta", {})
+            key = f"{ch:04d}"
+            entry = cm.setdefault(key, {})
+            cs = entry.setdefault("checker_scores", {})
+            recheck = entry.get("post_polish_recheck", {}) or {}
+            recheck_set = set(recheck.keys()) if isinstance(recheck, dict) else set()
+            pad = f"{ch:04d}"
+            mirrored = []
+            skipped_recheck = []
+            mirrored_count = 0
+            for prefix, canonical in disk_to_canonical.items():
+                if canonical in recheck_set:
+                    skipped_recheck.append(canonical)
+                    continue
+                candidates = [
+                    tmp_dir / f"{prefix}_ch{pad}.json",
+                    tmp_dir / f"{prefix}_check_ch{pad}.json",
+                ]
+                disk_path = next((p for p in candidates if p.exists()), None)
+                if disk_path is None:
+                    continue
+                try:
+                    disk_data = json.loads(disk_path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                disk_v = (
+                    disk_data.get("score")
+                    or disk_data.get("overall_score")
+                    or disk_data.get("verdict_score")
+                )
+                if disk_v is None:
+                    continue
+                old_v = cs.get(canonical)
+                cs[canonical] = int(round(float(disk_v)))
+                if old_v != cs[canonical]:
+                    mirrored.append(f"{canonical}: {old_v}→{cs[canonical]}")
+                    mirrored_count += 1
+            # 重新计算 overall = 13 个 canonical checker 平均（recheck 用 after 值）
+            from data_modules.chapter_audit import CHECKER_NAMES
+            vals = []
+            for n in CHECKER_NAMES:
+                v = cs.get(n)
+                if v is None and n in recheck_set:
+                    rc = recheck.get(n) or {}
+                    v = rc.get("after")
+                if isinstance(v, (int, float)):
+                    vals.append(float(v))
+            if vals:
+                overall_new = int(round(sum(vals) / len(vals)))
+                cs["overall"] = overall_new
+                entry["overall_score"] = overall_new
+                entry["review_score"] = overall_new
+            manager._pending_raw_state_mutations.add("chapter_meta")
+            changes.append(
+                f"chapter_meta.{key} mirror disk: 改 {mirrored_count} 项 "
+                + (f"({mirrored[:3]})" if mirrored else "(0 drift)")
+                + (f" / 跳过 recheck: {skipped_recheck}" if skipped_recheck else "")
+            )
+            if applied_chapter is None:
+                applied_chapter = ch
+
+        # Round 28.4 · Ch26 RCA · P1-7 · narrative_version 一键 bump（手动 polish 后必走）
+        if getattr(args, "bump_narrative_version", None):
+            payload = load_json_arg(args.bump_narrative_version)
+            ch = int(payload.get("chapter", 0))
+            reason = str(payload.get("reason", "")).strip() or "manual_polish"
+            if not ch:
+                emit_error("INVALID_ARG", "--bump-narrative-version 需要 {chapter:int,reason:str}")
+                return
+            cm = manager._state.setdefault("chapter_meta", {})
+            key = f"{ch:04d}"
+            entry = cm.setdefault(key, {})
+            cur = entry.get("narrative_version", "v1")
+            try:
+                cur_n = int(str(cur).lstrip("v") or "1")
+            except Exception:
+                cur_n = 1
+            new_v = f"v{cur_n + 1}"
+            entry["narrative_version"] = new_v
+            polog = entry.setdefault("polish_log", [])
+            now_iso = datetime.now(timezone.utc).isoformat()
+            polog.append({
+                # H20 schema 必填字段
+                "version": new_v,
+                "timestamp": now_iso,
+                "notes": reason,
+                # 扩展字段（保留可读性）
+                "from_version": cur,
+                "to_version": new_v,
+                "reason": reason,
+                "bumped_at": now_iso,
+            })
+            manager._pending_raw_state_mutations.add("chapter_meta")
+            changes.append(
+                f"chapter_meta.{key}.narrative_version: {cur}→{new_v}（reason={reason}）"
+            )
+            if applied_chapter is None:
+                applied_chapter = ch
 
         manager.save_state()
         emit_success(

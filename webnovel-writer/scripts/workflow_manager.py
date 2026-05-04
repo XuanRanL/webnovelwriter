@@ -125,6 +125,7 @@ def expected_step_owner(command: str, step_id: str) -> str:
             "Step 3": "review-agents",
             "Step 3.5": "external-review-agent",
             "Step 4": "polish-agent",
+            "Step 4.5": "polish-recheck-agent",
             "Step 5": "data-agent",
             "Step 6": "audit-agent",
             "Step 7": "backup-agent",
@@ -163,6 +164,8 @@ REQUIRED_ARTIFACT_FIELDS = {
         "Step 3": ["overall_score", "checker_count", "internal_avg", "review_score", "naturalness_verdict", "naturalness_score", "reader_critic_verdict", "reader_critic_score"],
         "Step 3.5": ["external_avg", "models_ok", "external_models_ok"],
         "Step 4": ["anti_ai_force_check", "polish_report", "fixes"],
+        # Round 28.4 · Ch26 RCA · P1-12：Step 4.5 复测加入白名单（之前被迫复用 "Step 4"）
+        "Step 4.5": ["anti_ai_force_check", "recheck_reader_critic", "recheck_reader_thrill", "rechecked_count"],
         "Step 5": ["state_modified", "entities", "foreshadowing", "scene_count", "chapter_meta_fields"],
         "Step 6": ["decision", "audit_report", "audit_decision"],
         "Step 7": ["commit", "branch", "commit_sha"],

@@ -32,7 +32,7 @@ alwaysApply: true
 
 ## 每章必须跑完整审查流程
 
-- 每章必须跑完整审查：Step 3 内部 13 checker + Step 3.5 外部 14 模型 × 13 维度
+- 每章必须跑完整审查：Step 3 内部 13 checker + Step 3.5 外部 15 模型 × 13 维度（Round 25 +V4-Flash）
 - 等待所有审查器返回后汇总评分
 - 有可修复的 medium 以上问题就修改正文，然后重跑对应审查器做第二轮
 - 确认没有明显提升空间后才进入 Data Agent → 审计闸门 → Git
@@ -45,14 +45,14 @@ alwaysApply: true
 - 个别维度因章节类型/情节因素评分偏低属于正常，不必强行拉分
 - 存在可修复的 medium/high 问题时，Step 4 修复后重新进入 Step 3 做第二轮审查
 
-## Step 3.5 外部模型审查配置（Round 21.4 · combined 默认 · 14 模型 × 13 维度）
+## Step 3.5 外部模型审查配置（Round 21.4 · combined 默认 · Round 25 · 15 模型 × 13 维度）
 
 > 权威版本在 `webnovel-writer/skills/webnovel-write/references/step-3.5-external-review.md`。此处给运行时摘要。
 
-**架构：6 供应商 × 14 模型 × 13 维度 = 182 份逻辑评分（共识机制）**
+**架构：6 供应商 × 15 模型 × 13 维度 = 195 份逻辑评分（共识机制 · Round 25 +V4-Flash）**
 
 **模型扁平投票（无 core/supplemental 硬耦合）：**
-`qwen3.6-plus`, `gpt-5.5`, `gemini-3.1-pro`, `doubao-pro`, `doubao-seed-2.0-lite`, `glm-5`, `glm-5.1`, `glm-4.7`, `mimo-v2.5-pro`, `minimax-m2.7-hs`, `minimax-m2.5`, `deepseek-v3.2-thinking`, `kimi-k2.5`, `kimi-k2.6`
+`qwen3.6-plus`, `gpt-5.5`, `gemini-3.1-pro`, `doubao-pro`, `doubao-seed-2.0-lite`, `glm-5`, `glm-5.1`, `glm-4.7`, `mimo-v2.5-pro`, `minimax-m2.7-hs`, `minimax-m2.5`, `deepseek-v3.2-thinking`, `kimi-k2.5`, `kimi-k2.6`, `deepseek-v4-flash` 🆕
 
 **供应商：**
 - **ticketpro** (`https://api.ticketpro.cc/v1`)，key=`TICKETPRO_API_KEY`，承载 GPT-5.x 主路
@@ -72,7 +72,7 @@ alwaysApply: true
 - 幽灵零分/空 combined reports：provider 层自动切下一供应商
 
 **调用方式（硬规则）：**
-- **必须**用 `--model-key all --dimension-strategy auto` 一次性跑全部 14 个模型，禁止手动逐个调用（防遗漏）
+- **必须**用 `--model-key all --dimension-strategy auto` 一次性跑全部 15 个模型，禁止手动逐个调用（防遗漏）
 - 默认 combined：每模型 1 次请求返回 13 个 `dimension_reports`；缺维度/坏 JSON 自动 split fallback
 - 脚本仅支持：`--project-root` / `--chapter` / `--mode` / `--model-key` / `--models` / `--dimension-strategy` / `--model-concurrent` / `--max-concurrent` / `--rpm-override` / `--rpm-override-provider` / `--no-merge-partial` / `--healthcheck`
 - 不要传 `--chapter-file` / `--outline-file` 等不存在的参数
@@ -93,11 +93,11 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 `model_actual` / `routing_verified` / `provider_chain` / `api_meta`（elapsed_ms / tokens / attempts / final_provider）。
 
 **审查报告格式：**
-- 14 模型 × 13 维度评分矩阵（含"供应商"列）
-- 共识问题（≥3 个模型指出的同类问题 = 真问题；14 模型下可将阈值调至 ≥4）
+- 15 模型 × 13 维度评分矩阵（含"供应商"列 · Round 25 +V4-Flash）
+- 共识问题（≥3 个模型指出的同类问题 = 真问题；15 模型下可将阈值调至 ≥4）
 - Step 4 修复清单（共识 + severity ≥ medium + verified 筛选）
 
-**执行要求：** 每章 Step 3（13 个内部 checker）+ Step 3.5（14 个外部模型 × 13 维度）脚本退出且有效模型数达到阈值后才进入 Step 4；Step 4 不得在任何内部 checker 或外审脚本仍运行时开始。
+**执行要求：** 每章 Step 3（13 个内部 checker）+ Step 3.5（15 个外部模型 × 13 维度 · Round 25 +V4-Flash）脚本退出且有效模型数达到阈值后才进入 Step 4；Step 4 不得在任何内部 checker 或外审脚本仍运行时开始。
 
 ## 开篇黄金协议（Ch1-3 专用，叠加在标准流程之上）
 

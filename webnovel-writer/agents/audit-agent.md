@@ -25,7 +25,7 @@ model: inherit
 }
 ```
 
-`mode` 取值：`standard` / `fast` / `minimal`。`fast` 模式下跳过 Layer E 的 AI 腔重度扫描；`minimal` 模式下跳过 Layer A3（外部模型真实性 · Round 16 扁平 14 模型共识 · ≥ 10/14 有效即 pass）、Layer G（趋势）、editor_notes 写入。
+`mode` 取值：`standard` / `fast` / `minimal`。`fast` 模式下跳过 Layer E 的 AI 腔重度扫描；`minimal` 模式下跳过 Layer A3（外部模型真实性 · Round 16/25 扁平 15 模型共识 · ≥ 10/15 有效即 pass）、Layer G（趋势）、editor_notes 写入。
 
 ## 执行前必读
 
