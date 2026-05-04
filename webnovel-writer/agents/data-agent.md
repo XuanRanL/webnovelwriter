@@ -299,6 +299,24 @@ Data Agent 自身无 search 能力（只有 Read/Write/Bash），但若扫描发
  ```
 
  **更新精简版 state.json**:
+
+**⚠️ Round 28.6 Ch29 RCA · process-chapter 前必须自检 23 Core 字段**：
+
+在调用 `state process-chapter` 之前，你必须在 `chapter_meta` JSON 中自检以下全部 23 个字段均存在且非空（非 None / "" / [] / {}）：
+
+```
+必须字段（CORE_META_FIELDS，缺任一则 hygiene H2 P0 阻断）：
+chapter, title, word_count, summary, hook_strength, scene_count,
+key_beats, characters, locations, created_at, updated_at,
+protagonist_state, location_current, power_realm, golden_finger_level,
+time_anchor, end_state, foreshadowing_planted, foreshadowing_paid,
+strand_dominant, review_score, checker_scores, allusions_used
+```
+
+允许为空列表 `[]` 的字段：`foreshadowing_planted`, `foreshadowing_paid`, `allusions_used`, `key_beats`, `characters`, `locations`, `checker_scores`
+
+**禁止调用 process-chapter 前 chapter_meta 缺少上述任何字段**（Ch29 血教训：data-agent 只填了 13/23 字段，导致后续手动补填 5 个 CLI 命令）。若某字段无法从正文推断（如 `power_realm`），使用占位值（如 `"普通人"`）而非省略。
+
  ```bash
   python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state process-chapter --chapter 100 --data '{...}'
  ```
