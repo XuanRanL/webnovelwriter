@@ -483,6 +483,14 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         "那一X": {"pattern": r"那一[一-鿿]", "warn": 10, "block": 12},
         # 同期发现：精确秒级时间词外溢（叙事声音约束 ≤3）。Ch11 polish 前 5 次。
         "半秒|一秒|三秒": {"pattern": r"(?:半秒|一秒|三秒)", "warn": 3, "block": 6},
+        # Round 28.6 · Ch28 RCA · B7 根治：reader-naturalness 持续标"了一下" 5+/千字 (N2 红线)
+        # 但 post_draft 一直未拦，polish 容易漏。Ch28 实测 20 次/3689 字 = 5.4/千字 触发 N2。
+        # 与"了一X"近似 r"了一[一-鿿]"（覆盖了一下/了一会/了一眼/了一拍 等）。
+        # 阈值参考 06-叙事声音约束.md ≤3 次/千字 → 警 12 / block 18（按 3500 字典型推进章计）。
+        "了一X": {"pattern": r"了一[一-鿿]", "warn": 12, "block": 18},
+        # Round 28.6 · 同源 N4 红线："不是X是Y" 排比，reader-naturalness 持续标外溢
+        # 单章 ≤1 次（执行包硬规则）但 polish 经常 5+ 次。block 4 拦最严重案例。
+        "不是X是Y": {"pattern": r"不是[^，。；！？\n]{1,15}是[^，。；！？\n]{1,15}", "warn": 2, "block": 4},
         # 段落首"他"开头连续（叙事声音约束 0 容忍）。Ch11 polish 前 2 处。
         # 这里用近似：单文档"他+空白"模式过密时 warn（精确版要分段处理，留 prose-quality 兜底）
     }

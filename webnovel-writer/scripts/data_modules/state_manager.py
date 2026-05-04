@@ -1320,8 +1320,19 @@ class StateManager:
             self._state["chapter_meta"][meta_key] = chapter_meta
             self._pending_chapter_meta[meta_key] = chapter_meta
 
-        # 更新进度
+        # 更新进度（嵌套 progress.current_chapter）
         self.update_progress(chapter)
+
+        # Round 28.6 · Ch28 RCA · B2 根治：process-chapter 自动同步顶层 last_completed_chapter / current_chapter
+        # 根因：process_chapter_result 只更新 progress.current_chapter（嵌套），但 H61 检查的是顶层字段
+        # 后果：data-agent Step 5 后必须手动跑 --set-progress-chapter 才能解 H61 P1，否则连续多章漂移
+        # 修复：自动调用 set_progress_chapter（顶层 + max() 守护避免回退）
+        try:
+            self.set_progress_chapter(chapter)
+            self._pending_raw_state_mutations.add("last_completed_chapter")
+            self._pending_raw_state_mutations.add("current_chapter")
+        except Exception as exc:  # pragma: no cover - 守护性失败不阻断主流程
+            warnings.append(f"set_progress_chapter 自动同步失败: {exc!r}")
 
         # 同步主角状态（entities_v3 → protagonist_state）
         self.sync_protagonist_from_entity()
@@ -2222,6 +2233,54 @@ def main():
                 f"chapter_meta.{key}.hook_close.primary={primary}"
                 + (f"+secondary={sec}" if sec else "")
             )
+
+            # Round 28.6 · Ch28 RCA · B3 根治：重分类后自动同步 reader_pull tmp 文件
+            # 根因：set-hook-close 只改 state.chapter_meta，但 reader_pull_chXXXX.json tmp 文件保留原值
+            # 后果：H26 P1 检查 reader_pull primary vs state primary 必假阳（重分类后必触发）
+            # 修复：set-hook-close 检测同章 tmp 文件存在则更新 hook_close.primary_type
+            try:
+                from pathlib import Path as _PPath
+                tmp_dir = _PPath(manager.config.project_root) / ".webnovel" / "tmp"
+                if tmp_dir.exists():
+                    pad = f"{ch:04d}"
+                    candidate_files = [
+                        tmp_dir / f"reader_pull_ch{pad}.json",
+                        tmp_dir / f"reader_pull_recheck_ch{pad}.json",
+                    ]
+                    for tmp_file in candidate_files:
+                        if not tmp_file.exists():
+                            continue
+                        try:
+                            tmp_data = json.loads(tmp_file.read_text(encoding="utf-8"))
+                        except (json.JSONDecodeError, OSError):
+                            continue
+                        if not isinstance(tmp_data, dict):
+                            continue
+                        tmp_hc = tmp_data.get("hook_close")
+                        if not isinstance(tmp_hc, dict):
+                            continue
+                        old_primary = tmp_hc.get("primary_type")
+                        if old_primary == primary:
+                            continue
+                        tmp_hc["primary_type"] = primary
+                        tmp_hc["_sync_from_set_hook_close"] = {
+                            "previous_primary": old_primary,
+                            "synced_at": datetime.now(timezone.utc).isoformat(),
+                            "reason": "Round 28.6 B3 自动同步 · 防 H26 假阳",
+                        }
+                        try:
+                            tmp_file.write_text(
+                                json.dumps(tmp_data, ensure_ascii=False, indent=2),
+                                encoding="utf-8",
+                            )
+                            changes.append(
+                                f"sync_tmp:{tmp_file.name} hook_close.primary_type={old_primary}->{primary}"
+                            )
+                        except OSError:
+                            pass
+            except Exception:  # pragma: no cover - 守护性失败不阻断主流程
+                pass
+
             if applied_chapter is None:
                 applied_chapter = ch
 

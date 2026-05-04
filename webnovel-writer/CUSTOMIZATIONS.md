@@ -7,6 +7,39 @@
 
 ---
 
+## [2026-05-04 · Round 28.6] Ch28 deep research RCA · 4 类根因永久根治
+
+**Trigger**：用户 Ch28《秩序初立》全流程跑完后做 deep research，暴露 4 类真实 bug：
+
+- **B1 (CRITICAL)**: `chapter_audit.py` v2 分支引用 `contract_fields_min` 未先初始化 → CLI audit 完全失败 (UnboundLocalError) → Step 6 阻断（Ch28 实测撞到，紧急修复才能继续）
+- **B2 (P0)**: `process-chapter` 不自动同步顶层 `last_completed_chapter` / `current_chapter` → H61 P1 持续 fail → AI 必须手动跑 `--set-progress-chapter`（Ch24/25/26/27/28 五连漂移）
+- **B3 (P0)**: `set-hook-close` 重分类后不同步 reader_pull tmp 文件 → H26 P1 误报（state primary='X' vs reader_pull primary='Y'）
+- **B7 (P1)**: `post_draft_check` 未拦"了一X" 5+/千字（reader-naturalness N2 红线）和"不是X是Y" 排比（N4 红线）→ polish 经常漏
+
+**Architecture change**：
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `scripts/data_modules/chapter_audit.py` | **B1** `contract_fields_min = 8` 上移到 v2 分支前（line 377）· 函数顶部预初始化防 UnboundLocalError |
+| 2 | `scripts/data_modules/state_manager.py` | **B2** `process_chapter_result` 末尾自动调 `set_progress_chapter(chapter)` · 顶层 `last_completed_chapter` / `current_chapter` 登记到 `_pending_raw_state_mutations` |
+| 3 | `scripts/data_modules/state_manager.py` | **B3** `--set-hook-close` 重分类后扫描同章 `reader_pull_chXXXX.json` / `reader_pull_recheck_chXXXX.json` tmp 文件 · 自动同步 `hook_close.primary_type` · 留 `_sync_from_set_hook_close` 痕迹（含 previous_primary / synced_at / reason） |
+| 4 | `scripts/post_draft_check.py` | **B7** SIGNATURE_PATTERNS 新增 `"了一X"` (warn 12/block 18) 和 `"不是X是Y"` (warn 2/block 4) · 拦截 N2/N4 红线 |
+| 5 | `scripts/data_modules/tests/test_ch28_round28_6_rca_fixes.py` | 7 个新单测（B1 v2 分支顺序 / B2 process-chapter 自动同步 / B3 set-hook-close tmp 同步 + 幂等 + 缺文件容错 / B7 默认表含新 patterns） |
+
+**Validation**：
+- 515 单测全过（旧 508 + 新 7 个 Round 28.6 测试）
+- Ch28 实战兑现：B1 修复后 Step 6 audit CLI 一次通过 / B2 修复后下章不必手动跑 set-progress-chapter / B3 防止 H26 误报 / B7 拦截 reader-naturalness 长期签名外溢
+
+**Why it matters for novel quality**：
+- B1 是阻塞性 bug，所有章 commit 前都要走 Step 6，不修无法继续
+- B2 让 progress 跨章漂移，trend 监控失真，下章 audit Layer G 取错基线
+- B3 让重分类与读者视角数据脱节，跨章 hook trend 分析失真
+- B7 让 reader-naturalness 持续标注但 polish 经常漏（"了一X" 在 Ch28 实测 20 次/3689 字 = 5.4/千字），影响读者母语自然度感受
+
+四个根因从源头根治后，**chapter_meta / progress / hook_close / signature 四方一致**，作者拿到的每个数据点都可信，跨章趋势监控准确，对长期质量稳定至关重要。
+
+---
+
 ## [2026-05-03 · Round 28.4] Ch26 deep research RCA · 12 处根因 + 6 道护栏 + 2 个新 CLI
 
 **Trigger**：用户对 Ch26《爆发后第一夜》做 deep research，暴露 4 个 P0 + 8 个 P1 真实 bug：
