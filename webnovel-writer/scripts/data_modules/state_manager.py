@@ -632,7 +632,15 @@ class StateManager:
         """Round 28.1 · Ch25 RCA: 同时更新 progress.current_chapter（嵌套）+
         last_completed_chapter / current_chapter（顶层）四个字段。
 
-        根因：H61 检查的是 state 顶层 last_completed_chapter / current_chapter，
+        Round 28.6 · B2 补丁：同时同步 progress.last_completed_chapter（嵌套字段）。
+        根因：原实现只同步顶层 last_completed_chapter，progress 子对象被遗漏，
+        导致 progress.last_completed_chapter 卡死在旧章节号（如 Ch26）。
+
+        Round 28.6 · 持久化自动注册：函数末尾自动将三个顶层 key 加入
+        _pending_raw_state_mutations，确保 save_state() 能正确落盘，
+        无需调用方手动 add()（Ch26/CLI 路径已有，process_chapter_result/测试路径补齐）。
+
+        根因（H61）：H61 检查的是 state 顶层 last_completed_chapter / current_chapter，
         但 update_progress 只写嵌套 progress.current_chapter。AI 必须手动改
         state.json 才能修 H61，违反 no_manual_state_edits 原则。
 
@@ -649,6 +657,13 @@ class StateManager:
         if old_nested != chapter:
             self._state["progress"]["current_chapter"] = chapter
             changes.append(f"progress.current_chapter={old_nested}->{chapter}")
+        # R28.6 B2 补丁：同步 progress.last_completed_chapter（嵌套字段）
+        # 根因：原函数只同步顶层 last_completed_chapter，遗漏 progress 子对象
+        # 后果：progress.last_completed_chapter 卡死在旧章节号（如 Ch26）
+        old_nested_last = self._state["progress"].get("last_completed_chapter")
+        if old_nested_last != chapter:
+            self._state["progress"]["last_completed_chapter"] = chapter
+            changes.append(f"progress.last_completed_chapter={old_nested_last}->{chapter}")
         old_top_last = self._state.get("last_completed_chapter")
         if old_top_last != chapter:
             self._state["last_completed_chapter"] = chapter
@@ -657,6 +672,11 @@ class StateManager:
         if old_top_curr != chapter:
             self._state["current_chapter"] = chapter
             changes.append(f"current_chapter={old_top_curr}->{chapter}")
+        # R28.6 持久化自动注册：确保 save_state() 把三个顶层 key 从内存写回磁盘
+        # 无需调用方手动 add()，防止 process_chapter_result / 测试等路径遗漏 pending 注册
+        self._pending_raw_state_mutations.add("progress")
+        self._pending_raw_state_mutations.add("last_completed_chapter")
+        self._pending_raw_state_mutations.add("current_chapter")
         return {"changes": changes}
 
     # ==================== 实体管理 (v5.1 SQLite-first) ====================
