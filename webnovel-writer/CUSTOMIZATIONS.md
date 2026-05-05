@@ -4652,3 +4652,15 @@ density-checker:     PADDING/REPETITION
 | `.webnovel/context/ch0025_context.json` | 项目 | chapter_type+hard_min |
 | `.webnovel/context/ch0026_context.json` | 项目 | chapter_type+hard_min |
 | `.webnovel/summaries/ch0030.md` | 项目 | narrative_version字段 |
+
+### Round 28.6续2 (734d7e7) · Step 3.5 --model-key 默认值 qwen→all
+
+**根因**：`external_review.py` argparse `--model-key default="qwen3.6-plus"`，
+SKILL.md 第695行已明确"必须使用 `--model-key all`"，但 CLI 默认值未跟进，
+导致不传参数时只跑单模型而非全部15模型（SKILL.md 硬约束被静默绕过）。
+
+**修复**：`default="qwen3.6-plus"` → `default="all"`，help文本补注"(default: all)"。
+
+**影响**：外部审查从默认单模型→默认15模型全跑，与 SKILL.md 硬约束完全对齐。
+
+**改动文件**：`scripts/external_review.py` 第2430行 | **sync-cache 已同步**
