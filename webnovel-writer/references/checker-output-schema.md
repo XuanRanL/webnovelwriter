@@ -7,6 +7,23 @@
 - 若需要兼容区间统计，可在聚合层补充 `start_chapter/end_chapter`，不要求单个 checker 必填。
 - 允许扩展字段，但不得删除或替代本文件定义的必填字段。
 
+## H71 防御规则：Checker 输出 JSON 字符串值引号约束
+
+> **P0 硬规则（Round 28.4 / 28.6 根治）**
+>
+> Checker 子代理在生成 JSON 输出时，**严禁**在 JSON 字符串字段值内嵌入 ASCII 双引号 `"` (U+0022)。
+> 原因：JSON 字符串值边界本身由 `"` 界定，内部出现未转义的 `"` 会立即导致解析失败（参见 Ch26 high_point_check 事故）。
+>
+> **正确做法**（三选一）：
+> 1. 使用中文书名号 `「」` 包裹引用内容：`"description": "角色说「不可能」，表示否认"`
+> 2. 使用中文方括号 `【】` 标注类型：`"location": "【第三段】<sister-character>进门时"`
+> 3. 使用 `\"` 转义（不推荐，可读性差）：`"description": "角色说\"不可能\""`
+>
+> **同样禁止**在 JSON 字符串值内使用 ASCII 单引号 `'` 包裹引用内容（某些解析器会误判）。
+>
+> H71 检查：`hygiene_check.py` 的 `check_disk_json_validity()` 会在每章 Step 7 扫描所有
+> `.webnovel/tmp/{checker}_ch{NNNN}.json` 文件，任何解析失败均触发 P0 block。
+
 ## 标准 JSON Schema
 
 ```json
