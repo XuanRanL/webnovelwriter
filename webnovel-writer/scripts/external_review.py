@@ -2427,13 +2427,13 @@ def main():
     parser.add_argument("--chapter", required=True, type=int)
     parser.add_argument("--mode", default="legacy", choices=["legacy", "dimensions"])
     parser.add_argument(
-        "--model-key", default="qwen3.6-plus",
+        "--model-key", default="all",
         help=(
             "For dimensions mode: any of the 15 model keys (qwen3.6-plus/gpt-5.5/"
             "gemini-3.1-pro/doubao-pro/doubao-seed-2.0-lite/glm-5/glm-5.1/glm-4.7/"
             "mimo-v2.5-pro/minimax-m2.7-hs/minimax-m2.5/deepseek-v3.2-thinking/"
             "kimi-k2.5/kimi-k2.6/deepseek-v4-flash) or legacy aliases (qwen-plus/kimi/glm/...) or "
-            "'all' to run all 15 models"
+            "'all' to run all 15 models (default: all)"
         ),
     )
     parser.add_argument("--models", default="qwen3.6-plus,kimi-k2.6,glm-5", help="For legacy mode: comma-separated")
