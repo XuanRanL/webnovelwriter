@@ -4601,3 +4601,54 @@ density-checker:     PADDING/REPETITION
 - 12 章 0 决策钩（主角无主动选择）
 - polish 沉没成本（Ch1 v7 11 轮）
 - hook_close 落库漂移（Ch12 Phase G 跳步）
+
+### Round 28.6续 (becaff8) · Ch25-30 deep RCA · 13 根因永久根治
+
+**背景**：Ch25-30 全流程审查，发现多类跨章积累债务与 P0 阻断点。
+
+**B2 完整修复** (`state_manager.py`):
+- `set_progress_chapter()` 原版同步 3 字段，遗漏 `progress.last_completed_chapter`
+- 补第 4 字段同步 + `_pending_raw_state_mutations.add("progress")`
+- 修复历史债：Ch26 起 last_completed_chapter 卡在 26（显示 progress 不推进）
+
+**H71 永久防御** (`references/checker-output-schema.md`):
+- 新规则：JSON 字符串值内禁用 ASCII 双引号 U+0022
+- 替代：`「」` 或 `【】` 中文引号
+- 根因：`consistency_check`/`reader_thrill` JSON 的 `quote` 字段嵌套 ASCII 双引号导致 JSON 解析崩溃 → H71 P0 阻断
+
+**H48-POST 新增（末世后时间线）**（项目侧 `h48_h52_guard.py`）:
+- `POST_APOC_TIMELINE` dict 覆盖 Ch25-30（末世第 0/1/2/3/4/5 天）
+- `check_h48_post()` 扫描章首 30 行检查末世第 N 天/夜锚点
+- H51 标签从硬编码 "全 22 章" 改为动态章节数
+
+**13 根因清单**：
+
+| # | 章 | 类型 | 根因 | 修复 |
+|---|---|---|---|---|
+| 1 | Ch25 | P0 | H71：consistency JSON内嵌ASCII引号 | 7处→「」Unicode |
+| 2 | Ch25 | P0 | H71：reader_thrill quote字段ASCII引号 | 替换弯引号 |
+| 3 | Ch25 | P0 | H68：无_recheck_文件→state vs disk漂移 | 13份合成_recheck_ |
+| 4 | Ch25 | P0 | META_DRIFT：updated_at落后mtime 73分钟 | 补同步时间戳 |
+| 5 | Ch30 | P0 | H72→H28 cascade：nv bump后hook_close未同步 | source_nv→v2 |
+| 6 | Ch30 | P1 | H65 cascade：summaries缺narrative_version | 补写YAML字段 |
+| 7 | 全局 | P0 | B2：progress.last_completed_chapter不同步 | 第4字段补全 |
+| 8 | 全局 | P0 | H71根因：checker JSON禁嵌ASCII引号规则缺失 | schema文档新规则 |
+| 9 | Ch25 | P1 | H70：context_contract chapter_type过严 | 改节点章型 |
+| 10 | Ch26 | P1 | H70：context_contract hard_min=3200>实际字数 | 改推进章型 |
+| 11 | Ch25 | P1 | H69：extended字段缺signature_density/external_avg | 补None占位 |
+| 12 | Ch25-30 | P1 | H48-POST：末世后时间线无覆盖（静默跳过） | 新增检查函数 |
+| 13 | H51 | P2 | 章数标签硬编码"全22章" | 动态计算 |
+
+**新增 3 单测** (`test_ch30_round28_6_b2_patch.py`）· 518 tests 全过（原 515）
+
+**改动文件**：
+| 文件 | 位置 | 说明 |
+|---|---|---|
+| `scripts/data_modules/state_manager.py` | fork | B2 第4字段同步 |
+| `references/checker-output-schema.md` | fork | H71 JSON引号规则 |
+| `scripts/data_modules/tests/test_ch30_round28_6_b2_patch.py` | fork | 3单测 |
+| `.webnovel/h48_h52_guard.py` | 项目 | POST_APOC_TIMELINE + H48-POST |
+| `.webnovel/state.json` | 项目 | 7处数据修正 |
+| `.webnovel/context/ch0025_context.json` | 项目 | chapter_type+hard_min |
+| `.webnovel/context/ch0026_context.json` | 项目 | chapter_type+hard_min |
+| `.webnovel/summaries/ch0030.md` | 项目 | narrative_version字段 |
