@@ -1156,8 +1156,19 @@ def check_A6_workflow_timing(project_root: Path, chapter: int) -> CheckResult:
             continue
         if trace_end and row_ts and row_ts > trace_end:
             continue
-        if row.get("event") in {"step_order_violation", "step_complete_rejected", "task_complete_rejected", "step_start_rejected"}:
-            invalid_events.append(str(row.get("event")))
+        event_name = row.get("event")
+        # Round 28.20 (Ch35 RCA): step_start_rejected with reason="active_step_running"
+        # is a *legitimate* protective rejection (workflow_manager refuses to start a new
+        # step while the previous step is still active). It should not count as a workflow
+        # violation. Only treat step_start_rejected as invalid when the rejection reason
+        # indicates an actual user error like step_order_violation or missing dependencies.
+        if event_name == "step_start_rejected":
+            reason = (payload.get("reason") or "").lower()
+            if reason in {"active_step_running", "concurrent_attempt"}:
+                continue  # legitimate protection, not a violation
+            invalid_events.append(str(event_name))
+        elif event_name in {"step_order_violation", "step_complete_rejected", "task_complete_rejected"}:
+            invalid_events.append(str(event_name))
 
     if invalid_events:
         return CheckResult(
