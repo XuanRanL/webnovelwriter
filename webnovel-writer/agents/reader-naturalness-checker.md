@@ -32,6 +32,15 @@ model: inherit
 
 ## 输出 Schema（JSON 落盘）
 
+> **【H71 P0 硬规则 · Round 28.20 Ch35 RCA 第 5 次复发根治】** 详见 `${CLAUDE_PLUGIN_ROOT}/references/checker-output-schema.md` § H71 防御规则。
+>
+> **严禁**在任何 JSON 字符串字段值内嵌入 ASCII 双引号 `"`（U+0022）。引用正文片段时，必须把内部的中文弯引号 `""` / `''` **替换**为 `「」` 或 `『』`（中文书名号/方头括号），或使用 `\"` 转义。
+>
+> Ch26 high_point_check 事故 + Ch27/31/32/33/35 五次复发的统一根因：reader-naturalness-checker.md 未声明此规则，prompt 模板默认行为是把正文 quote 直贴 JSON，撞坏 `json.loads`。
+>
+> ❌ 错误示例：`"quote": "<sister-character>笑得挺响，喉咙里那一口"哈"是上扬的"`
+> ✅ 正确示例：`"quote": "<sister-character>笑得挺响，喉咙里那一口『哈』是上扬的"`
+
 ```json
 {
   "agent": "reader-naturalness-checker",

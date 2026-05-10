@@ -1927,6 +1927,20 @@ def main():
                 # 修复：加入白名单使其可通过 set-chapter-meta-field 兜底设置
                 "updated_at",  # ISO 时间戳（章节最后更新时间）
                 "created_at",  # ISO 时间戳（章节首次创建时间）
+                # Round 28.20 · Ch35 RCA · data-agent time_anchor 跨章写错根治
+                # 根因：data-agent process-chapter 把 Ch35 time_anchor 写成"末世第13天"但实际续接 Ch34 末傍晚
+                #       属于同一日（末世第十二天入夜）。time_anchor 不在白名单 → 无法 CLI 修复，必须重跑全 data-agent
+                # 修复：time_anchor 加入白名单，data-agent 错写时可用 set-chapter-meta-field 兜底
+                "time_anchor",  # 章节时间锚 (e.g., "末世第十二天·入夜18:30→21:00")
+                # Round 28.20 配套：其他核心元数据字段如果 data-agent 写错也需要兜底入口
+                "location_current",  # 章末主要场景（用于下章 context-agent 衔接）
+                "pov_character",   # 主 POV 角色
+                "summary",         # 章节摘要（200 字内）
+                # Round 28.20 · Ch35 audit V2 B4 根治：state.chapter_meta.review_metrics 与 index.db 解耦
+                # 根因：data-agent Step E 只写 index.db.review_metrics，不 mirror 到 chapter_meta
+                #       audit B4 检查 state.chapter_meta.review_metrics 为 null 时无 CLI 修复路径
+                # 修复：加入白名单，配合 webnovel.py index save-review-metrics 的 --mirror-state 参数
+                "review_metrics",  # 复合 dict：含 overall_score / dimension_scores / thrill_score / severity_counts
             }
             if not ch or not field:
                 emit_error("INVALID_ARG", "--set-chapter-meta-field 需要 chapter + field 字段")
