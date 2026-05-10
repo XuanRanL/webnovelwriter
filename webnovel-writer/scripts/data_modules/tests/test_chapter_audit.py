@@ -1097,6 +1097,54 @@ def test_A6_workflow_timing_detects_trace_violations(good_project):
     assert r.severity == "critical"
 
 
+def test_A6_workflow_timing_step_start_rejected_active_step_is_legitimate(good_project):
+    """Round 28.20 (Ch35 RCA): step_start_rejected with reason=active_step_running
+    is a *legitimate* protective rejection from workflow_manager. It must NOT
+    trigger A6 critical fail. Only true violations (step_order_violation,
+    missing_dependency, etc.) should fail A6.
+    """
+    mod = _load_module()
+    trace_path = good_project / ".webnovel" / "observability" / "call_trace.jsonl"
+    with open(trace_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "timestamp": "2026-04-05T09:21:00",
+            "event": "step_start_rejected",
+            "payload": {
+                "chapter": 1,
+                "step_id": "Step 4",
+                "reason": "active_step_running",
+                "active_step_id": "Step 3.5",
+            },
+        }, ensure_ascii=False) + "\n")
+    r = mod.check_A6_workflow_timing(good_project, 1)
+    # Should NOT fail with critical - active_step_running is legitimate protection
+    assert r.status != "fail" or r.severity != "critical", (
+        f"step_start_rejected with reason=active_step_running should not be A6 critical, got {r.status}/{r.severity}"
+    )
+
+
+def test_A6_workflow_timing_step_start_rejected_order_violation_is_critical(good_project):
+    """Round 28.20: step_start_rejected with reason=step_order_violation
+    is a real workflow violation and must trigger A6 critical fail.
+    """
+    mod = _load_module()
+    trace_path = good_project / ".webnovel" / "observability" / "call_trace.jsonl"
+    with open(trace_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "timestamp": "2026-04-05T09:22:00",
+            "event": "step_start_rejected",
+            "payload": {
+                "chapter": 1,
+                "step_id": "Step 4",
+                "reason": "step_order_violation",
+                "missing_steps": ["Step 3.5"],
+            },
+        }, ensure_ascii=False) + "\n")
+    r = mod.check_A6_workflow_timing(good_project, 1)
+    assert r.status == "fail"
+    assert r.severity == "critical"
+
+
 def test_A5_fallback_detected(good_project):
     mod = _load_module()
     # 在 call_trace 追加 fallback

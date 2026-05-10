@@ -7,6 +7,37 @@
 
 ---
 
+## [2026-05-10 · Round 28.20] Ch35 RCA · A6 step_start_rejected false positive 永久根治
+
+**Trigger**：Ch35 全流程跑完后做 deep research，audit Layer A 报告 A6 critical fail：
+`workflow trace contains invalid events: ['step_start_rejected']`。
+
+但实际是合理流程行为：用户在 Step 3.5 还在跑时尝试 start-step Step 4，workflow_manager 礼貌拒绝（reason=`active_step_running`），并在 call_trace.jsonl 记一条 `step_start_rejected`。这是**保护**不是**违规**。
+
+历史上 Ch19/Ch31/Ch32/Ch34 都触发过同模事件，audit-agent 每次都手动在 Layer 6 降级为 deviation_accepted 才放行。这是已知的 audit 误判 known issue，但根因从未修复，导致：
+- 每章 audit 都需要 audit-agent 手动 override A6
+- A6 critical 误判推高 audit 严重度
+- 不修源码就永远漂移
+
+**Root cause**：`scripts/data_modules/chapter_audit.py` line 1159 把 `step_start_rejected` 与真正违规事件 (`step_order_violation`/`step_complete_rejected`/`task_complete_rejected`) 一刀切归为 critical，未根据 `payload.reason` 区分礼貌拒绝 vs 真正违规。
+
+**Architecture change**：
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `scripts/data_modules/chapter_audit.py` | A6 检查 step_start_rejected 时读 `payload.reason`：`active_step_running`/`concurrent_attempt` → 跳过（合法保护）；其他 reason → 计入 invalid_events |
+| 2 | `scripts/data_modules/tests/test_chapter_audit.py` | 加 2 个新单测：`test_A6_workflow_timing_step_start_rejected_active_step_is_legitimate`（active_step_running 不应判 critical）+ `test_A6_workflow_timing_step_start_rejected_order_violation_is_critical`（真正违规仍判 critical） |
+
+**Validation**：
+- pytest 4 个 A6 测试全过（含 2 新增 + 2 既有）
+- pytest 123 个 audit/workflow 测试全部通过，无回归
+- Ch35 audit 重测：A6 critical → A6 silent pass，A 层 score 88 → 97
+- sync-cache: fork→cache 已同步
+
+**Permanent Defense**：以后任何流程拒绝事件，必须在 reason 字段说明类型；A6 自动按 reason 区分。
+
+---
+
 ## [2026-05-04 · Round 28.6续] Ch29 deep research RCA · 5 根因永久根治
 
 **Trigger**：用户 Ch29《外院与内院》全流程跑完后做 deep research，暴露 5 类 bug：
