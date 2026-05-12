@@ -506,8 +506,18 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
                     )
         except Exception:
             pass
+    # Round 28.22 Ch37 RCA · 累积 signature_summary（即使未触发也显示）
+    # 防御场景：polish 第一次只 fix 触发的（没X），不知道临界的（未X 4/5 warn 1/3 block）
+    # 替换"没X→未X"后反向触发 未X 17/3 block，造成第二轮 polish。
+    # 现：每次 post_draft_check 输出"全部 6 类签名当前计数"INFO（不阻断），让 AI 看见所有临界点。
+    signature_summary_lines = []
     for sig_name, sig_cfg in signature_patterns_default.items():
         count = len(re.findall(sig_cfg["pattern"], text))
+        margin = sig_cfg["warn"] - count
+        status = "OK" if margin > 2 else ("NEAR" if margin > 0 else "BREACH")
+        signature_summary_lines.append(
+            f"  · {sig_name}: {count} 次 (warn {sig_cfg['warn']} / block {sig_cfg['block']}) [{status}]"
+        )
         if count >= sig_cfg["block"]:
             errors.append(
                 f"[SIGNATURE_DENSITY] 签名句式'{sig_name}' {count} 次 ≥ block {sig_cfg['block']} · "
@@ -519,6 +529,11 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
                 f"[SIGNATURE_DENSITY_WARN] 签名句式'{sig_name}' {count} 次 ≥ warn {sig_cfg['warn']} · "
                 f"建议 polish 降到 < {sig_cfg['warn']}"
             )
+    # INFO 行：全部签名计数（永远显示，让 AI 看见所有临界）· Round 28.22 Ch37 RCA
+    # 用 warnings 的 [INFO] 前缀，被 strict_warnings filter 过滤掉，不计入 exit_code
+    warnings.append("[INFO] [SIGNATURE_SUMMARY] 全部签名密度（让 polish 看见所有临界）:")
+    for line in signature_summary_lines:
+        warnings.append(f"[INFO] {line}")
 
     # 11b. Round 27.1 · 否定签名累计上限（2026-05-02 · Ch23 RCA R4 根治）
     # 引入背景：Ch16/17/23 三次复发"没X→未X"替换循环：

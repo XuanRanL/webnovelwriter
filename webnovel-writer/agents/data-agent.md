@@ -317,6 +317,30 @@ strand_dominant, review_score, checker_scores, allusions_used
 
 **禁止调用 process-chapter 前 chapter_meta 缺少上述任何字段**（Ch29 血教训：data-agent 只填了 13/23 字段，导致后续手动补填 5 个 CLI 命令）。若某字段无法从正文推断（如 `power_realm`），使用占位值（如 `"普通人"`）而非省略。
 
+**⚠️ Round 28.22 Ch37 RCA · 23 Core 之外的 7 个扩展字段也必填（H69 P1 根治）**：
+
+`state process-chapter` 完成后，必须**额外**用 `state update --set-chapter-meta-field` 写入下列 7 个扩展字段，否则 hygiene_check H69 P1 阻塞 Step 7 commit：
+
+```
+扩展字段（EXTENDED_META_FIELDS，缺任一则 hygiene H69 P1 阻断 commit）：
+total_words            # state.progress.total_words 当前累计字数（含本章）
+dialogue_ratio         # 本章对话占比（来自 post_draft_check 的 dialogue_ratio）
+signature_density      # dict: {了一X, 那一X, 没X, 未X, 破折号, AI模板} 计数
+naturalness_score      # checker_scores.reader-naturalness-checker
+reader_critic_score    # checker_scores.reader-critic-checker
+reader_thrill_score    # chapter_meta.thrill_score.score（单 int）
+external_avg           # Step 3.5 外部 14-15 模型平均（review_metrics.notes 中的 external_avg）
+```
+
+Ch37 血教训（2026-05-12）：data-agent process-chapter 完成后 7 扩展字段全空，commit 前 hygiene H69 P1 fail，主流程手动 fill 7 字段后才通过。
+
+填充方式示例（PowerShell 转义见 SKILL §Step 7）：
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
+  state update --set-chapter-meta-field '{"chapter":37,"field":"total_words","value":107496}'
+# 7 字段全部循环填一遍（见 SKILL §Step 5 后续）
+```
+
  ```bash
   python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state process-chapter --chapter 100 --data '{...}'
  ```
