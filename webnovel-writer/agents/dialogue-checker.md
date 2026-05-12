@@ -1,7 +1,7 @@
 ---
 name: dialogue-checker
 description: 对话质量检查，评估辨识度/意图层次/信息倾倒/独白控制，输出结构化报告
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 

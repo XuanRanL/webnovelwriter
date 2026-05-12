@@ -1,0 +1,4 @@
+interface:
+  display_name: "Webnovel Writer"
+  short_description: "Run the webnovel workflow in Codex"
+  default_prompt: "Use $webnovel-writer to write, plan, review, query, or resume a webnovel project."

@@ -1,7 +1,7 @@
 ---
 name: reader-pull-checker
 description: 追读力检查器 · 读者 + 退稿编辑 deep research 视角 · 评估钩子/承诺/爽点兑现/点下一章的理由
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 

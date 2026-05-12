@@ -1,7 +1,7 @@
 ---
 name: pacing-checker
 description: Strand Weave 节奏检查，输出结构化报告供润色步骤参考
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 

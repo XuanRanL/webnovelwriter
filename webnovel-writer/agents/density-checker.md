@@ -1,7 +1,7 @@
 ---
 name: density-checker
 description: 信息密度检查，评估有效字数/填充段/重复段/死段落/推进跨度，输出结构化报告
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 

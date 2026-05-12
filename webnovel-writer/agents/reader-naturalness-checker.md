@@ -1,7 +1,7 @@
 ---
 name: reader-naturalness-checker
 description: 汉语母语自然度审查器 · 读者 + 退稿编辑 deep research 视角 · 独立于规则污染
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 

@@ -1,0 +1,42 @@
+{
+  "name": "webnovel-writer-codex",
+  "version": "0.1.0",
+  "description": "Codex adapter for the local webnovel-writer workflow, including planning, chapter writing, review, query, resume, dashboard, and project memory tasks.",
+  "author": {
+    "name": "XuanRanL webnovel-writer fork",
+    "email": "n/a",
+    "url": "https://github.com/XuanRanL/webnovelwriter"
+  },
+  "homepage": "https://github.com/XuanRanL/webnovelwriter",
+  "repository": "https://github.com/XuanRanL/webnovelwriter",
+  "license": "GPL-3.0",
+  "keywords": [
+    "webnovel",
+    "writing",
+    "codex",
+    "claude-code-adapter",
+    "chinese-fiction"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Webnovel Writer",
+    "shortDescription": "Run the webnovel writing workflow in Codex",
+    "longDescription": "Adapts the local Claude Code webnovel-writer plugin into Codex by routing slash-style webnovel commands to the original skills, scripts, agents, references, and project data.",
+    "developerName": "XuanRanL",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/XuanRanL/webnovelwriter",
+    "privacyPolicyURL": "https://openai.com/policies/row-privacy-policy/",
+    "termsOfServiceURL": "https://openai.com/policies/row-terms-of-use/",
+    "defaultPrompt": [
+      "/webnovel-write 13",
+      "/webnovel-plan 1",
+      "/webnovel-review 1-5"
+    ],
+    "brandColor": "#7C3AED",
+    "screenshots": []
+  }
+}

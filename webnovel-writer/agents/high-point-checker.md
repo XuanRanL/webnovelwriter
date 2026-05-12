@@ -1,7 +1,7 @@
 ---
 name: high-point-checker
 description: 爽点密度检查，支持迪化误解/身份掉马模式，输出结构化报告
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 

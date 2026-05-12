@@ -4695,3 +4695,83 @@ SKILL.md 第695行已明确"必须使用 `--model-key all`"，但 CLI 默认值�
 **影响**：外部审查从默认单模型→默认15模型全跑，与 SKILL.md 硬约束完全对齐。
 
 **改动文件**：`scripts/external_review.py` 第2430行 | **sync-cache 已同步**
+
+---
+
+## 2026-05-12 · Round 28.21 · Ch36 RCA 7 类根因永久根治
+
+### Commit Context
+Ch36 完整流程（Step 0-7 全过）overall=89/100，audit decision=approve_with_warnings/90.86。
+但流程中出现 7 类问题，主要 2 个 P0 阻断 commit + 5 个 P1/medium 警告。
+本次 commit 永久根治其中可根治的 4 类，其余 3 类标记 known_issue 待后续 fork PR。
+
+### 根治 1：14 个 checker 加 Write 工具（根因 2 P0 H26+H63）
+
+**问题**：reader-pull / reader-naturalness / reader-critic / consistency / continuity 5 个 checker
+在 Ch33-36 反复出现"返回 findings 但不落盘 .webnovel/tmp/*.json"，hygiene H26+H63
+P0 阻断 commit，每次需手动补盘 5 个 JSON。
+
+**根因**：所有 14 个 checker 的 frontmatter `tools` 字段都是 `Read, Grep, Bash`，缺 `Write`。
+subagent 只能用 Bash heredoc 写盘，但部分 checker 的 prompt 未引导调用 Bash 写盘步骤。
+
+**修复**：14 个 checker（reader-pull/reader-naturalness/reader-critic/consistency/continuity
+/ooc/pacing/density/dialogue/emotion/prose-quality/high-point/flow/reader-thrill）全部追加 Write 工具。
+
+### 根治 2：H67 过滤 false positive 日常短语（根因 3 P1）
+
+**问题**：hygiene_check H67 把"些蔫的叶子" / "蔫了的叶子"等日常短语切片识别为
+"canon 未锁高敏感名词"，触发 P1 warning。
+
+**根因**：`[一-鿿]{2,3}叶子` 正则边界过宽，未过滤"的/了/些/那/这/有"等自然短语
+前缀和"的叶子/了叶子"等自然短语后缀。
+
+**修复**：scripts/hygiene_check.py 的 `check_canon_locked_terms` 加入 `natural_phrase_prefixes`
+和 `natural_phrase_suffixes_for_leaf` 过滤层，过滤明显非专有名词的日常短语。
+
+### 根治 3：SKILL.md 加 checker JSON 落盘双保险（根因 2 长效防御）
+
+**修复**：skills/webnovel-write/SKILL.md 的 Step 3+3.5 完成闸门段追加
+"Round 28.21 · Ch36 RCA · checker JSON 落盘双保险"，列出 13 canonical
+checker JSON 文件名清单 + sanity check 命令，要求主流程 Step 3 complete-step 前
+逐一验证 13 个文件落盘存在。
+
+### 根治 4：audit-agent editor_notes 真源对齐硬规则（根因 4 D2 medium）
+
+**问题**：Ch35 audit 在写 ch0036_prep.md 时把蓝皮笔记本写成"姐姐两年前遗物"，但
+Canon 女主卡 v7 锁死是"前夫前年因肺癌去世"。Ch36 audit D2 medium warn 才发现。
+
+**根因**：audit-agent 写 editor_notes 时引用上一章 editor_notes 二手描述，未优先 grep
+Canon 真源。
+
+**修复**：agents/audit-agent.md 追加"Round 28.21 · Ch36 RCA · editor_notes 真源对齐硬规则"段，
+规定优先级链 `Canon > 角色卡 > 当前章节正文 grep > 大纲 > editor_notes`，
+禁止引用上一章 editor_notes 二手描述，写完必须 grep 验证 3-5 个关键描述。
+
+### 根治 5：anti-ai-guide.md 起草签名密度根治模板（根因 1 起草反复迭代）
+
+**问题**：Ch36 起草后 5 次 post_draft_check 才通过——"了一X"=38 / "没X"=34 / 对话占比=0.108
+都是 P0 block。改"没X→未X"后引入"未X"=12 新签名（block ≥ 5）。
+
+**根因**：AI 起草的 default 风格大量使用"了一下/了一拍"动作骨架；日常推进章对话天然偏少；
+对"了一X"等签名的密度认知不足。
+
+**修复**：skills/webnovel-write/references/anti-ai-guide.md 末尾追加 "Round 28.21 ·
+Ch36 RCA · 起草签名密度根治模板"，提供：
+- "了一X" 替换池（每章上限 12）
+- "没X" 替换池（每章上限 14）
+- "未X" 警告（每章上限 < 3）
+- 对话占比起草时硬约束（≥ 0.22）
+- 破折号上限（≤ 3）
+- 起草前自检预算清单
+
+### 未根治（known_issue）
+
+- 根因 5 reader-thrill 日常章 tepid：需 reader-thrill-checker.md 按 chapter_type 分级阈值
+- 根因 6 external spread outlier：需 audit.py A3 改 trimmed_mean
+- 根因 7 polish 后审查报告 final_weighted_score 未更新：需 polish_cycle 自动改 .md
+
+### 影响范围
+
+- 已 sync-cache（cache v5.6.0 同步 18 文件）
+- 已 sync-agents（工作区 .claude/agents 同步 15 文件）
+- Ch37+ 起草将受益于 5 项修复

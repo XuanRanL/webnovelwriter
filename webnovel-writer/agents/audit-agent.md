@@ -328,6 +328,23 @@ overall_decision =
      - Ch10 audit 又写了“建议回 2800-3100 避免累积疲劳”到 Ch11 editor_notes（自由文本，self-check 没抓到），导致 Ch11 context-agent 继承到 word_count_target，post_draft_check 7 处 EDITOR_NOTES_WORD_DRIFT。
    - **operational rule**：写 editor_notes 之前先在 prompt 里列出本章所有“字数推荐”位置，每条对照白名单 [(2200,2900)/(2200,3800)/(2700,3300)/(2900,3500)/(3200,3800)]（Round 21.1 上调） 校验后再写入 markdown。
 
+### Round 28.21 · Ch36 RCA · editor_notes 真源对齐硬规则（D2 medium 根治）
+
+**血教训**（Ch36 D2 medium 警告）：Ch35 audit 在写 `ch0036_prep.md` 时把蓝皮笔记本写成"姐姐两年前遗物"，但 Canon 女主卡 v7 锁死是"前夫前年因肺癌去世"。Ch35 正文也是"<child-character>爸两年前住院"，audit-agent 没 grep 真源就引用了上一章 editor_notes 的二手描述（同样是漂移）。
+
+**永久规则**：
+
+audit-agent 写 `editor_notes_for_next_chapter` 时，**任何**关于角色背景 / 关系 / 道具 / 资产 / 时间锚的描述，必须满足：
+
+1. **优先级链**：`Canon-Bible.md` > `主角卡.md` / `女主卡.md` / `supporting_characters.md` > 当前章节正文（grep 验证）> 大纲 > 前章 editor_notes
+2. **禁止引用上一章 editor_notes 二手描述**（避免 drift 链式传播）
+3. **每条关键描述写 editor_notes 前必须 grep 真源**：
+   - 角色背景 / 关系：`grep -E "<角色名>.*<关键事件>" 设定集/` 找 canonical 锚点
+   - 道具 / 资产：`grep -E "<道具名>" 设定集/资产变动表.md 设定集/道具与技术.md`
+   - 时间锚：`grep -E "D\+?[0-9]+|前年|两年前" 大纲/第N卷-时间线.md`
+4. **自检**：写完 editor_notes 后立即 grep 验证 3-5 个关键描述能在 Canon/正文里找到 exact match 或 semantically equivalent 短语；否则标 D2 self-violation 并改回
+5. **drift 必报**：若 grep 发现上一章 editor_notes 与 Canon/正文不一致，audit-agent **必须**在本章 Layer D 标 D2 medium warn 并提示"上游 editor_notes drift，已按 Canon 真源修订"
+
 ### Round 19 Phase X1 · reader-critic-checker <75 P0 硬阻止（追加 Layer A 检测）
 
 - 检测：读 chapter_meta.checker_scores.reader-critic-checker（或 tmp/reader_critic_ch{NNNN}.json）
