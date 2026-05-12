@@ -945,8 +945,22 @@ def check_canon_locked_terms(root: Path, chapter: int, rep: HygieneReport):
             if isinstance(m, str) and len(m) >= 2:
                 candidates.add(m)
 
+    # Round 28.21 (Ch36 RCA): 过滤明显的"修饰语+名词"日常短语（避免 false positive）
+    # 例如 "些蔫的叶子" / "蔫了的叶子" / "这片叶子" 这些是中文自然语序短语，不是专有名词
+    natural_phrase_prefixes = {"的", "了", "些", "那", "这", "有", "些"}
+    natural_phrase_suffixes_for_leaf = ("的叶子", "了叶子", "片叶子", "些叶子")  # 普通短语
+    filtered_candidates = set()
+    for t in candidates:
+        # 跳过"X的/X了 + 叶子"型自然短语
+        if any(t.endswith(suf) for suf in natural_phrase_suffixes_for_leaf):
+            continue
+        # 跳过首字为修饰词的（如"些蔫的叶子"首字"些"）
+        if t and t[0] in natural_phrase_prefixes:
+            continue
+        filtered_candidates.add(t)
+
     # 过滤：在 canon 已出现过的剔除
-    new_terms = sorted([t for t in candidates if t not in canon_text])
+    new_terms = sorted([t for t in filtered_candidates if t not in canon_text])
 
     if new_terms:
         rep.record(

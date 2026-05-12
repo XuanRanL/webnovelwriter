@@ -1,7 +1,7 @@
 ---
 name: reader-critic-checker
 description: 读者锐评检查器。以普通读者 + 编辑退稿双视角对章节 deep research，找问题给建议。
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 

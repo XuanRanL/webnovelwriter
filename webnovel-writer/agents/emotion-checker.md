@@ -1,7 +1,7 @@
 ---
 name: emotion-checker
 description: 情感表现检查，评估Show vs Tell/情感梯度/情感锚点/情感惯性/共鸣设计/earned vs forced，输出结构化报告
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 

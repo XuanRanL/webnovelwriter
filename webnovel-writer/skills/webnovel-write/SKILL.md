@@ -756,6 +756,38 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
 4. 写审查报告 + 落库 review_metrics。
 **违规后果**：跳过此验证直接进入 Step 4，Step 6 审计 A2 检查项将检测到 checker 坍缩并可能 block 提交。
 
+**Round 28.21 · Ch36 RCA · checker JSON 落盘双保险（H26+H63 P0 根治）**：
+
+Ch36 血教训：5 个 checker（reader-pull / reader-naturalness / reader-critic / consistency / continuity）返回 findings 后未自动 Write 落盘，hygiene_check.py H26+H63 报 P0 阻断 commit，必须手动补盘 5 个 JSON 才能通过。
+
+**根因**：subagent 定义 tools 列表此前缺 `Write`（已修：Round 28.21 给 14 个 checker 全部加上 Write 工具），但 subagent 仍可能"忘记调用 Write"。
+
+**双保险硬规则**：
+
+1. **subagent 侧**（已修复）：14 个 checker 的 tools 全部含 `Write`；每个 checker.md 的"执行"段第 4 步明确"Write 落盘到 `.webnovel/tmp/{checker_id}_ch{NNNN}.json`"。
+2. **主流程侧**（本节硬约束）：Step 3 complete-step 之前，**必须**逐一验证 13 个 `.webnovel/tmp/{checker_id}_ch{NNNN}.json` 落盘存在；任一缺失则**主流程 Write 工具补盘**（用 subagent 返回的 findings 重建 JSON）。
+3. **完整 checker JSON 文件名清单**（13 canonical）：
+   - `reader_naturalness_check_ch{NNNN}.json`
+   - `reader_critic_check_ch{NNNN}.json`
+   - `consistency_check_ch{NNNN}.json`
+   - `continuity_check_ch{NNNN}.json`
+   - `ooc_check_ch{NNNN}.json`
+   - `reader_pull_ch{NNNN}.json`（注：reader-pull 文件名约定无 `_check` 后缀）
+   - `high_point_check_ch{NNNN}.json`
+   - `flow_check_ch{NNNN}.json` 或 `flow_ch{NNNN}.json`（双名兼容）
+   - `pacing_check_ch{NNNN}.json`
+   - `dialogue_check_ch{NNNN}.json`
+   - `density_check_ch{NNNN}.json`
+   - `prose_quality_check_ch{NNNN}.json`
+   - `emotion_check_ch{NNNN}.json`
+4. **Step 3 complete-step 前 sanity check**：
+   ```bash
+   for cid in reader_naturalness_check reader_critic_check consistency_check continuity_check ooc_check reader_pull high_point_check flow_check pacing_check dialogue_check density_check prose_quality_check emotion_check; do
+     test -f "${PROJECT_ROOT}/.webnovel/tmp/${cid}_ch${chapter_padded}.json" || echo "MISSING: ${cid}"
+   done
+   ```
+   任一 MISSING 必须先补盘再 complete-step。
+
 ### Step 4：润色（问题修复优先）
 
 执行前必须加载：

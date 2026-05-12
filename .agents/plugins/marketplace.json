@@ -1,0 +1,20 @@
+{
+  "name": "webnovel-writer-local",
+  "interface": {
+    "displayName": "Webnovel Writer Local"
+  },
+  "plugins": [
+    {
+      "name": "webnovel-writer-codex",
+      "source": {
+        "source": "local",
+        "path": "./plugins/webnovel-writer-codex"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

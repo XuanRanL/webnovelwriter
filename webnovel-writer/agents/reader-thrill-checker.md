@@ -1,7 +1,7 @@
 ---
 name: reader-thrill-checker
 description: 读者爽点强度检查器 · 评估金手指释放/主角胜利/反派受挫/信息差兑现/标题承诺兑现/节奏推进 · 6 子维度 deep research
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: prose-quality-checker
 description: 文笔质感检查，评估句式节奏/比喻新鲜度/感官丰富度/动词力度/画面感/具象化程度，输出结构化报告
-tools: Read, Grep, Bash
+tools: Read, Grep, Bash, Write
 model: inherit
 ---
 
