@@ -7,6 +7,45 @@
 
 ---
 
+## [2026-05-12 · Round 28.22] Ch37 RCA · 4 类根因永久根治
+
+**Trigger**：Ch37 "林业局来人" 全流程（Step 0-7 + 8.5）跑完后 deep research，发现 4 类系统性问题：
+
+1. **A6 implicit_start HIGH**：Step 3.5 complete-step 时触发 "AUDIT-A6 HIGH: Step 3.5 implicit_start=True" — SKILL 没说 Step 3.5 也要先 start-step
+2. **H71 P0 复发（第 4 次）**：emotion-checker / reader-critic-checker 多个 subagent JSON 的 quote/description 字段嵌套 ASCII `"` 未转义 → JSON parse fail → hygiene H71 P0 阻断 commit
+3. **H69 P1 chapter_meta 7 扩展字段缺失**：data-agent process-chapter 完成后 `total_words` / `dialogue_ratio` / `signature_density` / `naturalness_score` / `reader_critic_score` / `reader_thrill_score` / `external_avg` 全空，commit 前 hygiene H69 P1 fail
+4. **签名密度反向触发循环**：post_draft_check 一次只报触发的（没X 33→block），主流程把"没X"替换为"未X" → 反向触发"未X 17→block" → 第二轮 polish。AI 看不到未触发阈值的临界距离
+
+**Root cause**：
+
+| # | 根因 | 现象 |
+|---|------|------|
+| 1 | SKILL.md Step 3.5 段未声明"必须先 start-step"；workflow_manager OPTIONAL_PRECEDING_STEPS 未列 Step 3.5 | A6 HIGH 累积 |
+| 2 | reader-critic / emotion / consistency 等 14 个 checker subagent.md 缺 "quote 字段 ASCII 引号嵌套硬禁" 警示 | H71 三复发 + Ch37 第 4 次 |
+| 3 | data-agent.md 23 字段自检不含 7 扩展字段 | H69 P1 漂移 |
+| 4 | post_draft_check.py 不显示未触发阈值的当前值，AI polish 时盲推 | 反向触发循环 |
+
+**Architecture change**：
+
+| # | 文件 | 改动 |
+|---|------|------|
+| 1 | `skills/webnovel-write/SKILL.md` (Step 3.5 段) | 加 "🔴 Round 28.22 Ch37 RCA · A6 implicit_start 根治" 红字框：必须先 `workflow start-step --step-id "Step 3.5"` |
+| 2 | `skills/webnovel-write/SKILL.md` (Step 3 段) | 加 "🔴 Round 28.22 Ch37 RCA · checker JSON quote 字段 ASCII 引号嵌套硬禁" 全局警示：14 checker 全部适用，落盘前 `"` 字符自检 |
+| 3 | `agents/reader-critic-checker.md` | "唯一的硬约束" 段加 quote/reason/suggestion/improvement_notes 等字段内引号嵌套规则 + 反例正例对照 |
+| 4 | `agents/data-agent.md` | Step D 23 字段自检段后追加 "23 Core 之外的 7 个扩展字段也必填（H69 P1 根治）" — total_words / dialogue_ratio / signature_density / naturalness_score / reader_critic_score / reader_thrill_score / external_avg |
+| 5 | `scripts/post_draft_check.py` | 签名密度循环里增加 SIGNATURE_SUMMARY INFO 行：全部 6+ 类签名当前计数 + warn/block 阈值 + OK/NEAR/BREACH 状态，让 polish 看见所有临界（不阻断，只 INFO） |
+
+**Test coverage**：现有 H71/H69/A6 单测继续生效；post_draft_check 修改是 INFO 添加（不影响 exit_code 逻辑）。
+
+**Migration impact**：纯增量，无 BREAK CHANGE。已 `sync-cache` 同步到 cache（4 个文件更新）+ `sync-agents` 同步到工作区（2 个 agent 更新）。
+
+**Tracking**：
+- fork commit: TBD
+- 涉及章节流程：Ch37 全流程实测；Ch38+ 起按新规则执行
+- Audit hygiene 通过：Ch37 hygiene_check exit=0 + audit decision=approve_with_warnings + aggregate=91.1
+
+---
+
 ## [2026-05-10 · Round 28.20] Ch35 RCA · A6 step_start_rejected false positive 永久根治
 
 **Trigger**：Ch35 全流程跑完后做 deep research，audit Layer A 报告 A6 critical fail：

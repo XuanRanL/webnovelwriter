@@ -611,6 +611,18 @@ python -X utf8 "${SCRIPTS_DIR}/post_draft_check.py" ${chapter_num} --project-roo
 cat "${SKILL_ROOT}/references/step-3-review-gate.md"
 ```
 
+> **🔴 Round 28.22 Ch37 RCA · checker JSON quote 字段 ASCII 引号嵌套硬禁（H71 三复发根治）**
+>
+> 所有 14 个 checker subagent 在写 JSON 时，**`quote` / `reason` / `suggestion` / `description` / `improvement_notes` 等字符串字段内禁止嵌套 ASCII `"` 和中文 `""`**，否则 JSON parse fail → hygiene H71 P0 阻断 commit。
+>
+> 正文若含中文弯引号 `""""`，写入 JSON 时**必须**替换为括号 `()` / `〈〉` / `...`（省略）。
+>
+> Ch33/Ch37 三复发血教训：
+> - 反例：`"quote": "一种属于"我的兄弟在替我挡着"的什么"` → JSON parse error
+> - 正例：`"quote": "一种属于(我的兄弟在替我挡着)的什么"` / `"quote": "一种属于...的什么"`
+>
+> 全部 14 checker subagent 落盘前必须做字符串字段值 `"` 字符自检。主流程在 Step 3 complete-step 前必须 `python -c "import json; json.load(open(f))"` 逐文件验证。
+
 调用约束：
 - 必须用 `Task` 调用审查 subagent，禁止主流程伪造审查结论。
 - **标准/--fast 模式必须分批启动**（0+6+5 三段，详见 `step-3-review-gate.md`），禁止 13 个 checker 同时并发（Claude Code Agent 并发池上限约 4-6 个）。
@@ -685,6 +697,21 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
 - **Round 13 v2 · naturalness 和 reader-critic 作为常规评分维度**：两个读者视角 checker 的 `overall_score` 和 `problems` 与其他 11 个 checker **平等进入 `overall_score` 聚合**，不 block 流程。它们的 high/critical problems 与其他 checker 的 issues **合并**给 Step 4 做定向修复。**极端 block 条件**：仅当 Step 4 polish 后重新审查，`naturalness` 或 `reader-critic` 仍返回 `REJECT_CRITICAL` / `will_continue_reading=no`，才回到 Step 2A 重写。背景：Ch1 v1 case 中 19 审查器 + 7 层审计给 91 分 approve_with_warnings，但用户一眼看出“<protagonist>在死”语病——说明规则同源污染会让评分系统集体失灵。解决方案不是 block，而是**把读者视角纳入评分，强制 Step 4 必须修**。
 
 ### Step 3.5：外部模型审查（与 Step 3 并行或紧接执行）
+
+> **🔴 Round 28.22 · Ch37 RCA · A6 implicit_start 根治**
+>
+> Step 3.5 与 Step 3 并行/紧接执行，但 **workflow 仍要求显式 start-step**。直接 complete-step 会触发 `AUDIT-A6 HIGH: Step 3.5 implicit_start=True`（累积警告，下章流程感知）。
+>
+> 正确顺序：
+> ```bash
+> # Step 3 complete-step 后立即（或与 Step 3 并行起就）：
+> python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+>   workflow start-step --step-id "Step 3.5" --step-name "External review"
+> # 然后调 build_external_context.py + external_review.py
+> # 完成后 complete-step
+> ```
+>
+> Ch37 血教训：跳过 start-step 直接 complete-step → A6 HIGH 累积。
 
 执行前必须加载：
 ```bash
