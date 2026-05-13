@@ -1268,13 +1268,27 @@ def build_context_block(context_data, project_root=None, chapter_num=None):
         meta_lines = []
         for ch_key in sorted(recent_meta.keys()):
             meta = recent_meta[ch_key] if isinstance(recent_meta[ch_key], dict) else {}
-            hook = meta.get("hook") or {}
-            pattern = meta.get("pattern") or {}
-            ending = meta.get("ending") or {}
+            # R28.23 Ch38 RCA: defensive dict checks (chapter_meta fields may drift to str/None/int)
+            # 历史漂移：Ch37/Ch38 ending 写成 str 触发 AttributeError 让外审 15/15 失败
+            hook_raw = meta.get("hook")
+            hook = hook_raw if isinstance(hook_raw, dict) else {}
+            pattern_raw = meta.get("pattern")
+            pattern = pattern_raw if isinstance(pattern_raw, dict) else {}
+            ending_raw = meta.get("ending")
+            ending = ending_raw if isinstance(ending_raw, dict) else {}
+            # Fallback: 顶层扁平字段（新 schema） — hook_type/hook_strength/emotion_rhythm
+            hook_type = hook.get("type") or meta.get("hook_type") or "?"
+            hook_strength = hook.get("strength") or meta.get("hook_strength") or "?"
+            emotion_rhythm = pattern.get("emotion_rhythm") or meta.get("emotion_rhythm") or "?"
+            ending_emotion = ending.get("emotion") or "?"
+            ending_location = ending.get("location") or meta.get("location_current") or "?"
+            # 若 ending 是 str（旧漂移）作为人读描述插入
+            if isinstance(ending_raw, str) and ending_raw.strip():
+                ending_emotion = ending_raw[:50]
             meta_lines.append(
-                f"第{ch_key}章: 钩子={hook.get('type','?')}({hook.get('strength','?')}) "
-                f"开场={pattern.get('opening','?')} 情绪={pattern.get('emotion_rhythm','?')} "
-                f"结束情绪={ending.get('emotion','?')} 地点={ending.get('location','?')}"
+                f"第{ch_key}章: 钩子={hook_type}({hook_strength}) "
+                f"开场={pattern.get('opening','?')} 情绪={emotion_rhythm} "
+                f"结束情绪={ending_emotion} 地点={ending_location}"
             )
         parts.append(f"【近期章节模式（判断钩子/情绪/模式是否重复）】\n" + "\n".join(meta_lines) + "\n")
 

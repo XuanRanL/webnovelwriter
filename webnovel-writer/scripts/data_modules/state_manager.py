@@ -1941,6 +1941,32 @@ def main():
                 #       audit B4 检查 state.chapter_meta.review_metrics 为 null 时无 CLI 修复路径
                 # 修复：加入白名单，配合 webnovel.py index save-review-metrics 的 --mirror-state 参数
                 "review_metrics",  # 复合 dict：含 overall_score / dimension_scores / thrill_score / severity_counts
+                # Round 28.23 · Ch38 RCA · H2 core 23 字段 CLI fallback 通路根治
+                # 根因：data-agent process-chapter 后台执行延迟时主 agent 无法用 CLI 补 H2 字段
+                #       → 强行手动 Edit state.json 违反 feedback_no_manual_state_edits 硬规则
+                # 修复：H2 核心 23 字段全部加入白名单，配合类型校验
+                "chapter", "chapter_title", "title", "characters",
+                "allusions_used", "foreshadowing_planted", "foreshadowing_paid",
+                "end_state", "ending", "golden_finger_level",
+                "hook_content", "hook_type", "hook_strength", "hook_close",
+                "key_beats", "locations", "mode", "new_entities",
+                "post_polish_recheck", "pov_mode", "power_realm",
+                "protagonist_state", "scene_count", "strand", "strand_sub",
+                "time_span", "unresolved_questions",
+                "emotion_rhythm", "checker_subdimensions",
+            }
+            # Round 28.23 · Ch38 RCA · 字段类型 schema 强制（防 dict→str 漂移）
+            # 历史漂移：reader_thrill_score/signature_density/ending 写成 JSON string 触发 external_review.py
+            # build_context_block() 的 .get() 失败导致 15 模型全死。
+            CHAPTER_META_DICT_FIELDS = {
+                "thrill_score", "reader_thrill_score", "signature_density",
+                "ending", "hook_close", "post_polish_recheck", "checker_subdimensions",
+                "review_metrics", "protagonist_state",
+            }
+            CHAPTER_META_LIST_FIELDS = {
+                "characters", "allusions_used", "foreshadowing_planted",
+                "foreshadowing_paid", "new_entities", "key_beats",
+                "locations", "unresolved_questions",
             }
             if not ch or not field:
                 emit_error("INVALID_ARG", "--set-chapter-meta-field 需要 chapter + field 字段")
@@ -1954,6 +1980,41 @@ def main():
             cm = manager._state.setdefault("chapter_meta", {})
             key = f"{ch:04d}"
             entry = cm.setdefault(key, {})
+            # Round 28.23 · Ch38 RCA · 类型强制（防 JSON string 漂移）
+            if field in CHAPTER_META_DICT_FIELDS and isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("{"):
+                    try:
+                        value = json.loads(stripped)
+                    except Exception:
+                        emit_error(
+                            "FIELD_TYPE_MISMATCH",
+                            f"field={field} 期望 dict 但收到字符串且 JSON 解析失败: {stripped[:80]}",
+                        )
+                        return
+                else:
+                    emit_error(
+                        "FIELD_TYPE_MISMATCH",
+                        f"field={field} 期望 dict 但收到非 JSON 字符串: {stripped[:80]}",
+                    )
+                    return
+            elif field in CHAPTER_META_LIST_FIELDS and isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("["):
+                    try:
+                        value = json.loads(stripped)
+                    except Exception:
+                        emit_error(
+                            "FIELD_TYPE_MISMATCH",
+                            f"field={field} 期望 list 但收到字符串且 JSON 解析失败: {stripped[:80]}",
+                        )
+                        return
+                else:
+                    emit_error(
+                        "FIELD_TYPE_MISMATCH",
+                        f"field={field} 期望 list 但收到非 JSON 字符串: {stripped[:80]}",
+                    )
+                    return
             entry[field] = value
             # Round 17.2 · Ch8 P1-R6 根治：overall_score 与 checker_scores.overall 双字段同步
             # 写其一必同步另一（hygiene H9 强制两者相等的对偶实现）
