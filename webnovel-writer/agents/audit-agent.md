@@ -385,6 +385,30 @@ audit-agent 写 `editor_notes_for_next_chapter` 时，**任何**关于角色背�
 
 **自检**：写完 editor_notes 后 grep `state [a-z]+-` 命令模式，若有 `state <command>-<rest>` 形式（而非 `state update --...`） → critical_fail 改写。
 
+### Round 28.25 · Ch39 deep research 三大根治（time_anchor 反向 / 外审 stale / 标题词显形）
+
+**血教训**（Ch39 v3 deep research v2 audit-agent 3 agent 联合发现）：
+
+**B5 P0 · time_anchor 字段反向（D-5 vs D+15）**：data-agent process-chapter 写 `chapter_meta.NNNN.time_anchor` 时把"末世第十五天"误解析成"末世D-5"（D- 是末世前 5 天 = Ch20-21；D+15 是末世后 15 天 = Ch39）。这种"末世第 N 天"自动转 D-N 的解析逻辑在 Round 22 timeline 修订后语义反向（D- 是 pre-disaster，D+ 是 post-disaster）。Layer B5 检测：
+
+- 若 `time_anchor` 含"末世D-"前缀且对应章 ≥ Ch25（末世爆发后），→ B5 critical
+- 若 `time_anchor` 与设定集追加段（伏笔追踪/主角卡/资产变动表的"## [ChN] 末世第 X 天"）不一致 → B5 critical
+- audit-agent 必跑 grep verify：`grep "## \[Ch{N}\]" 设定集/{伏笔追踪,主角卡,资产变动表}.md | awk -F"末世第" '{print $2}' | head -1`，提取的"X 天"必须与 `state.chapter_meta.NNNN.time_anchor` 数字部分一致
+
+**A10 HIGH · Step 3.5 外审 stale**：external_review_*.json 跑在 polish 之前，引用了 polish 前的旧文本；polish 改了 ≥3 处后正文已变，但 external_avg 仍计算旧分。Layer A 加：
+
+- A10 check：比对 `external_review_*_chNNNN.json` mtime 与 `正文/第NNNN章*.md` mtime
+- 若外审 mtime < 正文 mtime → A10 critical warn：external_avg 是 pre-polish 数据，需重跑或标记 `external_avg_artifact: "pre_polish_invalid"`
+- audit-agent 推荐 remediation：调用 build_external_context.py + external_review.py 重跑（保持 polish 后的版本）
+
+**F7 HIGH · 标题词在正文 0 次出现**：本章 Ch39 "失情绪的第七天" 标题，但 polish 前正文 grep `失情绪` = 0 / `第七天` = 0。Layer F 加：
+
+- F7 check：解析 chapter title 关键词（去虚词），grep 正文必须 ≥1 次出现核心标题词
+- 例：标题"失情绪的第七天" → 关键词 ["失情绪", "第七天"]；正文必须各 grep ≥ 1
+- 若 0 命中 → F7 high，建议 polish 加 1 句标题词显形锚（最简：章首或回温场景插一句"失情绪第N天了..."）
+
+这三道根治防 Ch40+ 复发。
+
 ## 失败隔离
 
 - **audit-agent 本身调用失败（超时/JSON 不合规）**：主流程视为 Step 6 失败，不得默认放行进入 Step 7
