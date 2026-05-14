@@ -352,6 +352,39 @@ audit-agent 写 `editor_notes_for_next_chapter` 时，**任何**关于角色背�
 - 前 5 章额外：75-79 触发 medium warn（不阻 commit 但 audit notes 标“前 5 章警告区”）
 - 输出：audit_reports/ch{NNNN}_audit.md 必须含 X1 检测结果段（A-RC-X1）
 
+### Round 28.24 · Ch39 RCA · audit-agent 推荐 CLI 命令白名单（防 RC5 凭印象写错命令）
+
+**血教训**（Ch39 Step 6 → Ch40 editor_notes）：audit-agent 在 editor_notes_for_next_chapter 写"运行 `mirror-disk-scores --chapter 39`" 和"`state mirror-disk-scores --chapter 39`"，但实际 CLI 是 `state update --mirror-disk-scores '{"chapter":39}'`。LLM 凭印象组合 args 顺序导致 Ch40 主流程执行错命令。
+
+**永久规则**：audit-agent 写 `editor_notes_for_next_chapter` 中的任何 CLI 推荐命令时，**必须**从以下白名单照抄完整语法：
+
+| 用途 | 完整正确命令（不可省略 args 顺序） |
+|---|---|
+| 同步 disk JSON → state.chapter_meta.checker_scores | `python -X utf8 {SCRIPTS_DIR}/webnovel.py --project-root "{PROJECT_ROOT}" state update --mirror-disk-scores '{"chapter":N}'` |
+| 单维度落分 | `state update --set-checker-score '{"chapter":N,"checker":"<canonical>","score":S}'` |
+| 复测前后差 | `state update --append-recheck '{"chapter":N,"checker":"<canonical>","before":B,"after":A,"reason":"..."}'` |
+| 修 overall_score（combined 公式） | `state update --set-chapter-meta-field '{"chapter":N,"field":"overall_score","value":V}'` |
+| 写 thrill_score（非 13 canonical） | `state update --set-chapter-meta-field '{"chapter":N,"field":"thrill_score","value":{...嵌套 dict...}}'` |
+| 章末钩子落库 | `state update --set-hook-close '{"chapter":N,"primary_type":"...","secondary_type":"...","strength":S,"text_excerpt":"...","source_narrative_version":"vX"}'` |
+| 进度推进 | `state update --set-progress-chapter '{"chapter":N}'` |
+| 字数累加 | `state update --add-words '{"chapter":N,"words":W}'` |
+| 章节版本号 bump | `state update --bump-narrative-version '{"chapter":N}'` |
+| 审计决议查询 | `audit check-decision --chapter N --require approve,approve_with_warnings` |
+| 单章 audit Part 1 | `audit chapter --chapter N --mode standard --out "{PROJECT_ROOT}/.webnovel/tmp/audit_layer_abg_chNNNN.json"` |
+| review_metrics 落库 | `index save-review-metrics --data "@{PROJECT_ROOT}/.webnovel/tmp/review_metrics.json"` |
+| 写前 context-agent CLI tool | `context -- --chapter N` |
+| polish_cycle | `python -X utf8 {SCRIPTS_DIR}/polish_cycle.py N --project-root "{PROJECT_ROOT}" --reason "..." --narrative-version-bump --round-tag roundXX` |
+| 起草后硬闸门 | `python -X utf8 {SCRIPTS_DIR}/post_draft_check.py N --project-root "{PROJECT_ROOT}"` |
+| commit 前硬闸门 | `python -X utf8 {SCRIPTS_DIR}/pre_commit_step_k.py N --project-root "{PROJECT_ROOT}"` |
+| commit 前 hygiene | `python -X utf8 {PROJECT_ROOT}/.webnovel/hygiene_check.py N` |
+
+**绝对禁止**：
+- `state mirror-disk-scores --chapter N`（state 不是子命令容器，update 才是）
+- `state set-checker-score ...`（同上，应是 `state update --set-checker-score`）
+- 任何省略 `--project-root` 或 JSON args 引号的简写
+
+**自检**：写完 editor_notes 后 grep `state [a-z]+-` 命令模式，若有 `state <command>-<rest>` 形式（而非 `state update --...`） → critical_fail 改写。
+
 ## 失败隔离
 
 - **audit-agent 本身调用失败（超时/JSON 不合规）**：主流程视为 Step 6 失败，不得默认放行进入 Step 7
