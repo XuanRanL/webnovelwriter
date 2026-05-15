@@ -1,6 +1,6 @@
 # AI 句式替换字典 · 跨项目永久防御
 
-> Round 23 · 2026-05-01 · 跨项目（<example-project> / <example-project-A> / <example-project-B> / <example-project-C>）共用。
+> Round 23  跨项目（本插件所有项目）共用。
 > 本文件是 polish 阶段强制替换源 + writer 起草阶段必避词典。
 
 ---

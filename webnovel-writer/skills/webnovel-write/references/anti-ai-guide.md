@@ -75,7 +75,7 @@ purpose: Step 2 起草时加载，在写作阶段预防 AI 癖好
 
 ---
 
-## 本地 fork 接入（Round 19 / 5.6.0）
+## 本地 fork 接入
 
 ### 加载时机
 
@@ -103,7 +103,7 @@ Step 2 起草正文前，由 SKILL.md Step 2 references 列表加载。
 
 ### 不引入的 upstream 配套
 
-- upstream `docs/specs/2026-04-03-ai-writing-quirks.md`（148 行 6 层 60+ 癖好全景图）暂不引入，避免与本文件 + polish-guide 冗余
+- upstream `docs/specs/ai-writing-quirks.md`（148 行 6 层 60+ 癖好全景图）暂不引入，避免与本文件 + polish-guide 冗余
 - 如需扩展，往 `references/private-csv/ai-replacement-vocab.csv` 沉淀（Phase F）
 
 ---
@@ -178,7 +178,7 @@ polish_cycle 完成后 reader-critic-checker 复测：
 
 ---
 
-## Round 28.21 · Ch36 RCA · 起草签名密度根治模板（NEW）
+## Round 28.21 · 起草签名密度根治模板（NEW）
 
 **血教训**（Ch36 5 次 post_draft 才过）：
 - 第 1 次起草：`了一X` 38 次（block ≥ 18）/ `没X` 34 次（block ≥ 20）/ 对话占比 0.108（< 0.20 block）

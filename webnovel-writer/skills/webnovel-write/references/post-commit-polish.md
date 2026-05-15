@@ -1,7 +1,7 @@
 # Step 8 · Post-Commit Polish 完整规范
 
-> 引入版本：2026-04-20（Round 14.5）
-> 触发血教训：<example-project> Ch1 v3 polish 裸跑事故 — 58 个 ASCII 引号 + 414 字 word_count 漂移
+> 引入版本：
+> 触发<example-project> Ch1 v3 polish 裸跑事故 — 58 个 ASCII 引号 + 414 字 word_count 漂移
 > 唯一执行入口：`scripts/polish_cycle.py`
 
 ---
@@ -96,7 +96,7 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 - `2` 结构错（无变化、文件缺失、state 损坏、参数冲突）
 - `3` git 操作失败（workflow 已预登记，需要修复 git 后补跑 `--allow-no-change` 重新 commit）
 
-### 4.1 为什么 commit 是最后一步（v2 设计修正 · 2026-04-20）
+### 4.1 为什么 commit 是最后一步（v2 设计修正 ）
 
 v1 设计把 workflow 登记放在 commit **之后**，导致 commit 里完全没有 workflow 痕迹，git 历史与 workflow 解耦。用户质疑"提交不是应该在最后一步吗？"后重构为 v2：
 
@@ -134,7 +134,7 @@ v2 设计下如果 `[6/7] git commit` 失败：
 {
   "word_count": 3084,                      // 实测中文字符数
   "narrative_version": "v3",               // 自动自增或手动指定
-  "updated_at": "2026-04-20T12:34:56+00:00",
+  "updated_at": "T12:34:56+00:00",
   "checker_scores": {                      // --checker-scores 合并
     "reader-naturalness-checker": 91,
     "reader-critic-checker": 88
@@ -142,7 +142,7 @@ v2 设计下如果 `[6/7] git commit` 失败：
   "polish_log": [                          // 追加，不覆盖
     {
       "version": "v3",
-      "timestamp": "2026-04-20T12:34:56+00:00",
+      "timestamp": "T12:34:56+00:00",
       "notes": "读者视角 6 medium 修复"
     }
   ]
@@ -157,8 +157,8 @@ v2 设计下如果 `[6/7] git commit` 失败：
   "command": "webnovel-polish",
   "chapter": 1,
   "status": "completed",
-  "started_at": "2026-04-20T12:34:56Z",
-  "completed_at": "2026-04-20T12:34:58Z",
+  "started_at": "T12:34:56Z",
+  "completed_at": "T12:34:58Z",
   "args": { "chapter_num": 1, "reason": "...", "narrative_version": "v3" },
   "artifacts": {
     "polish_cycle": true,
@@ -208,7 +208,7 @@ Step 8 第3轮:   第1章 v5: 修 audit Layer C     (commit 3)
 
 ## 7. 跨章影响
 
-### 7.1 下章 context-agent 行为（Round 14.5.2 实装）
+### 7.1 下章 context-agent 行为
 
 context-agent 读 `state.json.chapter_meta.{N-1}`（上一章）时，**实际执行**下列逻辑（见 `agents/context-agent.md` 的"Post-Commit Polish 传递"章节）：
 

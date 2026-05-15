@@ -26,7 +26,7 @@ model: inherit
 ```
 
 **model_key 说明（十五模型共识架构 · Round 25 含 deepseek-v4-flash · Round 21.4 combined 默认）**:
-- **架构**：6 供应商（**ticketpro** + **api666** + openclawroot + **ark-coding** + siliconflow + **xiaomimimo**）× 15 模型 × 13 维度 = 195 份逻辑评分（Round 21.4 combined 默认 · 正常物理请求数为 15，不再是 195）
+- **架构**：6 供应商（**ticketpro** + **api666** + openclawroot + **ark-coding** + siliconflow + **xiaomimimo**）× 15 模型 × 13 维度 = 195 份逻辑评分
 - **共识机制**：每个模型都跑**全 13 维度**（无分工），默认一次请求返回 13 个 `dimension_reports`；多模型共识 → 真 bug；单模型孤例 → 模型偏见
 - **所有模型 thinking 全开**
   - ark-coding：`thinking={"type":"enabled"}`（火山原生）

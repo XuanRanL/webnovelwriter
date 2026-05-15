@@ -49,7 +49,7 @@ model: inherit
 - Protagonist's current realm/level matches state.json
 - Abilities used are within realm limitations
 - Power-ups follow established progression rules
-- **[2026-04-11 新增] 能力的使用步骤必须与设定集规定的机制链条一致**
+- **[新增] 能力的使用步骤必须与设定集规定的机制链条一致**
 
 **危险信号** (POWER_CONFLICT):
 ```
@@ -81,9 +81,9 @@ model: inherit
 4. 如果执行包的 immutable_facts 含 mechanism_step fact，那是强约束：正文必须全部按序呈现该 fact 的 `required_sequence`；缺任一步或出现 `forbidden_shortcut` 即违规
 5. 若 immutable_facts 里 `mechanism_facts_count==0` 但本章涉及能力使用 → 输出 warn「上游 context-agent 可能漏注入 mechanism_facts，请核对设定」
 
-#### 第一层半: 金手指三项专项（Round 17.1 · 2026-04-24 · Ch7 RCA P1.4 根治）
+#### 第一层半: 金手指三项专项
 
-**为什么新增**（Ch7 血教训）：
+**为什么新增**：
 - Ch7 本地 consistency-checker 给 **100 分**
 - Gemini-3.1-pro 却抓到 **4 个 critical 设定崩塌**：沙漏物理实体化（违反脑内设定）/ <golden-finger-space>空间石板入口（违反随身维度）/ A 级诗经麦（违反 D 级 lock-in）/ 金手指首秀浪费
 - 这三类是**读者最敏感的设定漂移**——规则型读者（占 30%+）一旦发现“沙漏脑内变抽屉拿”、“空间走地下通道”、“作物一夜三级跳”，立刻弃书
@@ -200,7 +200,7 @@ model: inherit
 | 问题类型 | Severity | 说明 |
 |---------|----------|------|
 | 倒计时算术错误 | **critical** | D-5 直接跳到 D-2，必须修复 |
-| **金手指激活时序矛盾** | **critical** | 设定“死亡瞬间激活”，却写“前世做过这个动作”（Ch1 <example-project>血教训） |
+| **金手指激活时序矛盾** | **critical** | 设定“死亡瞬间激活”，却写“前世做过这个动作” |
 | 事件先后矛盾 | **high** | 先发生的事情后写，逻辑混乱 |
 | 年龄/修炼时长冲突 | **high** | 算术错误，如15岁修炼5年却10岁入门 |
 | 时间回跳无标注 | **high** | 非闪回章节却出现时间倒退 |
@@ -208,7 +208,7 @@ model: inherit
 | 时间锚点缺失 | **medium** | 无法确定章节时间，但不影响逻辑 |
 | 轻微时间模糊 | **low** | 时段不明确但不影响剧情 |
 
-**金手指激活时序交叉校验（2026-04-16 Round 10 新增）**：
+**金手指激活时序交叉校验**：
 - 源 · `设定集/金手指设计.md` + `state.json::protagonist_state.golden_finger`
 - 关键字段：`激活时机` / `scheduled_unlock` / `activation_chapter` / `first_appearance_chapter`
 - 校验规则：
@@ -218,7 +218,7 @@ model: inherit
   4. 若金手指激活时机 ≥ 本章且正文有“前世 + 该金手指具体使用”描写 → **critical · GF_TIMELINE_VIOLATION**
   5. 例外：设定明示“金手指源自前世遗留”（如血脉型、宿命型）不违规
 
-**前世记忆时间边界交叉校验（2026-04-23 Round 17 新增 · 根治<example-project> Ch1-6 deep research P0）**：
+**前世记忆时间边界交叉校验**：
 - 源 · `设定集/金手指设计.md` §1.5.1 前世记忆时间边界（C/C'/C'' 三分类）+ `state.json::protagonist_state.previous_life.death_timestamp`
 - 关键字段（若 state 有）：`previous_life.death_timestamp` / `previous_life.death_event_description`
 - 若无 state 字段，则走正文约束推断：Ch1 主角前世死亡时刻 == 重生起点前 N 小时（如“他几个小时前死在月台。十一点四十七分”）
@@ -238,11 +238,11 @@ model: inherit
      - **high**：前世用了“末世前夜”等歧义时序词 + 主角前世死于末世前 30 天（如 Ch4 原文“<power-faction>是末世前夜那张情报网，他前世在档案边角见过几次”）
      - **medium**：前世记忆引用了精确数字/时间戳但主角前世不可能记得那么精确
      - **low**：前世记忆含模糊词（“依稀记得 / 好像”），但未明示信息源
-- 错误示例（Ch6 <example-project> 全套 checker 漏抓 · 血教训）：
+- 错误示例：
   ```
-  ❌ [critical] 设定：Ch1 L114 "他几个小时前死在那个月台。十一点四十七分。他根本没活到那一天" = 前世死于 2026-04-14 23:47 · 末世爆发在 30 天后
+  ❌ [critical] 设定：Ch1 L114 "他几个小时前死在那个月台。十一点四十七分。他根本没活到那一天" = 前世死于23:47 · 末世爆发在 30 天后
      正文 Ch6 L185：他在前世末世爆发前的某一个晚上，见过这种狗叫。
-     → 前世死亡: 2026-04-14 23:47 | 末世爆发: 2026-05-14 左右 | 正文描写: 前世亲历末世前夜 (2026-05-11 左右)
+     → 前世死亡:23:47 | 末世爆发:左右 | 正文描写: 前世亲历末世前夜 (左右)
      → VIOLATION: 前世亲历 × 前世死后才发生的事件 (相差 26 天)
      → 修法: 改为 C' 类二手见证 "他在前世刷到过一篇合肥本地公众号的旧帖——说某年城西有一处老小区塌方，前夜流浪狗集体异吠两个钟头"
   ```

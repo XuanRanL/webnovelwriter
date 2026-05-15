@@ -272,7 +272,7 @@ max_results = 3
 ```markdown
 | # | 原文 | 出处 | ... | verified_at | verification_source |
 |---|---|---|---|---|---|
-| S01 | 蓼蓼者莪 | 诗经·蓼莪 | ... | 2026-04-10 | gushiwen.cn/... |
+| S01 | 蓼蓼者莪 | 诗经·蓼莪 | ... || gushiwen.cn/... |
 ```
 
 这样下次写作时可以跳过重复验证，节约 search 调用次数。

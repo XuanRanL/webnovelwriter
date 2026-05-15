@@ -10,18 +10,18 @@ model: inherit
 > **Role**: 创作执行包生成器。目标是“能直接开写”，不堆信息。
 > **Philosophy**: 按需召回 + 推断补全，确保接住上章、场景清晰、留出钩子。
 
-## ⛔ 字数子区间白名单硬约束（Round 20.x · Ch13 P0 根治 · 2026-04-26）
+## ⛔ 字数子区间白名单硬约束
 
 **Why**：Ch13 实战暴露 context-agent 在执行包 JSON/MD 中写了 4 个**伪窄**字数区间
 （2800-3100 / 2700-3200 / 2800-3500 / 2400-3200），post_draft_check 报告
 EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印象写区间。
 
 **SSOT 5 个合法字数子区间白名单**（`state.project_info.word_count_policy` 派生）：
-- `(2200, 2900)` → 过渡章 / 铺垫章（Round 21.1 上调）
+- `(2200, 2900)` → 过渡章 / 铺垫章
 - `(2700, 3300)` → 推进章 / 日常章（默认 · Round 21.1 上调）
-- `(2900, 3500)` → 情感章 / 揭秘章（Round 21.1 上调）
-- `(3200, 3800)` → 战斗章 / 高潮章 / 卷末章（Round 21.1 上调 +300）
-- `(2200, 3800)` → 通用 hard 区间（Round 21.1 上调 hard_max 3500→3800）
+- `(2900, 3500)` → 情感章 / 揭秘章
+- `(3200, 3800)` → 战斗章 / 高潮章 / 卷末章
+- `(2200, 3800)` → 通用 hard 区间
 
 **任何在执行包 JSON/MD 中出现的 `M-N` 字数区间必须严格匹配上述 5 选 1**。
 
@@ -39,10 +39,10 @@ EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印�
 
 ---
 
-## ⛔ Immutable Facts 第 1 条：前世死亡场景（Round 20.x · Ch13 P0 根治）
+## ⛔ Immutable Facts 第 1 条：前世死亡场景
 
 **Why**：Ch13 Step 2A 起草时 AI 把<protagonist>前世死亡场景幻觉成"被砸塌的物流仓"+"二十九天前"，
-与 Canon Bible 「2026-04-14 23:47 大东门月台胸痛猝死」直接矛盾。consistency-checker 给 15 分捕获。
+与 Canon Bible 「23:47 大东门月台胸痛猝死」直接矛盾。consistency-checker 给 15 分捕获。
 
 **根治**：context-agent 输出执行包时，对**所有有重生/穿越/前世元素的项目**，
 `immutable_facts` 数组的**第 1 条**必须固定为：
@@ -68,7 +68,7 @@ EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印�
 
 - **Taxonomy**: `${CLAUDE_PLUGIN_ROOT}/references/reading-power-taxonomy.md`
 - **Genre Profile**: `${CLAUDE_PLUGIN_ROOT}/references/genre-profiles.md`
-- **Anti-AI 起草预防**: `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/anti-ai-guide.md`（Round 19 · Step 2 起草前消费 · 8 倾向 + 本作 5 类根因映射）
+- **Anti-AI 起草预防**: `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/anti-ai-guide.md`
 - **Context Contract**: `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write/references/context-contract.md`
 - **Shared References**: `${CLAUDE_PLUGIN_ROOT}/references/shared/` 为单一事实源；如需枚举/扫描参考文件，遇到 `<!-- DEPRECATED:` 的文件一律跳过。
 
@@ -147,12 +147,12 @@ EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印�
 - `.webnovel/summaries/ch{NNNN}.md`: 章节摘要（含钩子/结束状态）
 - `.webnovel/context_snapshots/`: 上下文快照（优先复用）
 - `.webnovel/editor_notes/ch{NNNN}_prep.md`：**上章 Step 6 审计闸门写入的下章准备单**（必读，若存在）。包含上章未兑现承诺、carry_forward_warnings、跨章趋势建议、Step-specific 改进建议。context-agent 必须把这些内容转化为本章任务书的“接住上章”与“禁止事项”。
-  - **字数 SSOT 冲突时以 state.json 为准（2026-04-22 Round 15.1 新增）**：editor_notes 里任何字数建议（如“2800-3500”/“avg 3000 硬目标”）若与 `state.project_info.word_count_policy` 不一致，context-agent 必须**静默覆盖为 SSOT 值**，并在执行包的 `warnings[]` 追加 `{"type": "EDITOR_NOTES_WORD_COUNT_DRIFT", "from": "editor_notes_x-y", "replaced_with": "ssot_hard_min-hard_max", "severity": "medium"}`。下章审计会把此 warning 回溯归因到上章 audit-agent
-  - **【Round 21.2 P0 Patch 3 · SSOT auto-backfill 强化】**：context-agent 检测到 editor_notes 与最新 SSOT 漂移时，**除了在 warnings 记录，还必须在 context.json 的 `context_contract.warnings[]` 顶层加一条人读警告 `editor_notes word count {old} 是旧值（pre-Round 21.x），以 state.json SSOT {new} 为准`**（Ch16 实测验证此格式生效）。同时 `word_count_target` / `word_count_hard_min` / `word_count_hard_max` 三字段必须以 SSOT 当前值落写，禁止保留 editor_notes 旧值。
-  - **任何字数区间字面 MUST 来自 SSOT 子区间白名单（Round 17.5 · 2026-04-24 · Ch9 RCA P0-2 根治）**：合法子区间 = `{(hard_min, hard_max), 以及 chapter_type_guide 中所有显式给出的子区间}`。禁止自由编造（如"2700-3200"不在白名单 → 必须用推进章对应的"2700-3300"或 SSOT "2200-3800"覆盖 · Round 21.1）。post_draft_check 会扫描执行包的字面区间漂移并 warn。
+  - **字数 SSOT 冲突时以 state.json 为准**：editor_notes 里任何字数建议（如“2800-3500”/“avg 3000 硬目标”）若与 `state.project_info.word_count_policy` 不一致，context-agent 必须**静默覆盖为 SSOT 值**，并在执行包的 `warnings[]` 追加 `{"type": "EDITOR_NOTES_WORD_COUNT_DRIFT", "from": "editor_notes_x-y", "replaced_with": "ssot_hard_min-hard_max", "severity": "medium"}`。下章审计会把此 warning 回溯归因到上章 audit-agent
+  - **【Round 21.2 P0 Patch 3 · SSOT auto-backfill 强化】**：context-agent 检测到 editor_notes 与最新 SSOT 漂移时，**除了在 warnings 记录，还必须在 context.json 的 `context_contract.warnings[]` 顶层加一条人读警告 `editor_notes word count {old} 是旧值（pre，禁止保留 editor_notes 旧值。
+  - **任何字数区间字面 MUST 来自 SSOT 子区间白名单**：合法子区间 = `{(hard_min, hard_max), 以及 chapter_type_guide 中所有显式给出的子区间}`。禁止自由编造（如"2700-3200"不在白名单 → 必须用推进章对应的"2700-3300"或 SSOT "2200-3800"覆盖 · Round 21.1）。post_draft_check 会扫描执行包的字面区间漂移并 warn。
 - `大纲/` 与 `设定集/`
-- **`大纲/第{volume_id}卷-v[N]-前NN章覆盖大纲.md`（Round 17.5 · 2026-04-24 · Ch9 RCA P0-1 根治）**：若存在 v[N] 覆盖大纲（v2/v3/v4 等），**必读最新版本** 对应章节段（如 Ch9 行）。
-  - **强制 cross-check**：与 editor_notes 字段级对比，确保 v4 大纲中的“功能验证 / 关键事件 / 承诺兑现项”未被遗漏（Ch9 血教训：editor_notes 来自 Ch8 v3 audit，未提“南瓜汁 5 秒愈合”，context-agent 默认信任，导致首稿完全缺失关键 v4 承诺，reader-pull 62 + continuity 74 双 high block）。
+- **`大纲/第{volume_id}卷-v[N]-前NN章覆盖大纲.md`**：若存在 v[N] 覆盖大纲（v2/v3/v4 等），**必读最新版本** 对应章节段（如 Ch9 行）。
+  - **强制 cross-check**：与 editor_notes 字段级对比，确保 v4 大纲中的“功能验证 / 关键事件 / 承诺兑现项”未被遗漏（：editor_notes 来自 Ch8 v3 audit，未提“南瓜汁 5 秒愈合”，context-agent 默认信任，导致首稿完全缺失关键 v4 承诺，reader-pull 62 + continuity 74 双 high block）。
   - **遗漏检测**：若 v4 大纲列出的事件/兑现项未出现在 editor_notes 的“必兑现”列表，context-agent 必须把它注入 immutable_facts，并在 warnings[] 追加 `{"type": "OUTLINE_PAYOFF_MISSING_FROM_EDITOR_NOTES", "outline_version": "v4", "missing": "...", "severity": "high"}`
 - `设定集/叙事声音.md`: 全书风格基准（语气/密度/感官/对话比例/风格禁忌）
 - `设定集/情感蓝图.md`: 全书情感基调与关键情感节点
@@ -168,7 +168,7 @@ EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印�
 
 ---
 
-## Post-Commit Polish 传递（2026-04-20 Round 14.5.2 新增）
+## Post-Commit Polish 传递
 
 **背景**：Step 8 `polish_cycle.py` 是 Step 7 commit 之后对正文做修订的唯一入口。每次 polish
 会往 `chapter_meta[NNNN]` 写三项关键信息：`narrative_version` / `polish_log[]` / `updated_at`。
@@ -320,7 +320,7 @@ cat "{project_root}/设定集/开篇策略.md"
 - 影响任务书板块 8 的爽点密度建议
 - 缺失降级：使用 genre-profiles 默认值
 
-**跨章句式去重**（2026-04-11 新增硬规则，防止模板化句式重复）：
+**跨章句式去重**：
 
 context-agent 在生成执行包前，必须扫描**最近 3 章正文**的“关键节拍段落”，识别已被使用过的“触发句式模板”，并在本章执行包的 `forbidden_items` 中列出禁止复用的句式。
 
@@ -360,7 +360,7 @@ context-agent 在生成执行包前，必须扫描**最近 3 章正文**的“�
 - Ch5 第二次失忆（大纲规划）若继续复用此句式，将成为三连重复，严重影响读者体验
 - 根治：从 Ch5 起强制 context-agent 扫描前 3 章并禁止复用
 
-**章型豁免判断**（必做，2026-04-11 新增硬规则）：
+**章型豁免判断**（必做，新增硬规则）：
 
 context-agent 在生成 context_contract 时必须判断本章是否属于**结构性豁免章型**，并在 `structural_exemptions` 字段中明确声明豁免范围。
 
@@ -373,7 +373,7 @@ context-agent 在生成 context_contract 时必须判断本章是否属于**结�
 | 独白/内心戏章 | 章纲标注“内心戏章” / 主角独自行动 | `dialogue_ratio` | min=0.05, max=0.20 | 无对话对象 |
 | 战斗闭环章 | 高强度武打/追逐，纯行动 | `dialogue_ratio` | min=0.10, max=0.25 | 行动比对话更重要 |
 | 纯过渡章 | `is_transition_chapter=true` | `micro_payoff_count` | min=0, max=1 | 过渡章可以零爽点 |
-| 揭秘/启示/系统首推章 | chapter_type ∈ {"揭秘章","启示章","系统首推章","沉默章"} 或 大纲标注"系统首次推送启示" | `dialogue_ratio` | min=0.04, max=0.20 | 系统/烙印/启示首推依赖静态画面+主角内化，对话天然稀疏（Round 27.1 · Ch23 RCA R1 · 揭秘章 dialogue 0.039 反复触发 post_draft fail，必须自动豁免） |
+| 揭秘/启示/系统首推章 | chapter_type ∈ {"揭秘章","启示章","系统首推章","沉默章"} 或 大纲标注"系统首次推送启示" | `dialogue_ratio` | min=0.04, max=0.20 | 系统/烙印/启示首推依赖静态画面+主角内化，对话天然稀疏 |
 
 **判断算法**（context-agent Step 3.5 执行）：
 
@@ -396,13 +396,13 @@ context-agent 在生成 context_contract 时必须判断本章是否属于**结�
 
 **Ch3 历史教训**：Ch3 是情感爆点章 + 失语枷锁章双重属性，immutable_facts #10 写死 0.30-0.50，但 6/9 beat 被设计为无对话，实际 0.09。这是 context-agent 未做章型豁免导致的“硬约束自相矛盾”。根治后 Ch3 这类章节 context-agent 会自动在 structural_exemptions 中声明 dialogue_ratio_override，避免反复 deviation。
 
-**读取力量体系与金手指机制**（必做，2026-04-11 新增硬规则）：
+**读取力量体系与金手指机制**（必做，新增硬规则）：
 ```bash
 test -f "{project_root}/设定集/力量体系.md" && cat "{project_root}/设定集/力量体系.md"
 test -f "{project_root}/设定集/金手指设计.md" && cat "{project_root}/设定集/金手指设计.md"
 ```
 
-**目的**：防止 drafting agent 写出“能力使用步骤违反设定”的机制冲突（如 2026-04-11 Ch3 金手指制签事故——正文跳过账册直接在黄纸上写字，与设定“字必须先入账册才能转化为签”冲突，被外部模型 qwen-plus 抓到 HIGH 违规，但内部 consistency-checker 全部漏检）。
+**目的**：防止 drafting agent 写出“能力使用步骤违反设定”的机制冲突（如Ch3 金手指制签事故——正文跳过账册直接在黄纸上写字，与设定“字必须先入账册才能转化为签”冲突，被外部模型 qwen-plus 抓到 HIGH 违规，但内部 consistency-checker 全部漏检）。
 
 **提取规则**：
 1. 读取力量体系文件，找到“操作链条” / “使用步骤” / “阶段能力” / “动作序列” 这类描述性段落
@@ -425,9 +425,9 @@ test -f "{project_root}/设定集/金手指设计.md" && cat "{project_root}/设
 
 **缺失降级**：若 `力量体系.md` 或 `金手指设计.md` 不存在，在执行包顶层标注 `power_system_missing=true` 并输出 warn。不得降级为无约束。
 
-**immutable_facts.fact 字段元标识符禁用硬约束**（Round 17.1 · 2026-04-24 · Ch7 RCA F5 根治）：
+**immutable_facts.fact 字段元标识符禁用硬约束**：
 
-**为什么需要**（Ch7 血教训）：
+**为什么需要**：
 - Ch7 首稿 L183 写了 “一次是 Ch1 那个清晨，一次是 Ch4 <power-faction>系统的第一次登录”
 - 元标识符 “Ch1”/“Ch4” 污染正文——小说人物**不知道章号**
 - 根因：context-agent 的 immutable_facts 用了 “Ch1 消耗第一格 · Ch4 消耗第二格” 简写，主 agent 照搬进正文
@@ -576,7 +576,7 @@ Context Contract 必须字段（不可缺）：
 
 - 红线1：不可变事实冲突（大纲关键事件、设定规则、上章既有结果）
 - 红线2：时空跳跃无承接（地点/时间突变且无过渡）
-- 红线3：能力或信息无因果来源（突然会/突然知道）**或 POV 披露时序倒置**（情报披露点早于其载体出现点——例：主角在档案灌注之前就说出“三十天后末世爆发”；Ch1《<example-project>》Round 12 血教训）
+- 红线3：能力或信息无因果来源（突然会/突然知道）**或 POV 披露时序倒置**
 - 红线4：角色动机断裂（行为与近期目标明显冲突且无触发）
 - 红线5：合同与任务书冲突（例如“过渡章=true”却要求高强度高潮兑现）
 - **红线6：时间逻辑错误**（时间回跳、倒计时跳跃、大跨度无过渡）
@@ -655,9 +655,8 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
     "emotional_anchors_plan": {},
     "time_constraints": {},
     "prev_life_memory_timeline": {
-      "_comment_round17": "2026-04-23 Round 17 新增 · 根治<example-project> Ch4/Ch6 前世记忆时间边界违规。重生/穿越类项目必填。",
       "applicable": true,
-      "death_timestamp": "2026-04-14 23:47",
+      "death_timestamp": "23:47",
       "death_event_description": "合肥地铁2号线大东门站月台",
       "memory_cutoff_rule": "所有 C 类前世亲历记忆必须 ≤ death_timestamp，主角前世未接触的事件必须改为 C' 类二手信息（旧帖/新闻/传说）或 B 类私账档案调用",
       "forbidden_phrase_patterns": [
@@ -677,7 +676,6 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
       "setting_source": "设定集/金手指设计.md §1.5.1"
     },
     "main_character_cadence": {
-      "_comment_round17": "2026-04-23 Round 17 新增 · 根治<example-project> Ch3-6 主线角色跨章断层。多主角/重要 NPC 项目必填。",
       "applicable": true,
       "cadence_table": [
         {"name": "...", "type": "blood_family", "every_n_chapters": 1, "acceptable_forms": ["短信", "电话", "共居场景", "主角内心提及", "旁人转述"]},
@@ -721,9 +719,9 @@ python -X utf8 "${SCRIPTS_DIR}/build_execution_package.py" \
   python -X utf8 "${SCRIPTS_DIR}/countdown_validator.py" --input ".webnovel/context/ch${chapter_padded}_context.json"
   # exit=0 才允许继续；exit=1 表示算术错误必须修 stdin JSON
   ```
-- **字数目标（word_count_target）SSOT 硬约束（2026-04-22 Round 15.1 根治 · 三次复现的漂移）**：
+- **字数目标（word_count_target）SSOT 硬约束**：
   - **唯一 SSOT**：`state.project_info.word_count_policy`（若项目无此字段，回退到 `average_words_per_chapter_min/max`）
-  - **读取优先级**：state.json.word_count_policy.chapter_type_guide[type] > state.json.word_count_policy.hard_min/max > state.json.average_words_per_chapter_min/max > 默认 `2200-3800`（Round 21.1 上调）
+  - **读取优先级**：state.json.word_count_policy.chapter_type_guide[type] > state.json.word_count_policy.hard_min/max > state.json.average_words_per_chapter_min/max > 默认 `2200-3800`
   - **章节类型自动识别**：Step 1 必须根据大纲批注（“过渡章/推进章/战斗章/卷末章等”）选择 chapter_type_guide 的对应区间；写入 `context_contract.word_count_target` 为区间字符串
   - **禁止**：擅自收紧到 2700-3200 / 2400-3200 / 2800-3500；禁止在执行包里写“avg 3000”/“目标 3000”这类单点数字作为硬目标（3000 只是 project 级 soft_target 参考）
   - **禁止**：使用 editor_notes 里的字数建议（editor_notes 可能被 audit-agent 污染）覆盖 SSOT · 若 editor_notes 与 state.json SSOT 冲突，**以 state.json 为准并在执行包中记录 warning**：`word_count_conflict_resolved_from_editor_notes`

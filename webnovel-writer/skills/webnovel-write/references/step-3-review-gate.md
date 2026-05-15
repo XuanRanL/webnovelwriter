@@ -95,7 +95,7 @@ else:
 
 **Round 13 v2 · 无 block 条件在 Step 3**：13 个 checker 的 `problems`/`issues` 全部传给 Step 4 定向修复。只有在 Step 4 polish 后复查，若 `naturalness_verdict` 仍 ∈ {`REJECT_CRITICAL`, `REJECT_HIGH`} 或 `reader_critic_verdict == "no"`，才考虑回 Step 2A 重写整章（极端情况，正常流程不触发）。
 
-**分批规则**（Round 13 v2 · 0+6+5 三段）：
+**分批规则**：
 - Batch 0（读者视角，先跑）：reader-naturalness + reader-critic（2 个并行）
 - Batch 1（核心优先，Batch 0 返回后启动）：consistency + continuity + ooc + reader-pull + high-point + flow-checker（6 个并行）
 - Batch 2（工艺维度，Batch 1 返回后启动）：pacing + dialogue + density + prose-quality + emotion（5 个并行）
@@ -171,7 +171,7 @@ review_metrics 文件字段约束（当前工作流约定只传以下字段）�
 
 **Step 4 不得在 Step 3 或 Step 3.5 有任何子任务仍在运行时开始。**
 
-等待方式（Round 13 v2 · 0+6+5 分批模式）：
+等待方式：
 1. Batch 0 的 2 个读者视角 checker（reader-naturalness + reader-critic）先并行启动，逐一通过 `TaskOutput` 检查输出是否非空。若任一 checker 输出为空（0 bytes），说明仍在运行，继续等待（轮询间隔 30s，单批最多 10 分钟）。
 2. Batch 0 全部返回后，启动 Batch 1 的 6 个 checker（consistency + continuity + ooc + reader-pull + high-point + flow-checker），同样等待全部返回。
 3. Batch 1 全部返回后，启动 Batch 2 的 5 个工艺 checker（pacing + dialogue + density + prose-quality + emotion），等待全部返回。
@@ -204,7 +204,7 @@ review_metrics 文件字段约束（当前工作流约定只传以下字段）�
 
 当 Step 3 内部审查和 Step 3.5 外部审查同时完成时，按以下规则合并为最终 `overall_score`：
 
-1. `internal_score`：Step 3 内部 **13 个评分 checker** 的聚合分数（Round 13 v2 · naturalness 和 reader-critic 升格为评分维度与其他 11 个平等）
+1. `internal_score`：Step 3 内部 **13 个评分 checker** 的聚合分数
 2. `external_avg`：Step 3.5 外部模型的平均 overall_score（仅统计成功返回的模型）
 3. `overall_score = round(internal_score * 0.6 + external_avg * 0.4)`
 4. 若 `|internal_score - external_avg| > 15`：标记 `score_divergence_warning`，需在审查报告中说明分歧原因

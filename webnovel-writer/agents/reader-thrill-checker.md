@@ -7,9 +7,9 @@ model: inherit
 
 # reader-thrill-checker
 
-## 设计目标（Round 20 · 2026-04-25 · Ch12 RCA P0 新增）
+## 设计目标
 
-**为什么需要**（Ch12 <example-project>血教训）：
+**为什么需要**：
 - 11 章评审给 90 分，读者代理给 5.5/10
 - 标题"我在空间里种出了整个基地"，Ch12 空间还在"绿芽冒头"——金手指吝啬到病态
 - 12 章过去主角无任何正面冲突——读者攒的火无处释放
@@ -176,7 +176,7 @@ model: inherit
 
 ## 大纲三计划读取（必须）
 
-读 `大纲/总纲.md` 的 3 个 section（Round 20 新增）：
+读 `大纲/总纲.md` 的 3 个 section：
 1. `## 金手指释放计划（golden_finger_release_plan）`
 2. `## 冲突释放计划（conflict_release_plan）`
 3. `## 标题承诺兑现计划（title_promise_payoff_plan）`

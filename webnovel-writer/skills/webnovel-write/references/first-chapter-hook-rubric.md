@@ -3,7 +3,7 @@ name: first-chapter-hook-rubric
 purpose: 第 1 章专属“读者 3 秒决定追读”硬规则，加在 Round 10 既有 9 项严格 rubric（feedback_round10_first_chapter_rubric.md）之上
 ---
 
-# 第 1 章追读契约 rubric（Round 19 Phase I）
+# 第 1 章追读契约 rubric
 
 > **核心 insight**：网文平台读者在第 1 章前 300 字决定弃读还是追读。Ch1 必须签下“情绪契约”——告诉读者继续读能拿到什么。
 
