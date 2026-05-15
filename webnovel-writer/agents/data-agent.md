@@ -13,7 +13,7 @@ model: inherit
 
 **命令示例即最终准则**：本文档中的所有 CLI 命令示例已与当前仓库真实接口对齐。脚本调用方式以本文档示例为准；命令失败时查错误日志定位问题，不去大范围翻源码学习调用方式。
 
-## ⛔ 绝对越权防护（Round 20.x · Ch13 P0 根治 · 2026-04-26）
+## ⛔ 绝对越权防护
 
 **Why**：Ch13 实战暴露 data-agent 越权改 Canon Bible（Ch24-28→Ch35）+ 改 Ch3-12 共 9 章已 commit 正文。这是**项目北极星等级**的事故。
 
@@ -50,7 +50,7 @@ model: inherit
   data-agent 即使误填这些字段也会被忽略并 warning。但 data-agent 应**主动避免**
   在输出 JSON 的 chapter_meta 中包含这些字段
 
-### Round 28.1 · Ch25 RCA · save-review-metrics 必须 13 维度
+### Round 28.1 · save-review-metrics 必须 13 维度
 
 **根因（Ch25）：** save-review-metrics 调用 dimension_scores 只写 11 维度（缺 naturalness + reader_critic），
 触发 B4 audit warn，跨章趋势查询失真，severity_counts/report_file/notes 全空。
@@ -300,7 +300,7 @@ Data Agent 自身无 search 能力（只有 Read/Write/Bash），但若扫描发
 
  **更新精简版 state.json**:
 
-**⚠️ Round 28.6 Ch29 RCA · process-chapter 前必须自检 23 Core 字段**：
+**⚠️ Round 28.6 process-chapter 前必须自检 23 Core 字段**：
 
 在调用 `state process-chapter` 之前，你必须在 `chapter_meta` JSON 中自检以下全部 23 个字段均存在且非空（非 None / "" / [] / {}）：
 
@@ -315,9 +315,9 @@ strand_dominant, review_score, checker_scores, allusions_used
 
 允许为空列表 `[]` 的字段：`foreshadowing_planted`, `foreshadowing_paid`, `allusions_used`, `key_beats`, `characters`, `locations`, `checker_scores`
 
-**禁止调用 process-chapter 前 chapter_meta 缺少上述任何字段**（Ch29 血教训：data-agent 只填了 13/23 字段，导致后续手动补填 5 个 CLI 命令）。若某字段无法从正文推断（如 `power_realm`），使用占位值（如 `"普通人"`）而非省略。
+**禁止调用 process-chapter 前 chapter_meta 缺少上述任何字段**（：data-agent 只填了 13/23 字段，导致后续手动补填 5 个 CLI 命令）。若某字段无法从正文推断（如 `power_realm`），使用占位值（如 `"普通人"`）而非省略。
 
-**⚠️ Round 28.22 Ch37 RCA · 23 Core 之外的 7 个扩展字段也必填（H69 P1 根治）**：
+**⚠️ Round 28.22 23 Core 之外的 7 个扩展字段也必填（H69 P1 根治）**：
 
 `state process-chapter` 完成后，必须**额外**用 `state update --set-chapter-meta-field` 写入下列 7 个扩展字段，否则 hygiene_check H69 P1 阻塞 Step 7 commit：
 
@@ -332,7 +332,7 @@ reader_thrill_score    # chapter_meta.thrill_score.score（单 int）
 external_avg           # Step 3.5 外部 14-15 模型平均（review_metrics.notes 中的 external_avg）
 ```
 
-Ch37 血教训（2026-05-12）：data-agent process-chapter 完成后 7 扩展字段全空，commit 前 hygiene H69 P1 fail，主流程手动 fill 7 字段后才通过。
+：data-agent process-chapter 完成后 7 扩展字段全空，commit 前 hygiene H69 P1 fail，主流程手动 fill 7 字段后才通过。
 
 填充方式示例（PowerShell 转义见 SKILL §Step 7）：
 ```bash
@@ -572,8 +572,6 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 
 所有追加必须带 `[Ch{N}]` 章节标注。Step K 失败不阻断流程。
 
-**Round 28.28 · 2026-05-15 · Ch42 RCA Step K 三条永久硬规则**：
-
 1. **设定集数字字段必须从 state.json 真源读取，禁止凭印象写**：
    - 触发：Ch42 设定集 [Ch40][Ch41][Ch42] 三段连续把 `vital_force=10` 误写为 `vital_force=48`。state.json 自 Ch20 起 vital_force.current=10 锁定不变，data-agent 在 Step K 时凭印象写 48（可能记着 Ch15 之前的旧值），三章连续漂移。
    - 规则：任何写入设定集的"vital_force / 沙漏 / <golden-finger-space> Lv / 印记 Lv / vital_force.max / danger_threshold / 主角等级 / 觉醒者阶段"等**数字字段**，**必须**先调 `state get-protagonist-state`（或直接读 `.webnovel/state.json` 的 `protagonist_state`）确认真值。**禁止**复制粘贴上章设定集文本里的数字（极易把上章数字直接搬过来）。
@@ -610,7 +608,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 
 违反任一条 → `step_k_status.outcome = "partial"` + `processing_report.warnings` 记录 `STEP_K_DATA_DRIFT` / `STEP_K_CHAPTER_REF_LEAK`。
 
-**Round 18 · 2026-04-24 · Ch10 P1-8 根治硬规则**：
+** Ch10 P1-8 根治硬规则**：
 
 主角卡 / 伏笔追踪 / 资产变动表 这 3 个被 `pre_commit_step_k.py` 检查的核心文件，
 **Data Agent 必须在 Step K 内自动用 Edit 工具追加 `[Ch{N}]` 标注行**，不得只写 state/index。
@@ -626,8 +624,6 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 `pre_commit_step_k.py` 仍报 `[STEP_K_MISSING] 设定集/主角卡.md 未找到 '[Ch{N}'`，
 这是 **Data Agent 失职**——主 agent 必须人工补一次，
 并在 polish_log notes 注明 “step_k_md_append_recovered_by_main_agent” 用于跨章追溯。
-
-**Round 28.4 · 2026-05-03 · Ch26 RCA · P1-11 根治硬规则**：
 
 > Step K 不允许"推给主 agent"。data-agent 在 chapter_meta 写库后必须 *直接*
 > 用 Edit 工具追加 `[Ch{N}]` 标注到 3 个核心文件，而非把它们列入
@@ -733,7 +729,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `location_current` | str | 章末主角所在地点 |
 | `power_realm` | str | 主角当前境界 |
 | `golden_finger_level` | int/str | 金手指等级/状态 |
-| `time_anchor` | str | 时间锚点（如“甲子57年·秋分”）。**Round 28.26 · Ch40 RCA · D+/D- 方向硬规则（防 R28.25 B5 第三次复发）**：若叙事用"末世第 N 天"日序锚（N≥1，末世后），D±M 段**必须**写 D+M（不是 D-M）。D-M 仅用于末世前倒计时（Ch1-22 范围）。Ch40 血教训：写 `末世第十六天·D-4` 五处真源同步漂移，audit-agent Layer D8-B5 抓到才发现。hygiene H78 P0 闸门强制截获。 |
+| `time_anchor` | str | 时间锚点（如“甲子57年·秋分”）。若叙事用"末世第 N 天"日序锚（N≥1，末世后），D±M 段**必须**写 D+M（不是 D-M）。D-M 仅用于末世前倒计时（Ch1-22 范围）。：写 `末世第十六天·D-4` 五处真源同步漂移，audit-agent Layer D8-B5 抓到才发现。hygiene H78 P0 闸门强制截获。 |
 | `end_state` | str | 章末状态描述 |
 | `foreshadowing_planted` | list[str] | 本章埋设的伏笔 |
 | `foreshadowing_paid` | list[str] | 本章兑现的伏笔 |
@@ -744,7 +740,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 ### 第二层 · Extended 26 扩展字段（允许但不强制；B9 不检查；为长线质量积累服务）
 
-> **Round 17.2 · Ch8 P1-R6 根治（2026-04-24）**：`overall_score` 虽然放在 Extended 层，但**与 Core 层的 `checker_scores.overall` 必须强制相等**（hygiene H9 阻断不一致）。data-agent 写 `checker_scores.overall=88` 时**必须**同步写 `overall_score=88`。`state_manager.py --set-chapter-meta-field overall_score` 会自动反向同步 `checker_scores.overall`。
+> **Ch8 P1-R6 根治**：`overall_score` 虽然放在 Extended 层，但**与 Core 层的 `checker_scores.overall` 必须强制相等**（hygiene H9 阻断不一致）。data-agent 写 `checker_scores.overall=88` 时**必须**同步写 `overall_score=88`。`state_manager.py --set-chapter-meta-field overall_score` 会自动反向同步 `checker_scores.overall`。
 
 > **【Round 21.2 P1 Patch 5 · 4-source 单源同步】**：写 chapter_meta 评分时，data-agent **必须同步刷新**这 4 个字段到一致值：
 > 1. `chapter_meta.{NNNN}.review_score`（report 加权分 = round(internal*0.6 + external*0.4)）
@@ -752,9 +748,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 > 3. `chapter_meta.{NNNN}.checker_scores.overall`（= overall_score）
 > 4. `index.db.review_metrics.overall_score`（= overall_score，DB 同步）
 > 同时 `last_stable_state.artifacts.{overall_score, internal_avg, external_avg, word_count}` 必须刷新（若 polish 后字数变化）。
-> Ch16 血教训：polish 后 last_stable_state.word_count=3234 但 chapter_meta.word_count=3322（漂移 88 字），report=85 但 chapter_meta.overall_score=83（语义混淆）。修法：data-agent process-chapter 末尾必须 emit 一次 sync-summary 行 `[SYNC] review_score={A} overall_score={B} word_count={C} → 4 sources aligned`。
+> ：polish 后 last_stable_state.word_count=3234 但 chapter_meta.word_count=3322（漂移 88 字），report=85 但 chapter_meta.overall_score=83（语义混淆）。修法：data-agent process-chapter 末尾必须 emit 一次 sync-summary 行 `[SYNC] review_score={A} overall_score={B} word_count={C} → 4 sources aligned`。
 
-> **Round 17.2 · Ch8 P0-R2 根治（2026-04-24）**：`post_polish_recheck` 字段的 `before` 值**硬禁止编造**：
+> **Ch8 P0-R2 根治**：`post_polish_recheck` 字段的 `before` 值**硬禁止编造**：
 > - `before` 必须来自 `.webnovel/tmp/{checker}_check_ch{NNNN}.json` 的 `overall_score`
 > - `after` 必须来自 `.webnovel/tmp/{checker}_recheck_ch{NNNN}.json` 的 `overall_score`
 > - 缺 check JSON 且无结构化入参 → 该 checker 的 post_polish_recheck 条目**不得写入**，并在 Layer A 记 warn
@@ -762,7 +758,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 > - hygiene H24 溯源验证：`post_polish_recheck[*].before` 必能在 tmp JSON 找到匹配（±0.5 容差）
 > - 推荐写入路径：用 CLI `state update --append-recheck '{"chapter":N,"checker":"pacing-checker","before":58,"after":90,"reason":"..."}'`（R3.1 实现）
 
-> **Round 17.2 · Ch8 P1-R7 根治**：`naturalness_verdict` / `reader_critic_verdict` 字段**必须**从 `.webnovel/tmp/{checker}_recheck_ch{NNNN}.json`（优先）或 `_check_ch{NNNN}.json` 读 `verdict` 字段（∈ {PASS, POLISH_NEEDED, FAIL, UNKNOWN} 或对应 yes/hesitant/no）写入。缺 JSON → 写 UNKNOWN + Layer A warn。
+> **Ch8 P1-R7 根治**：`naturalness_verdict` / `reader_critic_verdict` 字段**必须**从 `.webnovel/tmp/{checker}_recheck_ch{NNNN}.json`（优先）或 `_check_ch{NNNN}.json` 读 `verdict` 字段（∈ {PASS, POLISH_NEEDED, FAIL, UNKNOWN} 或对应 yes/hesitant/no）写入。缺 JSON → 写 UNKNOWN + Layer A warn。
 
 ### Round 19 Phase C · reader-naturalness 5 子维度落库
 
@@ -813,7 +809,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
 
 **Round 20.1 升级**：当 `no_decision_hook_8 == true` 且 chapter 是当前最新章时，hygiene H25 升 **P0 fail 阻断 commit**（决策钩=主角主动选择=网文核心爽点不能连续 8 章缺）。修复路径：下章 hook_close.primary_type=决策钩 或 reader-thrill protagonist_victory ≥80。
 
-**Round 20 · H26 hook_close 落库一致性 P0**：若 reader_pull_chNNNN.json 含 hook_close.primary_type 但 set-hook-close CLI 未跑 → state.chapter_meta.NNNN.hook_close 缺失 → hygiene H26 P0 fail 阻断 commit。data-agent 必须按本节执行落库步骤，不得跳过。
+**H26 hook_close 落库一致性 P0**：若 reader_pull_chNNNN.json 含 hook_close.primary_type 但 set-hook-close CLI 未跑 → state.chapter_meta.NNNN.hook_close 缺失 → hygiene H26 P0 fail 阻断 commit。data-agent 必须按本节执行落库步骤，不得跳过。
 
 ### Round 20 · reader-thrill-checker 6 子维度落库（标准模式必跑）
 
@@ -847,7 +843,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
 | `chapter_title` | str | title 的别名；只在迁移期保留，二选一即可 |
 | `overall_score` | int/float | 合并后加权分（int(internal*0.6 + external*0.4)）；**与 `checker_scores.overall` 强制相等**（R17.2 P1-R6） |
 | `post_polish_recheck` | dict | Step 4.5 选择性复测记录：`{checker: {before, after, delta, reason}}` · **before/after 必须来自 tmp JSON 不得编造**（R17.2 P0-R2） |
-| `external_avg` | float | Step 3.5 外部多模型平均分（Round 14/25：15 模型共识，排除 failed 模型） |
+| `external_avg` | float | Step 3.5 外部多模型平均分 |
 | `anti_ai_force_check` | str | Step 4 终检结果：pass / fail |
 | `mode` | str | 写作模式：standard / fast / minimal |
 | `narrative_version` | str | 当前叙事版本（v1/v2/v3） |
@@ -878,7 +874,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
 - `allusions_used` 遵循 Step B.5 的 schema 硬约束（见上方）
 - Core 层字段如 `review_score` 与 Extended 层 `overall_score` 不同：`review_score` 是 Step 3 内部均分，`overall_score` 是合并后加权分；两者同时存在不矛盾
 - `foreshadowing_added` / `foreshadowing_resolved` 为历史别名，写入时必须用 `foreshadowing_planted` / `foreshadowing_paid`（hygiene_check H8 会阻断同时存在）
-- **`checker_scores` key 硬约束**（Ch1 血教训 · hygiene H18）：
+- **`checker_scores` key 硬约束**（ · hygiene H18）：
   - 合法 key = 11 canonical 英文 checker 名 ∪ `{"overall"}`
   - 11 canonical 英文名：`consistency-checker / continuity-checker / ooc-checker / reader-pull-checker / high-point-checker / pacing-checker / dialogue-checker / density-checker / prose-quality-checker / emotion-checker / flow-checker`
   - **禁用中文 key**：AI 常写的 `{"设定一致性": 92, "钩子强度": 93, "Anti-AI": 91}` 会被 hygiene H18 P1 拦截
@@ -899,8 +895,8 @@ Agent 输出格式（正确）：
     "key_beats": ["关键节拍1", "关键节拍2"],
     "characters": ["角色A", "角色B"],
     "locations": ["地点1", "地点2"],
-    "created_at": "2026-04-05T10:00:00Z",
-    "updated_at": "2026-04-05T10:00:00Z",
+    "created_at": "T10:00:00Z",
+    "updated_at": "T10:00:00Z",
     "protagonist_state": "已觉醒，待入学",
     "location_current": "教务处",
     "power_realm": "空亡命格(已觉醒)",

@@ -1,6 +1,6 @@
 # Round 20.x 质量护栏完整规范
 
-> **生效日期**：2026-04-25 起（Round 20 → Round 20.3 累计 4 批根治）
+> **生效日期**：起
 > **适用范围**：所有项目（不限<example-project>），新书启动即生效
 > **设计目标**：从"评分越高越好"转向"读者越爱看越好"。建立 5 道质量护栏让"标题反向 / 评分掩盖硬伤 / polish 沉没成本 / 12 章 0 决策钩 / hook_close 落库漂移"等 7 类质量陷阱在代码层永久封死。
 
@@ -64,7 +64,7 @@ result = apply_overall_floor(checker_scores_dict, chapter_int)
 - **THRILL_HARD_002 金手指吝啬连续 3 章**：连续 3 章 golden_finger_release ≤ 50 → critical（前 5 章为 high）
 - **THRILL_HARD_003 主角无决策**：连续 3 章 plot_momentum ≤ 50 + decisions_by_protagonist = 0 → high
 
-**第 4 道硬约束（Round 28.1 · Ch25 RCA）**：
+**第 4 道硬约束**：
 - **THRILL_HARD_004 climax/卷末/世界观转折章金手指零释放 = P0**：
   - **触发条件**（任一）：本章是 outline 标识的 climax/world-shift/卷末/title-promise milestone（如末世爆发、卷末决战、boss 战、<golden-finger-space>开放等）
   - **判定**：reader-thrill `golden_finger_release < 50` 同时 verdict ∈ (`tepid`, `frustrating`)
@@ -81,7 +81,7 @@ result = apply_overall_floor(checker_scores_dict, chapter_int)
 
 **落库**：
 - 不计入 13 canonical（避免触发 7 处真源同步）
-- 写 `chapter_meta.thrill_score`（Round 20.1 加入 set-chapter-meta-field 白名单）
+- 写 `chapter_meta.thrill_score`
 ```bash
 python webnovel.py state update --set-chapter-meta-field \
   '{"chapter":N,"field":"thrill_score","value":{"overall":75,"verdict":"neutral","will_recommend":"yes","subdimensions":{...},"note":"..."}}'
@@ -96,7 +96,7 @@ python webnovel.py state update --set-chapter-meta-field \
 
 ## 3. H26 hook_close 落库一致性
 
-**问题根因**：Phase G（Round 19）规定 reader-pull-checker 章末输出 `hook_close.primary_type`，data-agent Step K 落库到 state。Ch12 血教训：reader_pull_ch0012.json 写了 hook_close 但 data-agent 跳过 Phase G 步骤，state.chapter_meta.0012.hook_close 缺失。后果：H25 hook_trend 退化跳过 + cross-chapter 决策钩缺失探测失效。
+**问题根因**：Phase G规定 reader-pull-checker 章末输出 `hook_close.primary_type`，data-agent Step K 落库到 state。：reader_pull_ch0012.json 写了 hook_close 但 data-agent 跳过 Phase G 步骤，state.chapter_meta.0012.hook_close 缺失。后果：H25 hook_trend 退化跳过 + cross-chapter 决策钩缺失探测失效。
 
 **根治位置**：`scripts/hygiene_check.py:check_hook_close_persistence` (P0)
 
@@ -124,7 +124,7 @@ python webnovel.py state update --set-hook-close \
 - "决策钩" 不在最近 8 章里
 - → **P0 fail**
 
-**chapter-aware（Round 20.2 修订）**：仅当 `chapter >= chs[-1]`（polish 当前最新章或更新章）时触发，避免 polish 早章被未来章状态误伤。
+**chapter-aware**：仅当 `chapter >= chs[-1]`（polish 当前最新章或更新章）时触发，避免 polish 早章被未来章状态误伤。
 
 **修复路径**：
 - 下章 hook_close.primary_type = "决策钩"，或
@@ -181,7 +181,7 @@ python webnovel.py state update --set-hook-close \
 
 ## 6. dialogue_ratio_override 章型豁免
 
-**问题根因**：post_draft_check 硬规则 dialogue_ratio ≥ 0.20，但**空间种田激活章 / 金融操盘独白章** 等章型对话天生低（Ch3 0.053 / Ch2 0.093）。Round 17.5 Ch9 RCA P1-1 已设计 `context_contract.structural_exemptions.dialogue_ratio_override` 单章 schema，Round 20.3 扩展到项目级配置。
+**问题根因**：post_draft_check 硬规则 dialogue_ratio ≥ 0.20，但**空间种田激活章 / 金融操盘独白章** 等章型对话天生低（Ch3 0.053 / Ch2 0.093）。Round 17.5 P1-1 已设计 `context_contract.structural_exemptions.dialogue_ratio_override` 单章 schema，Round 20.3 扩展到项目级配置。
 
 **两层豁免**：
 
@@ -193,7 +193,7 @@ python webnovel.py state update --set-hook-close \
 }
 ```
 
-**层 2：单章 context_contract**（Round 17.5 既有机制）：
+**层 2：单章 context_contract**：
 ```json
 // .webnovel/context/chNNNN_context.json
 {
@@ -238,10 +238,10 @@ python webnovel.py state update --set-hook-close \
 
 | Round | 重点 | Commits |
 |---|---|---|
-| Round 20 (2026-04-25) | A9 floor + reader-thrill + 三计划 + polish 上限 | `5551f07` |
-| Round 20.1 (2026-04-25) | H25 P0 升级 + H27 sunk cost + thrill 白名单 | `c93a70f` |
-| Round 20.2 (2026-04-25) | H25 chapter-aware + Ch3 polish v3 + Ch4 重写 v3 | `404bb1f` |
-| Round 20.3 (2026-04-26) | Ch6 重写 v5 + Ch2 polish v3 + 全章评分重审 | `9443eb6` |
+| Round 20 () | A9 floor + reader-thrill + 三计划 + polish 上限 | `5551f07` |
+| Round 20.1 () | H25 P0 升级 + H27 sunk cost + thrill 白名单 | `c93a70f` |
+| Round 20.2 () | H25 chapter-aware + Ch3 polish v3 + Ch4 重写 v3 | `404bb1f` |
+| Round 20.3 () | Ch6 重写 v5 + Ch2 polish v3 + 全章评分重审 | `9443eb6` |
 
 **累计成果**：
 - 8 道护栏建好（A9/H25/H26/H27/thrill 白名单/polish max-rounds/dialogue override/三计划）
@@ -254,7 +254,7 @@ python webnovel.py state update --set-hook-close \
 ## 9. 跨项目通用化清单
 
 新启动项目时：
-1. ✅ `init_project.py` 自动包含三计划模板（Round 20.3 后已集成）
+1. ✅ `init_project.py` 自动包含三计划模板
 2. ✅ `.webnovel/post_draft_config.json` 默认空 `dialogue_ratio_override_chapters: []`
 3. ✅ `agents/reader-thrill-checker.md` 通过 sync-agents 自动同步到 .claude/agents/
 4. ✅ SKILL.md 通用化（不引用任何"<example-project>"具体内容）

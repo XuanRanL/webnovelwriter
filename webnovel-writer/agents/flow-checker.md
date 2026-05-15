@@ -21,7 +21,7 @@ model: inherit
 
 1. Read 读 `chapter_file` 全文（首章无前章尾段；非首章可一并传入 `prev_chapter_tail`）
 2. 把章节正文作为 `{章节小说}` 代入下方 Prompt 执行
-3. 把结果按输出 Schema 落盘到 `.webnovel/tmp/flow_ch{NNNN}.json` **同时**复制一份到 `.webnovel/tmp/flow_check_ch{NNNN}.json`（Round 21.2 P2 Patch 7 · audit-agent 期望 `flow_check_*` 命名 · 兼容双名）
+3. 把结果按输出 Schema 落盘到 `.webnovel/tmp/flow_ch{NNNN}.json` **同时**复制一份到 `.webnovel/tmp/flow_check_ch{NNNN}.json`
 
 ## Prompt（原文，不改写不包装）
 
@@ -60,7 +60,7 @@ model: inherit
 - **只读当前章 + 上章末段**（不读大纲/设定集/state.json/前几章——读了就不是裸读读者了）
 - **quote 必须能在正文 grep 到**（防幻觉）
 
-## 时间预算（Round 18.2 · 2026-04-25 · Ch11 RCA #4 根治）
+## 时间预算
 
 - **time_budget**：单次执行硬上限 **10 分钟**（含 grep 验证 + 输出落盘）
 - **problems 上限**：建议 ≤ 8 条（critical+high 优先；medium/low 合并相似项）；超过 8 条说明章节问题集中度过高，应回到 Step 4 polish 而非堆 problems

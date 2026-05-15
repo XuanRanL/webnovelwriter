@@ -60,7 +60,7 @@ model: inherit
 
 - **只读当前章**（读大纲/设定集/state.json/前章会污染读者视角）
 - **quote 必须能在正文 grep 到**（防幻觉）
-- **🔴 quote / reason / suggestion / improvement_notes / description 等字符串字段内禁止嵌套 ASCII `"` 和中文 `""`**（Round 28.22 Ch37 RCA · H71 三复发根治）：
+- **🔴 quote / reason / suggestion / improvement_notes / description 等字符串字段内禁止嵌套 ASCII `"` 和中文 `""`**：
   - 正文里若有中文弯引号 `""""`，写入 JSON 字符串时**必须**替换为括号 `()` 或 `〈〉`，否则 JSON parse fail，hygiene H71 P0 阻断 commit
   - 反例（Ch37 实际崩坏）：`"quote": "一种属于"我的兄弟在替我挡着"的什么"` → JSON parse error
   - 正例：`"quote": "一种属于(我的兄弟在替我挡着)的什么"` 或 `"quote": "一种属于〈我的兄弟在替我挡着〉的什么"`

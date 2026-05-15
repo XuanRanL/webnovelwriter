@@ -11,7 +11,7 @@
       "pattern_type": "hook",
       "description": "危机钩设计：悬念拉满",
       "source_chapter": 100,
-      "learned_at": "2026-02-02T12:00:00Z"
+      "learned_at": "T12:00:00Z"
     }
   ]
 }

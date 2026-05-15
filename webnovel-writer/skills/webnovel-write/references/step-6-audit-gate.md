@@ -111,7 +111,7 @@ elif decision == 'approve':
 ### Layer A 失败（过程真实性）
 - A1 Context Contract 不全 → 重跑 Step 1：`Task(context-agent, ...)`
 - A2 13 checker 坍缩 → 重跑 Step 3，显式 Task 调用 13 个 checker（含 flow-checker + reader-naturalness + reader-critic · Round 13 v2）
-- A3 外部模型覆盖不足（Round 16/25 扁平判定）：
+- A3 外部模型覆盖不足：
   - ≥ 10/15 有效 → 自动 pass
   - 8-9/15 → medium warn · 可直接通过（共识已足够）
   - 5-7/15 → high warn · 可选重跑 `external_review.py --model-key {failed_model}` 或 `--model-key all` · 仍不阻塞

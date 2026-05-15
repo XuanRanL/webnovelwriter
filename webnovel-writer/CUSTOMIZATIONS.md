@@ -7,7 +7,7 @@
 
 ---
 
-## [2026-05-15 · Round 28.28 deep research 补充] Ch42 deep research 4 类追加根因
+## [ Round 28.28 deep research 补充] Ch42 deep research 4 类追加根因
 
 **Trigger**：Ch42 全流程跑完后用户要求 deep research 二次审查，发现 5 个新 root cause（第一次 audit 漏报 + audit-agent 自身漂移）：
 
@@ -59,7 +59,7 @@
 
 ---
 
-## [2026-05-15 · Round 28.28] Ch42 RCA · 2 类根因永久根治
+## [ Round 28.28] 2 类根因永久根治
 
 **Trigger**：Ch42 "<antagonist>地图的坑" 全流程跑完后 deep research，发现 2 类系统性 root cause：
 
@@ -96,7 +96,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-05-12 · Round 28.22] Ch37 RCA · 4 类根因永久根治
+## [ Round 28.22] 4 类根因永久根治
 
 **Trigger**：Ch37 "林业局来人" 全流程（Step 0-7 + 8.5）跑完后 deep research，发现 4 类系统性问题：
 
@@ -118,8 +118,8 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 | # | 文件 | 改动 |
 |---|------|------|
-| 1 | `skills/webnovel-write/SKILL.md` (Step 3.5 段) | 加 "🔴 Round 28.22 Ch37 RCA · A6 implicit_start 根治" 红字框：必须先 `workflow start-step --step-id "Step 3.5"` |
-| 2 | `skills/webnovel-write/SKILL.md` (Step 3 段) | 加 "🔴 Round 28.22 Ch37 RCA · checker JSON quote 字段 ASCII 引号嵌套硬禁" 全局警示：14 checker 全部适用，落盘前 `"` 字符自检 |
+| 1 | `skills/webnovel-write/SKILL.md` (Step 3.5 段) | 加 "🔴 Round 28.22 A6 implicit_start 根治" 红字框：必须先 `workflow start-step --step-id "Step 3.5"` |
+| 2 | `skills/webnovel-write/SKILL.md` (Step 3 段) | 加 "🔴 Round 28.22 checker JSON quote 字段 ASCII 引号嵌套硬禁" 全局警示：14 checker 全部适用，落盘前 `"` 字符自检 |
 | 3 | `agents/reader-critic-checker.md` | "唯一的硬约束" 段加 quote/reason/suggestion/improvement_notes 等字段内引号嵌套规则 + 反例正例对照 |
 | 4 | `agents/data-agent.md` | Step D 23 字段自检段后追加 "23 Core 之外的 7 个扩展字段也必填（H69 P1 根治）" — total_words / dialogue_ratio / signature_density / naturalness_score / reader_critic_score / reader_thrill_score / external_avg |
 | 5 | `scripts/post_draft_check.py` | 签名密度循环里增加 SIGNATURE_SUMMARY INFO 行：全部 6+ 类签名当前计数 + warn/block 阈值 + OK/NEAR/BREACH 状态，让 polish 看见所有临界（不阻断，只 INFO） |
@@ -135,7 +135,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-05-10 · Round 28.20] Ch35 RCA · A6 step_start_rejected false positive 永久根治
+## [ Round 28.20] A6 step_start_rejected false positive 永久根治
 
 **Trigger**：Ch35 全流程跑完后做 deep research，audit Layer A 报告 A6 critical fail：
 `workflow trace contains invalid events: ['step_start_rejected']`。
@@ -166,7 +166,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-05-04 · Round 28.6续] Ch29 deep research RCA · 5 根因永久根治
+## [ Round 28.6续] Ch29 deep research RCA · 5 根因永久根治
 
 **Trigger**：用户 Ch29《外院与内院》全流程跑完后做 deep research，暴露 5 类 bug：
 
@@ -197,7 +197,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-05-04 · Round 28.6] Ch28 deep research RCA · 4 类根因永久根治
+## [ Round 28.6] Ch28 deep research RCA · 4 类根因永久根治
 
 **Trigger**：用户 Ch28《秩序初立》全流程跑完后做 deep research，暴露 4 类真实 bug：
 
@@ -230,7 +230,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-05-03 · Round 28.4] Ch26 deep research RCA · 12 处根因 + 6 道护栏 + 2 个新 CLI
+## [ Round 28.4] Ch26 deep research RCA · 12 处根因 + 6 道护栏 + 2 个新 CLI
 
 **Trigger**：用户对 Ch26《爆发后第一夜》做 deep research，暴露 4 个 P0 + 8 个 P1 真实 bug：
 - P0-1: data-agent 静默改 11 处 checker 分数（emotion 91→81 / reader-pull 94→83 等）
@@ -274,7 +274,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-05-02 · Round 25] Step 3.5 加入 deepseek-v4-flash · 14→15 模型扁平共识 · 全开 reasoning_effort=max
+## [ Round 25] Step 3.5 加入 deepseek-v4-flash · 14→15 模型扁平共识 · 全开 reasoning_effort=max
 
 **Trigger**：用户测试 SiliconFlow 上的 `deepseek-ai/DeepSeek-V4-Flash` 模型在 Step 3.5 外部审查中的表现，要求"参数全开 · 展现最好的表现 · 加入外审 14 模型扩展为 15"。Deep research 确认 SF V4-Flash 接受 `reasoning_effort=max` + `thinking_budget=32768` + `enable_thinking=true` + `max_tokens=65536` 全开配置。
 
@@ -319,7 +319,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-05-02 · Round 23.1] Plugin 单源化：cool-points-guide stub 清理
+## [ Round 23.1] Plugin 单源化：cool-points-guide stub 清理
 
 **Trigger**：Context window 根治审计发现 `skills/webnovel-plan/references/cool-points-guide.md` 与 `skills/webnovel-review/references/cool-points-guide.md` 是完全相同的 11 行 deprecated stub（写着 "use ${CLAUDE_PLUGIN_ROOT}/references/shared/cool-points-guide.md"），但全 plugin 代码库 grep 这两个路径 0 命中。
 
@@ -333,7 +333,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-05-02 · Round 23.1] 项目侧 hygiene_check 新增 redundancy_signals_check
+## [ Round 23.1] 项目侧 hygiene_check 新增 redundancy_signals_check
 
 **Trigger**：经审计发现项目目录长期积累 5 类历史冗余（每章 polish 后产生 .bak 备份/state 历史快照/.webnovel/tmp 调试遗留/archive 目录）。一次性清理 41 MB 后，需要防御机制防止再发生。
 
@@ -356,7 +356,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-04-29 · Round 21.5] Gemini 主路切到 api666 / gemini-3.1-pro-preview
+## [ Round 21.5] Gemini 主路切到 api666 / gemini-3.1-pro-preview
 
 **Trigger**：历史外审产物显示 `gemini-3.1-pro@openclawroot` 不稳定：Ch4/5/8/15/20 为 0 维成功，Ch6/11/19 partial，Ch14 出现 51.9 outlier。主要错误是 openclawroot Gemini 路由的 503/524/400。
 
@@ -381,7 +381,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-04-29 · Round 21.4] Step 3.5 combined 默认 · 根治同模型 13 次重复上下文
+## [ Round 21.4] Step 3.5 combined 默认 · 根治同模型 13 次重复上下文
 
 **Trigger**：Ch20 外部审查实测 prompt tokens ≈ 12,325,450。Root cause 是 `external_review.py` 旧 dimensions 路径对同一模型按 13 个维度拆成 13 次请求，每次重复发送完整 `context_block + chapter_text`。在当前大 context window 模型下，这个拆分收益低、token/限流/失败面代价极高。
 
@@ -409,7 +409,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-04-29 · Round 21.3] mimo-v2-pro → mimo-v2.5-pro · 新增 xiaomimimo provider
+## [ Round 21.3] mimo-v2-pro → mimo-v2.5-pro · 新增 xiaomimimo provider
 
 **Trigger**：openclawroot 上的 mimo-v2-pro 升级到小米官方主路 token-plan-sgp 的 MiMo-V2.5-Pro，文学/推理质量整体抬升。
 
@@ -446,7 +446,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-04-25 · Round 18.3] Ch12 RCA · post_draft H22 AI cliche + H23 破折号密度 + polish 复扫规范
+## [ Round 18.3] post_draft H22 AI cliche + H23 破折号密度 + polish 复扫规范
 
 **Trigger**：Ch12 polish 阶段反向引入 2 个 forbidden_items 黑名单词（"轻轻放下了" + "仿佛...糖纸"），audit E3 low warn 标识但已渗入正文。
 
@@ -503,7 +503,7 @@ D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→87
 
 ---
 
-## [2026-04-25 · Round 19 Phase G] 章末钩子 4 分类 + 跨章追踪 + H25 + 回填 Ch1-11
+## [ Round 19 Phase G] 章末钩子 4 分类 + 跨章追踪 + H25 + 回填 Ch1-11
 
 RCA §3 揭示：现有 hook_type 命名严重泛用化（“主线单钩/冷钩/悬念钩+认知钩/ambient+mystery”等 7+ 种）。Ch4-5-6 内白模板三连 / Ch6/9/10/11 远处声音锚四连读者明显疲劳。Phase G 引入 4 分类强制映射 + 跨章趋势 + H25 hygiene + 回填 Ch1-11。
 
@@ -566,7 +566,7 @@ RCA §3 揭示：现有 hook_type 命名严重泛用化（“主线单钩/冷钩
 
 ---
 
-## [2026-04-25 · Round 19 Phase C] reader-naturalness 5 子维度结构化评分
+## [ Round 19 Phase C] reader-naturalness 5 子维度结构化评分
 
 upstream@5339e83 reviewer ai_flavor 5 子维度 rubric 借鉴（不引入 reviewer.md 整体）。把“AI 味重 78 分”单数字反馈升级成 vocab/syntax/narrative/emotion/dialogue 5 子维度，polish 定向修最低子维度。
 
@@ -615,7 +615,7 @@ reader_naturalness = round(mean(5 子维度), 2)
 
 ---
 
-## [2026-04-25 · Round 19 Phase E] plan 跨卷感知 + get-recent-meta CLI
+## [ Round 19 Phase E] plan 跨卷感知 + get-recent-meta CLI
 
 upstream@3e36417 借鉴 · plan 阶段下卷规划前必须读已写章节真实数据。Phase E 仅做 CLI（独立工具，Phase G hook_trend 之后扩展）。
 
@@ -648,7 +648,7 @@ upstream@3e36417 借鉴 · plan 阶段下卷规划前必须读已写章节真实
 
 ---
 
-## [2026-04-25 · Round 19 Phase B] polish-guide K/L/M/N 4 类词库 + 4 句式规则补强
+## [ Round 19 Phase B] polish-guide K/L/M/N 4 类词库 + 4 句式规则补强
 
 upstream@74717aa 的 polish-guide K/L/M/N 4 类细化词库 + 6 条句式规则。Round 19 Phase B 取并集（保留本地 200+ 高频词 + Round 17.2 签名密度硬线），缩到 4 句式（“不是X是Y” 已被 Phase A 起草前预防接住，不重复）。
 
@@ -698,7 +698,7 @@ upstream@74717aa 的 polish-guide K/L/M/N 4 类细化词库 + 6 条句式规则�
 
 ---
 
-## [2026-04-25 · Round 19 Phase H] prose-quality 画面感 3 子规则 + 5+1 感官色谱
+## [ Round 19 Phase H] prose-quality 画面感 3 子规则 + 5+1 感官色谱
 
 读者头号差评是“看不到画面”。Round 19 Phase H 把“画面感”从综合感官评分细化成 3 项可硬扫子规则，并加权 0.4 入 prose_quality 主分。
 
@@ -740,7 +740,7 @@ upstream@74717aa 的 polish-guide K/L/M/N 4 类细化词库 + 6 条句式规则�
 
 ---
 
-## [2026-04-25 · Round 19 Phase F] 自建私库 4 表 + extractor + 双向回灌
+## [ Round 19 Phase F] 自建私库 4 表 + extractor + 双向回灌
 
 > 这是 Round 19 杠杆最大的 Phase。Ch1-11 实测 polish_reports 显示 5 类问题（半度/了一下/系统术语/AI腔模板/不是X是Y）在 7-10 章反复修但都修不住——证明纯 polish 兜底失效。Phase F 把 RCA 数据自动派生 4 张 CSV，writer 起草前查 + checker 复测时回查，从根源根治。
 
@@ -794,7 +794,7 @@ upstream@74717aa 的 polish-guide K/L/M/N 4 类细化词库 + 6 条句式规则�
 
 ---
 
-## [2026-04-25 · Round 19 Phase X1] reader-critic <75 全卷 P0 硬阻止 + 前 5 章写前自检
+## [ Round 19 Phase X1] reader-critic <75 全卷 P0 硬阻止 + 前 5 章写前自检
 
 <example-project> Ch1-11 reader-critic 实测谷底：Ch3=62 / Ch4=58 远低于 75 但当时未触发 hard block（reader-critic 直到 Round 13 才纳入 13 维度）。Phase X1 把 reader-critic <75 升级为全卷 P0 硬阻止，并在 anti-ai-guide.md 加“前 5 章写前自检清单”段。
 
@@ -839,7 +839,7 @@ Ch3=62 / Ch4=58 是 18 轮 RCA 漏掉的“reader-critic 早期 P0”——Round
 
 ---
 
-## [2026-04-25 · Round 19 Phase I] Ch1 追读契约 9+3 rubric
+## [ Round 19 Phase I] Ch1 追读契约 9+3 rubric
 
 网文平台第 1 章前 300 字决定弃读率（商业转化率核心指标）。Round 10 已加 9 项严格 rubric（feedback_round10_first_chapter_rubric.md，偏“安全检查”），Round 19 补 3 项“读者承诺信号”。
 
@@ -882,7 +882,7 @@ Ch3=62 / Ch4=58 是 18 轮 RCA 漏掉的“reader-critic 早期 P0”——Round
 
 ---
 
-## [2026-04-25 · Round 19 Phase A 复审] quote_pair_fix.py 加 fenced 保护
+## [ Round 19 Phase A 复审] quote_pair_fix.py 加 fenced 保护
 
 Phase A subagent 反馈：在 SKILL.md 上首次跑 `quote_pair_fix.py --ascii-to-curly` 时担心 fenced ```bash``` 块内的 `"${VAR}"` / `cat "..."` / heredoc 被段奇偶配对算法破坏，subagent 已 git checkout 回滚并改手工 Edit。主会话复审时确认了**该担心是真的**——脚本 `fix_text` 按 `\n{2,}` 切段后 `fix_paragraph_ascii_to_curly` 不区分代码块。
 
@@ -915,7 +915,7 @@ def fix_text(text, ascii_to_curly=True):
 
 ---
 
-## [2026-04-25 · Round 19 Phase A] anti-ai-guide.md 起草预防层
+## [ Round 19 Phase A] anti-ai-guide.md 起草预防层
 
 upstream@f774f2b 引入 Step 2 起草前 Anti-AI 预防 reference。本地全程缺“起草前预防”层，AI 腔靠 polish_cycle 反复修。基于 Ch1-11 RCA（5 类强信号根因），本文件包含 upstream 8 倾向 + 本作专属 5 类根因映射。
 
@@ -957,7 +957,7 @@ upstream@f774f2b 引入 Step 2 起草前 Anti-AI 预防 reference。本地全程
 
 ---
 
-## [2026-04-24 · Round 18] Ch10 全流程 4 类 P0 bug **全部根治**
+## [ Round 18] Ch10 全流程 4 类 P0 bug **全部根治**
 
 触发：用户要求根治 Ch10 暴露的 4 类 P0 bug + 多类 P1，以后不再出现。本轮 P0 全部修到代码级，sync-cache 生效。
 
@@ -978,7 +978,7 @@ upstream@f774f2b 引入 Step 2 起草前 Anti-AI 预防 reference。本地全程
 - **Fix #4**：minimax-m2.7-hs 即使返回 null issues 也进入 dim_summary 校验路径，phantom_score0 处理仍生效，模型不再整体崩溃
 - **集成验证**：post_draft_check Ch10 显示 ✅ 全部通过（4 个 warn 全消）
 
-### Round 18.1 · 2026-04-24 · 7 类 P1 全部追加根治到代码级
+### Round 18.1  7 类 P1 全部追加根治到代码级
 
 | # | Bug | Root Cause | Fix | 文件 | 状态 |
 |---|---|---|---|---|---|
@@ -1002,7 +1002,7 @@ upstream@f774f2b 引入 Step 2 起草前 Anti-AI 预防 reference。本地全程
 
 ---
 
-## [2026-04-23 · Round 15.3 FULL] Ch6 全流程 6 类 bug **全部根治**
+## [ Round 15.3 FULL] Ch6 全流程 6 类 bug **全部根治**
 
 触发：用户要求根治 Ch6 暴露的 6 类 bug，以后不再出现。本轮全部 6 类都修到代码级，sync-cache 生效。
 
@@ -1131,7 +1131,7 @@ Bug #1 的修复（`workflow_manager.py:715+`）已 sync-cache 生效到 cache�
 
 ---
 
-## [2026-04-23 · Round 15.2] Ch5 全流程 6 项 bug 根治
+## [ Round 15.2] Ch5 全流程 6 项 bug 根治
 
 触发：写 Ch5 时全流程暴露 6 类 bug，全部根治为代码+文档，确保写其他小说同样受益。
 
@@ -1164,7 +1164,7 @@ Step 7 的 3 步序列必须按：`start-step → git commit → complete-step �
 
 ---
 
-## [2026-04-22 · Round 14] 外部审查并入火山方舟 Coding Plan · 14 模型 × 13 维度 · 182 份独立评分
+## [ Round 14] 外部审查并入火山方舟 Coding Plan · 14 模型 × 13 维度 · 182 份独立评分
 
 触发：用户要求把火山方舟 Coding Plan 的 7 个模型加入外部审查池，"有重复就优先用火山"，所有 thinking 全开、max_tokens 拉满。
 
@@ -1219,7 +1219,7 @@ Step 7 的 3 步序列必须按：`start-step → git commit → complete-step �
 
 ---
 
-## [2026-04-22 · Round 15.2] Ch4 全流程走完后补 3 根因（hygiene + data-agent + META_DRIFT）
+## [ Round 15.2] Ch4 全流程走完后补 3 根因（hygiene + data-agent + META_DRIFT）
 
 Round 15.1 字数根治后首章 Ch4 完整跑完 Step 0-7，approve_with_warnings 89 分 commit。流程中发现 3 个新根因，按优先级修复：
 
@@ -1250,7 +1250,7 @@ Round 15.1 字数根治后首章 Ch4 完整跑完 Step 0-7，approve_with_warnin
 
 ---
 
-## [2026-04-22 · Round 15.1] 字数 SSOT 漂移三次复现根治（hard-enforced word_count_policy）
+## [ Round 15.1] 字数 SSOT 漂移三次复现根治（hard-enforced word_count_policy）
 
 **触发**：用户启动《<example-project>》Ch4 写作流程时质疑 editor_notes/ch0004_prep.md 写 "字数目标：2800-3500"，实际 state.json 设置是 2200-3500 弹性区间。
 
@@ -1268,7 +1268,7 @@ Round 15.1 字数根治后首章 Ch4 完整跑完 Step 0-7，approve_with_warnin
 **三个并行根因**：
 1. audit-agent 写 editor_notes 时无 SSOT 硬读取
 2. "字数弹性"概念未模型化（只有 min/max/target 三个标量，没有 chapter_type_guide）
-3. 2026-04-13 / 04-15 两次已记录"字数目标 SSOT 缺失"（见 L521 / L1188 / L1232），但只做软修没硬闸门
+3./ 04-15 两次已记录"字数目标 SSOT 缺失"（见 L521 / L1188 / L1232），但只做软修没硬闸门
 
 ### 根治方案
 
@@ -1301,9 +1301,9 @@ WORD_COUNT_RANGE_RE = re.compile(r“(?P<lo>\b[23]\d{3})\s*[-—–]\s*(?P<hi>\b
 
 ### 三次复现时间线
 
-- 2026-04-13 Round X · Ch6 context-agent 写 2400-3200（副作用修正到 2200-3500）→ 未加硬闸门
-- 2026-04-15 Ch1 write audit · L1188/L1232 明确"字数目标 SSOT 到 state.json"为长期待办 → 未落地
-- 2026-04-22 Round 15.1 · Ch4 editor_notes 写 2800-3500 + 虚构字段名 → 本次根治
+-Round X · Ch6 context-agent 写 2400-3200（副作用修正到 2200-3500）→ 未加硬闸门
+-Ch1 write audit · L1188/L1232 明确"字数目标 SSOT 到 state.json"为长期待办 → 未落地
+-Round 15.1 · Ch4 editor_notes 写 2800-3500 + 虚构字段名 → 本次根治
 
 ### 长期待办（本次未覆盖）
 
@@ -1313,7 +1313,7 @@ WORD_COUNT_RANGE_RE = re.compile(r“(?P<lo>\b[23]\d{3})\s*[-—–]\s*(?P<hi>\b
 
 ---
 
-## [2026-04-20 · Round 14.5.2] 全流程 Step 0-8 深度审计 · 根治 7 类隐性漏洞
+## [ Round 14.5.2] 全流程 Step 0-8 深度审计 · 根治 7 类隐性漏洞
 
 **触发**：用户要求 deep research 整个 Step 0-8 流程，找出所有隐性问题并根治。
 
@@ -1456,7 +1456,7 @@ OK polish_drift: i:\...\<example-project>\正文
 
 ---
 
-## [2026-04-20 · Round 14.5.1] Step 8 顺序修正 · commit 成为真正的最后一步
+## [ Round 14.5.1] Step 8 顺序修正 · commit 成为真正的最后一步
 
 **触发**：用户质疑"提交不是应该在最后一步吗？"，要求 deep research v1 设计的逻辑严谨性。
 
@@ -1545,7 +1545,7 @@ HEAD commit files:
 
 ---
 
-## [2026-04-20 · Round 14.5] Step 8 Post-Commit Polish 引入 · 根治"裸跑 polish commit"漏洞
+## [ Round 14.5] Step 8 Post-Commit Polish 引入 · 根治"裸跑 polish commit"漏洞
 
 **触发**：用户要求"再次仔细检查 Step 0-7 是否完美运行 + 流程完整"；调查发现<example-project> Ch1 已 commit `第1章 v3: 读者视角 6 medium 定向修复 [polish:round13v2]`，但实测：
 - 正文仍含 58 个 ASCII 双引号（H5 P0 fail）
@@ -1584,7 +1584,7 @@ HEAD commit files:
 
 - 在 Step 7 之后新增 "Step 8：Post-Commit Polish Loop" 完整章节（触发场景、唯一入口、6 步流程、硬约束、与 Step 1-7 的关系）
 - 在"流程硬约束（禁止事项）"列表追加：
-  > **禁止裸跑 polish commit**（2026-04-20）：Step 7 commit 之后任何对正文文件的修改必须通过 `polish_cycle.py`，严禁直接 `git commit -m "polish"` 或 `git commit --amend`
+  > **禁止裸跑 polish commit**：Step 7 commit 之后任何对正文文件的修改必须通过 `polish_cycle.py`，严禁直接 `git commit -m "polish"` 或 `git commit --amend`
 
 #### 护栏 3：`hygiene_check.py` 新增 H19/H19a 检测项
 
@@ -1630,13 +1630,13 @@ H19 在 Step 7 commit 前 + Step 8 polish 中都会跑，构成双重防御：�
 
 ---
 
-## [2026-04-16 · Round 14] Round 13 v2 余波清扫 · 四道根治护栏 + Ch1 读者复审
+## [ Round 14] Round 13 v2 余波清扫 · 四道根治护栏 + Ch1 读者复审
 
 **触发**：用户要求"彻底检查 Round 13 v2 是否完美落地，root cause 根治不再复发，最后对 Ch1 跑一次 Step 3/3.5 + Step 4 修复看有没有爆款优化空间"。
 
 ### 根因调查 · 发现 4 个未根治的漏洞
 
-1. **代码真源漂移 · P0**：`scripts/hygiene_check.py` Step 3 artifact 白名单仍是旧 4 字段（`overall_score/checker_count/internal_avg/review_score`），`scripts/workflow_manager.py` 已是 8 字段（加 `naturalness_verdict/_score + reader_critic_verdict/_score`）。两份 hardcode 副本必然漂移——Ch7 RCA 已踩一次，Round 14 再次踩。
+1. **代码真源漂移 · P0**：`scripts/hygiene_check.py` Step 3 artifact 白名单仍是旧 4 字段（`overall_score/checker_count/internal_avg/review_score`），`scripts/workflow_manager.py` 已是 8 字段（加 `naturalness_verdict/_score + reader_critic_verdict/_score`）。两份 hardcode 副本必然漂移——已踩一次，Round 14 再次踩。
 2. **文档真源漂移 · P1 × 14 处**：Round 13 v2 commit message 说"grep 清零"但实测仍有 14 处"11 维度 / 11 checker / 9×11 = 99 份"未改，覆盖 `agents/external-review-agent.md` 3 处 / `step-3.5-external-review.md` prompt 模板 2 处 / `step-6-audit-matrix.md` + `step-6-audit-gate.md` / `step-3-review-gate.md` Batch 描述 + dimension_scores 键名映射 + 等待方式 + 违规示例 / `SKILL.md` review_metrics 示例缺 2 key / `webnovel-init/SKILL.md` checker 列表 / `workflow-resume.md` / `post_draft_check.py` + `post-draft-gate.md` 注释 / `reader-naturalness-checker.md`
 3. **Session 级 plugin 漂移 · P0**：新 agent `reader-critic-checker.md` 文件齐全 + `sync-cache` + `sync-agents` 都成功，**但当前 Claude Code session 启动时已固化 agent registry，新 agent 调用时报 `Agent type 'webnovel-writer:reader-critic-checker' not found`**。Ch6 教训是三层缓存（fork/marketplace/cache），Round 14 教训是**第四层缓存：session in-memory agent registry**。
 4. **测试硬编码字段列表滞后 · P1**：`test_ch7_rca_fixes::test_step3_whitelist_contains_all_documented_fields` 里 `required_in_docs` 集合硬编码 6 字段，Round 13 v2 应是 8 字段，测试没 fail 是因为它用 `issubset` 而非 `==`——漏报但不误报。
@@ -1700,7 +1700,7 @@ H19 在 Step 7 commit 前 + Step 8 polish 中都会跑，构成双重防御：�
 
 ---
 
-## [2026-04-16 · Round 13 v2] 读者视角双 checker 完整集成 · 13 维度 + 取消 veto 架构
+## [ Round 13 v2] 读者视角双 checker 完整集成 · 13 维度 + 取消 veto 架构
 
 **触发**：用户要求创建 `reader-critic-checker`（prompt：`仔细研究认真思考详细调查搜索分析 以正常读者的角度锐评和找这个章节小说的问题。{章节小说}`），并质疑 veto block 机制——认为所有读者视角反馈应该进入 Step 4 修复，而不是 block 回 Step 2A 重写。
 
@@ -1763,7 +1763,7 @@ Round 12 完成了 6 道 POV 披露防御（context-agent 红线 / flow-checker 
 
 ---
 
-## [2026-04-16 · Round 12] Ch1 披露时序 bug 根治 · POV 知情权六道防御
+## [ Round 12] Ch1 披露时序 bug 根治 · POV 知情权六道防御
 
 **触发**：用户指出 Ch1《<example-project>》L49"这一次得改。三十天后末世爆发，前世他没活到那一天"逻辑硬伤——前世<protagonist>死于 11:47 月台，根本没活到末世那天，唯一信息来源"铜面具档案灌注"在 L69 才发生，读者读到 L49 会立刻发问"他怎么知道？"。11 轮迭代 + 91 分审查 + 10 内部维度 + 9 外部模型全部没查出。
 
@@ -1828,7 +1828,7 @@ Round 12 完成了 6 道 POV 披露防御（context-agent 红线 / flow-checker 
 
 ---
 
-## [2026-04-16 · Round 11] 外部审查架构重构 · openclawroot 首位供应商 + 9 新模型 + all-high-thinking
+## [ Round 11] 外部审查架构重构 · openclawroot 首位供应商 + 9 新模型 + all-high-thinking
 
 **触发**：用户追问"Step 3.5 各供应商成功率"，实测 Round 10- 架构（4 provider × 9 老模型）全局只有 6-7/9 成功，nextapi 48% no_api_key / healwrap 41% / minimax-m2.7 0% / doubao 28%。用户提供 openclawroot.com API key + 指定 9 新模型。
 
@@ -1901,7 +1901,7 @@ Round 12 完成了 6 道 POV 披露防御（context-agent 红线 / flow-checker 
 
 ---
 
-## [2026-04-16 · Round 10] Ch1 <example-project>质量深审 · 5 个 checker rubric 升级 + Ch1 v3.2 精修
+## [ Round 10] Ch1 <example-project>质量深审 · 5 个 checker rubric 升级 + Ch1 v3.2 精修
 
 **触发**：用户要求 "仔细研究认真思考详细调查分析第 1 章怎么样有什么问题"。深度审查 Ch1 v2 (overall=92) 暴露 1 critical + 7 high + 6 medium 内部 checker 漏检、外部模型命中但被标"low"。核心 RC：审查 rubric 覆盖盲区 + 外部模型 quote 幻觉。
 
@@ -1981,7 +1981,7 @@ Round 10 五个 rubric 升级**不止服务 Ch1**：
 
 ---
 
-## [2026-04-16 · Round 9] Ch1 <example-project> RCA · checker_scores canonical key 根治
+## [ Round 9] Ch1 <example-project> RCA · checker_scores canonical key 根治
 
 **触发**：用户要求"再次仔细检查 Step 0-7 是否完美运行"。深度审查<example-project> Ch1 (task_001/002) 的 state.json，发现 `chapter_meta.0001.checker_scores` 是 10 个中文混 legacy key：`{设定一致性, 连贯性, 节奏, 对话, 爽点密度, 钩子强度, 情绪曲线, 伏笔埋设, Prose质量, Anti-AI}` —— 与 `chapter_audit.CHECKER_NAMES` 的 11 个英文 canonical 完全不匹配。audit silent fallback 到报告文本匹配，用户永远不知道 state 数据烂了。
 
@@ -2088,7 +2088,7 @@ invalid: [COLLISION:伏笔埋设→consistency-checker(prev=设定一致性), BA
 
 ---
 
-## [2026-04-16 · Round 8] Round 7 回归审查 · 三个 root cause 根治
+## [ Round 8] Round 7 回归审查 · 三个 root cause 根治
 
 **触发**：用户要求"再次检查 Round 7 是否完美运行"。深度审查发现 Round 7 的 cache_sync 闸门在**生产路径完全失效**，外加两个之前没发现的 root cause。
 
@@ -2107,12 +2107,12 @@ invalid: [COLLISION:伏笔埋设→consistency-checker(prev=设定一致性), BA
 
 ### RC-2 · Step 3 artifact 白名单缺 `naturalness_verdict` / `naturalness_score`
 
-**症状**：SKILL.md 第 268 行和 `step-3-review-gate.md` 第 82 行在 2026-04-16 Round 5 声明 `naturalness_verdict` 是 Step 3 合法语义字段，但 `workflow_manager.py:163` 的 `REQUIRED_ARTIFACT_FIELDS["Step 3"]` 没包含。若用户只填 `{"naturalness_verdict": "PASS"}` 就完成 Step 3，`complete-step` 会被 reject。
+**症状**：SKILL.md 第 268 行和 `step-3-review-gate.md` 第 82 行在Round 5 声明 `naturalness_verdict` 是 Step 3 合法语义字段，但 `workflow_manager.py:163` 的 `REQUIRED_ARTIFACT_FIELDS["Step 3"]` 没包含。若用户只填 `{"naturalness_verdict": "PASS"}` 就完成 Step 3，`complete-step` 会被 reject。
 
 **修复**（`scripts/workflow_manager.py:163`）：
 ```python
 “Step 3”: [“overall_score”, “checker_count”, “internal_avg”, “review_score”,
-           “naturalness_verdict”, “naturalness_score”],  # 2026-04-16 Round 8
+           “naturalness_verdict”, “naturalness_score”],  #Round 8
 ```
 
 **追加防御**：`feedback_doc_counter_single_source.md` 的"真源清单"从 6 处增到 7 处，把 `workflow_manager.py::REQUIRED_ARTIFACT_FIELDS` 列为第 7 处；任何 Step N artifact 字段变更都必须同步改这里。
@@ -2137,7 +2137,7 @@ invalid: [COLLISION:伏笔埋设→consistency-checker(prev=设定一致性), BA
 
 ---
 
-## [2026-04-16 · Round 7] Plugin 三层缓存架构根治 · sync-cache CLI + preflight cache_sync 闸门
+## [ Round 7] Plugin 三层缓存架构根治 · sync-cache CLI + preflight cache_sync 闸门
 
 **问题重审**：Round 6 发现 Ch6 flow-checker 未运行，并加 `sync-agents` 修了工作区 `.claude/agents/`。但用户追问"Step 3.5 真的有 11 维度吗"后，深入实测发现**更深一层的 bug**：**Ch6 外部审查 JSON 也只有 10 维度，缺 reader_flow**（<example-project>项目实测：Ch5=11✅ / Ch6=10❌ / <example-project> Ch1=10❌）。
 
@@ -2162,7 +2162,7 @@ invalid: [COLLISION:伏笔埋设→consistency-checker(prev=设定一致性), BA
 
 ### 证据
 
-- `installed_plugins.json` 的 `gitCommitSha: 535d60d1` 自 2026-03-26 安装以来**从未更新**
+- `installed_plugins.json` 的 `gitCommitSha: 535d60d1` 自安装以来**从未更新**
 - 自那次以来 fork 有 **79 个 commit**，cache 却停留在旧快照 + 零星手动同步
 - version 锁死 5.6.0 时，Claude Code 判定"已安装无需重装"，cache 永不更新
 - 实测 cache 的 `chapter_audit.py` 仍含 **37 行 `??????` 乱码**，fork 早已修复
@@ -2252,7 +2252,7 @@ exit code 仍为 0（非阻断），但 AI 看到 ERROR 就知道要跑 sync-cac
 
 ---
 
-## [2026-04-16 · Round 6] flow-checker 未部署 + mojibake 脚本 + preflight agents_sync 根治
+## [ Round 6] flow-checker 未部署 + mojibake 脚本 + preflight agents_sync 根治
 
 **动机**：用户要求"再次仔细研究认真思考详细调查最近的更新有没有问题"，全流程审计（Step 0-7）后定位 4 个 bug 族——不是旧 bug，是 Round 1-5 遗留的横切问题。
 
@@ -2340,12 +2340,12 @@ exit code 仍为 0（非阻断），但 AI 看到 ERROR 就知道要跑 sync-cac
 
 ---
 
-## [2026-04-16] Round 5 · fork↔cache 漂移根治 + plan_consistency_check 通用化
+## [] Round 5 · fork↔cache 漂移根治 + plan_consistency_check 通用化
 
 **发现**：Round 4 深度审计扫 fork vs cache 全量 diff，发现 4 处真实漂移：
 
 1. **Ch3 时代 cache 手改从未 upstream**：
-   - `agents/consistency-checker.md` 缺"2026-04-11 机制步骤冲突"检查（机制步骤绕过即 `MECHANISM_STEP_VIOLATION`）
+   - `agents/consistency-checker.md` 缺"机制步骤冲突"检查（机制步骤绕过即 `MECHANISM_STEP_VIOLATION`）
    - `scripts/data_modules/index_manager.py` 缺 `upsert-scenes` CLI + `upsert-relationship` / `record-state-change` 别名兼容
 2. **cache 比 fork 多的"隐藏改进"**：
    - `scripts/hygiene_check.py` H14 缺 step_2a 字段名别名兼容（`step2a_direct_prompt` / `step2a_write_prompt` → P1 警告不 block）
@@ -2381,7 +2381,7 @@ exit code 仍为 0（非阻断），但 AI 看到 ERROR 就知道要跑 sync-cac
 
 ---
 
-## [2026-04-16] Round 3 · webnovel-init 防伪神经科学污染 + .gitignore 强化
+## [] Round 3 · webnovel-init 防伪神经科学污染 + .gitignore 强化
 
 **发现**：上轮深度审计发现 3 处真实遗漏：
 
@@ -2395,7 +2395,7 @@ exit code 仍为 0（非阻断），但 AI 看到 ERROR 就知道要跑 sync-cac
 
 | 模块 | 文件 | 修改 |
 |---|---|---|
-| webnovel-init | `skills/webnovel-init/SKILL.md` Step 5.5B | 新增"硬约束（2026-04-16）"段 · 禁伪神经科学话术 · 禁机械字数阈值 · 必须爆款对比法 · 首句必须过双硬闸门 |
+| webnovel-init | `skills/webnovel-init/SKILL.md` Step 5.5B | 新增"硬约束"段 · 禁伪神经科学话术 · 禁机械字数阈值 · 必须爆款对比法 · 首句必须过双硬闸门 |
 | webnovel-init | `skills/webnovel-init/SKILL.md` 开篇策略文件生成段 | 加"生成内容硬约束" + 明确告知 AI 写作阶段首句会被 `post_draft_check` + `reader-naturalness-checker` 双闸门验证 + 模板规范含爆款对比示例 |
 | （项目侧）| `.gitignore` | 加 `.webnovel/tmp/` / `.webnovel/backups/` / `.webnovel/*.before_*_backfill` / `.webnovel/observability/*.jsonl` |
 | （项目侧）| `.webnovel/hygiene_check.py` | 扩展文案统一为 1/4 2/4 3/4 4/4 |
@@ -2409,7 +2409,7 @@ exit code 仍为 0（非阻断），但 AI 看到 ERROR 就知道要跑 sync-cac
 
 ---
 
-## [2026-04-16] Round 2 · 补齐上轮遗漏 · step-3-review-gate Batch 0
+## [] Round 2 · 补齐上轮遗漏 · step-3-review-gate Batch 0
 
 上轮 `d23ef81` 用户要求根治"<protagonist>在死"审查失灵，但**发现上轮有 4 处遗漏**：
 
@@ -2423,15 +2423,15 @@ exit code 仍为 0（非阻断），但 AI 看到 ERROR 就知道要跑 sync-cac
 | 模块 | 文件 | 修改 |
 |---|---|---|
 | step-3-review-gate | `references/step-3-review-gate.md` | 完整替换"审查路由模式"段 · 12 审查器 0+6+5 三段 · Task 调用模板加 veto 分支 · Step 3 artifacts 必填 naturalness_verdict |
-| SKILL artifact | `SKILL.md` 白名单表 | 加 `naturalness_verdict`（2026-04-16 新增） |
-| hygiene_check | 项目本地 `.webnovel/hygiene_check.py` | 挂载第 4 个扩展 `naturalness_log_check` · 核对 chapter_meta.{NNNN}.naturalness_verdict · 2026-04-16 前豁免，之后必填 |
+| SKILL artifact | `SKILL.md` 白名单表 | 加 `naturalness_verdict` |
+| hygiene_check | 项目本地 `.webnovel/hygiene_check.py` | 挂载第 4 个扩展 `naturalness_log_check` · 核对 chapter_meta.{NNNN}.naturalness_verdict 前豁免，之后必填 |
 | 历史补录 | 项目 `.webnovel/state.json` chapter_meta.0001 | 用 `data-agent` 合规 CLI 补 naturalness_verdict=PASS/score=88 · 禁 Python 手改 |
 
 Commit: `7556acf` (fork) · `d2cc4cd` (project)
 
 ---
 
-## [2026-04-16] 反规则污染 · naturalness-veto 硬闸门 · Ch1 v1 "<protagonist>在死"根治
+## [] 反规则污染 · naturalness-veto 硬闸门 · Ch1 v1 "<protagonist>在死"根治
 
 **问题根因**（基于《<example-project>》Ch1 v1 走完整流程后用户一眼看出"很奇怪"的系统性失败）：
 
@@ -2470,10 +2470,10 @@ Ch1 v1 首句"<protagonist>在死。"是汉语语病（"在死"违反现代汉�
 - 外部 9 模型被 context 驯化 → system prompt 反污染前缀强化独立视角
 - 评分体系"中文自然度权重 0%"漏洞 → naturalness 作为 veto 硬闸门补齐（不改现有公式，最小侵入）
 
-### 与 2026-04-15 修复的关系
+### 与修复的关系
 
-- 2026-04-15 的 post_draft_check + pre_commit_step_k 是"机械问题"拦截（ASCII 引号/Markdown/字数/伏笔种子）
-- 2026-04-16 的 naturalness-veto 是"语义问题"拦截（首句语病/AI 腔/规则污染）
+-的 post_draft_check + pre_commit_step_k 是"机械问题"拦截（ASCII 引号/Markdown/字数/伏笔种子）
+-的 naturalness-veto 是"语义问题"拦截（首句语病/AI 腔/规则污染）
 - 两层叠加 → 起草期全覆盖
 
 ### 长期待办（本次未覆盖）
@@ -2485,7 +2485,7 @@ Ch1 v1 首句"<protagonist>在死。"是汉语语病（"在死"违反现代汉�
 
 ---
 
-## [2026-04-15] Ch1 write postflight 根治 · 起草后 + commit 前双硬闸门
+## [] Ch1 write postflight 根治 · 起草后 + commit 前双硬闸门
 
 **问题根因**（基于《<example-project>》项目 Ch1 完整 write 流程审计 · 13 个问题）：
 
@@ -2538,7 +2538,7 @@ Ch1 v1 首句"<protagonist>在死。"是汉语语病（"在死"违反现代汉�
 4. 字数目标 SSOT 到 state.json（Context Agent 只读 `state.project_info.average_words_per_chapter_min/max`）
 ---
 
-## [2026-04-13 · Ch6 Bug 根治] 彻底修复 Ch6 首写暴露的 7 类系统 bug
+## [ Ch6 Bug 根治] 彻底修复 Ch6 首写暴露的 7 类系统 bug
 
 **动机**：Ch6 走完整流程后发现 12+ 个 bug/警告，用户要求根治。逐项 RCA 后定位 6 个 plugin 层 bug + 6 个 project 层遗留。
 
@@ -2559,7 +2559,7 @@ Ch1 v1 首句"<protagonist>在死。"是汉语语病（"在死"违反现代汉�
    - fix: 新脚本按 prev_end/current_start/claim_minutes 三字段校验，支持中文星期（周四等）strip；context-agent.md 新增硬调用
 
 4. **段内独立引号配对脚本**（`scripts/quote_pair_fix.py` 新增）
-   - bug: flip-pair 跨段翻转在嵌套引号段造成 7 处错乱（Ch6 血教训）
+   - bug: flip-pair 跨段翻转在嵌套引号段造成 7 处错乱
    - fix: 按 `\n{2,}` 分段独立配对 + 状态机检测顺序错乱
 
 5. **audit scanner pattern 扩展**（`scripts/data_modules/chapter_audit.py`）
@@ -2590,7 +2590,7 @@ Ch1 v1 首句"<protagonist>在死。"是汉语语病（"在死"违反现代汉�
 
 ---
 
-## [2026-04-13 · ABC] 读者视角流畅度三层审查系统
+## [ ABC] 读者视角流畅度三层审查系统
 
 **动机**：Ch1 写完后用户反馈"难懂，写得不清楚，很奇怪而且无法理解"。诊断发现现有 10 checker + 10 外部维度全是"作者工艺视角"，没有任何一个 checker 从"读者能否读懂、卡不卡顿"的角度审查。Ch1 打了 92 分但真实读者读不下去。
 
@@ -2653,7 +2653,7 @@ Ch1 v1 首句"<protagonist>在死。"是汉语语病（"在死"违反现代汉�
 
 ---
 
-## [2026-04-11 · v2] 递归审查：修复我第一次修复里的 6 个 bug
+## [ v2] 递归审查：修复我第一次修复里的 6 个 bug
 
 第一次修复完成后做递归审查，发现我自己加的代码里藏了 6 个 bug。全部修复如下：
 
@@ -2688,7 +2688,7 @@ Ch1 v1 首句"<protagonist>在死。"是汉语语病（"在死"违反现代汉�
 
 ---
 
-## [2026-04-11] Step 0-7 流程完整性根治（9 项 bug 全部解决）
+## [] Step 0-7 流程完整性根治（9 项 bug 全部解决）
 
 ### 背景
 
@@ -2800,7 +2800,7 @@ PLACEHOLDER_ONLY_FIELDS = {“v2”, “ok”, “chapter_completed”, “commi
 
 ---
 
-## [2026-04-10] Search tool 强制集成 + 8 skills 完整性审查 + 全文件类型同步
+## [] Search tool 强制集成 + 8 skills 完整性审查 + 全文件类型同步
 
 ### 背景
 
@@ -2942,7 +2942,7 @@ Data Agent 自身无 search 能力（只有 Read/Write/Bash），改为"主 agen
 
 ---
 
-## [2026-04-10] 终极修复：fork↔插件缓存双向同步 + init 策略升级为强制启用
+## [] 终极修复：fork↔插件缓存双向同步 + init 策略升级为强制启用
 
 ### 最严重的 Root Cause 发现
 
@@ -3105,7 +3105,7 @@ done
 
 ---
 
-## [2026-04-10] Step 5 data-agent + Step 6 audit-matrix 典故审计补强
+## [] Step 5 data-agent + Step 6 audit-matrix 典故审计补强
 
 ### 背景
 
@@ -3197,7 +3197,7 @@ done
 
 ---
 
-## [2026-04-10] Step 3.5 外部审查"盲评"缺口修复 + SKILL.md 编码损坏发现
+## [] Step 3.5 外部审查"盲评"缺口修复 + SKILL.md 编码损坏发现
 
 ### 严重缺口：Step 3.5 外部审查 context 只加载 9 字段
 
@@ -3277,7 +3277,7 @@ done
 
 ---
 
-## [2026-04-10] 典故引用系统端到端诊断（修正之前错误结论）
+## [] 典故引用系统端到端诊断（修正之前错误结论）
 
 > **注意**：本条**覆盖之前的错误结论**。上一次我错误判断"插件没设计过典故系统"。完整端到端审查后发现，**整个 Step 0-7 流程其实已经完整接入典故系统**，只是存在 3 个真实缺口和 2 个易被 AI 漏掉的策略问题。
 
@@ -3413,7 +3413,7 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-10] （旧版诊断，已被上条覆盖）发现 init 流程缺口：文化典故系统未被系统化
+## [] （旧版诊断，已被上条覆盖）发现 init 流程缺口：文化典故系统未被系统化
 
 **背景**：在《<example-project>：我在<setting><plot-mechanic>的规则》项目 init 过程中，用户指出"引经据典、引用典故、诗词、史料、原创诗词、互联网梗"这个模块应该在 init 阶段系统化规划，但当前 webnovel-init skill 的 Step 1.5 叙事声音只覆盖"视角/语气/密度/感官/对话比例"五个维度，没有典故系统的对应 Step。
 
@@ -3468,7 +3468,7 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-10] 历史章节批量修复（Ch1-12 数据漂移）
+## [] 历史章节批量修复（Ch1-12 数据漂移）
 
 **背景**：应用"章节写作全流程六项根因根治"修复后，对 Ch1-12 历史章节进行回归验证，发现多处已成型的数据漂移 + 5 个未解决的 audit 检查 bug（每个都会产生 false positive warning）。用户要求一次根治所有历史遗留。
 
@@ -3524,7 +3524,7 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-10] 章节写作全流程六项根因根治
+## [] 章节写作全流程六项根因根治
 
 **背景**：第13章《空亡五行》完整流程跑通后，Step 6 审计 + 流程日志暴露 6 个重复性 bug，在每一章都会触发。用户要求"根治，以后写不会再出现"，本次同步修复所有 root cause。
 
@@ -3579,7 +3579,7 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-08] CLI审计三项误报根治 — chapter_audit.py A1/B1/B9
+## [] CLI审计三项误报根治 — chapter_audit.py A1/B1/B9
 
 **问题根因**：CLI审计（chapter_audit.py）三处检查逻辑未适配当前数据格式，导致每次写章都block：
 1. A1：context snapshot格式从v1升级到v2（payload.sections），但CLI仍查旧格式8个独立键 → present永远=0 → critical fail
@@ -3601,7 +3601,7 @@ C01_typed_reference_audit:
 **注意**：此修改在插件缓存目录（`C:/Users/Windows/.claude/plugins/cache/...`），插件更新时会被覆盖。合并上游时需重新应用。
 ---
 
-## [2026-04-06] 典故引用系统修复 — 链路断裂 + 双仓库同步 + Step 3.5 覆盖
+## [] 典故引用系统修复 — 链路断裂 + 双仓库同步 + Step 3.5 覆盖
 
 **问题根因**：典故引用功能仅在 C: 运行时实现，未同步 git 且关键组件（context-agent/polish-guide/外部审查）未更新，导致：
 1. context-agent 不知道典故引用库 → 不推荐引用 → Step 2A 收不到推荐 → 整个链路断裂
@@ -3629,7 +3629,7 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-06] 全流程审计修复（8 代理并行调查）
+## [] 全流程审计修复（8 代理并行调查）
 
 **审计范围**：8 个并行调查代理覆盖 Step 0-7 全流程、10 个 checker 代理、3 个 skill、4 个脚本、20 个 reference 文件。
 
@@ -3648,14 +3648,14 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-06] Tavily 直连 API 迁移（MCP → tavily_search.py）
+## [] Tavily 直连 API 迁移（MCP → tavily_search.py）
 
 **改动文件**：三个 SKILL.md 移除 WebSearch/WebFetch，搜索规则改用 `tavily_search.py search/research`。
-详见下方 "[2026-03-29] Search Tool 全环节集成" 的 `[2026-04-06 更新]` 段落。
+详见下方 "[] Search Tool 全环节集成" 的 `[更新]` 段落。
 
 ---
 
-## [2026-04-06] 典故引用系统（通用 skill 级别 + <example-project-B>项目级别）
+## [] 典故引用系统（通用 skill 级别 + <example-project-B>项目级别）
 
 **动机**：让经典引用（典籍/哲学/诗词/史料/原创口诀/互联网梗）成为世界观的一部分而非装饰品。引用在大纲阶段规划（引用锚点），由 Context Agent 推荐，Step 2A 按需融入。核心创新："典故即伏笔"——看似无害的引经据典实际承载长线伏笔。**通用设计**：skill 级写作指南适用于所有小说项目，项目级文件（典故引用库/原创口诀）为可选模板。
 
@@ -3683,7 +3683,7 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-06] Ch3 数据完整性审计修复（5项）
+## [] Ch3 数据完整性审计修复（5项）
 
 **问题1（严重）：审查报告外部矩阵与 JSON 文件不匹配**
 - **根因**：部分模型经历 fallback 重试（healwrap→codexcc→硅基流动），不同 provider 返回不同分数。报告矩阵在首批结果返回时冻结，JSON 文件被后续重试覆盖。两组数据脱节。且 qwen（第9模型）在报告生成后才完成，未纳入矩阵。
@@ -3713,7 +3713,7 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-06] Ch3 三项根因修复 — chapter_meta 补全 + 外部审查 context 准备 + FFFD 防护
+## [] Ch3 三项根因修复 — chapter_meta 补全 + 外部审查 context 准备 + FFFD 防护
 
 **问题1：Ch3 chapter_meta 仅 15/30 字段（B9 审计警告）**
 - **根因**：Ch3 由主流程手动构建 chapter_meta，使用了旧的 15 字段格式（含 `file`/`strand`/`pov`/`key_events`/`foreshadowing_advanced` 等非标字段），与 Ch1/Ch2 由 Data Agent 写入的 30 字段扁平结构不一致。`state_manager.py` 接受任意 dict 无校验。
@@ -3736,7 +3736,7 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-06] 三项根因修复 — chapter_meta 格式 + snapshot 保障 + A1 v2 兼容
+## [] 三项根因修复 — chapter_meta 格式 + snapshot 保障 + A1 v2 兼容
 
 **问题1：data-agent chapter_meta 格式与 audit B9 不匹配**
 - **根因**：`data-agent.md` 定义嵌套 `{hook, pattern, ending}` 结构，`state-schema.md` 示例同样是嵌套结构，但 `chapter_audit.py` B9 检查期望 21 字段扁平结构。两份规范从未同步。
@@ -3765,7 +3765,7 @@ C01_typed_reference_audit:
 
 ---
 
-## [2026-04-05] Step 6 审计闸门（7层约70检查项 + Step 7 Git）
+## [] Step 6 审计闸门（7层约70检查项 + Step 7 Git）
 
 **动机**：Ch1 事故暴露 Step 3 审查是"自审自证"——checker 评它自己读的章节，无法检测 subagent fallback、checker 坍缩、Step K 静默跳过、钩子虚标等跨步骤问题。新增 Step 6 审计闸门作为"他审他证"，独立审视 Step 1-5 的执行痕迹与所有产物之间的一致性。目标：写最高质量、让真实读者留下来的小说。
 
@@ -3829,7 +3829,7 @@ python -X utf8 “${SCRIPTS_DIR}/webnovel.py” --project-root “${PROJECT_ROOT
 
 ---
 
-## [2026-04-05] 插件 subagent_type 注册修复（workspace 级 .claude/agents/ 兜底）
+## [] 插件 subagent_type 注册修复（workspace 级 .claude/agents/ 兜底）
 
 **症状**：在 Claude Code 会话里调用 `Agent(subagent_type="context-agent"/"data-agent"/"*-checker")` 报错
 `Agent type 'context-agent' not found. Available agents: general-purpose, statusline-setup, Explore, Plan, claude-code-guide`。
@@ -3881,7 +3881,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-04-03] 幽灵零分修复 + 补充模型 fallback 链
+## [] 幽灵零分修复 + 补充模型 fallback 链
 
 **问题1**：模型返回合法JSON但内容为空（`score:0, summary:""`），被视为有效评分。
 
@@ -3908,7 +3908,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-04-03] nextapi 供应商集成 + 9模型架构 + 早停修复
+## [] nextapi 供应商集成 + 9模型架构 + 早停修复
 
 **架构变更：**
 - 新增 nextapi 供应商（`https://api.nextapi.store/v1`，RPM=999 无限制）作为主力，支持 kimi/glm/minimax/minimax-m2.7
@@ -3931,7 +3931,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-04-03] external_review.py 稳定性修复 + --model-key all 模式
+## [] external_review.py 稳定性修复 + --model-key all 模式
 
 **修复的问题：**
 1. **连接池中毒**：`call_api()` 中 `requests.post()` 共享 urllib3 连接池，ConnectionResetError(10054) 后连接池被污染导致后续调用全部秒失败。改用显式 `requests.Session()`，连接错误后关闭重建。
@@ -3948,7 +3948,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-04-03] 默认字数目标调整 2100-3200 → 2200-3500
+## [] 默认字数目标调整 2100-3200 → 2200-3500
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -3961,7 +3961,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-04-02] Step 3.5 外部审查：6模型→8模型升级
+## [] Step 3.5 外部审查：6模型→8模型升级
 
 **新增模型（2个补充层）**:
 - `doubao-seed-2.0`（结构审查/逻辑一致性）：字节跳动 thinking 模型，256K 上下文，强推理+中文能力，healwrap only
@@ -3982,7 +3982,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-04-02] 小说质量优化全面升级
+## [] 小说质量优化全面升级
 
 **新增 Checker Agent（2个）**:
 - `agents/prose-quality-checker.md`：文笔质感检查器，评估句式节奏、比喻新鲜度、感官丰富度、动词力度、画面感、具象化程度。使用新 issue type `PROSE_FLAT`
@@ -4021,7 +4021,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-04-01] 默认字数目标调整 3000-3500 → 2100-3200
+## [] 默认字数目标调整 3000-3500 → 2100-3200
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4034,7 +4034,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-27] Step 3.5 外部模型审查
+## [] Step 3.5 外部模型审查
 
 **Commit:** d1015e1
 
@@ -4059,7 +4059,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-28] Step 3.5 双供应商架构 + 失败重试
+## [] Step 3.5 双供应商架构 + 失败重试
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4074,7 +4074,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 - codexcc kimi-k2.5 成功率 100%（5/5），区分度 HIGH（spread=9）
 - 决策：codexcc 升主力，硅基流动降备用
 
-**模型配置变更（2026-03-28 更新为三模型）：**
+**模型配置变更（更新为三模型）：**
 - qwen: codexcc `qwen3.5-plus` → 备用 硅基流动 `Qwen/Qwen3.5-397B-A17B`（稳定锚点）
 - kimi: codexcc `kimi-k2.5` → 备用 硅基流动 `Pro/moonshotai/Kimi-K2.5`（逻辑/设定视角）
 - glm: codexcc `glm-5` → 备用 硅基流动 `Pro/zai-org/GLM-5`（编辑/读者感受视角）
@@ -4090,7 +4090,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-28] Step 3 审查路由改为全量执行
+## [] Step 3 审查路由改为全量执行
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4108,7 +4108,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-28] SKILL.md 流程硬约束强化
+## [] SKILL.md 流程硬约束强化
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4127,7 +4127,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-28] Step 3.5 升级为Agent化6维度审查
+## [] Step 3.5 升级为Agent化6维度审查
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4150,7 +4150,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-29] 默认字数目标调整 2000-2500 → 3000-3500
+## [] 默认字数目标调整 2000-2500 → 3000-3500
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4164,7 +4164,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-29] Step 3.5 升级：healwrap 主力 + 6模型 + 升级输出格式
+## [] Step 3.5 升级：healwrap 主力 + 6模型 + 升级输出格式
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4208,7 +4208,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-29] Step 5 增加 Step K: 设定集同步检查
+## [] Step 5 增加 Step K: 设定集同步检查
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4237,7 +4237,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-29] 写前规划全面升级（11项改进）
+## [] 写前规划全面升级（11项改进）
 
 **改动文件：**
 | 文件 | 改动概述 |
@@ -4265,7 +4265,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-29] Search Tool 全环节集成
+## [] Search Tool 全环节集成
 
 **改动文件：**
 | 文件 | 改动 |
@@ -4284,7 +4284,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 5. 调研笔记归档：搜索结果按主题保存到 `调研笔记/` 目录，跨章复用
 6. init 阶段高频搜索：每 Step 至少1次，关键 Step 2-3次
 
-**[2026-04-06 更新] 从 MCP 迁移到 Tavily 直连 API：**
+**[更新] 从 MCP 迁移到 Tavily 直连 API：**
 - 三个 SKILL.md 的 `allowed-tools` 移除 WebSearch/WebFetch
 - 搜索规则段落全部改用 `tavily_search.py` 命令行调用
 - 失败协议从"配置 MCP"改为"检查 API key"
@@ -4297,7 +4297,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-29] Marketplace fork 与插件 cache(5.5.4) 技能文件对齐
+## [] Marketplace fork 与插件 cache(5.5.4) 技能文件对齐
 
 **原因：** Cursor/Claude 实际加载的是 `plugins/cache/.../5.5.4/`；marketplace 里的 fork 副本曾落后（例如 `step-3-review-gate.md` 仍为 auto 路由、缺少 `agents/external-review-agent.md`）。
 
@@ -4318,7 +4318,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-30] Claude Code 与 Cursor 完全对齐
+## [] Claude Code 与 Cursor 完全对齐
 
 **背景：** 调查发现 Claude Code 的技能/脚本/配置与 Cursor 存在多处不一致，导致两个环境下写作流程不完全相同。
 
@@ -4346,7 +4346,7 @@ Agent(subagent_type=“context-agent”,        # 调用时不再报 “not foun
 
 ---
 
-## [2026-03-30] Step 3 审查维度从6个扩展到8个（新增对话质量+信息密度）
+## [] Step 3 审查维度从6个扩展到8个（新增对话质量+信息密度）
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4398,7 +4398,7 @@ density-checker（信息密度）：
 
 ---
 
-## [2026-03-30] Step 3.5 外部审查 build_context_block 输入数据补全
+## [] Step 3.5 外部审查 build_context_block 输入数据补全
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4426,7 +4426,7 @@ density-checker（信息密度）：
 
 ---
 
-## [2026-03-30] 8维度全面落地 + 爽点密度加强 + 交叉验证实现
+## [] 8维度全面落地 + 爽点密度加强 + 交叉验证实现
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4440,7 +4440,7 @@ density-checker（信息密度）：
 | `skills/webnovel-write/SKILL.md` | 修改 | Step 2A 新增"爽点密度约束"硬规则（每800字至少1微爽点） |
 
 **背景：**
-- 2026-03-30 的 8 维度升级更新了所有规范文件但遗漏了实际执行脚本 `external_review.py`
+-的 8 维度升级更新了所有规范文件但遗漏了实际执行脚本 `external_review.py`
 - DIMENSIONS 字典仍为 6 维，缺少 dialogue_quality 和 information_density
 - dialogue-checker.md 和 density-checker.md agent 定义文件未创建，导致 Step 3 内部审查无法执行这两个 checker
 - cross_validation 是空壳（verified/dismissed 永远为 0）
@@ -4493,7 +4493,7 @@ density-checker（信息密度）：
 
 <!-- 新的改动记录追加在此线下方 -->
 
-## [2026-03-30] Step 0-6 全流程审计修复（22项bug）
+## [] Step 0-6 全流程审计修复（22项bug）
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4536,7 +4536,7 @@ density-checker（信息密度）：
 
 ---
 
-## [2026-03-31] Python 代码修复：外审上下文大幅补全 + 窗口对齐
+## [] Python 代码修复：外审上下文大幅补全 + 窗口对齐
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4568,7 +4568,7 @@ density-checker（信息密度）：
 
 ---
 
-## [2026-03-31] Step 3.5 外审流程 CRITICAL/HIGH bug 修复（9项）
+## [] Step 3.5 外审流程 CRITICAL/HIGH bug 修复（9项）
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4606,7 +4606,7 @@ density-checker（信息密度）：
 
 ---
 
-## [2026-03-31] 8内部审查Agent全面规范化 + Schema补全（18项修复）
+## [] 8内部审查Agent全面规范化 + Schema补全（18项修复）
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4653,7 +4653,7 @@ density-checker:     PADDING/REPETITION
 
 ---
 
-## [2026-03-31] 全流程审查 Bug 修复（7处）
+## [] 全流程审查 Bug 修复（7处）
 
 **改动文件：**
 | 文件 | 类型 | 说明 |
@@ -4682,10 +4682,9 @@ density-checker:     PADDING/REPETITION
 - grep 确认零残留 PowerShell 语法、零硬编码“第1卷”、零 score:62
 - 插件缓存已同步（25文件）
 
-
 ---
 
-## [2026-04-25 → 2026-04-26] Round 20.x 质量护栏完整批次（4 批同步根治）
+## [→] Round 20.x 质量护栏完整批次（4 批同步根治）
 
 ### Round 20 (5551f07) · 评分硬底线 + reader-thrill + 大纲三计划
 
@@ -4826,7 +4825,7 @@ SKILL.md 第695行已明确"必须使用 `--model-key all`"，但 CLI 默认值�
 
 ---
 
-## 2026-05-12 · Round 28.21 · Ch36 RCA 7 类根因永久根治
+## Round 28.21 · 7 类根因永久根治
 
 ### Commit Context
 Ch36 完整流程（Step 0-7 全过）overall=89/100，audit decision=approve_with_warnings/90.86。
@@ -4859,7 +4858,7 @@ subagent 只能用 Bash heredoc 写盘，但部分 checker 的 prompt 未引导�
 ### 根治 3：SKILL.md 加 checker JSON 落盘双保险（根因 2 长效防御）
 
 **修复**：skills/webnovel-write/SKILL.md 的 Step 3+3.5 完成闸门段追加
-"Round 28.21 · Ch36 RCA · checker JSON 落盘双保险"，列出 13 canonical
+"Round 28.21 · checker JSON 落盘双保险"，列出 13 canonical
 checker JSON 文件名清单 + sanity check 命令，要求主流程 Step 3 complete-step 前
 逐一验证 13 个文件落盘存在。
 
@@ -4871,7 +4870,7 @@ Canon 女主卡 v7 锁死是"前夫前年因肺癌去世"。Ch36 audit D2 medium
 **根因**：audit-agent 写 editor_notes 时引用上一章 editor_notes 二手描述，未优先 grep
 Canon 真源。
 
-**修复**：agents/audit-agent.md 追加"Round 28.21 · Ch36 RCA · editor_notes 真源对齐硬规则"段，
+**修复**：agents/audit-agent.md 追加"Round 28.21 · editor_notes 真源对齐硬规则"段，
 规定优先级链 `Canon > 角色卡 > 当前章节正文 grep > 大纲 > editor_notes`，
 禁止引用上一章 editor_notes 二手描述，写完必须 grep 验证 3-5 个关键描述。
 
@@ -4883,8 +4882,8 @@ Canon 真源。
 **根因**：AI 起草的 default 风格大量使用"了一下/了一拍"动作骨架；日常推进章对话天然偏少；
 对"了一X"等签名的密度认知不足。
 
-**修复**：skills/webnovel-write/references/anti-ai-guide.md 末尾追加 "Round 28.21 ·
-Ch36 RCA · 起草签名密度根治模板"，提供：
+**修复**：skills/webnovel-write/references/anti-ai-guide.md 末尾追加 "Round 28.21
+起草签名密度根治模板"，提供：
 - "了一X" 替换池（每章上限 12）
 - "没X" 替换池（每章上限 14）
 - "未X" 警告（每章上限 < 3）

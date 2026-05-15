@@ -1,8 +1,8 @@
-# Step 3.5 外部模型审查规范（Round 21.4 · combined 默认 · Round 25 · 15 模型扁平共识）
+# Step 3.5 外部模型审查规范
 
 ## 十五模型扁平共识架构 · 6 供应商
 
-**Round 16 架构决策（2026-04-23 · Ch6 RCA 最终根治）+ Round 25 扩展（2026-05-02 · +deepseek-v4-flash）**：
+**Round 16 架构决策+ Round 25 扩展（ +deepseek-v4-flash）**：
 - **去 core / supplemental 层级**：15 模型集体投票 · 任一失败不阻塞 · 以成功模型均分作共识
 - **统一重试策略**：所有 provider 最多 2 次重试（对抗 openclawroot 偶发 503/524/rate_limited）
 - **统一早停阈值**：任一模型累计 4 个维度失败 → 跳过该模型剩余维度（节省 API 配额给其他 14 模型）
@@ -14,7 +14,7 @@
 
 **历史背景**：Round 15.3 将 core 3 改为异构 provider（qwen+doubao+glm）仍有单 provider 脆弱性——Ch3-6 连续 4 章 openclawroot outage（gpt-5.4/gemini-3.1-pro 全挂）。Round 16 彻底去掉 "必须 X 模型成功" 的硬耦合，以 14 模型投票为共识根据，任意 4 家 provider 故障都不影响主流程。Round 25 加入 deepseek-v4-flash（siliconflow 单 provider · 实验性 · max-config）扩展为 15 模型。
 
-**Round 21.4 根治（2026-04-29 · token 重复消耗）**：
+**Round 21.4 根治（ token 重复消耗）**：
 - 旧路径：每个模型按 13 个维度拆成 13 次 API 请求，每次都重复发送完整 `context_block + chapter_text`；Ch20 实测 prompt tokens ≈ 12,325,450。
 - 新默认：`--dimension-strategy auto`，先用 **combined**（每模型 1 次请求返回 13 个 `dimension_reports`），仅在 JSON 不可用/维度缺失时自动 fallback 到 legacy **split**。
 - 物理请求数从正常情况下 `15 × 13 = 195` 降到 `15 × 1 = 15`；逻辑评分矩阵仍是 `15 模型 × 13 维度 = 195 份评分`。
@@ -42,17 +42,17 @@
 
 ## 供应商配置（6-tier · Round 21.5 api666 Gemini 主路加入）
 
-- **GPT-5.x 主 · ticketpro** (`https://api.ticketpro.cc/v1`)，key: `TICKETPRO_API_KEY`，RPM=30，仅承载 GPT-5.x 系列（实测 9 模型 OK，无 openclawroot 间歇性 forbidden 问题）— Round 20.x · 2026-04-27 · Ch14 RCA P0-2 加入
-- **Gemini 主 · api666** (`https://api-666.cc/v1`)，key: `API666_API_KEY`，RPM=30，承载 `gemini-3.1-pro-preview`；openclawroot 保留 fallback — Round 21.5 · 2026-04-29 加入
+- **GPT-5.x 主 · ticketpro** (`https://api.ticketpro.cc/v1`)，key: `TICKETPRO_API_KEY`，RPM=30，仅承载 GPT-5.x 系列（实测 9 模型 OK，无 openclawroot 间歇性 forbidden 问题）— Round 20.x  P0-2 加入
+- **Gemini 主 · api666** (`https://api-666.cc/v1`)，key: `API666_API_KEY`，RPM=30，承载 `gemini-3.1-pro-preview`；openclawroot 保留 fallback — Round 21.5 加入
 - **主力 A · openclawroot** (`https://openclawroot.com/v1`)，key: `OPENCLAWROOT_API_KEY`，RPM=30，承载 qwen/gemini/glm/minimax 等 8 条主/备路由（gpt-5.5 现在作 fallback 角色，Round 21.3 移除 mimo-v2-pro）
 - **主力 B · ark-coding**（火山方舟 Coding Plan，`https://ark.cn-beijing.volces.com/api/coding/v3`），key: `ARK_CODING_API_KEY`（fallback `ARK_API_KEY`），RPM=30，7 个模型；实测 7 并发 4.5× 加速
-- **MiMo 主 · xiaomimimo**（小米官方 token-plan-sgp，`https://token-plan-sgp.xiaomimimo.com/v1`），key: `XIAOMIMIMO_API_KEY`，RPM=30，承载 `mimo-v2.5-pro` — Round 21.3 · 2026-04-29 加入
+- **MiMo 主 · xiaomimimo**（小米官方 token-plan-sgp，`https://token-plan-sgp.xiaomimimo.com/v1`），key: `XIAOMIMIMO_API_KEY`，RPM=30，承载 `mimo-v2.5-pro` — Round 21.3 加入
 - **兜底 · siliconflow** (`https://api.siliconflow.cn/v1`)，key: `EMBED_API_KEY`/`SILICONFLOW_API_KEY`，RPM=30（kimi-k2.5/k2.6/glm-5/glm-4.7/deepseek-v3.2 fallback）
 
 ## 共识机制（核心设计）
 
-- **15 模型 × 13 维度 = 195 份独立评分**（Round 14 = 14 模型 / Round 25 = 15 模型 +V4-Flash）
-- 每个模型都跑**全 13 维度**（无分工！role 字段已删除 2026-04-16 Round 11）；Round 21.4 起默认**每模型一次请求**返回 13 维，避免重复发送大上下文
+- **15 模型 × 13 维度 = 195 份独立评分**
+- 每个模型都跑**全 13 维度**（无分工！role 字段已删除Round 11）；Round 21.4 起默认**每模型一次请求**返回 13 维，避免重复发送大上下文
 - 多模型命中同一 issue → 真 bug；单模型孤例 → 模型偏见（cross_validation 自动过滤）
 - 异构覆盖：国产（Doubao×2 / GLM×3 / Qwen / MiMo / MiniMax×2 / DeepSeek / Kimi×2）+ 西方（GPT / Gemini）
 
@@ -68,7 +68,7 @@
   - Anthropic 风格：`thinking={"type":"enabled","budget_tokens":16384}`
 - 所有推理模型若 `content` 为空，fallback 读 `reasoning_content`（REASONING_MODELS 集合标注）
 
-## 重试与 fallback 规则（Round 16 统一）
+## 重试与 fallback 规则
 
 - **所有 provider**：最多 2 次重试（对抗偶发 400/429/503/524/rate_limited）
   - openclawroot Ch3-6 连续 4 章 outage 实测数据表明 rate_limited/503/524 多为瞬时故障，2 次重试显著降低失败率
@@ -411,7 +411,7 @@ python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
 
 `审查报告/第{NNNN}章审查报告.md` 必须包含：
 
-1. **15模型评分矩阵**（Round 14+ / Round 25 +V4-Flash · 可用模型 × 13维度 + 总分 + 路由状态 + 供应商，Round 13 v2 · 含 reader_flow + naturalness + reader_critic）
+1. **15模型评分矩阵**
 2. **共识问题**（>=3个模型指出的同类问题 = 真问题；15 模型下建议阈值可调至 ≥4）
 3. **Step 4 修复清单**（从共识问题 + severity >= medium + verified 中筛选，按优先级排序）
 4. **模型路由验证结果**（每个模型的请求/实际/通过状态）

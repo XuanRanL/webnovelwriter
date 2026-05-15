@@ -3,7 +3,7 @@ name: chapter-end-hook-taxonomy
 purpose: 章末钩子 4 分类规范 + 跨章趋势规则
 ---
 
-# 章末钩子 4 分类（Round 19 Phase G）
+# 章末钩子 4 分类
 
 > **核心 insight**：reader_pull 0-100 单数字看不出“读者疲劳”。钩子强度 88 但连续 5 章都是“信息钩”，读者会期待“动作钩”或“决策钩”打破节奏。4 类对应 4 种读者心理动机。
 
@@ -63,7 +63,7 @@ purpose: 章末钩子 4 分类规范 + 跨章趋势规则
 }
 ```
 
-## <example-project> Ch1-11 钩子分布（Round 19 启发式回填后）
+## <example-project> Ch1-11 钩子分布
 
 参 `chapter_meta.hook_close` 实测数据（H25 hygiene 检查依赖此字段）。
 

@@ -692,7 +692,7 @@ python "${SCRIPTS_DIR}/webnovel.py" init \
   - 金手指展示计划
   - 使用说明：`Context Agent 在第 1-3 章必须读取此文件，write Step 1 Golden Opening Protocol 参照执行`
 
-**生成内容硬约束（2026-04-16 · 防伪神经科学污染）**：
+**生成内容硬约束（ 防伪神经科学污染）**：
 - ❌ 不得含"X 字激活杏仁核 Y 秒"、"短句 ≤ N 字最佳"、"镜像神经元激活"等**无循证来源**的神经/心理学话术
 - ❌ 不得规定"首句必须 ≤ N 字"等机械字数阈值
 - ✅ 必须用**爆款对比**（引用真实作品首句 + 学什么技法）替代"规则驱动"
@@ -889,15 +889,15 @@ chmod +x "{project_root}/.webnovel/hygiene_check.py" 2>/dev/null || true
 - `总纲.md` 已填核心主线、约束字段与主题内核。
 - `idea_bank.json` 已写入且包含 opening_strategy 且与最终选定方案一致。
 
-## ABC 审查能力默认启用（2026-04-13 新增）
+## ABC 审查能力默认启用
 
 新项目自动享用以下插件级能力，无需项目侧配置：
 
-- **Step 3 内部 13 个 checker（Round 13 v2 · 0+6+5 分批）**：
+- **Step 3 内部 13 个 checker**：
   - **Batch 0 读者视角 2 个**：`reader-naturalness-checker` 汉语母语自然度 + `reader-critic-checker` 读者锐评（先跑，与其他 11 个平等参与 overall_score 聚合，不 block 流程——其 problems 和其他 checker 的 issues 合并进入 Step 4 定向修复）
   - **Batch 1 核心 6 个**：consistency / continuity / ooc / reader-pull / high-point / `flow-checker`（读者视角流畅度 · 一人分饰两角失忆裸读协议）
   - **Batch 2 工艺 5 个**：pacing / dialogue / density / prose-quality / emotion
-- **Step 3.5 外部 15 模型 × 13 维度（Round 14+ / Round 25 +V4-Flash · ark-coding 并入）**：11 工艺维度 + `reader_flow` + `naturalness` + `reader_critic`，让外部 AI 也参与读者视角评估，与内部 13 checker 对齐，共 195 份独立评分
+- **Step 3.5 外部 15 模型 × 13 维度**：11 工艺维度 + `reader_flow` + `naturalness` + `reader_critic`，让外部 AI 也参与读者视角评估，与内部 13 checker 对齐，共 195 份独立评分
 - **Step 6 Layer C 扩展**：C13 跨层共识聚合 / C14 反应可追溯性（双通道）/ C15 Flow 趋势滑动窗口
 
 init 完成后的 `/webnovel-write` 会自动触发全部 ABC 流程。首章/规则揭示章/反派首露章等关键章节可手动用 `flow_union_runner.py --runs 3` 做 N=3 重跑 issue union 聚合。

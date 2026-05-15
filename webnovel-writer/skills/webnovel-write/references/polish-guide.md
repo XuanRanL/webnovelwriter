@@ -41,20 +41,20 @@ purpose: 章节生成后的润色阶段加载，基于审查报告修复问题 +
 2. 校验网文化 Hard/Soft/Style 规则
 3. 执行 Phase 1 Anti-AI 终检并改写
 4. 执行 No-Poison 毒点规避检查
-5. **polish 后复扫 forbidden_items（Round 18.3 · Ch12 RCA P0 根治 · 2026-04-25）**
-6. **reader-thrill 兑现回扫（Round 28.1 · Ch25 RCA · climax 章 P0）**
+5. **polish 后复扫 forbidden_items**
+6. **reader-thrill 兑现回扫**
 7. 输出润色结果与 deviation（若有）
 
-### 2.0c canon-check：polish 禁止凭空发明专有名词（Round 28.3 · Ch25 RCA wave 3 · H67 配套）
+### 2.0c canon-check：polish 禁止凭空发明专有名词
 
-**为什么必要（Ch25 v8→v11 血教训）：** Ch25 v11 polish 为了让 reader_thrill THRILL_SOFT_GF 通过，凭空发明了 3 项 canon 元素：
+**为什么必要：** Ch25 v11 polish 为了让 reader_thrill THRILL_SOFT_GF 通过，凭空发明了 3 项 canon 元素：
 - 金银花 / 银耳（凭空作物，0 处 in canon）
 - 灶屋木匣（凭空容器，0 处 in canon）
 - 空气在脱水（凭空物理机制，canon-bible 未定义）
 
 后果：未来章节如果引用这些名词，找不到 canon 来源 → 世界观破碎；同时违反 core-constraints "发明需识别"硬约束。
 
-**正确做法（Round 28.3 强制）：**
+**正确做法：**
 
 polish 涉及的所有 micro 兑现 / 设定补充 / 物理机制描述，**必须**先在以下来源中找到原型：
 1. 之前章节正文（Ch1...N-1）
@@ -79,9 +79,9 @@ polish 涉及的所有 micro 兑现 / 设定补充 / 物理机制描述，**必�
 
 ---
 
-### 2.0b polish_cycle 后 5 层归档必须刷新（Round 28.2 · Ch25 RCA wave 2 · H65/H66 配套）
+### 2.0b polish_cycle 后 5 层归档必须刷新
 
-**为什么必要（Ch25 v8→v11 血教训）：** polish_cycle 改正文 + bump narrative_version 后，5 层归档**没有**自动刷新：
+**为什么必要：** polish_cycle 改正文 + bump narrative_version 后，5 层归档**没有**自动刷新：
 - `summaries/ch{NNNN}.md`（仍写 v8 状态）
 - `audit_reports/ch{NNNN}.json`（仍是 v8 时期 6 warnings）
 - `审查报告/第{NNNN}章审查报告.md`（仍写 v8 字数 / 签名密度）
@@ -108,9 +108,9 @@ polish 涉及的所有 micro 兑现 / 设定补充 / 物理机制描述，**必�
 
 ---
 
-### 2.0a reader-thrill 兑现回扫（Round 28.1 · climax/卷末/世界观转折章 P0）
+### 2.0a reader-thrill 兑现回扫
 
-**为什么必要（Ch25 血教训）：** Ch25 是末世第 0 天爆发章（卷一 climax · title-promise milestone），reader_thrill_ch0025.json 输出 `golden_finger_release=45 · verdict=neutral · pass=false`，THRILL_SOFT_GF 标 HIGH（"<golden-finger-space>本章未出手，末世第一天无金手指兑现"）。Step 4 priority list 误标 P2 optional，未实施。结果：读者攒了 25 章对<golden-finger-space>的期待，最高潮章金手指零释放 = 情绪退场。
+**为什么必要：** Ch25 是末世第 0 天爆发章（卷一 climax · title-promise milestone），reader_thrill_ch0025.json 输出 `golden_finger_release=45 · verdict=neutral · pass=false`，THRILL_SOFT_GF 标 HIGH（"<golden-finger-space>本章未出手，末世第一天无金手指兑现"）。Step 4 priority list 误标 P2 optional，未实施。结果：读者攒了 25 章对<golden-finger-space>的期待，最高潮章金手指零释放 = 情绪退场。
 
 **新硬规则（THRILL_HARD_004）：**
 
@@ -130,11 +130,9 @@ polish 涉及的所有 micro 兑现 / 设定补充 / 物理机制描述，**必�
 
 **例外**：若大纲 `golden_finger_release_plan` 显式标该章为 `none`（明确零释放设计），可豁免，但必须在 Step 4 deviation 记录"按计划零释放"。
 
-
-
 ### 2.5 polish 后复扫 forbidden_items（必做 · Round 18.3）
 
-**为什么必要**（Ch12 血教训）：
+**为什么必要**：
 - Ch12 Step 4 polish 修复 11 high + 3 medium，质量大幅提升
 - 但 polish 改写时**反向引入** 2 个 forbidden_items 黑名单词：
   - "像有人把那只举起的手轻轻放下了"（"轻轻" 是 ai_cliche 黑名单）
@@ -173,7 +171,7 @@ for f in ctx['step_2a_write_prompt']['forbidden_items']:
 
 **项目级 override**：`.webnovel/ai_cliche_config.json` 可调阈值（如战斗章可放宽"猛地"）
 
-### 2.6 polish 后破折号收敛（Round 18.3 · Ch10 47 个 RCA）
+### 2.6 polish 后破折号收敛
 
 **跨章数据**：Ch1=21 / Ch2=29 / Ch5=31 / Ch10=**47**（13.4/千字）/ Ch11=4 / Ch12=6
 - 06-叙事声音约束写"≤3/单章"，但只在 Ch11/Ch12 控住
@@ -211,7 +209,7 @@ for f in ctx['step_2a_write_prompt']['forbidden_items']:
 | 学术词 | 而言 / 某种程度上 / 本质上 |
 | 因果连词 | 因为 / 所以 / 由于 / 因此 |
 
-### 签名句式密度硬线（Round 17.2 · Ch8 P0-R5 根治 · 2026-04-24）
+### 签名句式密度硬线
 
 **引入背景**：Ch8 polish 后“没X” 34 次漏抓（editor_notes 目标 ≤15 · 旧 hygiene H21 阈值 30 太宽），用户手动 12 处改写才降到 10。polish-guide 只管 anti-AI 禁语，未管密度签名——必须补齐。
 
@@ -239,7 +237,7 @@ for f in ctx['step_2a_write_prompt']['forbidden_items']:
 2. polish 完成后再跑一次 post_draft_check；任一签名仍 ≥ block → anti_ai_force_check=fail
 3. 若某签名因剧情必要超 warn（如连续对峙章印记跳必须 5 次），必须在 polish_reports.md 写 deviation（位置 + 原因 + 代价）
 
-**否定签名替换池禁词**（Round 27.1 · Ch23 RCA R4 根治 · 2026-05-02 · Ch16/17/23 三次复发血教训）：
+**否定签名替换池禁词**：
 
 ⚠️ **没X 减少时禁止用 未X / 不曾 / 无X 替换**——这些都是同源 AI signature，只是搬家不是减负。
 
@@ -524,7 +522,7 @@ Step 4 润色遇到同一位置 `READER_FLOW` 和 `READER_PULL` 两个 issue 时
 
 ---
 
-## 3.1 六个跨章 Root Cause · 系统性修复规则（2026-04-13 新增）
+## 3.1 六个跨章 Root Cause · 系统性修复规则
 
 > 基于 Ch1-5 审计发现的跨章共性问题根治。Step 4 润色时按此 6 条检查每章。这 6 条是**读者视角爆款门槛**——任何一条不达标都会让读者出戏弃读。
 

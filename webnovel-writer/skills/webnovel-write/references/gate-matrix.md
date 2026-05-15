@@ -2,9 +2,7 @@
 
 > Round 14.5.2 新增 · 保证"人读 SKILL 规则"与"机读闸门脚本"一一对应
 > 每次增改闸门必须同步更新本表，避免文档承诺 > 代码实现的断层
-> 最后校对：2026-04-20
-
-## 设计原则
+> 最后校对：## 设计原则
 
 任何一条 SKILL.md 的"充分性闸门"都必须有至少一个**机读**检查项与之对应；
 反之任何一个机读检查项也必须在 SKILL.md 的规则段落能找到文字描述。
@@ -43,7 +41,7 @@
 | 禁止裸跑 polish commit | **多层闸门**（见下一节） | 多文件协同 |
 | 禁止手动改 workflow_state.json | `H16` artifact 校验 + `PLACEHOLDER_ONLY_FIELDS` | `workflow_manager.py` + `hygiene_check.py` |
 
-## 裸跑 polish commit 的多层拦截（Round 14.5.2）
+## 裸跑 polish commit 的多层拦截
 
 这是一个需要多层防御的场景，因为单点闸门容易被绕过：
 
@@ -76,17 +74,17 @@
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## 充分性闸门扩充（Round 14.5.2 后）
+## 充分性闸门扩充
 
 SKILL.md 充分性闸门除了上述 15 条，再增加：
 
-16. **polish_log schema 合规**（Round 14.5.2 · `H20`）：若 `chapter_meta.{NNNN}.polish_log` 存在，每条必须含 `version/timestamp/notes` 三字段，version 匹配 `vN` 或 `vN.M.K`，timestamp 为 ISO-8601
-17. **polish drift 零 P0**（Round 14.5.2 · preflight `polish_drift`）：Step 0 preflight 必须报告 `polish_drift: ok=True`；P0 drift 视为 preflight 失败
-18. **hook_close 版本新鲜度**（Round 20.5 · hygiene `H28`）：`hook_close.source_narrative_version` 必须与当前 `chapter_meta.NNNN.narrative_version` 一致；不一致说明 Step 8 polish 后章末钩子未重算，会污染 H25 跨章趋势，P0 阻断。
-19. **checker_scores 13 canonical 必齐**（Round 28 · hygiene `H18` 升级 · Ch24 RCA）：`chapter_meta.{NNNN}.checker_scores` 必须包含全部 13 个 canonical key（11 工艺 + naturalness + reader-critic），缺任一 P0 阻断。Ch24 漏 reader-naturalness-checker 血教训：原 H18 只查"已存在 key 是否 canonical"，不查完整性。
-20. **checker_scores 与 review_metrics 一致性**（Round 28 · hygiene `H58` · Ch24 RCA）：`chapter_meta.checker_scores` 与 `review_metrics.dimension_scores` 13 个 canonical 项漂移 ≤±1。例外：`post_polish_recheck` 中的 checker（Step 4.5 合法 polish 真值改）。Ch24 实测 9 项漂移最大 14 分（prose-quality 89 vs 75），P1 警告。
-21. **post_polish 静默改分检测**（Round 28 · hygiene `H59` · Ch24 RCA）：任一 checker 与 review_metrics 漂移 >1 必须在 `post_polish_recheck` 留 before/after 记录；无记录则视为静默改分，P1 警告。`state update --set-checker-score` 必须配套 `--append-recheck`。
-22. **progress.last_completed_chapter 对齐**（Round 28 · hygiene `H61` · Ch24 RCA）：`state.last_completed_chapter` 与 `state.current_chapter` 必须 == max(chapter_meta keys)。Ch24 写到 24 但二字段停在 20（连续 4 章累积漂移），P1 警告。
+16. **polish_log schema 合规**：若 `chapter_meta.{NNNN}.polish_log` 存在，每条必须含 `version/timestamp/notes` 三字段，version 匹配 `vN` 或 `vN.M.K`，timestamp 为 ISO-8601
+17. **polish drift 零 P0**：Step 0 preflight 必须报告 `polish_drift: ok=True`；P0 drift 视为 preflight 失败
+18. **hook_close 版本新鲜度**：`hook_close.source_narrative_version` 必须与当前 `chapter_meta.NNNN.narrative_version` 一致；不一致说明 Step 8 polish 后章末钩子未重算，会污染 H25 跨章趋势，P0 阻断。
+19. **checker_scores 13 canonical 必齐**：`chapter_meta.{NNNN}.checker_scores` 必须包含全部 13 个 canonical key（11 工艺 + naturalness + reader-critic），缺任一 P0 阻断。Ch24 漏 reader-naturalness-checker 原 H18 只查"已存在 key 是否 canonical"，不查完整性。
+20. **checker_scores 与 review_metrics 一致性**：`chapter_meta.checker_scores` 与 `review_metrics.dimension_scores` 13 个 canonical 项漂移 ≤±1。例外：`post_polish_recheck` 中的 checker（Step 4.5 合法 polish 真值改）。Ch24 实测 9 项漂移最大 14 分（prose-quality 89 vs 75），P1 警告。
+21. **post_polish 静默改分检测**：任一 checker 与 review_metrics 漂移 >1 必须在 `post_polish_recheck` 留 before/after 记录；无记录则视为静默改分，P1 警告。`state update --set-checker-score` 必须配套 `--append-recheck`。
+22. **progress.last_completed_chapter 对齐**：`state.last_completed_chapter` 与 `state.current_chapter` 必须 == max(chapter_meta keys)。Ch24 写到 24 但二字段停在 20（连续 4 章累积漂移），P1 警告。
 
 ## 同步维护规则
 
