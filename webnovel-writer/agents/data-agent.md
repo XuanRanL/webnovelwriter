@@ -695,7 +695,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 | `location_current` | str | 章末主角所在地点 |
 | `power_realm` | str | 主角当前境界 |
 | `golden_finger_level` | int/str | 金手指等级/状态 |
-| `time_anchor` | str | 时间锚点（如“甲子57年·秋分”） |
+| `time_anchor` | str | 时间锚点（如“甲子57年·秋分”）。**Round 28.26 · Ch40 RCA · D+/D- 方向硬规则（防 R28.25 B5 第三次复发）**：若叙事用"末世第 N 天"日序锚（N≥1，末世后），D±M 段**必须**写 D+M（不是 D-M）。D-M 仅用于末世前倒计时（Ch1-22 范围）。Ch40 血教训：写 `末世第十六天·D-4` 五处真源同步漂移，audit-agent Layer D8-B5 抓到才发现。hygiene H78 P0 闸门强制截获。 |
 | `end_state` | str | 章末状态描述 |
 | `foreshadowing_planted` | list[str] | 本章埋设的伏笔 |
 | `foreshadowing_paid` | list[str] | 本章兑现的伏笔 |

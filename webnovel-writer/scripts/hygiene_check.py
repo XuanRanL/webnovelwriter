@@ -186,6 +186,12 @@ def check_rogue_empty_files(root: Path, rep: HygieneReport):
         re.compile(r"[<>|]"),  # 含 shell redirect 符
         re.compile(r"^[:：]"),  # 以冒号开头（markdown 引用残片）
         re.compile(r"^-{2,}$"),  # --- 分隔线被当文件名
+        # Round 28.26 · Ch40 RCA · 扩展 emoji + Private Use Area + 控制字符 accident
+        # Ch40 实际发现：'⚠️'（emoji + variation selector）+ 'v3'（PUA Wingdings *）
+        re.compile(r"[☀-➿]"),  # Misc Symbols/Dingbats 区（含 ⚠ 等 emoji 基字符）
+        re.compile(r"[\U0001F300-\U0001FAFF]"),  # emoji 扩展面
+        re.compile(r"[-]"),  # Private Use Area（Wingdings 编码错位的 * →  等）
+        re.compile(r"[︎️‍]"),  # emoji variation selector + ZWJ
     ]
     def _is_accident(name: str) -> bool:
         return any(p.search(name) for p in accident_patterns)
@@ -480,6 +486,19 @@ def check_chapter_text_hygiene(root: Path, chapter: int, rep: HygieneReport):
     ascii_dq = text.count('"')
     rep.record("P0", "H5", f"{cf.name} 含 {ascii_dq} 个 ASCII 双引号", ascii_dq == 0)
     crlf = raw.count(b"\r\n")
+    # Round 28.26 · Ch40 RCA · H6 自动 CRLF→LF（防 Windows Write/Edit 工具默认 CRLF）
+    # 根因：Windows PowerShell / Bash Write 工具在某些情况下把 LF 改 CRLF（Ch40 实测 263 个）
+    # 之前需要手动 python 脚本转换才能 commit，现在 hygiene 检测到自动修。
+    if crlf > 0:
+        try:
+            cf.write_bytes(raw.replace(b"\r\n", b"\n"))
+            print(f"  🔧 [H6 auto-fix] {cf.name} 自动 CRLF→LF（{crlf} 处）· Round 28.26 防御")
+            crlf = 0
+            # 重读 text 用于后续 H7
+            raw = cf.read_bytes()
+            text = raw.decode("utf-8", errors="replace")
+        except Exception as e:
+            pass  # auto-fix 失败仍按原 P0 报告
     rep.record("P0", "H6", f"{cf.name} 含 {crlf} 个 CRLF 行尾", crlf == 0)
     actual_zh = len(re.findall(r"[\u4e00-\u9fff]", text))
     state_p = root / ".webnovel" / "state.json"
@@ -1514,6 +1533,89 @@ def check_stale_failure_reason_consistency(root: Path, chapter: int, rep: Hygien
         )
     else:
         rep.record("P2", "H73", "失败 step 时钟自洽（如有）", True)
+
+
+def check_post_apocalypse_d_direction(root: Path, chapter: int, rep: HygieneReport):
+    """H78 (Round 28.26 · Ch40 RCA · 防 R28.25 B5 第三次复发): 末世后章节
+    chapter_meta.time_anchor / summaries / 设定集 Ch{N} 段 D±N 方向必须正确。
+
+    末世爆发窗口 Ch24-28 之后 (chapter >= 24)，"末世第 N 天" → 必须 D+N（不是 D-N）。
+    D-N 是末世前倒计时（Ch1-22），D+N 是末世后递增（Ch24+）。
+
+    Ch40 血教训：data-agent Step K 把 Ch40 time_anchor 写为
+      "末世第十六天·失情绪第八天·**D-4**·上午至傍晚至夜"
+    同步漂移到 5 处真源：state.json / summaries/ch0040.md / 主角卡.md /
+      伏笔追踪.md / 资产变动表.md
+    audit-agent Layer D8-B5 Part 2 抓到但已 5 处全错，必须 5 处一起修。
+
+    Round 28.25 在 Ch39 已根治 B5 (反向时间锚 "三十七天前那一晚")，但未防住
+    D-N vs D+N 字符方向错误。本检查在 hygiene 层确定性截获。
+
+    P0 阻断 commit（与 H62/H71 同等级）。
+    """
+    # 仅末世后章节（Ch24+ 末世爆发窗口之后）
+    if chapter < 24:
+        rep.record("P2", "H78", "Ch24- 章节, 末世前 D-N 倒计时合法, 跳过", True)
+        return
+
+    drifts = []  # list of (source, line/key, snippet)
+    import re as _re
+
+    # 1) state.json chapter_meta.{NNNN}.time_anchor
+    state_p = root / ".webnovel" / "state.json"
+    if state_p.exists():
+        try:
+            state = json.loads(state_p.read_text(encoding="utf-8"))
+            cm = state.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+            ta = cm.get("time_anchor", "") or ""
+            if isinstance(ta, str) and _re.search(r"D-\d", ta):
+                drifts.append(("state.json", f"chapter_meta.{chapter:04d}.time_anchor", ta))
+        except Exception:
+            pass
+
+    # 2) .webnovel/summaries/ch{NNNN}.md
+    summary_p = root / ".webnovel" / "summaries" / f"ch{chapter:04d}.md"
+    if summary_p.exists():
+        try:
+            txt = summary_p.read_text(encoding="utf-8")
+            for m in _re.finditer(r"D-\d+", txt):
+                drifts.append(("summaries", f"ch{chapter:04d}.md", m.group()))
+                break  # 一处即足以报告
+        except Exception:
+            pass
+
+    # 3) 设定集/*.md 的 [Ch{N}] 段含 D-X
+    canon_dir = root / "设定集"
+    if canon_dir.exists():
+        ch_tag = f"[Ch{chapter}]"
+        for md_p in canon_dir.glob("*.md"):
+            try:
+                txt = md_p.read_text(encoding="utf-8")
+                # 找 [ChN] 段
+                if ch_tag not in txt:
+                    continue
+                # 抓含 [ChN] 的标题段（## 开头或 ### 开头）
+                pattern = _re.compile(
+                    rf"^#{{1,4}}\s*\[Ch{chapter}\][^\n]*D-\d+",
+                    flags=_re.MULTILINE,
+                )
+                for m in pattern.finditer(txt):
+                    drifts.append(("设定集", md_p.name, m.group()[:80]))
+                    break
+            except Exception:
+                continue
+
+    if drifts:
+        msg_parts = [f"{src}:{key}={snippet[:50]}" for src, key, snippet in drifts]
+        rep.record(
+            "P0",
+            "H78",
+            f"末世后 Ch{chapter} 含 D-N 反向方向漂移 {len(drifts)} 处: {msg_parts} "
+            f"（修：所有 D-X 改 D+X · Round 28.25 B5 + R28.26 H78 永久规则：末世第 N 天 → D+N）",
+            False,
+        )
+    else:
+        rep.record("P0", "H78", f"末世后 Ch{chapter} time_anchor / 设定集 / summaries D+N 方向正确", True)
 
 
 def check_curly_quote_pairing(root: Path, chapter: int, rep: HygieneReport):
@@ -3473,6 +3575,9 @@ def main():
     check_disk_json_validity(root, args.chapter, rep)  # H71
     check_polish_narrative_version_bump(root, args.chapter, rep)  # H72
     check_stale_failure_reason_consistency(root, args.chapter, rep)  # H73
+
+    # Round 28.26 · Ch40 RCA · D+/D- 末世后方向校验（防 R28.25 B5 第三次复发）
+    check_post_apocalypse_d_direction(root, args.chapter, rep)  # H78
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
