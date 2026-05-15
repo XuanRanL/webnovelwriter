@@ -426,6 +426,121 @@ def _check_stale_current_task(project_root: Path) -> Optional[dict]:
         return {"name": "stale_task", "ok": True, "path": str(ws), "note": f"时间解析失败: {e}"}
 
 
+def _check_project_scripts_drift(plugin_root: Path, project_root: Path) -> Optional[dict]:
+    """Round 28.28 · Ch42 RCA · 项目本地脚本漂移检测（2026-05-15）
+
+    根因（Ch42 RCA）：
+      `.webnovel/post_draft_check.py` (271 行 · 项目本地 · stale)
+      vs cache/fork `scripts/post_draft_check.py` (867+ 行 · 含 H40 cn_chapter
+      meta + 签名密度 + 元标识符 + 内嵌大量后续 round 加固)
+
+      hygiene_check.py 第 98 行硬编码 `here / "post_draft_check.py"` 永远走项目本地，
+      cache 里新加的 ~600 行检查被项目侧静默跳过——这是 Ch42 L9 "二十二章前" 元叙述
+      泄漏经 5 个 checker 同时命中但 hygiene 没拦的根本原因之一。
+
+    检测对象（项目可能含本地脚本副本）：
+      - post_draft_check.py
+      - pre_commit_step_k.py
+      - plan_consistency_check.py
+      - hygiene_check.py（meta · 不强制，因为它本身决定是否调用其他）
+
+    返回：
+      None      → 项目没有任何本地脚本副本（项目用 cache，无漂移可能）
+      ok=True   → 项目副本与 cache 一致或仅有微小差异
+      ok=False  → 漂移（行数差 ≥ 50 或 mtime 差 ≥ 30 天，含修复命令）
+
+    阻断策略：non-blocking（P1 warn），不阻断 preflight；触发后立即提示同步命令。
+    """
+    proj_webnovel = project_root / ".webnovel"
+    cache_scripts = plugin_root / "scripts"
+    if not proj_webnovel.is_dir():
+        return None
+    if not cache_scripts.is_dir():
+        return None
+
+    targets = [
+        "post_draft_check.py",
+        "pre_commit_step_k.py",
+        "plan_consistency_check.py",
+    ]
+
+    drifted = []
+    for name in targets:
+        proj_file = proj_webnovel / name
+        cache_file = cache_scripts / name
+        if not proj_file.exists() or not cache_file.exists():
+            continue
+        try:
+            proj_lines = sum(1 for _ in proj_file.open("r", encoding="utf-8", errors="ignore"))
+            cache_lines = sum(1 for _ in cache_file.open("r", encoding="utf-8", errors="ignore"))
+        except Exception:
+            continue
+        line_diff = abs(proj_lines - cache_lines)
+        if line_diff >= 50:
+            drifted.append({
+                "name": name,
+                "proj_lines": proj_lines,
+                "cache_lines": cache_lines,
+                "diff": line_diff,
+                "older": "project" if proj_lines < cache_lines else "cache",
+            })
+
+    if not drifted:
+        return {
+            "name": "project_scripts_drift",
+            "ok": True,
+            "path": str(proj_webnovel),
+            "note": "项目本地脚本与 cache 一致 · 无漂移",
+        }
+
+    # 区分两种漂移方向：
+    #  - project_lagging: project < cache → 项目落后，建议 cp cache→project
+    #  - project_customized: project > cache → 项目可能有特化，建议人工 review
+    project_lagging = [d for d in drifted if d["proj_lines"] < d["cache_lines"]]
+    project_customized = [d for d in drifted if d["proj_lines"] > d["cache_lines"]]
+
+    detail_lines = []
+    for d in project_lagging:
+        detail_lines.append(
+            f"  ⚠️ [LAGGING] {d['name']}: project {d['proj_lines']} 行 < cache {d['cache_lines']} 行（diff={d['diff']}）· 项目落后，cache 含新加固"
+        )
+    for d in project_customized:
+        detail_lines.append(
+            f"  ℹ️ [CUSTOMIZED] {d['name']}: project {d['proj_lines']} 行 > cache {d['cache_lines']} 行（diff={d['diff']}）· 项目可能有特化，需人工 review"
+        )
+
+    fix_cmds = []
+    if project_lagging:
+        fix_cmds.append("# 项目落后 · 自动同步 cache → project：")
+        for d in project_lagging:
+            fix_cmds.append(
+                f"  cp '{cache_scripts / d['name']}' '{proj_webnovel / d['name']}'"
+            )
+    if project_customized:
+        fix_cmds.append("# 项目可能特化 · 建议先 diff 再决定：")
+        for d in project_customized:
+            fix_cmds.append(
+                f"  diff '{cache_scripts / d['name']}' '{proj_webnovel / d['name']}'"
+            )
+
+    return {
+        "name": "project_scripts_drift",
+        "ok": False,
+        "severity": "P1",  # 警告不阻断 preflight
+        "path": str(proj_webnovel),
+        "drifted_count": len(drifted),
+        "lagging_count": len(project_lagging),
+        "customized_count": len(project_customized),
+        "drifted": drifted,
+        "error": (
+            f"项目本地 .webnovel/*.py 与 cache 漂移 {len(drifted)} 个脚本（≥50 行差）：\n"
+            + "\n".join(detail_lines)
+            + "\n修复：\n"
+            + "\n".join(fix_cmds)
+        ),
+    }
+
+
 def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
     scripts_dir = _scripts_dir().resolve()
     plugin_root = scripts_dir.parent
@@ -476,6 +591,16 @@ def _build_preflight_report(explicit_project_root: Optional[str]) -> dict:
                 checks.append(polish_check)
         except Exception as exc:
             checks.append({"name": "polish_drift", "ok": True, "path": "", "note": f"检测失败: {exc}"})
+
+    # Project scripts drift check — Round 28.28 · 2026-05-15 · Ch42 RCA 根治
+    # 检测项目 .webnovel/*.py 是否漂移 cache（hygiene 跑项目本地版会绕过 cache 加固）
+    if project_root:
+        try:
+            drift_check = _check_project_scripts_drift(plugin_root, Path(project_root))
+            if drift_check is not None:
+                checks.append(drift_check)
+        except Exception as exc:
+            checks.append({"name": "project_scripts_drift", "ok": True, "path": "", "note": f"检测失败: {exc}"})
 
     # Stale current_task check — Round 21.0 · 2026-04-28 · Ch15 RCA H33 根治
     # 检测 workflow_state.json 是否有死任务（current_task.current_step.started_at > 30 分钟）

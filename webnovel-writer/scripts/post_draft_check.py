@@ -693,8 +693,15 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
     # reader-critic critical + ooc low + flow high 三层 checker 同时发现。
     # 现有 Ch[0-9]+/第N章 regex 漏掉中文数词章号。
     # 根治：扫描"X 章之前/之后/内/前/后" 模式（X = 中文数词或阿拉伯数字）。
+    # Round 28.28 · Ch42 RCA · 多位中文数词补丁（2026-05-15）
+    # 引入背景：Ch42 L9 "<antagonist>二十二章前在日料店包厢" 漏过原 pattern。
+    # 根因：原 pattern 用枚举 alternatives (二十/三十/四十/五十)，
+    #       无法匹配"二十二/三十二/四十五"等多位中文数词；
+    #       \d+ 只匹配阿拉伯数字。
+    # 5 个 checker 同时命中本应在 post_draft_check 拦截的 H40 P0 critical。
+    # 根治：用字符类 [零一二两三四五六七八九十百千]+ 直接吃整段中文数词。
     cn_chapter_meta_pattern = (
-        r"(几|十|百|千|两|三|四|五|六|七|八|九|二十|三十|四十|五十|"
+        r"(几|[零一二两三四五六七八九十百千]+|"
         r"\d+)\s*章\s*(之前|之后|内|后|前|以前|以后)"
     )
     cn_chapter_hits = re.findall(cn_chapter_meta_pattern, text)
