@@ -572,6 +572,44 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 
 所有追加必须带 `[Ch{N}]` 章节标注。Step K 失败不阻断流程。
 
+**Round 28.28 · 2026-05-15 · Ch42 RCA Step K 三条永久硬规则**：
+
+1. **设定集数字字段必须从 state.json 真源读取，禁止凭印象写**：
+   - 触发：Ch42 设定集 [Ch40][Ch41][Ch42] 三段连续把 `vital_force=10` 误写为 `vital_force=48`。state.json 自 Ch20 起 vital_force.current=10 锁定不变，data-agent 在 Step K 时凭印象写 48（可能记着 Ch15 之前的旧值），三章连续漂移。
+   - 规则：任何写入设定集的"vital_force / 沙漏 / <golden-finger-space> Lv / 印记 Lv / vital_force.max / danger_threshold / 主角等级 / 觉醒者阶段"等**数字字段**，**必须**先调 `state get-protagonist-state`（或直接读 `.webnovel/state.json` 的 `protagonist_state`）确认真值。**禁止**复制粘贴上章设定集文本里的数字（极易把上章数字直接搬过来）。
+   - 自检：写完 [Ch{N}] 段后，grep 自己写的所有数字字段，与 state.json 对账，发现不一致立即修正。
+
+2. **设定集追加内容禁止具体章号 Ch{N} 引用**：
+   - 触发：Ch42 伏笔追踪.md [Ch42] 段写 "<antagonist> Ch26 日料店包厢"——但<antagonist>日料店饭局在 Ch19《<antagonist>的方法》，不是 Ch26《爆发后第一夜》。双重错误：(a) 章号事实错（Ch26→Ch19）；(b) 章号自我指称（H40 元叙述变体的设定集级别延伸）。
+   - 规则：设定集 [Ch{N}] 段中**禁止**写 "Ch19 / Ch26 / 第N章" 等具体章号指代历史事件，必须用**自然指代** + 书名号章题：
+     - 反例："<antagonist> Ch26 日料店包厢"
+     - 正例："<antagonist>日料店包厢那晚（《<antagonist>的方法》那次饭局）"
+   - 例外：当前章 [Ch{N}] 自我标识、跨章窗口（Ch43-46 兑现窗口）允许。
+   - 自检：grep "Ch\d{1,3}" 自己写的 [Ch{N}] 段，每条都问"这个章号是事实正确的吗？能不能用自然指代代替？"
+
+3. **设定集 [Ch{N}] 段写完后做 grep 自检 3 项**：
+   ```python
+   # 自检脚本（在 Step K 写完每个文件后调用）
+   import re, pathlib
+   text = pathlib.Path('设定集/资产变动表.md').read_text(encoding='utf-8')
+   ch_n_section = re.search(rf'\[Ch{N}\][^]]*?(?=\[Ch{N+1}\]|\Z)', text, re.DOTALL)
+   if ch_n_section:
+       sec = ch_n_section.group(0)
+       # 1. 数字字段 cross-check
+       vf_writes = re.findall(r'vital_force[=\s]+(\d+)', sec)
+       state_vf = state['protagonist_state']['golden_finger']['vital_force']['current']
+       assert all(int(v) == state_vf for v in vf_writes), f'vital_force drift: {vf_writes} vs state {state_vf}'
+       # 2. 历史章号引用检查（除 [Ch{N+1}-Ch{N+M}] 兑现窗口外）
+       ch_refs = re.findall(r'Ch(\d+)', sec)
+       wrong_refs = [c for c in ch_refs if int(c) < N - 2]  # 引用 2 章以前的，建议改自然指代
+       if wrong_refs:
+           print(f'WARN: Step K 引用了具体章号 {wrong_refs}，建议改自然指代')
+       # 3. 字段类型 sanity
+       # 主角卡 / 资产表 是描述性 markdown，不应含 JSON 片段
+   ```
+
+违反任一条 → `step_k_status.outcome = "partial"` + `processing_report.warnings` 记录 `STEP_K_DATA_DRIFT` / `STEP_K_CHAPTER_REF_LEAK`。
+
 **Round 18 · 2026-04-24 · Ch10 P1-8 根治硬规则**：
 
 主角卡 / 伏笔追踪 / 资产变动表 这 3 个被 `pre_commit_step_k.py` 检查的核心文件，

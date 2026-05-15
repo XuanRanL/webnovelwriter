@@ -418,6 +418,27 @@ audit-agent 写 `editor_notes_for_next_chapter` 时，**任何**关于角色背�
 
 3. **审查报告 overall_score 唯一性 (B4 regex 冲突)**: 报告里"overall_score: X"字段必须**唯一出现在 frontmatter 顶头**，其他位置（如 reader-thrill section）必须用别名（`综合分` / `thrill_score` / `sub_score`）而不是 `overall_score`，否则 B4 regex 抓到第二条命中导致误报 fail。Round 28.27 SKILL.md 已加入审查报告模板规范。
 
+**Round 28.28 · Ch42 deep research 三大新根因**：
+
+1. **B6 跨产物数字真值对账 (新增 P0)**: 第一次 audit Layer B 只校 time_anchor 方向 (B5) 和字段个数 (B9)，完全没做跨产物 numeric 对账。Ch42 设定集 [Ch40][Ch41][Ch42] 三段连续把 `vital_force=10` 误写为 `vital_force=48`，但 audit 没抓到。**新规则**：Layer B 加 B6_numeric_truth check：
+   - 读 state.json TOP `protagonist_state.golden_finger.vital_force.current`
+   - grep 设定集所有 `[Ch{N}]` 段中的 `vital_force[=\s]+\d+` 数字
+   - 若任一漂移 ≥ 5 → B6 high；漂移 ≥ 10 → B6 critical
+   - 类似对 `沙漏`、`<golden-finger-space> Lv`、`印记 Lv`、`觉醒者阶段` 做对账
+   - 当代 audit-agent 复审 Ch42 时找到 vital_force 漂移 (48 vs 10)，第一次 audit 漏报应升级 B6 high
+
+2. **B7 editor_notes prep 数字 vs 正文 grep 对账 (新增)**: audit-agent 自己写 `editor_notes/ch{N+1}_prep.md` 时常凭印象写"Ch{N} 实际 X 处 Y"统计数字，与正文 grep 不符。Ch42 prep 写"不是X是Y 5 处"（实测 2-4）、"他不X 8 处"（实测 6-10）、"刻度量词 9 处/3 抒情"（实测 14/6）。**新规则**：audit-agent 写 editor_notes 时**必须**：
+   - 用 grep 实测每个声称的统计数字
+   - 在 prep 中标注真实测得值，禁止凭印象
+   - 自检：写完 prep 后用 `post_draft_check.py --editor-notes-only` 跑 PREP_COUNT_DRIFT 校验
+
+3. **B8 设定集章号引用扫描 (新增)**: 设定集追加内容（伏笔追踪/资产变动表/主角卡）的 [Ch{N}] 段含具体章号 "Ch19/Ch26/第N章" 等是 H40 元叙述变体的设定集级延伸 + 常常 fact-error。Ch42 伏笔追踪 [Ch42] 段写"<antagonist> Ch26 日料店"（应为 Ch19）。**新规则**：Layer B 加 B8_canon_chapter_ref check：
+   - grep 设定集 [Ch{N}] 段中 `Ch\d{1,3}` / `第\s*[零一二两三四五六七八九十百千]+\s*章`
+   - 排除当前章自指 [Ch{N}] / 跨章窗口表达（Ch43-46）
+   - 剩余每条都做 fact-check：grep 该章号对应正文/canon 是否含相关事实
+   - 不一致 → B8 medium
+   - 即使一致也提示"建议改为自然指代 + 书名号章题"
+
 ## 失败隔离
 
 - **audit-agent 本身调用失败（超时/JSON 不合规）**：主流程视为 Step 6 失败，不得默认放行进入 Step 7
