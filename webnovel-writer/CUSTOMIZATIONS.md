@@ -7,6 +7,58 @@
 
 ---
 
+## [2026-05-15 · Round 28.28 deep research 补充] Ch42 deep research 4 类追加根因
+
+**Trigger**：Ch42 全流程跑完后用户要求 deep research 二次审查，发现 5 个新 root cause（第一次 audit 漏报 + audit-agent 自身漂移）：
+
+1. **vital_force 跨产物数字漂移**（最严重 high）：
+   - state.json TOP `vital_force.current=10`（自 Ch20 锁定，danger_threshold 阈值）
+   - 设定集/资产变动表.md [Ch40][Ch41][Ch42] 三段连续写 `vital_force=48 维持`
+   - 设定集/主角卡.md [Ch40][Ch41][Ch42] 同样误写 48
+   - Ch42 第一次 audit Layer B5 只校 time_anchor，B9 只数字段个数，完全没做跨产物 numeric 对账
+   - 直接影响：下章 Ch43 context-agent 读 state 真源是 10（危险阈值），但若 audit-agent 读设定集是 48 → 决策矛盾
+   - **Root**：data-agent Step K 写设定集时凭印象写数字字段（可能是 Ch15 之前的旧值），不读 state.json 真源；连续三章漂移
+   - **Fix**：
+     - 设定集修正（Ch40-42 三段全改 `vital_force=10`）
+     - `agents/data-agent.md` Step K 新增硬规则 1：设定集数字字段必须从 state.json 真源读取
+     - `agents/audit-agent.md` Layer B 新增 B6_numeric_truth check：跨产物数字对账，漂移 ≥10 → critical
+
+2. **设定集 [Ch42] Ch26 vs Ch19 事实错误**（medium）：
+   - 伏笔追踪.md [Ch42] 段写 "<antagonist> Ch26 日料店包厢"
+   - 实际 canon：<antagonist>日料店饭局在 Ch19《<antagonist>的方法》，Ch26 是《爆发后第一夜》（与日料店无关）
+   - 双重错误：(a) 章号事实错；(b) 章号自我指称（H40 元叙述变体的设定集级延伸）
+   - **Root**：data-agent 在 Step K 写设定集时引用具体章号常常出错；缺乏 grep 验证
+   - **Fix**：
+     - 伏笔追踪.md 改 "<antagonist>日料店包厢那晚（《<antagonist>的方法》那次饭局）"
+     - data-agent Step K 新增硬规则 2：设定集追加内容禁止具体章号 Ch{N} 引用，用书名号章题 + 自然指代
+     - audit-agent Layer B 新增 B8_canon_chapter_ref check
+
+3. **editor_notes/ch{N+1}_prep.md 中"Ch{N} 实际 X 处" 数字凭印象**（medium）：
+   - Ch43 prep 写 "Ch42 不是X是Y 5处" 实测 2-4；"他不X 8处" 实测 6-10；"刻度量词 9处/3抒情" 实测 14/6
+   - **Root**：audit-agent 写 prep 时凭印象给统计数字，未 grep 实测
+   - **Fix**：audit-agent.md Layer B 新增 B7_prep_count_drift 自检规则
+
+4. **F7 标题字面承诺低估**（升 high reader-side）：
+   - 标题《<antagonist>地图的坑》，正文 "<antagonist>" 9 次 / "地图" 0 / "坑" 1
+   - "坑" 1 命中在 L161 "土面陷下去一个小坑" — 与标题语义无关（标题是<antagonist>挖坑设套，L161 是浇水土凹）
+   - CLI strict 任一关键词 ≥1 PASS，但 reader 视角 "<antagonist>地图在哪？" — 标题主承诺确实未字面落字
+   - 第一次 audit 给 medium，复审 audit 建议 high（reader-side）
+   - **Fix**：editor_notes/ch0043_prep.md W1 已写明 Ch43 必兑现 "<antagonist>地图"字面落字 ≤25 字
+
+5. **chapter_meta.protagonist_state 字段类型混乱**（info 设计级）：
+   - chapter_meta.NNNN.protagonist_state 是 str 描述
+   - TOP protagonist_state 是 dict 结构
+   - 同名异型，下游 LLM 易混淆
+   - 暂未引发 bug，记录在 audit_reports/ch0042_recheck.json N5
+
+**Verification**：
+- 设定集 vital_force 3 处已修（Ch40/41/42 段）
+- 设定集 [Ch42] Ch26→自然指代已修
+- data-agent.md / audit-agent.md 新规则已落 + sync 完成
+- 项目 Ch43 起草时 preflight 会看到新规则生效
+
+---
+
 ## [2026-05-15 · Round 28.28] Ch42 RCA · 2 类根因永久根治
 
 **Trigger**：Ch42 "<antagonist>地图的坑" 全流程跑完后 deep research，发现 2 类系统性 root cause：
