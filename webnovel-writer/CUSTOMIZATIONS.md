@@ -7,6 +7,43 @@
 
 ---
 
+## [2026-05-15 · Round 28.28] Ch42 RCA · 2 类根因永久根治
+
+**Trigger**：Ch42 "<antagonist>地图的坑" 全流程跑完后 deep research，发现 2 类系统性 root cause：
+
+1. **多位中文数词章号距离指代 H40 未拦**：Ch42 L9 "<antagonist>二十二章前在日料店包厢" 触发 5 个 checker（consistency/continuity/reader-critic/flow/reader-pull）同时 critical/high，但 post_draft_check.py 在 Step 2A 双轮 check 中都没拦下来。**Root cause**：cn_chapter_meta_pattern 使用 alternative enumeration `(几|十|百|千|两|三|四|五|六|七|八|九|二十|三十|四十|五十|\d+)` 只能匹配 0-2 位中文数词，"二十二/三十二/四十五"等 3+ 字组合直接漏掉。本应作为 H40 元叙述泄漏被起草层拦截。
+
+2. **项目本地脚本与 cache 严重漂移**：`.webnovel/post_draft_check.py` 271 行 vs cache/fork 867 行（缺失 ~600 行后续 Round 加固）。hygiene_check.py 第 98 行 `here / "post_draft_check.py"` 硬编码项目本地，cache 里的 H40 cn_chapter_meta / 签名密度 / 元标识符等检查永远跳过。preflight 没有项目本地脚本漂移检测项，多个项目的 .webnovel/*.py 多年未同步。
+
+**Root fix**：
+
+A. **scripts/post_draft_check.py** cn_chapter_meta_pattern 改字符类：
+```
+旧: (几|十|百|千|两|三|四|五|六|七|八|九|二十|三十|四十|五十|\d+)\s*章\s*(之前|之后|内|后|前|以前|以后)
+新: (几|[零一二两三四五六七八九十百千]+|\d+)\s*章\s*(之前|之后|内|后|前|以前|以后)
+```
+覆盖所有合法中文数词组合，匹配测试通过：二十二/三十二/四十五/一百零三 全部 hit。
+
+B. **scripts/data_modules/webnovel.py** 新增 `_check_project_scripts_drift()` preflight 检查项：
+   - 比对项目 `.webnovel/{post_draft_check,pre_commit_step_k,plan_consistency_check}.py` vs cache `scripts/*.py`
+   - 行数差 ≥ 50 → P1 warn（非阻断 preflight）
+   - 区分两种漂移：`LAGGING`（project < cache，建议 cp 同步）/ `CUSTOMIZED`（project > cache，建议 diff 后人工 review）
+
+C. **skills/webnovel-write/SKILL.md** Step 2A 硬要求新增两条：
+   - 复述前章人物原话必须 Grep 原文校验（Ch42 L9 凭印象写<antagonist>原话被 continuity 13 分捕获）
+   - 禁止"X章前/X章后/X章之前"数字章号距离指代（H40 隐蔽变体）
+
+D. **项目本地 .webnovel/post_draft_check.py** 已 cp cache 最新（271→874 行）覆盖；plan_consistency_check.py 同步（395→452）；pre_commit_step_k.py 因项目特化保留（214 > cache 154）。
+
+**Verification**：
+- Pattern test: `[('二十二', '前')]` hit ✓
+- preflight: 现报 1 个 CUSTOMIZED drift（pre_commit_step_k.py 项目自定义保留）
+- 项目本地 hygiene 跑 post_draft_check 现可触发 METAREF_CN_CHAPTER
+
+**Round trip**：从 Step 2A 起草→post_draft_check（cache & project 双路径）→ Step 3/3.5 → polish → hygiene → commit，全链路无法再让"X章前"通过。
+
+---
+
 ## [2026-05-12 · Round 28.22] Ch37 RCA · 4 类根因永久根治
 
 **Trigger**：Ch37 "林业局来人" 全流程（Step 0-7 + 8.5）跑完后 deep research，发现 4 类系统性问题：
