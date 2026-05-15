@@ -1944,6 +1944,131 @@ def check_B9_chapter_meta_fields(project_root: Path, chapter: int) -> CheckResul
     )
 
 
+# ==================== Layer F: 题材兑现（CLI 子集 · Round 28.27 加入）====================
+
+# Round 28.27 · Ch41 deep research RCA：F7 规则 (Round 28.25) 只在 audit-agent.md
+# 文档化但 agent 实际跑时漏检（Ch41 标题《<child-character>的第一棵树》中"第一棵"在正文 0 显形
+# 仍 PASS）。把 F7 grep 实现搬到 CLI 自动跑，避免 audit-agent prompt 漏跑。
+
+# 标题虚词/共用词黑名单（不算关键标题词）
+_TITLE_STOPWORDS = {
+    "的", "了", "和", "与", "或", "在", "是", "也", "都", "就",
+    "我", "他", "她", "它", "你", "们", "这", "那", "之", "中",
+    "一", "二", "三", "上", "下", "里", "外", "前", "后", "时", "天",
+    "一个", "这个", "那个", "之中", "其中",
+}
+
+
+def _extract_title_keywords(title: str) -> List[str]:
+    """从章节标题提取核心关键词（去虚词/单字停用词）。
+
+    例:
+      <child-character>的第一棵树 → ['<child-character>', '第一棵', '树']  (拆 N+量词+N 边界)
+      失情绪的第七天 → ['失情绪', '第七天']
+      九分之一 → ['九分之一']
+    """
+    if not title:
+        return []
+    parts: List[str] = []
+    # 第一层：以"的/之/，"等切分
+    for seg in re.split(r"[的之，,。·\s]+", title):
+        seg = seg.strip()
+        if not seg or seg in _TITLE_STOPWORDS:
+            continue
+        # 第二层：在"数字+量词"边界做二次切分
+        # 例如 "第一棵树" → "第一棵" + "树"  ("棵" 是量词，量词后做切点)
+        sub_parts = re.split(r"(?<=[棵颗只把条根块片张个本场次轮]).", "X" + seg)
+        if len(sub_parts) > 1:
+            # 还原 "X" prefix
+            sub_parts[0] = sub_parts[0][1:]
+            for sp in sub_parts:
+                sp = sp.strip()
+                if sp and sp not in _TITLE_STOPWORDS:
+                    parts.append(sp)
+        else:
+            parts.append(seg)
+    return parts
+
+
+def check_F7_title_promise_in_text(project_root: Path, chapter: int) -> CheckResult:
+    """F7: 标题词在正文显形（Round 28.25 永久规则 · Round 28.27 CLI 化）.
+
+    背景: Ch39 "失情绪的第七天" 标题词 0 显形 + Ch41 "<child-character>的第一棵树" 中
+    "第一棵" 在正文 0 显形仍 PASS 的盲区。
+
+    规则: 解析章节标题关键词，**至少有一个核心关键词在正文 ≥1 次出现**即 pass
+    （任一命中即可）。所有关键词都 0 显形才 fail。这避免了对单一关键词的过严
+    要求（"第一棵树" 整体不命中但 "<child-character>"+"树" 都命中也算兑现）。
+    """
+    state = _read_json(project_root / ".webnovel" / "state.json") or {}
+    entry = (state.get("chapter_meta", {}) or {}).get(_pad(chapter)) or {}
+    title = entry.get("title", "")
+
+    chapter_file = _find_chapter_file(project_root, chapter)
+    if not title:
+        return CheckResult(
+            id="F7", name="标题词正文显形", layer="F",
+            status="skipped", severity="high",
+            evidence=f"chapter_meta.{chapter}.title 为空，无法检查",
+        )
+    if not chapter_file or not chapter_file.exists():
+        return CheckResult(
+            id="F7", name="标题词正文显形", layer="F",
+            status="skipped", severity="high",
+            evidence=f"正文文件不存在",
+        )
+    text = _read_text(chapter_file) or ""
+    keywords = _extract_title_keywords(title)
+    if not keywords:
+        return CheckResult(
+            id="F7", name="标题词正文显形", layer="F",
+            status="skipped", severity="high",
+            evidence=f"标题 '{title}' 无有效关键词",
+        )
+    counts: Dict[str, int] = {kw: text.count(kw) for kw in keywords}
+    hits = [kw for kw, c in counts.items() if c > 0]
+    missing = [kw for kw, c in counts.items() if c == 0]
+
+    # 任一关键词命中即 pass（避免对单一组合关键词的过严要求）
+    if hits:
+        # 若有部分关键词漏，降为 warn（轻度提醒）
+        if missing:
+            return CheckResult(
+                id="F7", name="标题词正文显形", layer="F",
+                status="warn", severity="medium",
+                evidence=f"标题 '{title}' 部分关键词显形 {hits}，但 {missing} 0 次出现",
+                measured={"title": title, "keywords": keywords, "counts": counts, "hits": hits, "missing": missing},
+                remediation=[
+                    f"建议 polish 加 1 句 '{missing[0]}' 字眼让标题承诺完整兑现",
+                ],
+            )
+        return CheckResult(
+            id="F7", name="标题词正文显形", layer="F",
+            status="pass", severity="high",
+            evidence=f"标题 '{title}' 全部关键词在正文显形: {counts}",
+            measured={"title": title, "keywords": keywords, "counts": counts},
+        )
+    # 全部 0 显形 → fail
+    return CheckResult(
+        id="F7", name="标题词正文显形", layer="F",
+        status="fail", severity="high",
+        evidence=f"标题 '{title}' 全部关键词 {keywords} 在正文 0 显形（Round 28.25 永久规则）",
+        measured={"title": title, "keywords": keywords, "counts": counts, "missing": missing},
+        remediation=[
+            f"polish 加 1-2 句标题词显形锚（最简：在情节自然处插入 '{keywords[0]}' 字眼）",
+            "或回 Step 1/Step 2A 重新设计标题与正文对应关系",
+        ],
+    )
+
+
+def _run_layer_f(project_root: Path, chapter: int) -> LayerResult:
+    """Layer F: 题材兑现（CLI 子集 · 当前只跑 F7，其余仍由 audit-agent 跑）."""
+    checks = [
+        check_F7_title_promise_in_text(project_root, chapter),
+    ]
+    return LayerResult(layer="F", score=_score_from_checks(checks), checks=checks)
+
+
 # ==================== Layer G: 跨章趋势 ====================
 
 def check_G1_score_trend(project_root: Path, chapter: int) -> CheckResult:
@@ -2285,16 +2410,23 @@ _DECISION_TO_EXIT_CODE = {
 
 
 def run_audit(project_root: Path, chapter: int, mode: str = "standard") -> Dict[str, Any]:
-    """运行 Layer A/B/G 全部检查，返回字典供主流程/agent 消费."""
+    """运行 Layer A/B/F(子集)/G 全部检查，返回字典供主流程/agent 消费.
+
+    Round 28.27: Layer F 加入 CLI 子集（F7 标题词正文显形），其余 F 检查仍由
+    audit-agent 在 Part 2 跑。背景：F7 (Round 28.25 永久规则) 只在 audit-agent.md
+    文档化但 agent 实际跑时可能漏检（Ch41 标题《<child-character>的第一棵树》中"第一棵"
+    在正文 0 显形仍 PASS）。
+    """
     layer_a = _run_layer_a(project_root, chapter)
     layer_b = _run_layer_b(project_root, chapter)
+    layer_f = _run_layer_f(project_root, chapter)  # Round 28.27 加入
     # minimal 模式跳过 Layer G
     if mode == "minimal":
         layer_g = LayerResult(layer="G", score=None, checks=[], skipped_reason="mode=minimal")
     else:
         layer_g = _run_layer_g(project_root, chapter)
 
-    all_checks = layer_a.checks + layer_b.checks + layer_g.checks
+    all_checks = layer_a.checks + layer_b.checks + layer_f.checks + layer_g.checks
     critical_fails = [c for c in all_checks if c.status == "fail" and c.severity == "critical"]
     high_fails = [c for c in all_checks if c.status == "fail" and c.severity == "high"]
     medium_fails = [c for c in all_checks if c.status == "fail" and c.severity == "medium"]
@@ -2314,7 +2446,7 @@ def run_audit(project_root: Path, chapter: int, mode: str = "standard") -> Dict[
 
     return {
         "chapter": chapter,
-        "audit_version": "1.0",
+        "audit_version": "1.1",  # Round 28.27 加入 Layer F 子集
         "mode": mode,
         "source": "chapter_audit_cli",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -2322,6 +2454,7 @@ def run_audit(project_root: Path, chapter: int, mode: str = "standard") -> Dict[
         "layers": {
             "A_process_integrity": layer_a.to_dict(),
             "B_cross_artifact_consistency": layer_b.to_dict(),
+            "F_genre_fitness": layer_f.to_dict(),
             "G_cross_chapter_trend": layer_g.to_dict(),
         },
         "summary": {

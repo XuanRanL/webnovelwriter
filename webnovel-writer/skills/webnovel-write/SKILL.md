@@ -51,6 +51,11 @@ allowed-tools: Read Write Edit Grep Bash Task
 - **禁止跳步**：不得跳过未被模式定义标记为可跳过的 Step。即使批量写多章、赶进度、上下文紧张，也必须每章完整执行所有 Step。任何“先写完再补审”、“跳过 Context Agent 直接起草”、“只跑外部审查不跑内部审查”的行为均视为违规。
 - **禁止赶进度降级**：批量写作多章时，每一章都必须独立走完完整流程（Step 0→1→2A→2B→3→3.5→4→5→6→7）。不得因为“后面还有很多章”而简化任何一章的流程。质量优先于速度，这是不可协商的硬规则。
 - **禁止省略审查报告**：Step 3 完成后必须生成审查报告文件（`审查报告/第{NNNN}章审查报告.md`），包含所有审查器的结果汇总。不得只在内存中汇总分数而不写文件。
+- **审查报告模板规范 (Round 28.27 加入 · 防 B4 regex 冲突)**：
+  - `overall_score: X` 字段**必须唯一出现在 frontmatter 顶头**（首条 `> overall_score: X`）
+  - 其他位置的 score（如 reader-thrill）**必须**用别名（`综合分` / `thrill_score` / `sub_score`）而非 `overall_score`，否则 B4 regex 抓到第二条命中导致 audit B4 high fail（Ch41 RCA：thrill section `- overall_score: 55` 触发，应改为 `- 综合分: 55`）
+  - 各 checker 行**禁止共用同一 token ≥3 次**（如多个 `(未复测)`），否则 audit A2 检测为 checker 坍缩 critical fail（Ch41 RCA：5+ checker 共用"未复测"误判）
+  - 外部模型矩阵中每个 score**必须用 disk JSON `overall_score` 字段真值**，而非 stdout 早期值或自己估的值（Ch41 RCA：minimax-m2.7-hs 写 73.2 实际 disk 88.5，差 15.3）
 - **禁止临时改名**：不得将 Step 的输出产物改写为非标准文件名或格式。
 - **禁止自创模式**：`--fast` / `--minimal` 只允许按上方定义裁剪步骤，不允许自创混合模式、“半步”或“简化版”。
 - **禁止自审替代**：Step 3 审查必须由 Task 子代理执行，主流程不得内联伪造审查结论。
@@ -853,13 +858,50 @@ Ch36 血教训：5 个 checker（reader-pull / reader-naturalness / reader-criti
    - `density_check_ch{NNNN}.json`
    - `prose_quality_check_ch{NNNN}.json`
    - `emotion_check_ch{NNNN}.json`
-4. **Step 3 complete-step 前 sanity check**：
+4. **Step 3 complete-step 前 sanity check (Round 28.27 加强：必须 parseable)**：
    ```bash
-   for cid in reader_naturalness_check reader_critic_check consistency_check continuity_check ooc_check reader_pull high_point_check flow_check pacing_check dialogue_check density_check prose_quality_check emotion_check; do
-     test -f "${PROJECT_ROOT}/.webnovel/tmp/${cid}_ch${chapter_padded}.json" || echo "MISSING: ${cid}"
-   done
+   python -X utf8 -c "
+   import json, os
+   chap = '${chapter_padded}'
+   files = ['reader_naturalness_check','reader_critic_check','consistency_check','continuity_check','ooc_check','reader_pull','high_point_check','flow_check','pacing_check','dialogue_check','density_check','prose_quality_check','emotion_check']
+   for cid in files:
+       p = f'.webnovel/tmp/{cid}_ch{chap}.json'
+       if not os.path.exists(p):
+           print(f'MISSING: {cid}'); continue
+       try:
+           json.load(open(p, encoding='utf-8'))
+       except json.JSONDecodeError as e:
+           # H71 嵌套引号 / 编码错误 / 截断 → 必须先修复
+           print(f'BROKEN: {cid}: {e}')
+   "
    ```
-   任一 MISSING 必须先补盘再 complete-step。
+   任一 MISSING 必须先补盘再 complete-step。任一 BROKEN（通常因 H71 ASCII 引号嵌套）必须先用以下脚本修复：
+   ```python
+   # 自动 repair：把嵌套 ASCII " 改成括号 ( )
+   import json, pathlib, re
+   p = pathlib.Path('.webnovel/tmp/<broken_file>.json')
+   raw = p.read_text(encoding='utf-8')
+   out = []
+   for line in raw.split('\n'):
+       m = re.match(r'(\s*"[a-z_]+"\s*:\s*")(.*)("(,?)\s*)$', line)
+       if m and not line.strip().startswith('"problems"'):
+           prefix, content, suffix, _ = m.groups()
+           depth = 0; new = []
+           for ch in content:
+               if ch == '"':
+                   new.append('(' if depth % 2 == 0 else ')'); depth += 1
+               else:
+                   new.append(ch)
+           out.append(prefix + ''.join(new) + suffix)
+       else:
+           out.append(line)
+   fixed = '\n'.join(out)
+   json.loads(fixed)  # 验证
+   p.write_text(fixed, encoding='utf-8')
+   ```
+   **Round 28.27 RCA**: Ch41 reader-critic / ooc-recheck 两份 JSON 都 H71 复发, 即使
+   subagent.md 已写禁嵌套规则。根因是 subagent prompt 落盘前未做 json.load 自检——
+   主流程必须代替 subagent 做这道闸门, 否则 hygiene H71 P0 阻断 commit 才发现就晚了。
 
 ### Step 4：润色（问题修复优先）
 

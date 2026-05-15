@@ -403,11 +403,20 @@ audit-agent 写 `editor_notes_for_next_chapter` 时，**任何**关于角色背�
 
 **F7 HIGH · 标题词在正文 0 次出现**：本章 Ch39 "失情绪的第七天" 标题，但 polish 前正文 grep `失情绪` = 0 / `第七天` = 0。Layer F 加：
 
-- F7 check：解析 chapter title 关键词（去虚词），grep 正文必须 ≥1 次出现核心标题词
-- 例：标题"失情绪的第七天" → 关键词 ["失情绪", "第七天"]；正文必须各 grep ≥ 1
-- 若 0 命中 → F7 high，建议 polish 加 1 句标题词显形锚（最简：章首或回温场景插一句"失情绪第N天了..."）
+- F7 check：解析 chapter title 关键词（去虚词），grep 正文必须每个关键词 ≥1 次出现核心标题词（任一关键词命中即 pass，全部 0 显形才 fail）
+- 例：标题"失情绪的第七天" → 关键词 ["失情绪", "第七天"]；正文必须至少 1 个 grep ≥ 1
+- **Round 28.27 加强（CLI 化）**: F7 grep 已实现到 `scripts/data_modules/chapter_audit.py:check_F7_title_promise_in_text`，audit-agent 在跑 Part 1 CLI 时自动消费 `layers.F_genre_fitness.checks[].F7`。audit-agent 直接读 CLI 输出，不需要自己再 grep 一次（避免漏跑）。背景：Ch41 标题《<child-character>的第一棵树》中 "第一棵" 在正文 0 显形仍 PASS 的盲区——audit-agent prompt 写了 F7 规则但实际 Layer F 跑题。CLI 化后 F7 确定性触发。
+- 若 0 命中 → F7 high，建议 polish 加 1 句标题词显形锚
 
 这三道根治防 Ch40+ 复发。
+
+**Round 28.27 · Ch41 deep research 三大新根因**：
+
+1. **disk JSON 真值优先 (B4/A3 数据校对)**: 引用外部模型 score 时**必须**用 disk JSON `overall_score` 字段而非审查报告里抄写的数。Ch41 minimax-m2.7-hs 报告里写 73.2 (是 stdout 第一次单跑早期值)，但 disk 真值 88.5；导致 external_avg 错算 85.48 应 86.50、combined overall 错算 88 应 89、误报 minimax 为 outlier。audit-agent Layer B 加 B4_disk_truth check: 每个 external_review_*_ch{N}.json 的 `overall_score` 与审查报告矩阵抄写值差 ≤ 1。
+
+2. **Canon Bible vs 详细大纲真源分裂 (D4)**: Ch41 Canon §260 写 "Ch41 救下"，详细大纲 §117 写 "Ch41 <child-character>种树"。三处真源（Canon/详细大纲/节拍表）至少有 2 处冲突必须 audit Layer D 加 D4_canon_vs_outline_split check: 对当前章号 grep Canon Bible + 详细大纲 + 节拍表，若 keyword 描述（如 "救下" vs "种树"）严重分裂 → high warn。
+
+3. **审查报告 overall_score 唯一性 (B4 regex 冲突)**: 报告里"overall_score: X"字段必须**唯一出现在 frontmatter 顶头**，其他位置（如 reader-thrill section）必须用别名（`综合分` / `thrill_score` / `sub_score`）而不是 `overall_score`，否则 B4 regex 抓到第二条命中导致误报 fail。Round 28.27 SKILL.md 已加入审查报告模板规范。
 
 ## 失败隔离
 
