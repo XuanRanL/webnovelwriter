@@ -2320,7 +2320,7 @@ def main():
                 "primary_type": primary,
                 "secondary_type": sec,
                 "strength": int(payload.get("strength", 80)),
-                "text_excerpt": (str(payload.get("text") or ""))[:200],
+                "text_excerpt": (str(payload.get("text_excerpt") or payload.get("text") or ""))[:200],
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             if source_nv:
