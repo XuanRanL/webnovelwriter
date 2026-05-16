@@ -243,7 +243,13 @@ def update_state_after_polish(
     hook_close = meta.setdefault("hook_close", {})
     new_excerpt = _extract_chapter_tail_excerpt(text)
     old_excerpt = hook_close.get("text_excerpt", "")
-    excerpt_changed = (new_excerpt or "").strip() != (old_excerpt or "").strip()
+    # Round 28.31 (Ch43 v2 deep research RCA): normalize whitespace before comparison
+    # 否则 set-hook-close 用 '\n' 单换行 vs polish_cycle 抽 '\n\n' 双换行 会触发
+    # excerpt_changed=True → needs_reclassify=True → hygiene H28 P0 反复阻塞 commit
+    # （chicken-egg 死循环, Ch43 v2 实测 polish_cycle 跑 3 次都因此 fail）
+    def _norm_ws(s: str) -> str:
+        return re.sub(r"\s+", " ", (s or "").strip())
+    excerpt_changed = _norm_ws(new_excerpt) != _norm_ws(old_excerpt)
     hook_close["text_excerpt"] = new_excerpt
     hook_close["source_narrative_version"] = new_version
     if excerpt_changed:

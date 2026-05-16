@@ -424,17 +424,21 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
             )
             override_str = structural_ex.get("dialogue_ratio_override")
             # override 格式如 "0.20-0.28" 或 {"min": 0.20, "max": 0.28}
+            # Round 28.31 (Ch43 v2 deep research): 旧逻辑 dr_min=max(0.20, override_min)
+            # 让 0.18 exemption 永远等于 0.20，context.exemption 设计完全废 → writer 仍被反复
+            # 加对话耗时（Ch43 实测加了 5 轮 polish 才到 0.198）。
+            # 修复：允许 override 真正生效（绝对底线放宽到 0.15），但 0.15-0.20 段需 prep 笔记
+            # 声明 reason；hygiene H21 streak 仍以 0.20 计避免长期低对话章累积。
             if isinstance(override_str, str):
                 m = re.match(r"\s*(\d*\.?\d+)\s*-\s*(\d*\.?\d+)\s*", override_str)
                 if m:
                     override_min = float(m.group(1))
-                    # 不让 override 低于绝对 0.20 底线
-                    if 0.18 <= override_min <= 0.30:
-                        dr_min = max(0.20, override_min)
+                    if 0.15 <= override_min <= 0.30:
+                        dr_min = override_min  # 真正生效
             elif isinstance(override_str, dict) and "min" in override_str:
                 override_min = float(override_str["min"])
-                if 0.18 <= override_min <= 0.30:
-                    dr_min = max(0.20, override_min)
+                if 0.15 <= override_min <= 0.30:
+                    dr_min = override_min
         except Exception:
             pass
 
