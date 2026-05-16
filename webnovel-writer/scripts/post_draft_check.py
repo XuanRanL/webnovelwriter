@@ -495,8 +495,14 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         # Round 28.6 · 同源 N4 红线："不是X是Y" 排比，reader-naturalness 持续标外溢
         # 单章 ≤1 次（执行包硬规则）但 polish 经常 5+ 次。block 4 拦最严重案例。
         "不是X是Y": {"pattern": r"不是[^，。；！？\n]{1,15}是[^，。；！？\n]{1,15}", "warn": 2, "block": 4},
+        # Round 28.32 · Ch43 v2 deep research RCA：post_draft 完全漏检 "嗯" 应答词和 "他不X"
+        # 否定式两个 prep 笔记 W3 明文限的签名，导致 v2 commit 后 reader-naturalness 复测仍报
+        # "嗯 18次/章 ≥12 prep 限超载"、"他不X 7次/章 ≥5 prep 限超载"。
+        # 单独配置 prep 笔记常用阈值 + 千字归一化（按 3500 字典型推进章计）。
         # 段落首"他"开头连续（叙事声音约束 0 容忍）。Ch11 polish 前 2 处。
         # 这里用近似：单文档"他+空白"模式过密时 warn（精确版要分段处理，留 prose-quality 兜底）
+        "嗯应答": {"pattern": r"[“]嗯[。.！？]", "warn": 12, "block": 16},
+        "他不X": {"pattern": r"他不[一-鿿]", "warn": 5, "block": 8},
     }
     # 项目级 override
     sig_cfg_path = project_root / ".webnovel" / "signature_density_config.json"
