@@ -1473,6 +1473,100 @@ def check_A9_dimension_floor(project_root: Path, chapter: int) -> CheckResult:
     )
 
 
+# ==================== Round 28.35: A10 外部审查 mtime stale 对账 ====================
+
+def check_A10_external_freshness(project_root: Path, chapter: int) -> CheckResult:
+    """A10: 外部审查 stale 检测 — polish 后正文 mtime 晚于外部审查 mtime → warn
+
+    根因 (Ch44 v3 deep research RCA):
+      - Step 3.5 外部 15 模型审查在 Step 4 polish 之前
+      - 若 polish 修了实质内容，external_avg=86.80 反映 polish 前的旧稿
+      - audit 直接用 stale external_avg 算 combined → 分数虚高
+      - A3 只统计 valid_count + spread，不查 mtime
+    修复:
+      - 比对每个 external_review_*_chNNNN.json mtime 与正文 mtime
+      - 任一 stale → medium warn · 全部 stale → high warn
+      - polish_cycle 后建议 rerun Step 3.5（commit 后跨 commit polish 必触发）
+    """
+    chapter_padded = _pad(chapter)
+    chap_text_path = None
+    for p in (project_root / "正文").glob(f"第{chapter_padded}章*.md"):
+        chap_text_path = p
+        break
+    if not chap_text_path or not chap_text_path.exists():
+        return CheckResult(
+            id="A10", name="外部审查 mtime stale", layer="A",
+            status="skip", severity="info",
+            evidence="正文文件未找到，跳过",
+            measured={},
+        )
+
+    chap_mtime = chap_text_path.stat().st_mtime
+    tmp_dir = project_root / ".webnovel" / "tmp"
+    external_files = list(tmp_dir.glob(f"external_review_*_ch{chapter_padded}.json"))
+    if not external_files:
+        return CheckResult(
+            id="A10", name="外部审查 mtime stale", layer="A",
+            status="skip", severity="info",
+            evidence="无外部审查文件，跳过（A3 接管）",
+            measured={"chap_mtime": chap_mtime, "external_count": 0},
+        )
+
+    stale = []
+    fresh = []
+    # 容忍 60 秒（避免 polish_cycle 写 state.json 后 stat 微差）
+    tolerance = 60
+    for ef in external_files:
+        ef_mtime = ef.stat().st_mtime
+        # external 应该 >= 正文 mtime（外审在 polish 之后跑）OR 外审用于 polish 前评分（合理 stale）
+        if ef_mtime + tolerance < chap_mtime:
+            stale.append({"model": ef.stem.replace(f"external_review_", "").replace(f"_ch{chapter_padded}", ""),
+                          "stale_seconds": int(chap_mtime - ef_mtime)})
+        else:
+            fresh.append(ef.stem)
+
+    result = {
+        "chap_mtime": chap_mtime,
+        "total_external": len(external_files),
+        "stale_count": len(stale),
+        "fresh_count": len(fresh),
+        "stale_models": stale[:5],
+    }
+
+    if not stale:
+        return CheckResult(
+            id="A10", name="外部审查 mtime stale", layer="A",
+            status="pass", severity="info",
+            evidence=f"所有 {len(external_files)} 个外审 mtime ≥ 正文 mtime（外审用的是当前稿）",
+            measured=result,
+        )
+
+    # 全部 stale = 严重（polish 后未重跑）
+    if len(stale) == len(external_files):
+        return CheckResult(
+            id="A10", name="外部审查 mtime stale", layer="A",
+            status="warn", severity="high",
+            evidence=f"所有 {len(external_files)} 个外审都早于正文 · external_avg 反映旧稿 · audit combined 分数可能虚高/虚低",
+            measured=result,
+            remediation=[
+                "若 Ch44 v3 类大 polish：重跑 Step 3.5 (python external_review.py --mode dimensions --model-key all --chapter N)",
+                "若仅措辞 micro polish：可在 polish_report 标 deviation",
+                "保留 polish 前 external_avg 在 audit_reports 中做痕迹",
+            ],
+        )
+
+    return CheckResult(
+        id="A10", name="外部审查 mtime stale", layer="A",
+        status="warn", severity="medium",
+        evidence=f"{len(stale)}/{len(external_files)} 个外审早于正文（polish 后部分模型未重跑）",
+        measured=result,
+        remediation=[
+            f"重跑 stale 模型: {[s['model'] for s in stale[:3]]}",
+            "或在 polish_report 显式标记 partial external 已 stale",
+        ],
+    )
+
+
 # ==================== Layer B: 跨产物一致性 ====================
 
 def check_B1_summary_vs_chapter(project_root: Path, chapter: int) -> CheckResult:
@@ -2354,6 +2448,7 @@ def _run_layer_a(project_root: Path, chapter: int) -> LayerResult:
         check_A6_workflow_timing(project_root, chapter),
         check_A7_encoding_clean(project_root, chapter),
         check_A9_dimension_floor(project_root, chapter),  # Round 20 · A9 floor block
+        check_A10_external_freshness(project_root, chapter),  # Round 28.35 · A10 external mtime stale
         check_A8_anti_ai_force_not_stub(project_root, chapter),
         check_a_x1_reader_critic_hard_block(project_root, chapter),
         check_a_x1b_pre_draft_self_check(project_root, chapter),  # Round 19.1 P0-3

@@ -656,6 +656,34 @@ def complete_step(step_id, artifacts_json=None):
         )
         return
 
+    # Round 28.35 · Ch44 v3 deep research RCA · Step 7 branch 字段动态对账
+    # 根因：作者/AI 传 artifacts {"branch":"main"} 时凭印象，实际仓库可能是 master
+    # 后果：audit 假数据 + observability 误标 + 跨章 trend 出错
+    # 修复：Step 7 complete-step 时跑 `git branch --show-current`，与传入 branch 对比；
+    #       不一致 → warn 并在 artifacts 追加 branch_verified（不阻断）
+    if step_id == "Step 7" and artifacts.get("branch"):
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", "branch", "--show-current"],
+                capture_output=True, text=True, cwd=os.getcwd(), timeout=5
+            )
+            actual_branch = (result.stdout or "").strip()
+            claimed_branch = str(artifacts.get("branch", "")).strip()
+            if actual_branch and claimed_branch and actual_branch != claimed_branch:
+                print(
+                    f"\033[93m⚠️ Round 28.35 BRANCH_MISMATCH: artifacts branch='{claimed_branch}' "
+                    f"vs git 实际='{actual_branch}' · 自动覆盖为实际值\033[0m"
+                )
+                artifacts["branch"] = actual_branch
+                artifacts["branch_claimed_original"] = claimed_branch
+                artifacts["branch_verified"] = True
+            elif actual_branch:
+                artifacts["branch_verified"] = True
+        except Exception as e:
+            # 非 git 仓库或超时 · 静默跳过（不影响 commit 流程）
+            pass
+
     target_step["status"] = STEP_STATUS_COMPLETED
     target_step["completed_at"] = now_iso()
 
