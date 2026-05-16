@@ -43,6 +43,14 @@ DEFAULT_TARGETS = [
     "设定集/主角卡.md",
 ]
 
+# Round 28.35 (Ch44 v3 deep research RCA): 扩白名单 default · 缺失文件 skip 不阻断
+# 用于：当项目存在 01/02/11.md 时自动追加 [ChN] 标注（不存在则 silent skip）
+EXTENDED_TARGETS_OPTIONAL = [
+    "设定集/01-卷一承诺-兑现表.md",
+    "设定集/02-损失与代价表.md",
+    "设定集/11-反派压强表.md",
+]
+
 
 def load_config(project_root: Path) -> dict:
     cfg = project_root / ".webnovel" / "step_k_config.json"
@@ -75,6 +83,9 @@ def check(project_root: Path, chapter: int) -> list[str]:
     cfg = load_config(project_root)
     targets = cfg.get("target_files", DEFAULT_TARGETS)
     check_fs_ids = cfg.get("check_foreshadowing_ids", True)
+    # Round 28.35: 是否检查扩展可选文件（默认 True · 文件不存在则 skip 不阻断）
+    check_extended = cfg.get("check_extended_targets", True)
+    extended_targets = cfg.get("extended_targets", EXTENDED_TARGETS_OPTIONAL)
 
     ch_tag = f"[Ch{chapter}"  # 匹配 [Ch1] [Ch1 埋设] 等所有变体
 
@@ -91,6 +102,22 @@ def check(project_root: Path, chapter: int) -> list[str]:
                 f"主 agent 必须在 commit 前追加本章标注"
             )
 
+    # Round 28.35: 扩展可选文件（卷一承诺/损失代价/反派压强）· 文件不存在则 skip
+    # 存在但缺 [ChN] 标注 → STEP_K_EXTENDED_MISSING warn 级别（不进 errors 阻断 · 而是 print warn）
+    extended_warnings = []
+    if check_extended:
+        for rel_path in extended_targets:
+            fp = project_root / rel_path
+            if not fp.exists():
+                continue  # silent skip · 老项目无此文件不阻断
+            text = fp.read_text(encoding="utf-8")
+            if ch_tag not in text:
+                extended_warnings.append(
+                    f"[STEP_K_EXTENDED_WARN] {rel_path} 未找到 '{ch_tag}' 标注 · "
+                    f"扩展同步白名单（卷一承诺/损失代价/反派压强）建议每章追加 · 不阻塞 commit"
+                )
+    # 把 extended_warnings 通过模块级别变量暴露给 main · 主流程 print 但不计入 errors
+
     # 进阶：chapter_meta.foreshadowing_planted 里每条是否在伏笔追踪.md 可查
     if check_fs_ids:
         fs_planted = meta.get("foreshadowing_planted", [])
@@ -104,6 +131,9 @@ def check(project_root: Path, chapter: int) -> list[str]:
                         f"[FORESHADOWING_MD_MISSING] 伏笔 {m.group(1)} 在 "
                         f"chapter_meta 里埋设，但 设定集/伏笔追踪.md 未找到 ID 行"
                     )
+
+    # 把扩展 warnings 加到 errors 列表末尾 · main 会区分（前缀 STEP_K_EXTENDED_WARN）
+    errors.extend(extended_warnings)
 
     return errors
 
@@ -129,11 +159,20 @@ def main() -> int:
     print(f" 项目：{project_root.name}")
     print("=" * 60)
 
-    errors = check(project_root, args.chapter)
+    all_errors = check(project_root, args.chapter)
 
-    if errors:
-        print(f"\n ❌ 发现 {len(errors)} 项 Step K 遗漏（阻塞 commit）：")
-        for e in errors:
+    # Round 28.35: 分离 STEP_K_EXTENDED_WARN（不阻塞）与硬 errors
+    blocking_errors = [e for e in all_errors if "STEP_K_EXTENDED_WARN" not in e]
+    extended_warnings = [e for e in all_errors if "STEP_K_EXTENDED_WARN" in e]
+
+    if extended_warnings:
+        print(f"\n ⚠ Round 28.35 扩展白名单 {len(extended_warnings)} 项 warn（不阻塞）：")
+        for w in extended_warnings:
+            print(f"  {w}")
+
+    if blocking_errors:
+        print(f"\n ❌ 发现 {len(blocking_errors)} 项 Step K 遗漏（阻塞 commit）：")
+        for e in blocking_errors:
             print(f"  {e}")
         print(
             "\n  修复方式：\n"

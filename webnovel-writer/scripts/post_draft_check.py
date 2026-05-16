@@ -503,6 +503,12 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         # 这里用近似：单文档"他+空白"模式过密时 warn（精确版要分段处理，留 prose-quality 兜底）
         "嗯应答": {"pattern": r"[“]嗯[。.！？]", "warn": 12, "block": 16},
         "他不X": {"pattern": r"他不[一-鿿]", "warn": 5, "block": 8},
+        # Round 28.35 · Ch44 v3 deep research RCA：half-X 高密度
+        # 根因：reader-naturalness AV-091 标"半 X"成新代偿签名 · Ch44 实测 13 次（半截/半张/
+        #       半指/半道/半碗/半口/半档/半拍/半步/半截 ...）
+        # 阈值 warn 15 / block 22（Ch44 13 留 margin · 排除"半夜/半小时/半个"等正常用语
+        # 用 [一-鿿] 但实际 grep 也会抓"半夜半小时"，建议 Step 4 polish-guide 处理"半 X" 误伤）
+        "半X": {"pattern": r"半[一-鿿]", "warn": 15, "block": 22},
     }
     # 项目级 override
     sig_cfg_path = project_root / ".webnovel" / "signature_density_config.json"
@@ -761,6 +767,113 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         errors.append(
             f"[METAREF_CN_CHAPTER] 正文含 {len(cn_chapter_hits)} 处中文章数元叙事（样本：{cn_chapter_hits[:3]}）· "
             f"小说人物不能用「章」做时间单位 · 改为「等几天/几个月/到时候」等自然时间表述"
+        )
+
+    # H78. Round 28.35 · 跨章首段 N-gram 比对（2026-05-16 · Ch44 v3 deep research RCA · P0 根治）
+    # 引入背景：Ch43→Ch44 首段 4 处意象 1:1 复用（东墙根青砖/膝盖印/送水车压低引擎/引擎声拖出去半截）
+    # 13 个内部 checker + 15 个外部模型全部漏检（单章独立视角盲区）· 只有读者会感到"昨天已读过"
+    # 根因：所有 checker 都看本章 in-text，无跨章 N-gram 比对工具
+    # 根治：扫上一章文本，取章末最后 600 字 + 当章前 600 字，对比 6-gram 重合度
+    #       命中 ≥ 3 个 6-gram 重合即 warn，≥ 6 个 block
+    # 配置：`.webnovel/cross_chapter_ngram_config.json`（可调阈值或禁用）
+    cross_cfg = {
+        "enabled": True,
+        "ngram_size": 6,
+        "lookback_chars": 600,
+        "warn_threshold": 3,
+        "block_threshold": 6,
+        # 跳过过于通用的 6-gram（如"末世第N天"时间锚 / "蓝铁门那头" 等场景常量）
+        "exclude_patterns": [r"\d+章$", r"末世第", r"失情绪第"],
+    }
+    cross_cfg_path = project_root / ".webnovel" / "cross_chapter_ngram_config.json"
+    if cross_cfg_path.exists():
+        try:
+            cross_cfg.update(json.loads(cross_cfg_path.read_text(encoding="utf-8")))
+        except Exception:
+            pass
+
+    if cross_cfg.get("enabled", True) and chapter >= 2:
+        try:
+            # 找上一章正文
+            prev_padded = f"{chapter - 1:04d}"
+            prev_files = list((project_root / "正文").glob(f"第{prev_padded}章*.md"))
+            if prev_files:
+                prev_text = prev_files[0].read_text(encoding="utf-8")
+                # 清洗：去除 frontmatter / 标题
+                prev_text_clean = re.sub(r"^---.*?^---", "", prev_text, flags=re.DOTALL | re.MULTILINE).strip()
+                prev_text_clean = re.sub(r"^#.*$", "", prev_text_clean, flags=re.MULTILINE).strip()
+                cur_text_clean = re.sub(r"^---.*?^---", "", text, flags=re.DOTALL | re.MULTILINE).strip()
+                cur_text_clean = re.sub(r"^#.*$", "", cur_text_clean, flags=re.MULTILINE).strip()
+
+                # 取上一章末尾 + 当章开头
+                prev_tail = prev_text_clean[-cross_cfg["lookback_chars"]:]
+                cur_head = cur_text_clean[:cross_cfg["lookback_chars"]]
+
+                # 提取 N-gram (仅中文字符)
+                ngram_size = cross_cfg["ngram_size"]
+                def _extract_ngrams(s, n):
+                    # 只取连续 N 个中文字符
+                    cleaned = re.sub(r"[^一-鿿]", "", s)
+                    return set(cleaned[i:i + n] for i in range(len(cleaned) - n + 1))
+
+                prev_ngrams = _extract_ngrams(prev_tail, ngram_size)
+                cur_ngrams = _extract_ngrams(cur_head, ngram_size)
+                overlap = prev_ngrams & cur_ngrams
+
+                # 排除通用 patterns
+                exclude_pats = [re.compile(p) for p in cross_cfg.get("exclude_patterns", [])]
+                overlap_filtered = [
+                    g for g in overlap if not any(p.search(g) for p in exclude_pats)
+                ]
+                overlap_count = len(overlap_filtered)
+
+                if overlap_count >= cross_cfg["block_threshold"]:
+                    errors.append(
+                        f"[H78_CROSS_CHAPTER_REUSE] 与上一章首尾 {ngram_size}-gram 重合 {overlap_count} 处 ≥ block {cross_cfg['block_threshold']} · "
+                        f"跨章意象 1:1 复用（样本：{overlap_filtered[:5]}）· "
+                        f"读者会感到 deja vu · 必须改写开篇或末段"
+                    )
+                elif overlap_count >= cross_cfg["warn_threshold"]:
+                    warnings.append(
+                        f"[H78_CROSS_CHAPTER_REUSE_WARN] 与上一章首尾 {ngram_size}-gram 重合 {overlap_count} 处 "
+                        f"（样本：{overlap_filtered[:5]}）· 建议替换 1-2 处具体意象避免单调"
+                    )
+        except Exception as e:
+            warnings.append(f"[H78_SKIP] 跨章 N-gram 检查失败（不阻断）：{e}")
+
+    # H79. Round 28.35 · 正文 ASCII 英文动词残留扫描（2026-05-16 · Ch44 v3 RCA · P0 根治）
+    # 引入背景：Ch44 v1 含 "release 不开"（AI draft 残留），naturalness checker P0 high
+    # 但 13 checker 漏检（prose_quality 也漏）· 只有 5 个外部模型 critical
+    # 根因：post_draft_check 无 ASCII 英文动词扫描（ASCII 引号 H1 已查 · 英文 token 未查）
+    # 根治：扫常见 AI 残留英文动词，warn ≥1 / block ≥3（容忍极少英文档案引用，不可滥用）
+    # 配置：`.webnovel/ascii_verb_config.json`
+    ascii_verbs = ["release", "active", "passive", "trigger", "deactive", "enable", "disable",
+                   "buff", "debuff", "cooldown", "execute", "abort", "resume", "suspend"]
+    ascii_verb_cfg_path = project_root / ".webnovel" / "ascii_verb_config.json"
+    if ascii_verb_cfg_path.exists():
+        try:
+            cfg = json.loads(ascii_verb_cfg_path.read_text(encoding="utf-8"))
+            ascii_verbs = cfg.get("verbs", ascii_verbs)
+        except Exception:
+            pass
+    # 用 word boundary 扫描，避免 "released"/"trigger_" 等被误匹配的同时排除人名/ID 单词上下文
+    ascii_verb_hits = {}
+    for verb in ascii_verbs:
+        # 严格 word boundary：前后必须是非字母数字（含中文）
+        pattern = r"(?<![A-Za-z0-9_])" + re.escape(verb) + r"(?![A-Za-z0-9_])"
+        count = len(re.findall(pattern, text, re.IGNORECASE))
+        if count:
+            ascii_verb_hits[verb] = count
+    total_ascii_verbs = sum(ascii_verb_hits.values())
+    if total_ascii_verbs >= 3:
+        errors.append(
+            f"[H79_ASCII_VERB] 正文含 {total_ascii_verbs} 处 ASCII 英文动词（{ascii_verb_hits}）· "
+            f"AI draft 残留 · 必须改写为中文表达（如 release→松开/释放/打开）"
+        )
+    elif total_ascii_verbs >= 1:
+        warnings.append(
+            f"[H79_ASCII_VERB_WARN] 正文含 {total_ascii_verbs} 处 ASCII 英文动词（{ascii_verb_hits}）· "
+            f"建议改为中文表达"
         )
 
     return errors, warnings

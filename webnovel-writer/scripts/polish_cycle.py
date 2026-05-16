@@ -711,11 +711,22 @@ def main() -> int:
     s = json.loads(state_p.read_text(encoding="utf-8"))
     meta = s.get("chapter_meta", {}).get(f"{args.chapter:04d}", {})
     cur_version = meta.get("narrative_version")
+    # Round 28.35 (Ch44 v3 deep research RCA): polish 有实质 fixes 时自动 bump narrative_version
+    # 根因：作者/AI 经常忘记 --narrative-version-bump flag · Ch43/Ch44 连续两章漏 bump 阻塞下章
+    # 修复：当 changed=True（正文有变化）且未显式 --narrative-version 且未 --narrative-version-bump
+    #       且 --allow-no-change 不在 → 自动触发 bump（与 hygiene H72 P1 警告对齐）
+    auto_bumped = False
     if args.narrative_version:
         new_version = args.narrative_version
     elif args.narrative_version_bump:
         prefix, n = parse_narrative_version(cur_version)
         new_version = f"{prefix}{n + 1}"
+    elif changed and not args.allow_no_change:
+        # 自动 bump（Round 28.35 默认行为）
+        prefix, n = parse_narrative_version(cur_version)
+        new_version = f"{prefix}{n + 1}"
+        auto_bumped = True
+        print(f"  ℹ Round 28.35 自动 bump: narrative_version {cur_version} → {new_version}（polish 改了正文 · 显式带 --narrative-version 可覆盖）")
     else:
         new_version = cur_version or "v1"
 
