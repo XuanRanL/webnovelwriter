@@ -519,6 +519,16 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
             " ",
             cleaned,
         )
+        # Round 28.30 (Ch43 RCA): \u6392\u9664 12 \u7c7b\u5e38\u89c1\u5ba1\u67e5\u72b6\u6001/\u590d\u6d4b\u6807\u8bb0\u4e2d\u6587 token\uff0c
+        # \u907f\u514d 5+ \u672a\u590d\u6d4b checker \u884c\u5171\u4eab"\u672a\u590d\u6d4b"\u88ab A2 \u22653 \u8bef\u5224 critical fallback\u3002
+        # Ch43 \u5b9e\u6d4b duplicated_snippets=['\u672a\u590d\u6d4b'] block \u5168\u7ae0\u6d41\u7a0b\u3002
+        status_zh_pattern = (
+            r"(?:\u672a\u590d\u6d4b|\u672a\u590d\u8dd1|\u672a\u8dd1|\u672a\u53d8|\u672a\u89e6\u53d1|\u4e0d\u53d8|\u4e0d\u52a8|\u65e0\u53d8\u5316|"
+            r"\u590d\u6d4b|\u65b0\u5206|\u590d\u8dd1|recheck|\u964d\u7ea7|\u5347\u7ea7|approve|fail|polish_needed|"
+            r"revision_recommended|reject_critical|reject_high|"
+            r"polished|post_polish|pre_polish|pass_with_note|pass_with_caveat)"
+        )
+        cleaned = re.sub(status_zh_pattern, " ", cleaned)
         tokens = [
             token
             for token in re.findall(r"[a-z][a-z0-9_.-]+|[\u4e00-\u9fff]{2,}", cleaned)

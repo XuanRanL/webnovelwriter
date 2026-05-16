@@ -687,6 +687,48 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
             f" ≥ warn 阈值 · 06-叙事声音约束 ≤3/单章 · 建议 polish 收敛"
         )
 
+    # 15. Round 28.30 · AI 排比/诗化金句检测（2026-05-15 · Ch43 RCA · reader-critic 79 三连金句 critical）
+    # 引入背景：Ch43 起草触发 reader-critic / ooc / dialogue / flow / density / prose 6 checker 共识 critical/high：
+    # L207 "一棵一棵种。一户一户教。一年一年做。" 四联排比 + L221 "到头来不是我自己的脚" 诗化隐喻金句
+    # = "作者代言外露" + "口号化" + "网络爽文金句模板"。reader-critic 79 / flow 72 / dialogue 70。
+    # 根因：context-agent prep 笔记说"宣告朴素落字一次"，但起草无硬约束；post_draft 只看签名密度不看排比/金句结构。
+    # 根治：扫描两类模板：
+    #   (a) ABAB 四连排比 "一X一X、一X一X、一X一X" 或 "X一X、X一X、X一X" 或 "X的Y、X的Y、X的Y" 等
+    #   (b) 诗化金句模式 "X，是Y" / "不是X，是Y" / "X不是Y、是Z" 单章 ≥ 3 处
+    # 项目级 override：`.webnovel/ai_slogan_config.json`
+    slogan_warn = 1  # warn 阈值：排比组数
+    slogan_block = 2  # block 阈值：排比组数
+    slogan_cfg_path = project_root / ".webnovel" / "ai_slogan_config.json"
+    if slogan_cfg_path.exists():
+        try:
+            scfg = json.loads(slogan_cfg_path.read_text(encoding="utf-8"))
+            slogan_warn = scfg.get("warn_abs", slogan_warn)
+            slogan_block = scfg.get("block_abs", slogan_block)
+        except Exception:
+            pass
+    # 排比检测：单句内重复"一X一X、一X一X、一X一X" 三连及以上（用 \1 反向引用）
+    # 例：一棵一棵种。一户一户教。一年一年做。 / 一字一字地说。一笔一笔地写。一句一句地交代。
+    triple_parallel_pattern = re.compile(
+        r"一([一-鿿])一\1[^。]{0,4}[。，；]\s*一[一-鿿]一[一-鿿][^。]{0,4}[。，；]\s*一[一-鿿]一[一-鿿]"
+    )
+    slogan_hits_a = triple_parallel_pattern.findall(text)
+    # 诗化金句 (b): "不是X，到头来不是Y" / "到头来不是X" / "走快了，路就不是X" 等强对偶金句
+    # 模式：以"不是X是Y"、"不是X，是Y"、"到头来不是"、"X到头来Y" 单章累计
+    slogan_pattern_b = re.compile(r"(?:不是.{1,8}[是就]|到头来不是|说到底.{0,3}不是|本质.{0,3}不是)")
+    slogan_hits_b = slogan_pattern_b.findall(text)
+    slogan_total = len(slogan_hits_a) + max(0, len(slogan_hits_b) - 2)  # 诗化金句 ≤2 容忍
+    if slogan_total >= slogan_block:
+        errors.append(
+            f"[AI_SLOGAN] AI 排比/诗化金句模板 {slogan_total} 处（排比 {len(slogan_hits_a)} 组 / "
+            f"诗化对偶 {len(slogan_hits_b)} 处）≥ block 阈值 · "
+            f"reader-critic 易判'口号化/作者代言外露' · 必须 polish 拆解或白话化"
+        )
+    elif slogan_total >= slogan_warn:
+        warnings.append(
+            f"[AI_SLOGAN_WARN] AI 排比/诗化金句 {slogan_total} 处（排比 {len(slogan_hits_a)} / "
+            f"诗化 {len(slogan_hits_b)}）≥ warn 阈值 · 建议 polish 拆短或减一组"
+        )
+
     # 12. Round 17.5 · 中文章数元叙事扫描（2026-04-24 · Ch9 RCA P0-3 根治）
     # 引入背景：Ch9 L233 主角心里"二十章之前，不问这种事"——
     # 主角不应该用"章"做时间单位（这是元叙事破壁）。

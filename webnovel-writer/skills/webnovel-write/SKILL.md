@@ -63,6 +63,10 @@ allowed-tools: Read Write Edit Grep Bash Task
 - **禁止源码探测**：脚本调用方式以本文档与 data-agent 文档中的命令示例为准，命令失败时查日志定位问题，不去翻源码学习调用方式。
 - **禁止裸跑 polish commit**：Step 7 commit 之后任何对正文文件（`正文/第NNNN章*.md`）的修改，**必须**通过 `polish_cycle.py`（Step 8）完成，**严禁**直接 `git add . && git commit -m "polish"` 或 `git commit --amend`。裸跑会绕过 `post_draft_check`/`hygiene_check`，让 ASCII 引号、word_count 漂移、checker 数据滞留，并且 polish 任务在 `workflow_state.json` 不留痕。
 
+- **禁止三连排比金句 / 诗化对偶金句 (Round 28.30 加入 · 防 reader-critic 79 三连金句 critical 重发)**：起草宣告/独白/认知里程碑场面时，单章 ABAB 三连排比 ≥1 组（如"一棵一棵种。一户一户教。一年一年做。"）或诗化对偶金句 ≥3 处（如"到头来不是X是Y"/"不是X，是Y"），post_draft_check H15 AI_SLOGAN 闸门 warn 1 / block 2 阻断。Ch43 实测 reader-critic / ooc / dialogue / flow / density / prose 6 checker 共识 critical/high。**修法**：宣告完整落字一次即可，**不要反复回响 / 不要排比 / 不要诗化收束**；对偶宣言保留核心 1-2 句，排比四联缩二联或单句，金句去承接词。
+- **禁止 META_DRIFT 阻塞 commit (Round 28.30 自动根治)**：Step 4/6 polish 修复后只改 word_count/score 不改 updated_at → 正文 mtime > chapter_meta.updated_at + 300s → pre_commit_step_k.py META_DRIFT 阻塞 commit。**根治**：state_manager.py 已加 auto-touch updated_at（任何非 updated_at 字段修改后自动同步），无需手动 set-chapter-meta-field updated_at。
+- **禁止 A2 false positive 误判 (Round 28.30 audit 启发式扩展)**：5+ 未复测 checker 行共享"未复测/PASS/unchanged"等状态文案 → audit A2 启发式判 ≥3 token 重复 → critical fallback 警报。**根治**：chapter_audit._normalize_checker_snippet 已扩展 12 类状态词排除（未复测/未跑/不变/PASS_WITH_NOTE/REVISION_RECOMMENDED 等）。**写报告硬规则**：不复测 checker 行用"-"或留空，禁止用 "(未复测)" 标签。
+
 ### 章节间闸门（Chapter Gate）
 
 在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：

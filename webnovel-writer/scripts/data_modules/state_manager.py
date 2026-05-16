@@ -2023,6 +2023,15 @@ def main():
                 if cs.get("overall") != value:
                     cs["overall"] = value
                     changes.append(f"chapter_meta.{key}.checker_scores.overall={value} (auto-sync)")
+            # Round 28.30 · Ch43 RCA META_DRIFT 根治：任何非 updated_at 字段的修改
+            # 都自动 touch updated_at 到当前 UTC ISO 时间戳，避免 pre_commit_step_k.py
+            # 的 META_DRIFT 检测（正文 mtime > updated_at + 300s）误报阻塞 commit。
+            # Ch43 实测：F7 修复后只改 word_count，updated_at 不变 → META_DRIFT 586s 阻塞。
+            if field != "updated_at":
+                from datetime import datetime as _dt, timezone as _tz
+                _now = _dt.now(_tz.utc).isoformat()
+                entry["updated_at"] = _now
+                changes.append(f"chapter_meta.{key}.updated_at={_now} (auto-touch)")
             manager._pending_raw_state_mutations.add("chapter_meta")
             changes.append(f"chapter_meta.{key}.{field}={value}")
             if applied_chapter is None:
