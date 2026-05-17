@@ -144,6 +144,68 @@ def test_h67_skips_when_chapter_text_missing(tmp_path):
     assert not fails, "缺章节应跳过不报警"
 
 
+# ============== Round 28.46 false positive 修复 ==============
+
+def test_h67_false_positive_natural_phrase_with_yizhong_yezi(tmp_path):
+    """Round 28.46 (Ch46 RCA): '一种叶子' 是日常短语，不应触发 H67"""
+    _ensure_scripts_on_path()
+    from hygiene_check import HygieneReport, check_canon_locked_terms
+
+    chapter_text = "林晚秋手里那一种叶子。朵朵学会了认两种叶子。"
+    canon_text = "金手指设定..."
+    _setup_project(tmp_path, chapter_text, None, canon_text)
+
+    rep = HygieneReport()
+    check_canon_locked_terms(tmp_path, 25, rep)
+    fails = [f for f in rep.p1_fails if "H67" in f]
+    assert not fails, f"'一种叶子/两种叶子' 是日常短语不应触发 H67: {rep.p1_fails}"
+
+
+def test_h67_false_positive_natural_phrase_with_ba_yezi(tmp_path):
+    """Round 28.46 (Ch46 RCA): '把两种叶子' 是动作短语，不应触发 H67"""
+    _ensure_scripts_on_path()
+    from hygiene_check import HygieneReport, check_canon_locked_terms
+
+    chapter_text = "朵朵把两种叶子并起来。"
+    canon_text = "金手指设定..."
+    _setup_project(tmp_path, chapter_text, None, canon_text)
+
+    rep = HygieneReport()
+    check_canon_locked_terms(tmp_path, 25, rep)
+    fails = [f for f in rep.p1_fails if "H67" in f]
+    assert not fails, f"'把两种叶子' 是动作短语不应触发 H67: {rep.p1_fails}"
+
+
+def test_h67_false_positive_natural_phrase_with_role_name_prefix(tmp_path):
+    """Round 28.46 (Ch46 RCA): '朵朵把叶子' 角色名+动作+叶子 不应触发 H67"""
+    _ensure_scripts_on_path()
+    from hygiene_check import HygieneReport, check_canon_locked_terms
+
+    chapter_text = "朵朵把叶子翻过来。"
+    canon_text = "..."
+    _setup_project(tmp_path, chapter_text, None, canon_text)
+
+    rep = HygieneReport()
+    check_canon_locked_terms(tmp_path, 25, rep)
+    fails = [f for f in rep.p1_fails if "H67" in f]
+    assert not fails, f"'朵朵把叶子' 角色+动作短语不应触发 H67: {rep.p1_fails}"
+
+
+def test_h67_still_catches_real_invention_after_fix(tmp_path):
+    """Round 28.46 修复后，真正凭空发明的'金银花叶'仍应触发"""
+    _ensure_scripts_on_path()
+    from hygiene_check import HygieneReport, check_canon_locked_terms
+
+    chapter_text = "<sister-character>取了一片金银花。"
+    canon_text = "金手指作物：苦瓜、变异南瓜瓤。"
+    _setup_project(tmp_path, chapter_text, None, canon_text)
+
+    rep = HygieneReport()
+    check_canon_locked_terms(tmp_path, 25, rep)
+    fails = [f for f in rep.p1_fails if "H67" in f]
+    assert fails, f"R28.46 修复不应放过真凭空发明 '金银花': p1={rep.p1_fails}"
+
+
 # ============== Canon-aware logic verification ==============
 
 def test_canon_aware_pattern_extraction():
