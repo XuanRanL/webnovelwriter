@@ -595,6 +595,18 @@ exit=0 才能进入 Step 2B。**禁止带任何 hard fail 进入 Step 3**——�
 
 ### Step 2B：风格适配（`--fast` / `--minimal` 跳过）
 
+> **🔴 Round 28.46 · 必须显式 start-step（H64/A6 防累积）**
+>
+> 调用风格适配 Edit / 子代理之**前**，必须先显式登记 Step 2B 开始：
+>
+> ```bash
+> python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+>   workflow start-step --step-id "Step 2B" --step-name "Style adapter"
+> ```
+>
+> **根因**：Ch46 R28.46 #2 实战 — 主流程直接 Edit polish 后才调 complete-step → workflow_manager 兜底 implicit_start=True → audit A6 HIGH warn 累积。Step 2B 与 Step 5 / Step 3.5 同等优先级，必须显式登记。
+> 设环境变量 `WEBNOVEL_STRICT_WORKFLOW=1` 后，complete-step 会直接 reject 没预先 start-step 的调用。
+
 执行前加载：
 ```bash
 cat "${SKILL_ROOT}/references/style-adapter.md"
@@ -907,6 +919,25 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
    主流程必须代替 subagent 做这道闸门, 否则 hygiene H71 P0 阻断 commit 才发现就晚了。
 
 ### Step 4：润色（问题修复优先）
+
+> **🔴 Round 28.46 · polish 新增有名角色行为 / 物件位置前必 grep（防 R28.36 v5 + R28.46 同源根因）**
+>
+> 在 polish 修复涉及到新增"角色 X 在 Y 地点 / 与 Z 交互"或"物件 X 在桌上 / 兜里 / 手上"等段落前，**必须**先 grep Canon + 同章正文确认：
+>
+> ```bash
+> # § canon-grep — 任何有名角色 (非临时配角) 新增段
+> grep -n "<角色名>" 设定集/00-Canon-Bible.md
+> grep -n "<角色名>" 设定集/08-连续性锁死表.md  # 或 SSOT
+> grep -nE "<角色名>.*(觉醒|印记|入基地|移居|住|学校)" 设定集/
+> # § physical-state-trace — 任何随身物 / 容器内物新增位置
+> grep -nE "(物件名)" 正文/第00{N}章*.md  # 看前后位置链
+> ```
+>
+> **R28.36 v5 教训**: Ch45 polish 凭印象造"合肥物科院"传染 12 处。
+> **R28.46 #1 教训**: Ch46 polish 凭印象写"陆灵今晚在内院" — Canon SSOT 一.D-7 锁"未移居" 硬冲突。
+> **R28.46 #6 教训**: Ch46 polish L341 引入折角广告纸"兜里→桌上"瞬移，flow recheck 报 high。
+>
+> 详见 `references/polish-guide.md` §2.0c.bis (canon-grep) + §2.0c.tri (physical-state-trace)。
 
 执行前必须加载：
 ```bash

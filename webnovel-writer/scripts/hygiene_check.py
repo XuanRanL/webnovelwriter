@@ -965,15 +965,32 @@ def check_canon_locked_terms(root: Path, chapter: int, rep: HygieneReport):
                 candidates.add(m)
 
     # Round 28.21 (Ch36 RCA): 过滤明显的"修饰语+名词"日常短语（避免 false positive）
-    # 例如 "些蔫的叶子" / "蔫了的叶子" / "这片叶子" 这些是中文自然语序短语，不是专有名词
-    natural_phrase_prefixes = {"的", "了", "些", "那", "这", "有", "些"}
-    natural_phrase_suffixes_for_leaf = ("的叶子", "了叶子", "片叶子", "些叶子")  # 普通短语
+    # Round 28.46 (Ch46 RCA): 扩展数词/动作词/代词/常见量词的 prefix 过滤
+    # 例如 "些蔫的叶子" / "一种叶子" / "把两种叶子" / "朵朵把叶子" 都是日常短语
+    natural_phrase_prefixes = {
+        "的", "了", "些", "那", "这", "有",
+        # Round 28.46 加入：数词
+        "一", "两", "三", "四", "五", "六", "七", "八", "九", "十",
+        "几", "多", "半",
+        # Round 28.46 加入：动作/介词 + 名词 自然短语首字
+        "把", "拿", "给", "摸", "抓", "掐", "翻", "捏", "捧", "端", "挑",
+        "用", "对", "向", "从", "为", "和", "跟", "与",
+        # Round 28.46 加入：代词/人称
+        "他", "她", "它", "我", "你", "咱",
+        # Round 28.46 加入：常见配角姓名首字（项目可扩展）
+        "朵", "林", "陆", "苏", "张", "周", "老", "小",
+    }
+    natural_phrase_suffixes_for_leaf = (
+        "的叶子", "了叶子", "片叶子", "些叶子",
+        # Round 28.46 加入：种类量词+名词
+        "种叶子", "把叶子", "把两种叶子", "朵朵把叶子",
+    )
     filtered_candidates = set()
     for t in candidates:
         # 跳过"X的/X了 + 叶子"型自然短语
         if any(t.endswith(suf) for suf in natural_phrase_suffixes_for_leaf):
             continue
-        # 跳过首字为修饰词的（如"些蔫的叶子"首字"些"）
+        # 跳过首字为修饰词/数词/动作词/代词的（如"一种叶子" / "把两种叶子" / "朵朵把叶子"）
         if t and t[0] in natural_phrase_prefixes:
             continue
         filtered_candidates.add(t)

@@ -357,6 +357,48 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" stat
 ```
 根据本章主线判断 dominant strand 类型，每章必须调用一次。
 
+#### ⚠️ Round 28.46 · hook_close 副作用自检（必做）
+
+**血教训**（Ch46 R28.46 #4）：`state process-chapter` 用全量 chapter_meta 写回时，**会把 `hook_close` 子键置 None**（即使 Step 3 reader-pull-checker 已落库）。主流程读 chapter_meta 时 `hook_close.primary` = None → hygiene H26 P0 阻断 commit → 手动 set-hook-close 二次落库才修。
+
+**永久规则**：每次调用 `state process-chapter` 后**必须**立即自检 + 回写 hook_close：
+
+```bash
+# 1. 读 chapter_meta 验 hook_close
+python -X utf8 -c "
+import json
+s = json.load(open(r'{project_root}/.webnovel/state.json', encoding='utf-8'))
+m = s['chapter_meta'][f'{chapter:04d}']
+hc = m.get('hook_close', {})
+if not hc.get('primary_type'):
+    print('HOOK_CLOSE_LOST: 需要从 .webnovel/tmp/reader_pull_ch{NNNN}.json 回写')
+    import sys; sys.exit(2)
+print('hook_close.primary =', hc.get('primary_type'))
+"
+
+# 2. 若 exit code = 2，立即从 reader_pull_ch{NNNN}.json 读 + 回写
+python -X utf8 -c "
+import json, subprocess
+rp = json.load(open(r'{project_root}/.webnovel/tmp/reader_pull_ch{chapter:04d}.json', encoding='utf-8'))
+hc = rp.get('hook_close', {})
+payload = json.dumps({
+    'chapter': {chapter},
+    'primary': hc.get('primary_type', '信息钩'),
+    'secondary': hc.get('secondary_type', ''),
+    'strength': hc.get('strength', 70),
+    'text': hc.get('text_excerpt', ''),
+    'source_narrative_version': 'v1'
+}, ensure_ascii=False)
+r = subprocess.run(['python','-X','utf8','{SCRIPTS_DIR}/webnovel.py',
+                    '--project-root','{project_root}',
+                    'state','update','--set-hook-close',payload],
+                   capture_output=True, text=True)
+print(r.stdout, r.stderr)
+"
+```
+
+**判定**：data-agent Step D 完成后必须执行上面 2 步；hook_close.primary 仍为 None → Step 5 视为失败，必须重做。
+
 ### Step E: 生成章节摘要文件（新增）
 
 **输出路径**: `.webnovel/summaries/ch{NNNN}.md`
@@ -571,6 +613,35 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
    - 标注 `[Ch{N}]` 和搜索关键词，方便后续定位
 
 所有追加必须带 `[Ch{N}]` 章节标注。Step K 失败不阻断流程。
+
+#### ⚠️ Round 28.46 · Step K markdown header 格式硬规则（防 pre_commit_step_k 阻塞）
+
+**血教训**（Ch46 R28.46 #3）：data-agent Step K 写设定集时用了 `### Ch46 推进+新埋（...）` 三级 header，但 `pre_commit_step_k.py` 严格匹配 `[Ch46`（带方括号）字面，**未命中 → 阻塞 commit**。主流程手动 Edit 改成 `## [Ch46] ...` 二级 header 才修。
+
+**永久规则**：每章 Step K 追加任何设定集新段，**必须**用如下二级 header 格式：
+
+```markdown
+## [Ch{NNNN}] {章节时间锚 / 情节关键词}
+
+### Ch{NNNN} 新埋伏笔（X 条）  # 三级 header 用于子段（可选）
+
+- **F-CH{NNNN}-01** ...
+```
+
+**强制要求**：
+- 顶级 section 必须以 `## [Ch{NNNN}]` 开头（**两个井号 + 空格 + 方括号包章号**）
+- 不得用 `## Ch{NNNN}` / `### Ch{NNNN}` / `### [Ch{NNNN}]`（首字 ###/缺方括号 都不符合 pre_commit_step_k 检测）
+- 自检 grep：`grep -c "\[Ch{NNNN}" <file>` 必须 ≥1
+
+**Step K 完成后必须 self-check**：
+```bash
+for f in 设定集/主角卡.md 设定集/伏笔追踪.md 设定集/资产变动表.md; do
+  cnt=$(grep -c "\[Ch${chapter_num}" "$f" 2>/dev/null || echo 0)
+  if [ "$cnt" -eq 0 ]; then echo "STEP_K_HEADER_FORMAT_FAIL: $f 缺 [Ch${chapter_num}] header"; fi
+done
+```
+
+任一 fail → Step K outcome 标 `partial`，data-agent 主动 Edit 改 header 格式后再交给主流程。
 
 1. **设定集数字字段必须从 state.json 真源读取，禁止凭印象写**：
    - 触发：Ch42 设定集 [Ch40][Ch41][Ch42] 三段连续把 `vital_force=10` 误写为 `vital_force=48`。state.json 自 Ch20 起 vital_force.current=10 锁定不变，data-agent 在 Step K 时凭印象写 48（可能记着 Ch15 之前的旧值），三章连续漂移。
