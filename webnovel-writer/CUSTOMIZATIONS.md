@@ -7,6 +7,78 @@
 
 ---
 
+## [Round 28.48] Ch47 v2 deep audit · 1 P0 顺序 bug 根治 (R28.47 后续)
+
+**Trigger**：Ch47 v1 commit 后用户要求 deep research。6 维度独立审查 (reader-critic / consistency / continuity / naturalness / flow / thrill) 共识发现 R28.47 别名表声称已修但 secondary_type=None 仍存在 — 实际是顺序 bug。
+
+### Fix · `set_hook_close` 别名映射顺序 bug 根治 (P0)
+
+**根因**：R28.47 加 HOOK_ALIASES 含 `行动钩→动作钩` 但顺序错：
+```python
+sec = payload.get("secondary")
+if sec and sec not in VALID_HOOK_TYPES:  # ← sec='行动钩' 被先 reject 置 None
+    sec = None
+# ... 后面才做别名映射
+if sec and sec in HOOK_ALIASES:  # ← sec 已是 None, 永远不进
+    sec = HOOK_ALIASES[sec]
+```
+
+实测：Ch47 调 `set-hook-close primary=决策钩 secondary=行动钩` 返回 success，但 state.json secondary_type=None。用户被误导以为 R28.47 已修。
+
+**修法**：`scripts/data_modules/state_manager.py:L2308-2335` 顺序调换：
+```python
+sec = payload.get("secondary")
+# 别名映射先行 (R28.48 顺序 bug 根治)
+if sec and sec in HOOK_ALIASES:
+    sec = HOOK_ALIASES[sec]
+# 映射后才做 enum reject
+if sec and sec not in VALID_HOOK_TYPES:
+    sec = None
+```
+
+### 测试
+
+`scripts/data_modules/tests/test_round28_48_hook_order_fix.py` 新增 2 单测全过：
+- `test_r28_48_hook_alias_order_fix_secondary_xingdongou_not_rejected` (源码顺序硬约束: 别名映射位置 < enum reject 位置)
+- `test_r28_48_hook_alias_xingdongou_secondary_end_to_end` (端到端 subprocess: secondary=行动钩 → 动作钩)
+
+547+ 全量回归 pass
+
+### Ch47 v2 真实质量提升
+
+| Checker | v1 polish | v2 deep audit | v2 polish |
+|---|---|---|---|
+| reader-critic | 86 | 78 | 85 |
+| consistency | 88 | 72 | 84 |
+| continuity | 87 | 73 | 89 |
+| thrill | 71 | 64 | 79 |
+| **overall** | 87 | 73 (cap) | **88** |
+| **external avg** | 85.68 | - | **87.23** |
+
+**gemini-3.1-pro 从连 4 章 outlier 68→82.6 (+14.6)** — 长期 outlier 解除！
+
+### 推到 R28.49+ 的 7 项
+
+- H80 polish 首次宣告词跨章 grep 硬闸 (R28.36 v5 + Ch47 印记 同源 P0)
+- H81 polish 标题承诺时态+数字一致性闸
+- H82 polish antagonist_signal vs setback 判别闸
+- data-agent backfill dialogue_ratio + D8 闸门
+- chapter 完成时强制跨产物对账 CLI
+- H83 新角色首次出现 三方对账闸
+- polish_cycle character voice register 锁
+
+### 文件清单
+
+- `scripts/data_modules/state_manager.py:L2308-2335` (顺序调换 12 行)
+- `scripts/data_modules/tests/test_round28_48_hook_order_fix.py` (新增 100 行 + 2 单测)
+- `CUSTOMIZATIONS.md` (本段)
+
+### Commit
+- fork: `72c2c9b feat(R28.48)`
+- 项目: `a02117d` (Ch47 v3) + `12a765a` (Canon §6 印记新规则) + `201a9bf` (Ch32 老吴→老武)
+
+---
+
 ## [Round 28.47] Ch47 RCA · 17 项 bug + 3 类根因永久根治 (post-flow audit)
 
 **Trigger**：Ch47 完整流程跑完后用户要求 deep research bug 总扫描。audit-agent post-flow audit 找出 17 项 bug，3 类立即根治：
