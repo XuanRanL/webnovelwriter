@@ -2579,6 +2579,7 @@ def run_audit(project_root: Path, chapter: int, mode: str = "standard") -> Dict[
 
 def _cmd_chapter(args) -> int:
     from .cli_output import print_error
+    import time
     try:
         project_root = Path(args.project_root).resolve()
     except Exception as exc:
@@ -2589,11 +2590,14 @@ def _cmd_chapter(args) -> int:
                     suggestion="先通过 webnovel.py use <project_root> 绑定书项目")
         return 3
 
+    # Round 28.47 (Ch47 RCA · BUG-AUDIT-JSONL-ELAPSED-ZERO): 计时
+    audit_start_ts = time.time()
     try:
         report = run_audit(project_root, args.chapter, mode=args.mode)
     except Exception as exc:
         print_error("audit_runtime_error", f"{type(exc).__name__}: {exc}")
         return 3
+    audit_elapsed_ms = int((time.time() - audit_start_ts) * 1000)
 
     # 写出到 --out
     if args.out:
@@ -2602,6 +2606,9 @@ def _cmd_chapter(args) -> int:
         out_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # 追加到 chapter_audit.jsonl 观测日志
+    # Round 28.47 (Ch47 RCA · BUG-AUDIT-DECISION-FIELD-MISSING):
+    # 加 decision + overall_decision 字段对齐 audit-agent (Part 2) 的 schema,
+    # 防止 jsonl 同一文件 两个生产者 schema 不一致 导致下游 SQL/analytics NULL 半数
     obs_path = project_root / ".webnovel" / "observability" / "chapter_audit.jsonl"
     obs_path.parent.mkdir(parents=True, exist_ok=True)
     with open(obs_path, "a", encoding="utf-8") as f:
@@ -2609,7 +2616,10 @@ def _cmd_chapter(args) -> int:
             "chapter": args.chapter,
             "ts": datetime.now(timezone.utc).isoformat(),
             "source": "chapter_audit_cli",
+            "decision": report["cli_decision"],          # R28.47: alias 对齐 audit-agent
+            "overall_decision": report["cli_decision"],  # R28.47: alias 对齐 audit-agent
             "cli_decision": report["cli_decision"],
+            "elapsed_ms": audit_elapsed_ms,              # R28.47: timing instrumentation
             "layer_scores": {
                 "A": report["layers"]["A_process_integrity"]["score"],
                 "B": report["layers"]["B_cross_artifact_consistency"]["score"],

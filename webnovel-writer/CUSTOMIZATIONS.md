@@ -7,6 +7,79 @@
 
 ---
 
+## [Round 28.47] Ch47 RCA · 17 项 bug + 3 类根因永久根治 (post-flow audit)
+
+**Trigger**：Ch47 完整流程跑完后用户要求 deep research bug 总扫描。audit-agent post-flow audit 找出 17 项 bug，3 类立即根治：
+
+### Fix 1 · `PROTECTED_FIELDS` 扩 5 字段 + incoming 缺失防御 (P0)
+
+**根因**：R28.5 / R28.6 / R28.46 反复发生 — data-agent process-chapter merge 时不带 key → existing 真源被丢。当前 `PROTECTED_FIELDS` 只含 11 个字段，遗漏 5 个有 disk artifact 真源的字段。
+
+**修法**：`scripts/data_modules/state_manager.py:1316-1349`
+- 新增 5 字段：`hook_close` / `dialogue_ratio` / `signature_density` / `external_avg` / `reader_thrill_score`
+- 新增 `elif existing_val not in (None,...) and chapter_meta.get(protected) in (None,...)` 分支：incoming 缺失时主动保留 existing（防 R28.46 复发）
+
+**血教训**：Ch47 实测 dialogue-checker 真值 0.289 vs data-agent LLM 自估 0.476，差 0.187，前 9 章基线 0.198-0.32 唯一异常。
+
+### Fix 2 · audit CLI jsonl 加 `decision` + `overall_decision` + `elapsed_ms` (P0)
+
+**根因**：`chapter_audit.jsonl` 有两个生产者 (CLI Part 1 + audit-agent Part 2)，schema 不一致 — CLI 只写 `cli_decision`，导致下游 SQL/analytics NULL 半数（110/164 entries `decision=None`）。
+
+**修法**：`scripts/data_modules/chapter_audit.py:_cmd_chapter` 加 `decision` + `overall_decision` 字段对齐 audit-agent；加 `import time` + `audit_start_ts` 计时算 `elapsed_ms`。
+
+### Fix 3 · HOOK_ALIASES 加 行动钩→动作钩 / 发现钩→信息钩 (P0)
+
+**根因**：prep 文档/审查报告高频使用"行动钩"（"动作钩"的口语简化）作为 secondary type，CLI 严格 4 枚举 + 旧别名表 6 项 → 静默置 None。Ch47 实测 `secondary_type=None` 但所有产物都写"动作钩+决策钩"。
+
+**修法**：`state_manager.py:2286-2293` HOOK_ALIASES_PRIMARY 加 `"行动钩": "动作钩"` + `"发现钩": "信息钩"`；`L2311-2318` HOOK_ALIASES (secondary) 同步。
+
+### 测试
+
+`scripts/data_modules/tests/test_round28_47_rca_fixes.py` 新增 8 单测：
+- `test_fix1_hook_close_preserved_when_incoming_missing` ✓
+- `test_fix1_dialogue_ratio_protected` ✓
+- `test_fix1_signature_density_protected` ✓
+- `test_fix1_thrill_score_preserved_when_missing` ✓
+- `test_fix3_hook_alias_xingdongou_mapped_primary` ✓
+- `test_fix3_hook_alias_xingdongou_mapped_secondary` ✓
+- `test_fix2_audit_cli_jsonl_decision_field` ✓
+- `test_protected_fields_count_after_round28_47` ✓
+
+503+8 = 511 单测全过（除 Ch22 R21.7 长期 pre-existing fail）
+
+### 推到下一轮的 7 项 (推迟到 R28.48+)
+
+仍未实装的 P0/P1 fix (audit-agent 已建议但未在本轮实施):
+- Fix 4: data-agent.md 显式禁止 LLM 重算 dialogue_ratio + backfill 机制
+- Fix 5: polish_cycle 末尾自动级联触发 Step 3.5 重跑提示
+- Fix 6: writer subagent inline 签名密度预警（每场景 grep）
+- Fix 7: thrill_score backfill（修历史 6 章 overall=None 漂移）
+- Fix 8: G4 thrill cascade auto-escalation (连 5 章 neutral → critical block)
+- Fix 9: F7 标题词分词 fallback (避免全字串误报)
+- Fix 10: editor_notes 数字 self-check 强化
+
+### 文件清单
+
+- `scripts/data_modules/state_manager.py` (修 Fix 1 + Fix 3 = 30 行)
+- `scripts/data_modules/chapter_audit.py` (修 Fix 2 = 15 行)
+- `scripts/data_modules/tests/test_round28_47_rca_fixes.py` (新增 200 行)
+- `CUSTOMIZATIONS.md` (本段)
+
+### Round 28.47 commit message 模板
+
+```
+feat(R28.47): Ch47 七类根因永久根治 · 3 P0 fix + 8 新单测全过
+
+- Fix 1: PROTECTED_FIELDS 扩 5 字段 (hook_close/dialogue_ratio/signature_density/
+         external_avg/reader_thrill_score) + incoming 缺失防御
+- Fix 2: chapter_audit CLI jsonl 加 decision/overall_decision/elapsed_ms
+- Fix 3: HOOK_ALIASES 加 行动钩→动作钩 + 发现钩→信息钩
+
+8 新单测全过 · 511 全量回归 pass · Ch47 流程完美闭合
+```
+
+---
+
 ## [ Round 28.28 deep research 补充] Ch42 deep research 4 类追加根因
 
 **Trigger**：Ch42 全流程跑完后用户要求 deep research 二次审查，发现 5 个新 root cause（第一次 audit 漏报 + audit-agent 自身漂移）：
