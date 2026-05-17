@@ -2306,12 +2306,12 @@ def main():
                 )
                 return
             sec = payload.get("secondary")
-            if sec and sec not in VALID_HOOK_TYPES:
-                sec = None
             # Round 28.4 · Ch26 RCA · P1-8: hook taxonomy alias 自动映射
             # reader-pull-checker 经常输出 "危机钩"/"悬念钩"/"反转钩" 但 CLI 只接受 4 类。
             # 在严格 reject 之外提供别名映射（向后兼容旧报告 + 减少 hygiene H26 mismatch）。
             # Round 28.47 · Ch47 RCA · 加 "行动钩"→"动作钩" 映射（secondary 也要支持）
+            # Round 28.48 · Ch47 v2 RCA · **顺序 bug 根治**：别名映射必须在 reject 之前
+            # 之前的 bug: sec="行动钩" → L2309 not in VALID_HOOK_TYPES → sec=None → 永远 None
             HOOK_ALIASES = {
                 "危机钩": "动作钩",
                 "悬念钩": "信息钩",
@@ -2322,11 +2322,15 @@ def main():
                 "行动钩": "动作钩",  # R28.47 secondary 也常用
                 "发现钩": "信息钩",  # R28.47 防御性
             }
+            # Round 28.48 · 别名映射先行（修 R28.47 顺序 bug）
             # 注意：这一段在 primary 校验之后；若 primary 已是 4 类直通，
             # 但 secondary 可能是别名 → 映射；同时把 alias 命中也写入 source 字段以便审计。
             if sec and sec in HOOK_ALIASES:
                 payload.setdefault("alias_mapping", {})["secondary"] = sec
                 sec = HOOK_ALIASES[sec]
+            # 映射后 才做 enum reject (防 R28.47 顺序 bug 复发)
+            if sec and sec not in VALID_HOOK_TYPES:
+                sec = None
             cm = manager._state.setdefault("chapter_meta", {})
             key = f"{ch:04d}"
             entry = cm.setdefault(key, {})
