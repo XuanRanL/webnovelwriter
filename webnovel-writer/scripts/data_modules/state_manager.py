@@ -1325,17 +1325,31 @@ class StateManager:
                 "thrill_score",
                 "narrative_version",
                 "polish_log",
+                # Round 28.47 (Ch47 RCA) 新增 — 这些字段都有可验证的 disk artifact 来源:
+                "hook_close",           # reader-pull-checker + polish_cycle 真源 (R28.46 复发反复)
+                "dialogue_ratio",       # dialogue-checker + post_draft_check 真源 (Ch47 实测漂移 0.289→0.476)
+                "signature_density",    # post_draft_check 真源
+                "external_avg",         # external_review.py 真源
+                "reader_thrill_score",  # reader-thrill-checker 真源 (数字版)
             )
             existing_meta = self._state["chapter_meta"].get(meta_key, {}) or {}
             for protected in PROTECTED_FIELDS:
-                if protected in existing_meta and existing_meta[protected] not in (None, "", [], {}):
+                existing_val = existing_meta.get(protected)
+                if protected in existing_meta and existing_val not in (None, "", [], {}):
                     incoming = chapter_meta.get(protected)
-                    if incoming != existing_meta[protected]:
+                    if incoming != existing_val:
                         # 保护：data-agent 写入的值与已有真源不一致 → 用已有真源覆盖 incoming
-                        chapter_meta[protected] = existing_meta[protected]
+                        chapter_meta[protected] = existing_val
                         warnings.append(
                             f"data-agent 试图覆盖 chapter_meta.{meta_key}.{protected}（Step 3+4.5 真源），已保留原值"
                         )
+                # Round 28.47 (Ch47 RCA): incoming 缺失或为空但 existing 有值 → 保留 existing
+                # 防 R28.46 hook_close 副作用复发：data-agent merge 时不带 key 导致真源被丢
+                elif existing_val not in (None, "", [], {}) and chapter_meta.get(protected) in (None, "", [], {}):
+                    chapter_meta[protected] = existing_val
+                    warnings.append(
+                        f"data-agent 未带入 chapter_meta.{meta_key}.{protected}，已从 existing 保留真源（防 R28.46 复发）"
+                    )
 
             self._state["chapter_meta"][meta_key] = chapter_meta
             self._pending_chapter_meta[meta_key] = chapter_meta
@@ -2269,6 +2283,7 @@ def main():
             primary = str(payload.get("primary", "")).strip()
             VALID_HOOK_TYPES = {"信息钩", "情绪钩", "决策钩", "动作钩"}
             # Round 28.4 · 别名映射前置（reader-pull-checker 常输出 "危机钩" 等扩展类型）
+            # Round 28.47 · Ch47 RCA · "行动钩" 高频简称（prep 文档大量使用），必须加入别名表
             HOOK_ALIASES_PRIMARY = {
                 "危机钩": "动作钩",
                 "悬念钩": "信息钩",
@@ -2276,6 +2291,8 @@ def main():
                 "意外钩": "信息钩",
                 "决断钩": "决策钩",
                 "情境钩": "动作钩",
+                "行动钩": "动作钩",  # R28.47 (Ch47 RCA) prep/审查报告高频简称
+                "发现钩": "信息钩",  # R28.47 防御性新增
             }
             primary_alias_used = None
             if primary in HOOK_ALIASES_PRIMARY:
@@ -2294,6 +2311,7 @@ def main():
             # Round 28.4 · Ch26 RCA · P1-8: hook taxonomy alias 自动映射
             # reader-pull-checker 经常输出 "危机钩"/"悬念钩"/"反转钩" 但 CLI 只接受 4 类。
             # 在严格 reject 之外提供别名映射（向后兼容旧报告 + 减少 hygiene H26 mismatch）。
+            # Round 28.47 · Ch47 RCA · 加 "行动钩"→"动作钩" 映射（secondary 也要支持）
             HOOK_ALIASES = {
                 "危机钩": "动作钩",
                 "悬念钩": "信息钩",
@@ -2301,6 +2319,8 @@ def main():
                 "意外钩": "信息钩",
                 "决断钩": "决策钩",
                 "情境钩": "动作钩",
+                "行动钩": "动作钩",  # R28.47 secondary 也常用
+                "发现钩": "信息钩",  # R28.47 防御性
             }
             # 注意：这一段在 primary 校验之后；若 primary 已是 4 类直通，
             # 但 secondary 可能是别名 → 映射；同时把 alias 命中也写入 source 字段以便审计。
