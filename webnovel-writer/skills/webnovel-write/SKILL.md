@@ -561,6 +561,29 @@ print('quote check: 0 ASCII, OK')
 "
 ```
 
+> **🔴 Round 28.49 · Write 工具中文引号 known bug 兜底（Ch48 实战 142 个 ASCII 复发）**
+>
+> Claude Code Write 工具有 known bug: 大段中文正文写入时, U+201C/U+201D 可能被转为 ASCII `"` 落地。每次 Write 中文正文 / 起草后, **必须**紧跟自动配对修复脚本（成对替换不依赖原始位置）：
+>
+> ```bash
+> python -X utf8 -c "
+> import pathlib, glob
+> files = glob.glob('${PROJECT_ROOT}/正文/第${chapter_padded}章*.md')
+> p = pathlib.Path(files[0])
+> t = p.read_text(encoding='utf-8')
+> out = []; depth = 0
+> for ch in t:
+>     if ch == chr(34):
+>         out.append('“' if depth % 2 == 0 else '”'); depth += 1
+>     else: out.append(ch)
+> p.write_text(''.join(out), encoding='utf-8')
+> print(f'paired {depth} ASCII -> Chinese curly')
+> "
+> ```
+>
+> 此脚本配对策略: 第1/3/5... 个 ASCII `"` → U+201C(`“`), 第2/4/6... → U+201D(`”`)。**适用于 Write 单次写入** (引号配对完整时)。若 Edit 局部替换出现奇数 ASCII 残留, 改用人工 Edit 精确修复。
+
+
 U+FFFD 编码验证（写入后立即执行）：
 ```bash
 python -c "
@@ -919,6 +942,19 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
    主流程必须代替 subagent 做这道闸门, 否则 hygiene H71 P0 阻断 commit 才发现就晚了。
 
 ### Step 4：润色（问题修复优先）
+
+> **🔴 Round 28.49 · Step 4 polish 必须显式 start-step（Ch48 实战 A6 HIGH 警告根治）**
+>
+> 调用 polish Edit / 子代理之**前**，必须先显式登记 Step 4 开始：
+>
+> ```bash
+> python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+>   workflow start-step --step-id "Step 4" --step-name "Polish"
+> ```
+>
+> **根因**: Ch48 R28.49 实战 — 完成 Step 3.5 后直接调 polish Edit, complete-step 时 workflow_manager 兜底 `implicit_start=True` → audit Layer A6 HIGH warn 累积。Step 4 与 Step 2B / Step 5 / Step 3.5 同等优先级，必须显式登记。
+>
+> 设环境变量 `WEBNOVEL_STRICT_WORKFLOW=1` 后，complete-step 会直接 reject 没预先 start-step 的调用。
 
 > **🔴 Round 28.46 · polish 新增有名角色行为 / 物件位置前必 grep（防 R28.36 v5 + R28.46 同源根因）**
 >

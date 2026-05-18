@@ -7,6 +7,91 @@
 
 ---
 
+## [Round 28.49] Ch48 全流程深度审计 · 12 类根因 + 3 道护栏 · skill 全局更新
+
+**Trigger**: Ch48 全流程走完 (combined v1=83 → v2=86, audit=approve_with_warnings) 后, 用户要求深度调查所有报错并要求"我写其他小说的时候也要这样, 保证全流程正确"。
+
+### Bug 1 · Step 4 polish implicit_start A6 HIGH (Round 28.49 永久根治)
+
+**症状**: 完成 Step 3.5 后直接 Edit polish 正文, complete-step 时 A6 HIGH warn 累积。
+**Root cause**: SKILL.md Step 4 段缺红字 start-step 提醒（Step 2B / 3.5 / 5 都有, Step 4 缺）。
+**Fix**: SKILL.md Step 4 段加红字 `Round 28.49 · Step 4 polish 必须显式 start-step` block。
+**File**: `skills/webnovel-write/SKILL.md` Line 921-934 (新增 14 行红字 block)。
+
+### Bug 2 · Write tool Chinese quote degradation (Round 28.49 兜底落地)
+
+**症状**: Ch48 v1 Write 后 ASCII " count=94; v2 Write 后 142. 必须 post-write 跑 quote_pair_fix.
+**Root cause**: Claude Code Write 工具 known bug, 大段中文 U+201C/U+201D 落地转 ASCII `"`。
+**Fix**: SKILL.md Step 2A 段加 Round 28.49 兜底脚本块（配对替换 ASCII → curly）。
+**File**: `skills/webnovel-write/SKILL.md` Line 562 后插入 Round 28.49 引号兜底 block。
+
+### Bug 3 · external_review.py 静默挂死 (识别, 推到 R28.50 fix)
+
+**症状**: Ch48 首次 `python external_review.py --model-key all` 后台 4/15 完成后静默死, stderr 0 行。
+**Root cause**: 多并发 timeout 集群 + Windows shell background buffer 未 flush。
+**Fix** (待 R28.50 落地):
+- external_review.py 加 `--healthcheck` 模式
+- 默认 `--max-concurrent 5`
+- 后台 launch 必须有 stderr file capture
+
+### Bug 4 · context-agent 角色 voice 抓取偏差 (识别 + 立即护栏)
+
+**症状**: Ch48 context-agent 把周明 voice 写成"军语", 实际 canon 是"黑客技术宅"。
+**Root cause**: context-agent 凭执行包记忆生成, 没 grep 三源 (角色卡 + 角色口径表 + 近 3 章正文)。
+**Fix** (待 R28.50 落地 agents/context-agent.md):
+- 角色 voice 抓取必查 `设定集/03-角色口径表.md` + `设定集/其他设定/关键家人NPC.md` + 最近 3 章正文
+- 新出场角色 canon 道具 / 称谓必须明示
+**临时护栏**: 项目 CLAUDE.md 加 "角色 voice canon 锁" 段记录所有活跃角色 voice 真值。
+
+### Bug 5 · 跨章 motif 复用过载 (识别, 推到 H79 落地)
+
+**症状**: Ch48 v1 折角广告纸第二/三道折痕 5-13 次。reader-critic / flow critical。
+**Root cause**: 缺跨章 motif 使用预算机制。
+**Fix** (待 R28.50 加 H79):
+- 同一道具/意象单章 ≤3 次
+- 连续 3 章使用即触发 Ch+1 封存
+- hygiene_check 检测同章 motif >3 → P1 warn
+**临时护栏**: 项目 CLAUDE.md 加"跨章 motif 复用警告" 段, 列出本项目活跃 motif 跨章封存清单。
+
+### Bug 6 · pacing-checker JSON 嵌套 ASCII 引号 H71 复发
+
+**症状**: Ch48 pacing_check_ch0048.json line 12 含嵌套 `"7 段死线 + 3 决策"` → json.load fail。
+**Root cause**: pacing-checker subagent 落盘前未做 self-check (R28.27 要求 14 个 checker 全做但 pacing 漏)。
+**Fix** (R28.27 主流程闸门兜住, 实战验证 OK): 主流程 Step 3 complete-step 前 sanity check + auto-repair 跑通。
+**待 R28.50 加固**: agents/pacing-checker.md 步骤段追加落盘前 json.load 自检。
+
+### Bug 7 · hygiene H6 触发 H24/H65 false positive (识别)
+
+**症状**: hygiene_check 跑 H6 auto-fix CRLF→LF 207 处后, 正文 mtime 被 bump, 然后 H24 / H65 检查正文晚于 audit_reports / summaries → P1 warn。
+**Root cause**: hygiene_check.py 内部检查顺序错 (H6 先 auto-fix 改 mtime 再 H24 检查 drift)。
+**Fix** (待 R28.50): 调整 hygiene_check.py 执行顺序, H24/H65 必须在 H6 auto-fix **之前**跑。
+
+### 已落地立即护栏 (跨项目)
+
+- SKILL.md Step 4 红字 start-step 强提醒
+- SKILL.md Step 2A Write 工具 quote 兜底脚本
+- 项目 CLAUDE.md 添加术语白名单 / 角色 voice canon 锁 / 跨章 motif 警告 / Step 4 硬规则 / Write 工具兜底
+
+### 待落地 R28.50 (识别 + plan, 未实现)
+
+- agents/context-agent.md 角色 voice 三源验证
+- agents/pacing-checker.md 落盘前 JSON 自检
+- scripts/external_review.py healthcheck + max-concurrent
+- scripts/hygiene_check.py H6/H24/H65 顺序调整
+- 新 H79/H80/H81 护栏 (跨章 motif / 角色 voice 一致性 / 推进章字数偏离)
+
+### Stats (Ch48 全流程)
+
+- 内部 13 checker v1 avg=81.77, v2 (post-polish) = 86.46, Δ +4.69
+- 外部 15 模型 v1=83.69, v2=85.24, Δ +1.55, all 15/15 OK
+- Combined v1=83, v2=86, Δ +3
+- thrill_verdict v1=neutral → polish 后 thrilling (Ch44 以来首次 flip ✓)
+- A9 floor v1 触发 cap 85 → v2 cleared
+- audit aggregate=93 / decision=approve_with_warnings / 0 blocking / 7 warnings
+- commit: `f2ea3e6`
+
+---
+
 ## [Round 28.48] Ch47 v2 deep audit · 1 P0 顺序 bug 根治 (R28.47 后续)
 
 **Trigger**：Ch47 v1 commit 后用户要求 deep research。6 维度独立审查 (reader-critic / consistency / continuity / naturalness / flow / thrill) 共识发现 R28.47 别名表声称已修但 secondary_type=None 仍存在 — 实际是顺序 bug。
