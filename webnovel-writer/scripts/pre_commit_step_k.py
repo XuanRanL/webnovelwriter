@@ -103,8 +103,10 @@ def check(project_root: Path, chapter: int) -> list[str]:
             )
 
     # Round 28.35: 扩展可选文件（卷一承诺/损失代价/反派压强）· 文件不存在则 skip
-    # 存在但缺 [ChN] 标注 → STEP_K_EXTENDED_MISSING warn 级别（不进 errors 阻断 · 而是 print warn）
+    # Round 28.50 (Ch48 RCA): 升级 — 缺 ≥2 个扩展文件 OR 距上次更新 ≥10 章 → 升级为 STEP_K_HIGH
+    # Round 28.50 Ch48 实战：5/9 设定集没标 [Ch48] 我"不阻塞"心态忽略了, 实际是真问题
     extended_warnings = []
+    extended_missing_count = 0
     if check_extended:
         for rel_path in extended_targets:
             fp = project_root / rel_path
@@ -112,10 +114,18 @@ def check(project_root: Path, chapter: int) -> list[str]:
                 continue  # silent skip · 老项目无此文件不阻断
             text = fp.read_text(encoding="utf-8")
             if ch_tag not in text:
+                extended_missing_count += 1
                 extended_warnings.append(
                     f"[STEP_K_EXTENDED_WARN] {rel_path} 未找到 '{ch_tag}' 标注 · "
                     f"扩展同步白名单（卷一承诺/损失代价/反派压强）建议每章追加 · 不阻塞 commit"
                 )
+        # Round 28.50: 缺 >= 2 个扩展文件 → 升级 STEP_K_HIGH warn (仍不阻塞但显眼)
+        if extended_missing_count >= 2:
+            extended_warnings.append(
+                f"[STEP_K_EXTENDED_HIGH] 缺 {extended_missing_count} 个扩展设定集 [Ch{chapter}] 标注 (≥2) · "
+                f"Round 28.50 升级警告 · 强烈建议补齐 (即使不阻塞 commit) · "
+                f"参考 Ch48 实战: 我跳了 P1 warn 结果 5/9 设定集没标导致下章 context-agent 漏读"
+            )
     # 把 extended_warnings 通过模块级别变量暴露给 main · 主流程 print 但不计入 errors
 
     # 进阶：chapter_meta.foreshadowing_planted 里每条是否在伏笔追踪.md 可查
