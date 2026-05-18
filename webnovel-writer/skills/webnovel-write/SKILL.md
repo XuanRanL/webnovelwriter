@@ -541,6 +541,33 @@ fi
 - **禁止英文结论话术**：正文、审查说明、润色说明、变更摘要、最终报告中不得出现 Overall / PASS / FAIL / Summary / Conclusion 等英文结论标题。
 - **英文仅限机器标识**：CLI flag（`--fast`）、checker id（`consistency-checker`）、DB 字段名（`anti_ai_force_check`）、JSON 键名等不可改的接口名保持英文，其余一律使用简体中文。
 
+> **🔴 Round 28.49 · Step 2A 起草后必跑 4 项 self-check (Ch48 deep audit 漏检根治)**
+>
+> Ch48 v1 走完 13 checker + 15 外模型 + Step 4.5 复测后, deep research subagent 仍发现 4 高问题被全部审查机制漏检:
+>
+> 1. **NPC entry/exit pairing 缺**: 老吴 L37 入场 → L77 最后一句 → L205 章末"竹篮还在桌沿"但无出门描写 = ghost-exit. **修法**: Step 2A 起草后 grep 所有有名角色, 验证每个 entry 必有 exit (出门/告别/视线离开) 至少 1 句
+> 2. **Timeline transition fill 缺**: L3 "六点整" → L37 "老吴七点四十到" = 100 分钟无 atmosphere/action 桥. **修法**: Step 2A 时间锚之间 >30 min 必须至少 1 句过渡 (等候 / 物动 / 环境变化)
+> 3. **Emotional 高潮 minimum depth 缺**: 林母 50米共享规则首次质疑这种 critical relationship beat 仅 6 句对话被 "妈,洒水" 打发 = 法律咨询语气而非"商量恳求语气". **修法**: 情感锚 ≥2 轮对话 + 身体语言 ≥3 处 + reaction shot ≥1 个 (孩子拽衣角 / 同辈触碰 / 物理位置变化 等)
+> 4. **同章内部 timestamp 精度 sanity 缺**: L141 八点整 vs L171 SMS 七点五十四 = 6 分钟 gap 无 in-prose 解释 (收到延迟 / 静音 / 设备故障). **修法**: 同章内部时间精度 mins 差 ≥5 必须有 in-prose 解释
+>
+> **新 self-check 模板** (Step 2A complete-step 前必跑):
+> ```python
+> # 1. NPC entry/exit pair
+> grep -n "<NPC名>" 正文/第${chapter_padded}章*.md
+> # 验证每个 NPC 入场后有出场描写
+>
+> # 2. Time anchor transition
+> grep -nE "六点|七点|八点|九点|十点|中午|下午|晚上" 正文/第${chapter_padded}章*.md
+> # 验证相邻时间锚之间有过渡行
+>
+> # 3. Emotional climax depth
+> # 手动检查情感锚场景 dialogue rounds + body-lang + reaction shots
+>
+> # 4. Internal timestamp sanity
+> grep -nE "[0-9一二三四五六七八九十]+点[0-9一二三四五六七八九十]*" 正文/第${chapter_padded}章*.md
+> # 验证 mins 差 ≥5 必有解释
+> ```
+
 引号与格式清洁硬约束（起草时必须严格遵守）：
 - **禁止 ASCII 半角引号 `"`**：从第一笔起就必须用 U+201C（“）/U+201D（”）中文弯引号对。不得“先用 ASCII 写完再批量替换”——批量 flip-pair 脚本在段内多重嵌套引号时会跨段翻转配对，导致 7 处+错乱。
 - **禁止 Markdown 标题/分隔线**：正文不得含 `#` / `##` / `---` / 粗体 `**...**`。章节文件直接以第一段叙事开头。
