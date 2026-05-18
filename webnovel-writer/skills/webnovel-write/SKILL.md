@@ -866,6 +866,22 @@ python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
 
 若脚本失败，手动从设定集文件读取并用 `Write` 工具写入 JSON。**禁止跳过此步骤直接调用 external_review.py**。**禁止回退到旧的 9 字段内联脚本，否则外部 15 个模型将盲评无法看到作者要求的克制风格、情感蓝图、典故伏笔等关键信息。**
 
+> **🔴 Round 28.50 · 调用前必跑 healthcheck (Ch48 实战 4/15 静默挂死 根治)**
+>
+> Ch48 实战首次 `python external_review.py --model-key all` 后台跑 → 4/15 模型完成后**静默卡死**, stderr 0 行, 必须手动重启才完成 15/15. 根因: 多并发 + 单个 provider 超时未触发 fast-fail.
+>
+> **永久根治** — 主调用之**前**必跑 healthcheck:
+>
+> ```bash
+> # Step A: healthcheck (验证 API key + provider 可用 · ~30s)
+> python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
+>   --project-root "${PROJECT_ROOT}" \
+>   --chapter {chapter_num} \
+>   --healthcheck
+> # 输出 .webnovel/tmp/external_healthcheck_{ts}.json
+> # 若 healthy_count < 10/15 → 修复 API key 或换 provider 再继续
+> ```
+
 调用命令：
 ```bash
 python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
@@ -873,7 +889,8 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
   --chapter {chapter_num} \
   --mode dimensions \
   --model-key all \
-  --dimension-strategy auto
+  --dimension-strategy auto \
+  --max-concurrent 5   # Round 28.50 · 默认 6, 降到 5 防 timeout 集群挂死
 ```
 ⚠️ 脚本仅支持：`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--dimension-strategy`, `--model-concurrent`, `--max-concurrent`, `--rpm-override`, `--rpm-override-provider`, `--no-merge-partial`, `--healthcheck`。不要传其他参数。
 

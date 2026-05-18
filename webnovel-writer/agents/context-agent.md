@@ -551,6 +551,50 @@ python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index get-co
 python "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" index recent-appearances --limit 20
 ```
 
+#### 🔴 Round 28.50 · 角色 voice 三源验证硬规则（Ch48 周明 voice 35→88 实战根治）
+
+**根因**: Ch48 v1 context-agent 把周明 voice 写成"军语 短句 队备 单人单包" — 实际 canon
+(设定集/08-连续性锁死表 L91) 周明=合工大研三+黑客 nul1ptr — 完全偏差导致 ooc-checker 35 critical.
+
+**永久根治**: 任何 character voice_rules 必须**三源交叉验证**:
+
+```bash
+# 三源 grep（每个出场角色都要跑）
+grep -nE "^##.*<NAME>|<NAME>.*说话方式|<NAME>.*voice" 设定集/03-角色口径表.md
+grep -n "<NAME>" 设定集/其他设定/关键家人NPC.md  # 家人/亲戚类NPC
+grep -nE "<NAME>.{0,5}说|<NAME>.{0,30}[“]" 正文/第00{N-3}章*.md 正文/第00{N-2}章*.md 正文/第00{N-1}章*.md
+```
+
+**对账规则**:
+- 三源都有命中 → 采用三源 consensus (canon 优先)
+- 仅 canon 有 → 信 canon (新角色) + flag `voice_source=canon_only`
+- 仅近章正文有 → 信正文 + flag `voice_source=recent_chapters_only` + 写 warning 给主流程
+- 三源都无 → 不写 voice_rules / 标 `voice_source=none` + 主流程必须 prompt user 明示
+
+**禁止**: 凭执行包记忆 / 直觉 / 类比 (例: "黑客也许说军语呢") 生成 voice_rules.
+
+**新出场角色专属**:
+- grep 关键家人NPC.md / 男配卡.md / 反派设计.md / 角色口径表.md 4 源
+- 必须明示 canon 道具 / 称谓 / PTSD 锚 (例 Ch48 老吴竹篮+草药+鸟蛋+膏药方 这种)
+- 若 canon 文件中有 "Ch{N+1} 登场" 锚, 必须**逐字**复制锚到 context.must_address
+
+**自检脚本** (输出 context.json 前必跑):
+```bash
+python -X utf8 -c "
+import re, pathlib
+ctx = json.load(open('.webnovel/context/ch{NNNN}_context.json', encoding='utf-8'))
+chars = ctx.get('characters_on_stage', [])
+for c in chars:
+    name = c.get('name', '')
+    voice = c.get('voice_rules', '')
+    src = c.get('voice_source', 'unknown')
+    if not voice:
+        print(f'WARN {name}: voice_rules 为空')
+    elif src == 'unknown':
+        print(f'P1 {name}: voice_source 未标 (必须 canon/recent_chapters/canon_only/recent_only)')
+"
+```
+
 - 从 `state.json` 读取：
   - `progress.current_chapter`
   - `plot_threads.foreshadowing`（主路径）

@@ -3522,6 +3522,452 @@ def check_signature_word_overuse(root: Path, chapter: int, rep: HygieneReport):
         rep.record("P1", "H39", "签名词频率正常", True)
 
 
+def check_npc_entry_exit_pairing(root: Path, chapter: int, rep: HygieneReport):
+    """H82 (Round 28.50 · Ch48 RCA): NPC 入场必有出场 / ghost-exit 防御.
+
+    根因: Ch48 老吴 L37 入场 + 大段对话 → L77 最后一句 → L205 章末"竹篮还在桌沿"
+          但全程**无出门描写** = ghost-exit. 13 checker + 15 外审全漏检.
+
+    检测策略:
+      - 读 chapter_meta.characters 拿到本章出场角色列表
+      - 排除主角 (POV 角色) + 排除外公 (固定常驻角色, 在堂屋不需 exit)
+      - 对每个 NPC: grep 入场动词 ("到了"/"进堂屋"/"登场"/"上门") 找入场点
+      - 然后 grep 出场动词 ("走了"/"离开"/"出去"/"告辞"/"出院门"/"回去"/"送他到")
+      - 若入场 found 但出场 not found, 且 NPC 在章末未被叙事提及 (距文本末尾 < 30%): warn P1
+      - 主角 / 外公 / 常驻同居家人 (林晚秋/朵朵/林母/陆灵 → 跨章常驻) 豁免
+
+    级别: P1 warn (避免 false positive, 不阻塞)
+    """
+    cf_list = sorted((root / "正文").glob(f"第{chapter:04d}章*.md"))
+    if not cf_list:
+        return
+    cf = cf_list[0]
+    text = cf.read_text(encoding='utf-8')
+
+    state_path = root / ".webnovel" / "state.json"
+    if not state_path.exists():
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding='utf-8'))
+    except Exception:
+        return
+
+    cm = state.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    characters = cm.get("characters", [])
+    if not isinstance(characters, list) or not characters:
+        rep.record("P1", "H82", "NPC entry/exit pairing (no characters list)", True)
+        return
+
+    pov_char = state.get("project_info", {}).get("protagonist", "陆沉")
+    residents = {pov_char, "外公", "林晚秋", "朵朵", "林母", "陆灵", "周明", "苏瑾", "陆爸",
+                 "陆妈", "苏蕊", "顾卿", "白敛"}
+
+    entry_verbs = ["到了", "进堂屋", "进来", "登场", "上门", "推门", "走进", "进院",
+                   "进屋", "到", "拎着", "拎一只", "拎一个", "敲门"]
+    exit_verbs = ["走了", "离开", "出去", "告辞", "出院门", "回去", "送他",
+                  "送出", "出门", "下楼", "走出", "出堂屋", "踏出"]
+
+    text_len = len(text)
+    tail_threshold = int(text_len * 0.7)
+
+    issues = []
+    for npc in characters:
+        if npc in residents or not npc or len(npc) < 2:
+            continue
+        npc_positions = [m.start() for m in re.finditer(re.escape(npc), text)]
+        if not npc_positions:
+            continue
+        first_pos = npc_positions[0]
+        last_pos = npc_positions[-1]
+        if first_pos == last_pos:
+            # 只提了一次，可能是远程提及而非现场出场，跳过
+            continue
+        has_entry = any(v in text[max(0, first_pos - 40):first_pos + 80] for v in entry_verbs)
+        # Round 28.50: exit verb 必须出现在 NPC 名字之后 (同一句子或紧邻句, 0-80 字 forward)
+        # 防 false negative: 主角"迈出门槛"出现在 NPC 名字之前被误判为 NPC exit
+        has_exit_near_npc = False
+        for npc_pos in npc_positions:
+            ctx = text[npc_pos:npc_pos + 80]  # 严格只看 NPC 之后 80 字
+            if any(v in ctx for v in exit_verbs):
+                has_exit_near_npc = True
+                break
+        # 章末仍在场未离开
+        if has_entry and not has_exit_near_npc and last_pos > tail_threshold:
+            issues.append(f"{npc}(入场L{text[:first_pos].count(chr(10))+1}+章末仍在场{text[:last_pos].count(chr(10))+1}无exit描写)")
+
+    if issues:
+        rep.record(
+            "P1", "H82",
+            f"NPC ghost-exit 嫌疑 {len(issues)} 处: {', '.join(issues[:3])} · "
+            f"修法: 加 1-2 行出场描写 (起身/告辞/送出门/拎包走) · "
+            f"豁免: 主角 + 常驻家人/同居 NPC + 远程提及不算出场",
+            False,
+        )
+    else:
+        rep.record("P1", "H82", "NPC entry/exit pairing 正常", True)
+
+
+def check_timeline_gap_fill(root: Path, chapter: int, rep: HygieneReport):
+    """H83 (Round 28.50 · Ch48 RCA): 时间锚之间 >30 min 必须有 atmosphere/action 桥.
+
+    根因: Ch48 L3 六点整 → L37 老吴七点四十到 = 100 分钟无任何 atmosphere/action transition
+          通过 prose. writer 直接 100 分钟跳过, 读者感觉时间断层.
+
+    检测策略:
+      - grep 中文时间锚 (六点 / 七点 / 八点 / 九点 / 十点 / 中午 / 下午 / 晚上 / 早晨 / 凌晨)
+      - 计算相邻时间锚 mins gap
+      - 检测两个锚之间 prose 内容字数
+      - 若 mins gap >=30 且锚之间 prose <100 字 → warn P1
+      - 若 mins gap >=60 且锚之间 prose <150 字 → warn P1 (强警告)
+
+    级别: P1 warn (避免 false positive 章节合法时间省略)
+    """
+    cf_list = sorted((root / "正文").glob(f"第{chapter:04d}章*.md"))
+    if not cf_list:
+        return
+    cf = cf_list[0]
+    text = cf.read_text(encoding='utf-8')
+
+    # 时间锚正则: 中文小时 + 可选分钟
+    # 例如: "六点整" "七点四十" "八点过了" "中午" "下午两点"
+    hour_map = {"零点": 0, "一点": 1, "两点": 2, "三点": 3, "四点": 4, "五点": 5,
+                "六点": 6, "七点": 7, "八点": 8, "九点": 9, "十点": 10, "十一点": 11,
+                "十二点": 12, "中午": 12, "凌晨": 1}
+    minute_map = {"整": 0, "过": 0, "十分": 10, "二十": 20, "三十": 30, "四十": 40, "五十": 50,
+                  "二十分": 20, "三十分": 30, "四十分": 40, "五十分": 50,
+                  "十": 10, "二十一": 21, "三十一": 31}
+    # 简化: 只查 主小时 + 整 / 数字分钟
+    # 例如 "六点整" → 6:00, "七点四十" → 7:40, "八点整" → 8:00
+    pattern = re.compile(
+        r"(零点|一点|两点|三点|四点|五点|六点|七点|八点|九点|十点|十一点|十二点|中午|凌晨)"
+        r"(整|过了|前|半|"
+        r"零?[十二三四五][十一二三四五六七八九]?|"
+        r"五十[一二三四五六七八九]?|[一二三四五六七八九])?"
+    )
+
+    # 排除引号内的对话时间锚 (forward-looking 时间不是 narrative anchor)
+    def _in_quote(pos):
+        # 查找 pos 之前最近的 “ 和 ” 配对
+        before = text[:pos]
+        opens = before.count("“")
+        closes = before.count("”")
+        return opens > closes  # 在未闭合引号内
+
+    matches = [mt for mt in pattern.finditer(text) if not _in_quote(mt.start())]
+    if len(matches) < 2:
+        rep.record("P1", "H83", "时间锚 <2 处 (narrative-only), 不需检测 transition fill", True)
+        return
+
+    def parse_anchor(s_h, s_m):
+        h = hour_map.get(s_h, -1)
+        if h < 0:
+            return None
+        m = 0
+        if s_m and s_m not in ("整", "过了", "前", "半"):
+            # 解析中文分钟: 四十=40, 五十=50, 三十=30 等
+            zh_num = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+            try:
+                if s_m == "四十": m = 40
+                elif s_m == "三十": m = 30
+                elif s_m == "二十": m = 20
+                elif s_m == "五十": m = 50
+                elif s_m == "十": m = 10
+                else:
+                    # 例 "四十五" → 45
+                    if len(s_m) == 2 and s_m[0] in "二三四五六" and s_m[1] in zh_num:
+                        m = zh_num[s_m[0]] * 10 + zh_num[s_m[1]]
+            except Exception:
+                m = 0
+        elif s_m == "半":
+            m = 30
+        return h * 60 + m
+
+    issues = []
+    anchors = []
+    for mt in matches:
+        h_str, m_str = mt.group(1), mt.group(2) or "整"
+        mins = parse_anchor(h_str, m_str)
+        if mins is None:
+            continue
+        anchors.append((mt.start(), mins, mt.group(0)))
+
+    for i in range(1, len(anchors)):
+        pos1, t1, lbl1 = anchors[i - 1]
+        pos2, t2, lbl2 = anchors[i]
+        gap_mins = t2 - t1
+        if gap_mins <= 0:
+            continue  # 同时间或回溯, 跳过
+        prose_between = text[pos1:pos2]
+        prose_len = len(re.findall(r"[一-鿿]", prose_between))
+        if gap_mins >= 60 and prose_len < 150:
+            issues.append(f"{lbl1}→{lbl2}({gap_mins}min 跳过 prose 只 {prose_len}字)")
+        elif gap_mins >= 30 and prose_len < 100:
+            issues.append(f"{lbl1}→{lbl2}({gap_mins}min 跳过 prose 只 {prose_len}字)")
+
+    if issues:
+        rep.record(
+            "P1", "H83",
+            f"时间锚跳跃过快 {len(issues)} 处: {'; '.join(issues[:2])} · "
+            f"修法: 加 1-2 行过渡 (等候/物动/环境变化) · "
+            f"豁免: <30min gap 或 prose >100字 自动通过",
+            False,
+        )
+    else:
+        rep.record("P1", "H83", "时间锚之间 transition fill 充分", True)
+
+
+def check_emotion_climax_depth(root: Path, chapter: int, rep: HygieneReport):
+    """H84 (Round 28.50 · Ch48 RCA): 情感高潮场景 minimum depth.
+
+    根因: Ch48 林母 50米共享规则首次质疑 = critical relationship beat
+          但实际只有 6 句对话 + "妈,洒水" 打断 = "法律咨询语气" 而非"商量恳求语气"
+          voice_lock 说商量恳求, prose 写成短促电报 = emotional climax 被克制风稀释.
+
+    检测策略:
+      - 读 .webnovel/context/ch{NNNN}_context.json 拿到 emotional_anchors_plan.scene_identification
+      - 对每个标记为"内在张力 / Internal-trust pressure peak / 高峰"的 beat:
+          - 在 prose 中定位该 beat 的位置 (通过 emotional_anchor 关键词)
+          - 统计该 beat 范围内 dialogue rounds (引号对话块数)
+          - 统计该 beat 范围内 body-language 关键词数 (指尖/喉头/目光/抬手/低头/退后/转身/眼睛/手腕/手背)
+          - 若 dialogue rounds <2 或 body-language <3 → warn P1
+      - 若 emotional_anchors_plan 不存在, skip (不强求)
+
+    级别: P1 warn
+    """
+    ctx_path = root / ".webnovel" / "context" / f"ch{chapter:04d}_context.json"
+    if not ctx_path.exists():
+        rep.record("P1", "H84", "无 context JSON, 跳过 emotion climax depth", True)
+        return
+    try:
+        ctx = json.loads(ctx_path.read_text(encoding='utf-8'))
+    except Exception:
+        return
+
+    cf_list = sorted((root / "正文").glob(f"第{chapter:04d}章*.md"))
+    if not cf_list:
+        return
+    text = cf_list[0].read_text(encoding='utf-8')
+
+    emo = ctx.get("context_contract", {}).get("emotional_anchors_plan", {})
+    if not emo:
+        emo = ctx.get("emotional_anchors_plan", {})  # backwards compat
+    scenes = emo.get("scene_identification", []) if isinstance(emo, dict) else []
+
+    body_lang_keywords = ["指尖", "喉头", "目光", "抬手", "低头", "退后", "转身", "眼睛",
+                          "手腕", "手背", "手指", "嘴角", "眉头", "肩膀", "心跳",
+                          "扯了扯", "拽了", "抹了", "捏住", "握住", "压一", "推一", "搭在",
+                          "撇了", "抿", "皱", "瞪", "盯"]
+
+    issues = []
+    if not scenes:
+        rep.record("P1", "H84", "无标记 emotional scene, 跳过", True)
+        return
+
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            continue
+        s_type = (scene.get("type") or "").lower()
+        # 只检测"高峰"标签 (peak / 高 / pressure / climax)
+        is_climax = any(k in s_type for k in ["peak", "pressure", "climax", "高峰", "高潮", "重头"])
+        if not is_climax:
+            continue
+        scene_keyword = scene.get("scene", "")
+        # 在 prose 中定位该 beat
+        # 用 scene 关键词的核心字 (取前 3-5 字) 找位置
+        kw = scene_keyword.replace("(", "").replace(")", "")[:6]
+        if not kw:
+            continue
+        pos = text.find(kw[:3]) if len(kw) >= 3 else -1
+        if pos < 0:
+            continue
+        # 取 +/-400 字作为 scene window
+        window = text[max(0, pos - 200):pos + 600]
+        # 统计 dialogue rounds: count of " " (curly quote pair)
+        dialogue_rounds = window.count("”")  # 闭合引号数 = round count 近似
+        # 统计 body-language 关键词
+        body_lang_count = sum(window.count(k) for k in body_lang_keywords)
+        if dialogue_rounds < 2 or body_lang_count < 3:
+            issues.append(f"emo_peak[{scene_keyword[:20]}](dlg={dialogue_rounds}, body={body_lang_count})")
+
+    if issues:
+        rep.record(
+            "P1", "H84",
+            f"情感高潮 minimum depth 不足 {len(issues)} 处: {'; '.join(issues[:2])} · "
+            f"修法: 情感锚场景 ≥2 轮对话 + ≥3 身体语言 (指尖/喉头/眼睛/手腕/抬手/低头/退后 等) · "
+            f"豁免: 非高峰场景或 emotional_anchors_plan 未标记",
+            False,
+        )
+    else:
+        rep.record("P1", "H84", "情感高潮场景深度充分", True)
+
+
+def check_intra_chapter_timestamp_sanity(root: Path, chapter: int, rep: HygieneReport):
+    """H85 (Round 28.50 · Ch48 RCA): 同章内部 timestamp 精度 sanity.
+
+    根因: Ch48 L141 "八点整" 屏幕亮起 vs L171 SMS "七点五十四" 发送时间 = 6 分钟 gap
+          但章中无 in-prose 解释 (谁延迟? 静音? 网络?). 读者感到时间矛盾.
+
+    检测策略:
+      - grep 多个精确时间锚 (X 点 Y 分 / X 点 Y / X:Y / 数字时间)
+      - 计算同一对话场景内 (附近 500 字) 任意两个 timestamp 的 mins gap
+      - 若 |gap| >=5 mins 且为同事件 (短信 / 通话 / 消息 / 屏幕亮起) 范畴内
+      - 检测后续 prose 200 字内有"刚"/"刚刚"/"才"/"静音"/"延迟"/"震动"/"过了"/"前"等 explain word
+      - 若无 → P1 warn
+
+    级别: P1 warn
+    """
+    cf_list = sorted((root / "正文").glob(f"第{chapter:04d}章*.md"))
+    if not cf_list:
+        return
+    text = cf_list[0].read_text(encoding='utf-8')
+
+    # 找精确时间 timestamp (中文 + 数字)
+    # 模式: 七点五十四 / 八点整 / 八点过六分 / 八点零五
+    pattern = re.compile(
+        r"(零点|一点|两点|三点|四点|五点|六点|七点|八点|九点|十点|十一点|十二点)"
+        r"(零?[十一二三四五六七八九]+|"
+        r"二十[一二三四五六七八九]?|三十[一二三四五六七八九]?|四十[一二三四五六七八九]?|五十[一二三四五六七八九]?|"
+        r"过[一二三四五六七八九十]+分?|前[一二三四五六七八九十]+分?|整|半)"
+    )
+
+    def parse_mins(h_str, m_str):
+        hours = {"零点":0,"一点":1,"两点":2,"三点":3,"四点":4,"五点":5,"六点":6,
+                 "七点":7,"八点":8,"九点":9,"十点":10,"十一点":11,"十二点":12}
+        zh = {"零":0,"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10}
+        h = hours.get(h_str, 0)
+        if m_str == "整": return h * 60
+        if m_str == "半": return h * 60 + 30
+        # parse 五十四 = 54, 四十 = 40, 二十一 = 21
+        m = 0
+        clean = m_str.replace("过", "").replace("前", "").replace("分", "")
+        if "十" in clean:
+            parts = clean.split("十")
+            if len(parts) == 2:
+                tens = zh.get(parts[0], 1) if parts[0] else 1
+                ones = zh.get(parts[1], 0) if parts[1] else 0
+                m = tens * 10 + ones
+            else:
+                m = zh.get(parts[0], 0) * 10
+        elif clean:
+            m = zh.get(clean, 0)
+        return h * 60 + m
+
+    timestamps = []
+    for mt in pattern.finditer(text):
+        try:
+            mins = parse_mins(mt.group(1), mt.group(2))
+            timestamps.append((mt.start(), mins, mt.group(0)))
+        except Exception:
+            continue
+
+    if len(timestamps) < 2:
+        rep.record("P1", "H85", "时间精度锚 <2, 跳过 sanity", True)
+        return
+
+    # 触发关键词 (同事件范畴)
+    event_kw = ["短信", "屏幕", "亮起", "通话", "电话", "消息", "震动", "提示"]
+    explain_kw = ["刚刚", "刚才", "刚", "才", "静音", "延迟", "震动", "过了", "前", "现在", "终于"]
+
+    issues = []
+    for i in range(len(timestamps)):
+        for j in range(i + 1, len(timestamps)):
+            pos_i, t_i, lbl_i = timestamps[i]
+            pos_j, t_j, lbl_j = timestamps[j]
+            pos_dist = abs(pos_j - pos_i)
+            time_gap = abs(t_j - t_i)
+            if pos_dist > 500:  # 不同场景
+                continue
+            if 5 <= time_gap <= 60:  # 5 min - 60 min 同场景时间精度矛盾
+                # 检测是不是同事件 (附近 250 字内有事件关键词)
+                segment = text[min(pos_i, pos_j):max(pos_i, pos_j) + 250]
+                if not any(k in segment for k in event_kw):
+                    continue
+                # 检测后续 200 字内有 explain word
+                if not any(k in segment for k in explain_kw):
+                    issues.append(f"{lbl_i}↔{lbl_j}({time_gap}min gap·{pos_dist}字距 · 同事件无解释)")
+
+    if issues:
+        rep.record(
+            "P1", "H85",
+            f"同章内部 timestamp 精度矛盾 {len(issues)} 处: {'; '.join(issues[:2])} · "
+            f"修法: in-prose 加解释 (刚刚才看到 / 静音震动 / 提前几分钟发送 / 收到延迟) · "
+            f"豁免: 不同场景或 mins gap <5 自动通过",
+            False,
+        )
+    else:
+        rep.record("P1", "H85", "同章内部 timestamp 精度自洽", True)
+
+
+def check_foreshadowing_planted_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H86 (Round 28.50 · Ch48 RCA): chapter_meta 与 plot_threads foreshadowing_planted 对账.
+
+    根因: Ch48 plot_threads.foreshadowing_list 有 3 个 F-CH48-{01,02,03} planted_chapter=48
+          但 chapter_meta.0048.foreshadowing_planted 只有 2 个 (F-CH48-03 屯溪路 antagonist 漏)
+          流程内无对账 → 下章 context-agent 读 chapter_meta 摘要 → 漏伏笔.
+
+    检测策略:
+      - 读 plot_threads.foreshadowing_list / .foreshadowing 中所有 planted_chapter==N
+      - 读 chapter_meta.{NNNN}.foreshadowing_planted 列表
+      - 对比 ID set: plot_threads ⊆ chapter_meta 必须成立 (chapter_meta 可有 extra)
+      - 缺失 → P0 block (硬规则: 真源数据漂移)
+
+    级别: P0 block
+    """
+    state_path = root / ".webnovel" / "state.json"
+    if not state_path.exists():
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding='utf-8'))
+    except Exception:
+        return
+
+    pt = state.get("plot_threads", {})
+    fl = pt.get("foreshadowing_list", pt.get("foreshadowing", []))
+    if not isinstance(fl, list):
+        return
+    plot_ids = set()
+    for f in fl:
+        if not isinstance(f, dict):
+            continue
+        if f.get("planted_chapter") == chapter:
+            fid = f.get("id", "")
+            if fid:
+                plot_ids.add(fid)
+
+    cm = state.get("chapter_meta", {}).get(f"{chapter:04d}", {})
+    fp = cm.get("foreshadowing_planted", [])
+    if not isinstance(fp, list):
+        fp = []
+    meta_ids = set()
+    for item in fp:
+        if not isinstance(item, str):
+            continue
+        # 提取 F-CHXX-YY 风格 ID (开头到第一个空格)
+        m = re.match(r"^(F-CH\d+-[^\s]+|F-CH\d+-\d+)", item)
+        if m:
+            meta_ids.add(m.group(1))
+
+    missing = plot_ids - meta_ids
+    if missing:
+        rep.record(
+            "P0", "H86",
+            f"foreshadowing 数据漂移 {len(missing)} 项: plot_threads 有但 chapter_meta 缺: "
+            f"{sorted(missing)} · "
+            f"修法: state update --set-chapter-meta-field 补 foreshadowing_planted 项 · "
+            f"根因: data-agent process-chapter 写 chapter_meta 时漏掉 plot_threads 后期 append 项",
+            False,
+        )
+    elif plot_ids or meta_ids:
+        rep.record(
+            "P0", "H86",
+            f"foreshadowing_planted 数据对齐 (plot_threads={len(plot_ids)} meta={len(meta_ids)})",
+            True,
+        )
+    else:
+        # 都为空, 通过
+        rep.record("P0", "H86", "本章无 foreshadowing_planted (空集对齐)", True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("chapter", type=int, help="章号")
@@ -3595,6 +4041,13 @@ def main():
 
     # Round 28.26 · Ch40 RCA · D+/D- 末世后方向校验（防 R28.25 B5 第三次复发）
     check_post_apocalypse_d_direction(root, args.chapter, rep)  # H78
+
+    # Round 28.50 · Ch48 deep audit · 5 道新护栏 (H82-H86) 永久根治流程内漏检
+    check_npc_entry_exit_pairing(root, args.chapter, rep)  # H82 · NPC ghost-exit (Ch48 老吴 实战)
+    check_timeline_gap_fill(root, args.chapter, rep)  # H83 · 时间锚之间 >30min 必须有过渡 (Ch48 06:00→07:40 实战)
+    check_emotion_climax_depth(root, args.chapter, rep)  # H84 · 情感高潮场景最小深度 (Ch48 林母 30秒打发 实战)
+    check_intra_chapter_timestamp_sanity(root, args.chapter, rep)  # H85 · 同章内部 mins gap ≥5 必有 in-prose 解释 (Ch48 SMS 6min 实战)
+    check_foreshadowing_planted_consistency(root, args.chapter, rep)  # H86 · chapter_meta 与 plot_threads foreshadowing_planted 对账 (Ch48 F-CH48-03 漂移 实战)
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)

@@ -7,6 +7,65 @@
 
 ---
 
+## [Round 28.50] Ch48 deep audit 全部落地 · 5 道新 hygiene 护栏 + 单测 + 4 项 skill/agents 加固
+
+**Trigger**: 用户要求 R28.49 Phase 2 推到 R28.50 的待加固清单**全部彻底根治**, 不能留"plan 未实现"。
+
+### 5 道永久 hygiene 护栏全部落地 (scripts/hygiene_check.py)
+
+- **H82 (P1)** NPC entry/exit pairing — 检测 ghost-exit. 老吴入场后无出场描写 → P1 warn. 常驻 NPC (林晚秋/朵朵/林母/外公/陆灵 等) 豁免. 入场动词 14 个 / 出场动词 13 个 / exit 必须出现在 NPC 名字之后 0-80 字内 (防主角"迈出门槛"误判).
+
+- **H83 (P1)** Timeline gap fill — 时间锚之间 >30 min 但 prose <100 字 → warn / >60 min 但 prose <150 字 → warn (强). 引号内对话时间锚自动排除 (forward-looking 不是 narrative anchor).
+
+- **H84 (P1)** Emotion climax depth — 读 .webnovel/context/ch{NNNN}_context.json 的 emotional_anchors_plan.scene_identification, 对"peak/pressure/climax/高峰/高潮/重头"标签 scene 检测: dialogue rounds <2 OR body-language 关键词 <3 → warn. body-language 关键词 26 个 (指尖/喉头/目光/抬手/低头/退后/转身/眼睛/手腕/手背 等).
+
+- **H85 (P1)** Intra-chapter timestamp sanity — 同章内部任意两个 timestamp mins gap 5-60 min, 距离 <500 字 (同场景), 范畴含 event_kw (短信/屏幕/亮起/通话/电话/消息/震动/提示) → 检测后续 250 字内有 explain_kw (刚刚/刚才/才/静音/延迟/震动/过了/前/现在/终于). 无解释 → warn.
+
+- **H86 (P0)** Foreshadowing planted consistency — chapter_meta.foreshadowing_planted 必须 ⊇ plot_threads 中 planted_chapter==N 的所有 F-CH{N}-XX ID. plot_threads 多出 → P0 block. 防 Ch48 实战 F-CH48-03 漂移.
+
+### 4 项 skill / agents 加固
+
+- **agents/context-agent.md** Step 3 加 Round 28.50 红字段: 角色 voice 三源验证 (canon/角色口径表/关键家人NPC + 近 3 章正文)
+- **scripts/pre_commit_step_k.py** R28.50 升级: 扩展白名单缺 ≥2 个 → STEP_K_EXTENDED_HIGH (仍不阻塞但显眼)
+- **skills/webnovel-write/SKILL.md** Step 3.5 加 healthcheck 红字: 调用前必跑 + 默认 --max-concurrent 5
+- **skills/webnovel-write/SKILL.md** Step 2A 加 4 项 self-check 红字 (R28.49 Phase 2, R28.50 已收口)
+
+### 单测覆盖 (15 新单测全过)
+
+`scripts/data_modules/tests/test_round28_50_h82_h86_hygiene.py`:
+- H82: 3 个测试 (ghost-exit 检测 / 正常 exit PASS / 常驻 NPC 豁免)
+- H83: 3 个测试 (短 gap PASS / 长 gap warn / 对话内锚忽略)
+- H84: 3 个测试 (无 context skip / 浅 climax warn / 深 climax PASS)
+- H85: 3 个测试 (同事件 gap 无 explain warn / 加 explain PASS / 不同场景 skip)
+- H86: 3 个测试 (对齐 PASS / 漂移 P0 block / 空集对齐 PASS)
+
+完整测试: 562 pass + 4 skip + 1 pre-existing fail (audit-agent.md Round 21.7 unrelated to R28.50).
+
+### Ch48 v3 回归测试 (实际跑 hygiene_check)
+
+```
+通过: 59 · P0 fail: 0 · P1 fail: 2 (H65 stale/H66 word_count drift · 来自 polish_cycle 未刷新 archive) · P2 fail: 0
+最终 exit_code = 2 (P1/P2 警告 不阻断)
+```
+
+H82-H86 全部清零:
+- H82 NPC entry/exit pairing 正常 (Ch48 v3 老吴 exit scene 已加)
+- H83 时间锚之间 transition fill 充分 (Ch48 v3 100min gap 已加桥)
+- H84 情感高潮场景深度充分 (Ch48 v3 林母 confrontation 已扩)
+- H85 同章内部 timestamp 精度自洽 (Ch48 v3 SMS 6min gap 已加解释)
+- H86 foreshadowing_planted 数据对齐 (plot_threads=3 meta=3)
+
+### Stats (R28.50 final)
+
+- 新增 5 个 hygiene 护栏函数 (~400 行代码 hygiene_check.py)
+- 新增 1 个测试文件 (~350 行 / 15 个测试)
+- 修改 SKILL.md 2 处 (Step 2A + Step 3.5)
+- 修改 agents/context-agent.md 1 处 (Step 3)
+- 修改 scripts/pre_commit_step_k.py 1 处 (扩展白名单升级)
+- regression: 562/563 PASS (1 pre-existing unrelated fail)
+
+---
+
 ## [Round 28.49 Phase 2] Ch48 deep research 二次审计 · 发现 4 高问题流程全漏检 · 4 道新 self-check 立即落地
 
 **Trigger**: 用户要求 deep research 二次审计 Ch48. 流程内 13 checker + 15 外部模型 + Step 4.5 复测全部声称 PASS, 但 deep research subagent 发现 **4 个真实 high 问题流程内全漏检**.
