@@ -7,6 +7,66 @@
 
 ---
 
+## [Round 28.49 Phase 2] Ch48 deep research 二次审计 · 发现 4 高问题流程全漏检 · 4 道新 self-check 立即落地
+
+**Trigger**: 用户要求 deep research 二次审计 Ch48. 流程内 13 checker + 15 外部模型 + Step 4.5 复测全部声称 PASS, 但 deep research subagent 发现 **4 个真实 high 问题流程内全漏检**.
+
+### 4 高漏检问题清单 (Ch48 deep research)
+
+1. **NPC entry/exit pairing 缺 (ghost-exit)**
+   - 症状: 老吴 L37 入场 → L77 最后一句 → L205 章末"竹篮还在桌沿"但**无出门描写** = pure character vanish
+   - Root: 13 checker 中 continuity-checker 查跨章, OOC 查 voice, 但**没人专门查 NPC entry/exit 配对结构**
+   - Fix: Step 2A self-check item 4 - 每个有名 NPC 入场必有出场
+
+2. **Timeline transition fill 缺**
+   - 症状: L3 "六点整" → L37 "老吴七点四十到" = 100 分钟纯空白无 atmosphere
+   - Root: writer 跳场缺"physical transition fill"自检, 项目刻度量词风格促成短句堆砌
+   - Fix: 时间锚之间 >30 min 必须 ≥1 句过渡
+
+3. **Emotional 高潮 minimum depth 缺 (法律咨询语气)**
+   - 症状: 林母 50米共享规则首次质疑 emotional重头戏被 6 句对话+"妈,洒水"打发, voice lock 说商量恳求实际写成法律咨询
+   - Root: 项目克制 voice 倾向 + 没有"emotional 高潮场景 minimum dialog depth"自检
+   - Fix: 情感锚 ≥2 轮对话 + 身体语言 ≥3 处 + reaction shot ≥1
+
+4. **同章内部 timestamp 精度 sanity 缺**
+   - 症状: L141 八点整 vs L171 SMS 七点五十四 = 6 分钟 gap 无 in-prose 解释
+   - Root: continuity-checker 跨章查, 不查同章内部时间精度
+   - Fix: 同章内部时间精度 mins 差 ≥5 必有 in-prose 解释
+
+### 立即落地 (R28.49 Phase 2)
+
+- SKILL.md Step 2A 段加 Round 28.49 红字 block (4 项 new self-check) - Line ~544 已落地
+- 项目 CLAUDE.md 已被 chore(canon) 单独 commit 加 5 段护栏 (commit f73a975)
+- 项目 commit c8cd0c8 (chapter v3 polish) + f73a975 (canon files) 双 commit 分离
+
+### Ch48 Phase 2 polish 实际改动 (apply via polish_cycle.py 已成功)
+
+- L29-37 加 100 分钟 transition fill (回堂屋等候 + 陶罐水气 + 阳光爬上桌沿)
+- L77 后加 老吴 exit scene 5 行 (起身 + 留竹篮 + 外公送门口 + "路上慢些" + 拎旧布包出院门)
+- L99-149 林母 confrontation 加深 (林母看林晚秋朵朵收回 + 朵朵拽衣角 + 林晚秋触碰母亲手背一秒)
+- L173 SMS 6 分钟 gap 解释 (周明手机一直静音到点震动才看见)
+- 字数 2321 → 2645 (+324, 接近推进章 2700 下限)
+- 章节 narrative_version v1 → v2 → v3 (polish_cycle 2 attempts)
+- hook_close 重分类 v1 → v2 → v3 (3 次 set-hook-close)
+
+### 推到 R28.50 加固
+
+- agents/continuity-checker.md 加 NPC entry/exit pairing detection
+- agents/continuity-checker.md 加同章内部 timestamp 精度 sanity
+- agents/pacing-checker.md 加 emotional climax minimum depth
+- hygiene_check.py 加 H82/H83/H84/H85 (NPC pairing / timeline transition / emotion depth / timestamp精度)
+- agents/context-agent.md 角色 voice 三源验证 (canon + 角色口径表 + 近 3 章)
+
+### Stats (Phase 2 final)
+
+- chapter commit: c8cd0c8 (v3 polish) + f73a975 (canon chore)
+- 设定集 [Ch48] 同步: 4 → 9 (Canon Bible / 卷一承诺 / 损失代价 / 反派压强 / 关键家人NPC 全部补齐)
+- foreshadowing_planted: 2 → 3 (F-CH48-03 屯溪路 antagonist 补登)
+- 字数 v1=2223 → v3=2645
+- narrative_version: v1 → v3
+
+---
+
 ## [Round 28.49] Ch48 全流程深度审计 · 12 类根因 + 3 道护栏 · skill 全局更新
 
 **Trigger**: Ch48 全流程走完 (combined v1=83 → v2=86, audit=approve_with_warnings) 后, 用户要求深度调查所有报错并要求"我写其他小说的时候也要这样, 保证全流程正确"。
