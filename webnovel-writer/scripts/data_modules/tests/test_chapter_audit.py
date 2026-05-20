@@ -1536,6 +1536,54 @@ def test_B4_review_metrics_fail_on_large_diff(good_project):
     assert r.severity == "high"
 
 
+def test_B4_review_metrics_frontmatter_priority_over_inline_history(good_project):
+    """
+    Round 28.55 (Ch51 二轮 deep audit P1-2 跨项目根治 GLOBAL-4):
+    审查报告 frontmatter 顶部 overall_score=90 是 SSOT,
+    §三/§八 polish 后段的 'v1_combined = 85' / 'polish_combined = 87' 是历史快照
+    audit B4 必须只读 frontmatter, 不能被宽松兜底匹配抓到历史快照。
+    """
+    mod = _load_module()
+    report_path = mod._find_review_report(good_project, 1)
+    assert report_path is not None
+    # 模拟 Ch51 实战: frontmatter 90 + §三 polish 历史快照 85
+    report_path.write_text(
+        "# 第0001章《xx》审查报告\n\n"
+        "> overall_score: 90\n"
+        "> internal_avg: 88.23\n"
+        "> external_avg: 85.64\n\n"
+        "## 一、内部分\n\n"
+        "## 三、合并分\n\n"
+        "**v1_combined = round(84.69 × 0.6 + 85.64 × 0.4) = 85**\n\n"
+        "## 八、polish 后\n\n"
+        "**polish_combined = round(88.23 × 0.6 + 85.64 × 0.4) = 87**\n",
+        encoding="utf-8",
+    )
+    r = mod.check_B4_review_metrics_consistency(good_project, 1)
+    # db_score 来自 good_project fixture (默认 90), frontmatter=90 → diff=0 pass
+    # 若没有 Round 28.55 frontmatter 优先，会抓到 85 → diff=5 fail
+    assert r.status == "pass", f"frontmatter SSOT 优先未生效: {r.evidence}"
+    assert r.measured.get("report_score") == 90.0
+
+
+def test_B4_review_metrics_frontmatter_missing_falls_back_to_inline(good_project):
+    """
+    Round 28.55: 若审查报告无 frontmatter 段, 仍应走 P1/P2/P3 兜底找 overall_score。
+    """
+    mod = _load_module()
+    report_path = mod._find_review_report(good_project, 1)
+    assert report_path is not None
+    report_path.write_text(
+        "# report (无 frontmatter blockquote)\n\n"
+        "## 综合分\n"
+        "overall_score: 90\n",
+        encoding="utf-8",
+    )
+    r = mod.check_B4_review_metrics_consistency(good_project, 1)
+    assert r.status == "pass"
+    assert r.measured.get("report_score") == 90.0
+
+
 def test_A3_external_models_markdown_only_uses_report_fallback(good_project):
     mod = _load_module()
     tmp_dir = good_project / ".webnovel" / "tmp"

@@ -1933,6 +1933,31 @@ def check_B4_review_metrics_consistency(project_root: Path, chapter: int) -> Che
     report_score = None
     # 先过滤掉所有代码块内容（```...```），避免把文档/示例里的分数当真值
     text_nofence = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+
+    # Round 28.55 (Ch51 二轮 deep audit P1-2 跨项目根治 · GLOBAL-4):
+    # 优先匹配审查报告顶部 frontmatter 段（开头连续 `> key: value` 行块），
+    # 防止 audit 抓到 §三/§八 polish 后段 "v1_combined / polish_combined" 等历史快照导致 false fail。
+    # Ch51 实战：frontmatter overall_score=87 vs §三 v1_combined=85 被 P3 兜底抓到 → diff=2 false warn。
+    _frontmatter_text = ""
+    _fm_match = re.match(
+        r"^(?:#[^\n]*\n+)?((?:>\s*[a-zA-Z_][\w]*\s*[:：][^\n]*\n)+)",
+        text_nofence,
+    )
+    if _fm_match:
+        _frontmatter_text = _fm_match.group(0)
+    if _frontmatter_text:
+        _m_fm = re.search(
+            r"(?im)^[>\s]*(?:overall[_ ]?score|综合分|综合评分|总评分|合并分|总分)\s*[:：=]\s*[*_~`]*\s*(\d{1,3}(?:\.\d)?)",
+            _frontmatter_text,
+        )
+        if _m_fm:
+            try:
+                _cand = float(_m_fm.group(1))
+                if _cand >= 1.0:
+                    report_score = _cand
+            except Exception:
+                pass
+
     # 允许行首有 blockquote `>` 或空白；要求 score 是 1-3 位整数或 xx.x 浮点（排除公式里的 0.6 / 0.4）；
     # 要求 score 后紧跟中文括号、换行、空白+中文字符或行尾（避免吃到公式里的数字）
     for pattern in (
@@ -1943,6 +1968,8 @@ def check_B4_review_metrics_consistency(project_root: Path, chapter: int) -> Che
         # P3 兜底：整段独立一行 `93 分` 或 `综合: 93` 或 Markdown 加粗 `合并分：**91**`
         r"(?im)^(?!\s*[-*>])\s*[^0-9\n]{0,30}[:：]?\s*\*{0,2}\s*(\d{2,3})\*{0,2}\s*(?:分)?\s*$",
     ):
+        if report_score is not None:
+            break  # Round 28.55: frontmatter 已抓到 SSOT，跳过宽松兜底
         match = re.search(pattern, text_nofence, re.IGNORECASE)
         if not match:
             continue
