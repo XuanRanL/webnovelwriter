@@ -185,6 +185,7 @@ EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印�
 - **`大纲/第{volume_id}卷-v[N]-前NN章覆盖大纲.md`**：若存在 v[N] 覆盖大纲（v2/v3/v4 等），**必读最新版本** 对应章节段（如 Ch9 行）。
   - **强制 cross-check**：与 editor_notes 字段级对比，确保 v4 大纲中的“功能验证 / 关键事件 / 承诺兑现项”未被遗漏（：editor_notes 来自 Ch8 v3 audit，未提“南瓜汁 5 秒愈合”，context-agent 默认信任，导致首稿完全缺失关键 v4 承诺，reader-pull 62 + continuity 74 双 high block）。
   - **遗漏检测**：若 v4 大纲列出的事件/兑现项未出现在 editor_notes 的“必兑现”列表，context-agent 必须把它注入 immutable_facts，并在 warnings[] 追加 `{"type": "OUTLINE_PAYOFF_MISSING_FROM_EDITOR_NOTES", "outline_version": "v4", "missing": "...", "severity": "high"}`
+  - **【Round 28.51 (Ch49 RCA) · 任意大纲格式 cross-check 强化】**：cross-check 不局限于 v[N] 版本号大纲, 凡 `大纲/` 下任何含 Ch{NNNN}/第{N}章/Ch{N} 行的 .md 文件 (含 `第1卷-详细大纲.md` / `第1卷-骨架.md` / `第1卷-节拍表.md` 等) 都必须 grep 比对。Ch49 实战 root cause: editor_notes 完全漏写大纲 L130 "周晓兰生日 + 秦岳第二次出手"，audit-agent 写 prep 时只 carry forward 上一章悬置，未读大纲本章行。**修法**: context-agent 必须显式做 outline-anchor-grep `grep -nE "Ch${NNNN}|第${cn_num}章" 大纲/*.md`。若 grep 命中行 (非空 + 含具体事件名词) 在 editor_notes 完全 0 mention, context-agent 必须 inject 大纲点为 must_complete 头条 + warnings[] 追加 `{"type": "EDITOR_NOTES_OUTLINE_DRIFT", "missing_outline_points": [...], "severity": "high"}`。具体 token-level 检测策略: 把大纲行 split 出名词短语 (>=2 字非"日常 buffer/[标签]"通用词), 在 editor_notes 全文 grep, 任一命名实体未出现 → 触发。
 - `设定集/叙事声音.md`: 全书风格基准（语气/密度/感官/对话比例/风格禁忌）
 - `设定集/情感蓝图.md`: 全书情感基调与关键情感节点
 - `设定集/开篇策略.md`: 前3章策略（仅 Ch1-3 读取）

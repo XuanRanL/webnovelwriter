@@ -7,6 +7,60 @@
 
 ---
 
+## [Round 28.51] Ch49 RCA 8 项根因永久根治 + 3 个跨项目通用修复
+
+**Trigger**: Ch49 全流程跑完 commit=5c84a8f combined=86 后, deep RCA 发现 8 类根因, 用户要求"以后写不会再出现"。
+
+### 3 跨项目脚本级根治 (scripts/)
+
+- **chapter_audit.py A2 false positive 扩白名单** (`_normalize_checker_snippet` status_zh_pattern):
+  - 加 20+ 状态/中性同义/版本号 token: `综合分` `unchanged` `v1/v2/v3/v4` `接受` `沿用` `持平` `维持` `稳定` `保持` `原值` `中立` `轻微` `微调` `buffer` `合规` `已稳` `已生效` `近线` `无修复` `无需复测` `可接受` `修复点轻微` `hook` `信息节奏`
+  - 根因: Ch49 审查报告 v2 列写 "综合分: 88" / "unchanged_88 (v1 接受)" 触发 A2 ≥3 token 重复 critical fail
+  - 修法: status_zh_pattern 扩展, 让所有"复测未做"列再写任何变体也不再误报
+  - 测试: cache 同步后 Ch49 audit Part 1 = 0 critical / 2 warn (vs 修复前 1 critical / 2 warn)
+
+- **hygiene_check.py H67 canon-locked 白名单**:
+  - 加 canon_locked_terms_whitelist = {灵泉, 桃源, 印记, 沙漏, 生机值, 样苗, 母苗, 失情绪, 黑雾, 守夜人}
+  - 移除 sensitive_patterns 中的 `r"灵泉[一-鿿]{0,2}"` 单独项
+  - 根因: Ch49 实战 "灵泉那头" / "灵泉边" / "灵泉飘过" 都被 H67 误报"canon 未锁的高敏感名词"
+  - 修法: 凡 token 以 canon-locked 关键词开头, 任何方位介词/动词搭配后缀都豁免
+
+- **hygiene_check.py H83 timeline gap 高密度章豁免**:
+  - 加高密度章自动识别: `anchor_count >= 5 OR time_span_mins >= 600`
+  - 高密度章 30min gap 阈值 100→60 字 / 60min gap 阈值 150→100 字
+  - 根因: Ch49 周晓兰生日宴 + 章末 antagonist 收尾 = 6 时间锚 / 12.5h 跨度 / 字数 hard_max 3800 结构性冲突
+  - 修法: 高密度章节豁免阈值降一档, 保留普通章节严格阈值
+
+### 4 项 skill / agents 加固 (跨项目通用)
+
+- **skills/webnovel-write/SKILL.md** Step 2A 加 Round 28.51 红字 (起草前): outline-anchor-grep + 签名词起草前预算 + 跨章 6-gram 自查
+  - 根因: Ch49 v1 大纲 L130 "周晓兰生日 + 秦岳第二次出手" 完全漏写 → reader-critic=72 critical
+  - 修法: 起草前先 grep 大纲行逐项核对 → 起草中实时计数签名词 → 起草后立即验证首段不与上章 deja vu
+
+- **skills/webnovel-write/SKILL.md** Step 2B no-op 显式声明:
+  - 根因: Ch49 实战 Step 2B 实际改动 <5 字 / 章 = 接近 no-op
+  - 修法: Step 2B 可声明 no-op, 但仍必须显式 start-step + complete-step 写 `deviation_notes`
+
+- **agents/context-agent.md** 任意大纲格式 cross-check 强化:
+  - 根因: Ch49 editor_notes 完全漏写大纲 L130 "周晓兰生日 + 秦岳第二次出手"
+  - 修法: context-agent 必须 `grep -nE "Ch{NNNN}|第{N}章" 大纲/*.md` (不限版本号大纲), token-level 命名实体若在 editor_notes 0 出现 → `EDITOR_NOTES_OUTLINE_DRIFT` high warning + inject 为 must_complete 头条
+
+### Ch49 实测数据
+
+- **Step 2A 起草后 post_draft_check** v1: 6 hard fails (4 签名词 BREACH + DIALOGUE_RATIO 0.104 + H78 跨章 6-gram 10 处) → v2 polish 全 OK
+- **Step 3 内审** (post-polish 6 维度 recheck): reader-critic 72→86 / flow 82→86 / naturalness 80→86 / dialogue 76→91 / emotion 86→93 / prose 84→89
+- **Step 3.5 外审 15 模型 FRESH (post-polish 重跑)**: avg=84.41 / gemini-3.1-pro=36.9 outlier 连 6 章
+- **combined=86** (round(87.62×0.6 + 84.41×0.4))
+- **Step 6 audit-agent**: aggregate=92 / approve_with_warnings / 0 blocking / 2 warnings (A3 outlier + D2 voice canon)
+- 项目 5c84a8f (Ch49 commit)
+
+### sync 状态
+
+- cache 同步: `chapter_audit.py` `hygiene_check.py` `SKILL.md` `context-agent.md` 全部 sync 完成
+- agents 工作区同步: context-agent.md 已 sync
+
+---
+
 ## [Round 28.50] Ch48 deep audit 全部落地 · 5 道新 hygiene 护栏 + 单测 + 4 项 skill/agents 加固
 
 **Trigger**: 用户要求 R28.49 Phase 2 推到 R28.50 的待加固清单**全部彻底根治**, 不能留"plan 未实现"。

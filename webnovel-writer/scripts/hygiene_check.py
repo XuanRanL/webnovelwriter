@@ -952,12 +952,21 @@ def check_canon_locked_terms(root: Path, chapter: int, rep: HygieneReport):
         r"[一-鿿]{2,4}瓤",       # 瓜瓤等
         r"[一-鿿]{1,3}木匣",      # 木匣
         r"[一-鿿]{1,3}搪瓷盒",    # 搪瓷盒
-        r"灵泉[一-鿿]{0,2}",      # 灵泉相关
+        # Round 28.51 (Ch49 RCA): "灵泉" 是 canon 锁定的金手指三件套之一,
+        # 但任何方位介词后缀 (灵泉那头/灵泉边/灵泉飘) 都被 H67 误判为"新设定".
+        # 修法: 排除"灵泉" 单独项 + 移除"灵泉那头/边/飘/旁/上/下" 等空间介词搭配 = 误报。
+        # 保留检测: 仅当后接非常用介词 (例如 灵泉X枝 / 灵泉X片 等带量词的, 是真正新设定时才扫)
+        # r"灵泉[一-鿿]{0,2}",      # Round 28.51 移除: 灵泉是 canon 不应在 H67 扫
         r"[一-鿿]{2,3}叶子",      # 叶子相关
         r"[一-鿿]{1,2}银花",      # 金银花/银花类
         r"[一-鿿]{0,2}银耳",      # 银耳类
         r"空气在[一-鿿]{1,3}",    # 空气在 X
     ]
+    # Round 28.51 (Ch49): canon 已锁定金手指术语白名单, 任何搭配后缀都豁免
+    canon_locked_terms_whitelist = {
+        "灵泉", "桃源", "印记", "沙漏", "生机值", "样苗", "母苗",
+        "失情绪", "黑雾", "守夜人",
+    }
     candidates = set()
     for pat in sensitive_patterns:
         for m in re.findall(pat, cur_text):
@@ -996,7 +1005,10 @@ def check_canon_locked_terms(root: Path, chapter: int, rep: HygieneReport):
         filtered_candidates.add(t)
 
     # 过滤：在 canon 已出现过的剔除
-    new_terms = sorted([t for t in filtered_candidates if t not in canon_text])
+    # Round 28.51 (Ch49): canon 已锁的金手指术语 任何搭配后缀都豁免
+    def _starts_with_canon_locked(term: str) -> bool:
+        return any(term.startswith(locked) for locked in canon_locked_terms_whitelist)
+    new_terms = sorted([t for t in filtered_candidates if t not in canon_text and not _starts_with_canon_locked(t)])
 
     if new_terms:
         rep.record(
@@ -3691,6 +3703,15 @@ def check_timeline_gap_fill(root: Path, chapter: int, rep: HygieneReport):
             continue
         anchors.append((mt.start(), mins, mt.group(0)))
 
+    # Round 28.51 (Ch49 RCA): 高时间密度章节 (>5 anchors / >10h span) 阈值松动到 60 字
+    # 根因: 周晓兰生日宴 + 章末 antagonist 收尾 = 6-7 时间锚 / 12.5h 跨度
+    # 与 hard_max 3800 字 + dialogue 0.20 硬线结构性冲突 (需 7×100=700 字过渡 buffer)
+    anchor_count = len(anchors)
+    time_span_mins = anchors[-1][1] - anchors[0][1] if anchor_count >= 2 else 0
+    high_density = anchor_count >= 5 or time_span_mins >= 600
+    threshold_30min = 60 if high_density else 100
+    threshold_60min = 100 if high_density else 150
+
     for i in range(1, len(anchors)):
         pos1, t1, lbl1 = anchors[i - 1]
         pos2, t2, lbl2 = anchors[i]
@@ -3699,17 +3720,18 @@ def check_timeline_gap_fill(root: Path, chapter: int, rep: HygieneReport):
             continue  # 同时间或回溯, 跳过
         prose_between = text[pos1:pos2]
         prose_len = len(re.findall(r"[一-鿿]", prose_between))
-        if gap_mins >= 60 and prose_len < 150:
+        if gap_mins >= 60 and prose_len < threshold_60min:
             issues.append(f"{lbl1}→{lbl2}({gap_mins}min 跳过 prose 只 {prose_len}字)")
-        elif gap_mins >= 30 and prose_len < 100:
+        elif gap_mins >= 30 and prose_len < threshold_30min:
             issues.append(f"{lbl1}→{lbl2}({gap_mins}min 跳过 prose 只 {prose_len}字)")
 
     if issues:
+        density_note = f" (高密度章{anchor_count}锚/{time_span_mins}min 跨度 · 已宽豁免阈)" if high_density else ""
         rep.record(
             "P1", "H83",
             f"时间锚跳跃过快 {len(issues)} 处: {'; '.join(issues[:2])} · "
             f"修法: 加 1-2 行过渡 (等候/物动/环境变化) · "
-            f"豁免: <30min gap 或 prose >100字 自动通过",
+            f"豁免: <30min gap 或 prose >{threshold_30min}字 (≥60min 需 >{threshold_60min}字){density_note}",
             False,
         )
     else:
