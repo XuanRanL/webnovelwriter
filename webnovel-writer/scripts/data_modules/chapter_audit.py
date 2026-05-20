@@ -519,14 +519,21 @@ def check_A2_checker_diversity(project_root: Path, chapter: int) -> CheckResult:
             " ",
             cleaned,
         )
-        # Round 28.30 (Ch43 RCA): \u6392\u9664 12 \u7c7b\u5e38\u89c1\u5ba1\u67e5\u72b6\u6001/\u590d\u6d4b\u6807\u8bb0\u4e2d\u6587 token\uff0c
+        # Round 28.30 (Ch43 RCA): \u6392\u9664 12 \u7c7b\u5e38\u89c1\u5ba1\u67e5\u72b6\u6001/\u590d\u6d4b\u6807\u8bb0\u4e2d\u6587 token,
         # \u907f\u514d 5+ \u672a\u590d\u6d4b checker \u884c\u5171\u4eab"\u672a\u590d\u6d4b"\u88ab A2 \u22653 \u8bef\u5224 critical fallback\u3002
         # Ch43 \u5b9e\u6d4b duplicated_snippets=['\u672a\u590d\u6d4b'] block \u5168\u7ae0\u6d41\u7a0b\u3002
+        # Round 28.51 (Ch49 RCA): \u6269 30+ \u72b6\u6001/\u4e2d\u6027\u540c\u4e49/\u7248\u672c\u53f7 token,
+        # \u4fee Ch49 \u5b9e\u6218 "\u7efc\u5408\u5206:" + "unchanged_88/89 v1 \u63a5\u53d7" + "buffer \u7ae0\u5408\u89c4 / \u4fe1\u606f\u8282\u594f\u7a33\u5b9a / hook \u5df2\u7a33" \u89e6\u53d1 A2 false positive critical\u3002
         status_zh_pattern = (
             r"(?:\u672a\u590d\u6d4b|\u672a\u590d\u8dd1|\u672a\u8dd1|\u672a\u53d8|\u672a\u89e6\u53d1|\u4e0d\u53d8|\u4e0d\u52a8|\u65e0\u53d8\u5316|"
             r"\u590d\u6d4b|\u65b0\u5206|\u590d\u8dd1|recheck|\u964d\u7ea7|\u5347\u7ea7|approve|fail|polish_needed|"
             r"revision_recommended|reject_critical|reject_high|"
-            r"polished|post_polish|pre_polish|pass_with_note|pass_with_caveat)"
+            r"polished|post_polish|pre_polish|pass_with_note|pass_with_caveat|"
+            # Round 28.51 extends:
+            r"\u7efc\u5408\u5206|unchanged|v1|v2|v3|v4|"
+            r"\u63a5\u53d7|\u6cbf\u7528|\u6301\u5e73|\u7ef4\u6301|\u7a33\u5b9a|\u4fdd\u6301|\u539f\u503c|\u4e2d\u7acb|\u8f7b\u5fae|\u5fae\u8c03|"
+            r"buffer|\u5408\u89c4|\u5df2\u7a33|\u5df2\u751f\u6548|\u8fd1\u7ebf|\u65e0\u4fee\u590d|\u65e0\u9700|\u65e0\u9700\u590d\u6d4b|"
+            r"\u53ef\u63a5\u53d7|\u65e0\u53d8\u5316|\u4fee\u590d\u70b9\u8f7b\u5fae|hook|\u4fe1\u606f\u8282\u594f)"
         )
         cleaned = re.sub(status_zh_pattern, " ", cleaned)
         tokens = [

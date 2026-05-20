@@ -541,6 +541,37 @@ fi
 - **禁止英文结论话术**：正文、审查说明、润色说明、变更摘要、最终报告中不得出现 Overall / PASS / FAIL / Summary / Conclusion 等英文结论标题。
 - **英文仅限机器标识**：CLI flag（`--fast`）、checker id（`consistency-checker`）、DB 字段名（`anti_ai_force_check`）、JSON 键名等不可改的接口名保持英文，其余一律使用简体中文。
 
+> **🔴 Round 28.51 · Step 2A 起草前必跑 outline + signature self-check (Ch49 RCA)**
+>
+> Ch49 v1 走完全流程后 reader-critic=72 critical blocking, root cause = 大纲 L130 "周晓兰生日 + 秦岳第二次出手" 中"秦岳第二次出手"在起草时完全漏写; root cause 2 = 单章签名词 "了一X" 34 / "那一X" 23 / "没X" 39 全部 block 阈值; root cause 3 = Ch48 末"外公递水"段 6-gram 重合 10 处。
+>
+> **新 self-check 模板** (Step 2A 起草前必跑):
+> ```bash
+> # 1. outline 大纲点逐项核对
+> grep -nE "^[|│] Ch${chapter_num}" 大纲/第1卷-详细大纲.md | head -3
+> # 输出大纲 L${chapter_num} 行, 起草前必须 100% 兑现 (含小括号"轻触"等定语)
+>
+> # 2. 签名词起草前预算 (近 5 章累计)
+> for w in 了一 那一 半 没 点头 一档 桌沿 没掉头 指尖; do
+>   echo "  $w: $(grep -hroE "$w" 正文/第00{$((chapter_num-5))..$((chapter_num-1))}章*.md 2>/dev/null | wc -l) / 100 (5章累计上限)"
+> done
+>
+> # 3. 跨章 6-gram 自查 (起草后立即)
+> python -c "
+> import re
+> prev = open('正文/第00${prev_chapter}章<title>.md', encoding='utf-8').read()
+> cur = open('正文/第00${chapter_num}章<title>.md', encoding='utf-8').read()
+> prev_grams = set(prev[i:i+6] for i in range(len(prev)-5) if re.match(r'^[一-鿿]+$', prev[i:i+6]))
+> cur_grams = set(cur[i:i+6] for i in range(len(cur)-5) if re.match(r'^[一-鿿]+$', cur[i:i+6]))
+> overlap = prev_grams & cur_grams
+> n_open = sum(1 for g in overlap if g in cur[:500])
+> print(f'前 500 字与上章 6-gram 重合: {n_open}')
+> assert n_open < 6, '首段与上章 6-gram 过载, 必须重写开篇'
+> "
+> ```
+>
+> **修法**: 起草前先核对大纲点 → 实时计数签名词 → 起草后立即验证首段不与上章 deja vu。
+
 > **🔴 Round 28.49 · Step 2A 起草后必跑 4 项 self-check (Ch48 deep audit 漏检根治)**
 >
 > Ch48 v1 走完 13 checker + 15 外模型 + Step 4.5 复测后, deep research subagent 仍发现 4 高问题被全部审查机制漏检:
@@ -664,10 +695,24 @@ cat "${SKILL_ROOT}/references/style-adapter.md"
 
 硬要求：
 - 只做表达层转译，不改剧情事实、事件顺序、角色行为结果、设定规则。
-- 对“模板腔、说明腔、机械腔”做定向改写，为 Step 4 留出问题修复空间。
+- 对"模板腔、说明腔、机械腔"做定向改写，为 Step 4 留出问题修复空间。
+
+> **🔴 Round 28.51 · Step 2B no-op 显式声明 (Ch49 RCA)**
+>
+> Ch49 实战发现 Step 2B 与 Step 4 polish 职责重叠: 当 Step 2A 已严格按项目克制风格起草 + 签名密度 OK + 无模板腔时, Step 2B 实际改动量 < 5 字 / 章, 接近 no-op。
+> **新规则**: 起草已符合项目风格时, Step 2B 可声明 no-op, 但必须显式登记:
+>
+> ```bash
+> python webnovel.py workflow start-step --step-id "Step 2B" --step-name "Style adapter"
+> # ... 实际只做 grep verify (无 Edit), 或 1-2 处微调
+> python webnovel.py workflow complete-step --step-id "Step 2B" \
+>   --artifacts '{"style_applied": false, "deviation_notes": "Step 2A 已严格按项目克制风格起草 + post_draft_check 通过 + 0 模板腔, Step 2B 仅 grep verify 无 Edit"}'
+> ```
+>
+> deviation_notes 必填, 留 audit-agent trace。**禁止**完全跳过 Step 2B 登记。
 
 输出：
-- 风格化正文（覆盖原章节文件）。
+- 风格化正文（覆盖原章节文件）或 verify-only artifact。
 
 U+FFFD 编码验证（同 Step 2A，风格转译后再次执行，确保转译未引入损坏）。
 
