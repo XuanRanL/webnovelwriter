@@ -4072,6 +4072,186 @@ def check_cross_product_data_consistency(root: Path, chapter: int, rep: HygieneR
         rep.record("P1", "H87", "正文实测与 chapter_meta 三类指标对齐 (word_count / dialogue_ratio / signature_density)", True)
 
 
+def check_intra_chapter_time_anchor_physical_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H88 (Round 28.53 · Ch50 deep RCA): 同章内时间锚物理一致性.
+
+    根因 (Ch50 deep research):
+      L211 "十一点二十的时候，手机响" + L225 同事说"门里头有血" + L239 "十一点二十八到三十二之间动手"
+      → 11:20 接电话报告 11:28-32 才发生的事 = 物理悖论
+      gemini-3.1-pro 抓到 critical, 但 audit A3 outlier 自动降权 effective_avg=raw_avg, 主审 0 见
+      内部 13 checker (consistency/continuity/pacing 全 ≥88) 0 抓 — 流程内集体漏检
+
+    检测策略:
+      grep 同章所有时间锚 (XX点XX | XX:XX | XX分)
+      记录每个事件的最早提及时间锚 vs 事件本身时间锚
+      "[人物 + (听/说/见/见血/动手/事件类动词)]" 周围 20 字内 + 时间锚先后顺序
+      若 报告时刻 ≤ 事件发生时刻 → P0 阻断
+    """
+    chapter_str = f"{chapter:04d}"
+    chapter_files = list((root / "正文").glob(f"第{chapter_str}章*.md"))
+    if not chapter_files:
+        rep.record("P1", "H88", f"正文不存在, 跳过", True)
+        return
+    text = chapter_files[0].read_text(encoding="utf-8")
+    lines = text.split("\n")
+
+    import re as _re
+    # 提取所有时间锚 (中文数字 + 半角数字)
+    cn_num = {"零":0,"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10,"十一":11,"十二":12,"十三":13,"十四":14,"十五":15,"十六":16,"十七":17,"十八":18,"十九":19,"二十":20,"二十一":21,"二十二":22,"二十三":23,"二十四":24,"二十五":25,"二十六":26,"二十七":27,"二十八":28,"二十九":29,"三十":30,"三十一":31,"三十二":32,"三十三":33,"三十四":34,"三十五":35,"三十六":36,"三十七":37,"三十八":38,"三十九":39,"四十":40,"四十一":41,"四十二":42,"四十三":43,"四十四":44,"四十五":45,"四十六":46,"四十七":47,"四十八":48,"四十九":49,"五十":50,"五十一":51,"五十二":52,"五十三":53,"五十四":54,"五十五":55,"五十六":56,"五十七":57,"五十八":58,"五十九":59}
+
+    def parse_time_to_minutes(h_str: str, m_str: str = None) -> int:
+        if h_str.isdigit():
+            h = int(h_str)
+        else:
+            h = cn_num.get(h_str, -1)
+        if h < 0 or h > 23:
+            return -1
+        m = 0
+        if m_str:
+            if m_str.isdigit():
+                m = int(m_str)
+            else:
+                m = cn_num.get(m_str, 0)
+        return h * 60 + m
+
+    # 找形如 "X点X" / "X:X" 的时间锚 + 所在行号
+    time_anchors = []
+    pattern = _re.compile(r"([零一二三四五六七八九十百\d]{1,3})点(?:([零一二三四五六七八九十\d]{1,3}|半)?)")
+    for ln_idx, line in enumerate(lines, 1):
+        for m in pattern.finditer(line):
+            h_str = m.group(1)
+            m_str = m.group(2)
+            if m_str == "半":
+                m_str = "三十"
+            minutes = parse_time_to_minutes(h_str, m_str)
+            if minutes < 0:
+                continue
+            time_anchors.append({"line": ln_idx, "minutes": minutes, "raw": m.group(0), "context": line[:120]})
+
+    if len(time_anchors) < 3:
+        rep.record("P0", "H88", f"时间锚 {len(time_anchors)} 处 < 3, 跳过物理一致性检测", True)
+        return
+
+    # 检测：叙述时间锚 ≤ 对话内提到的事件时间锚 (Ch50 真实悖论形态)
+    # Ch50 实战:
+    #   L211 (叙述) "十一点二十的时候，手机响" → 叙述时间 11:20
+    #   L239 (引号内) "十一点二十八到三十二之间" → 对话内事件实际时刻 11:28-32
+    #   悖论: 叙述 11:20 接电话, 对话却说事件 11:28-32 才发生 → 接电话时事件还没发生
+    # 触发条件 (全部满足):
+    #   1. 早时间锚 在叙述中 (不在引号内) — 章节叙事当前时刻
+    #   2. 晚时间锚 在同章引号内 (人物对话内提及)
+    #   3. 引号内含"之间/到 XX/到 X 之间" 类表达事件时段
+    #   4. 时间差 ≥5 分钟 ≤90 分钟
+    #   5. 早晚时间锚 line 距离 ≤30 行 (同场景)
+    actual_event_in_quote_words = ["之间","到三十","到二十","到四十","到五十","到十","动手","才","才发生","到十五"]
+    violations = []
+    def is_in_quote(line: str, raw: str) -> bool:
+        idx = line.find(raw)
+        if idx < 0:
+            return False
+        left = line[:idx]
+        last_open = left.rfind("“")
+        last_close = left.rfind("”")
+        return last_open > last_close
+    for i, t1 in enumerate(time_anchors[:-1]):
+        line_t1 = lines[t1["line"]-1] if t1["line"]-1 < len(lines) else ""
+        # 1. 早时间锚必须**不**在引号内 (叙述当前时刻)
+        if is_in_quote(line_t1, t1["raw"]):
+            continue
+        for t2 in time_anchors[i+1:]:
+            if abs(t2["line"] - t1["line"]) > 30:
+                continue
+            mins_diff = t2["minutes"] - t1["minutes"]
+            if mins_diff < 5 or mins_diff > 90:
+                continue
+            line_t2 = lines[t2["line"]-1] if t2["line"]-1 < len(lines) else ""
+            # 2. 晚时间锚必须在引号内 (对话内描述)
+            if not is_in_quote(line_t2, t2["raw"]):
+                continue
+            # 3. 晚时间锚 line 附近含"事件实际时段"表达
+            late_window_lines = lines[max(0, t2["line"]-1):min(len(lines), t2["line"]+3)]
+            late_ctx = "\n".join(late_window_lines)
+            has_actual_event = any(w in late_ctx for w in actual_event_in_quote_words)
+            if not has_actual_event:
+                continue
+            violations.append({
+                "early_line": t1["line"], "early_time": t1["raw"], "early_mins": t1["minutes"],
+                "late_line": t2["line"], "late_time": t2["raw"], "late_mins": t2["minutes"],
+                "gap_mins": mins_diff,
+            })
+
+    if violations:
+        v = violations[0]
+        rep.record(
+            "P0", "H88",
+            f"同章内时间锚物理悖论 {len(violations)} 处: L{v['early_line']} '{v['early_time']}' 报告已发生 vs L{v['late_line']} '{v['late_time']}' 才发生 ({v['gap_mins']} min 后) · "
+            f"Ch50 实战 L211/L239 11:20 接电话报告 11:28-32 才动手 = gemini critical, 内部全漏 · "
+            f"修法: 调整早时间锚加缓冲 (如 11:20→11:40) 或晚时间锚提前",
+            False,
+        )
+    else:
+        rep.record("P0", "H88", f"同章内 {len(time_anchors)} 时间锚物理一致 (R28.53 防 Ch50 时间悖论复发)", True)
+
+
+def check_dialogue_tag_diversity(root: Path, chapter: int, rep: HygieneReport):
+    """H89 (Round 28.53 · Ch50 deep RCA): dialogue tag 单调度防护.
+
+    根因 (Ch50 跨章 trend deep research):
+      Ch50 "陆沉说" 22 次 / 5 章累计 67 次 / 5 章 dialogue checker 81→ 下滑主因
+      dialogue tag 单调使 reader-critic 跨章疲劳 → 跌穿 80 概率显著上升
+      内部 dialogue-checker (维度集中在台词分量与 voice) 0 抓单调度
+
+    检测策略:
+      单章 主角"说" 占比 > 50% (相对所有 "X 说" 模式) → P1 warn
+      单章 任一 dialogue tag 单字模式 > 12 次 → P1 warn
+      豁免: chapter_meta.chapter_type 含 "高浓度对白" 时阈值上调到 15
+    """
+    chapter_str = f"{chapter:04d}"
+    chapter_files = list((root / "正文").glob(f"第{chapter_str}章*.md"))
+    if not chapter_files:
+        rep.record("P1", "H89", f"正文不存在, 跳过", True)
+        return
+    text = chapter_files[0].read_text(encoding="utf-8")
+
+    import re as _re
+    # 找所有 "X 说" / "X 应" / "X 道" / "X 答" / "X 问" / "X 接" 模式 (X = 1-2 个中文字)
+    tag_pattern = _re.compile(r"”([一-鿿]{1,3})(说|应|道|答|问|接|嗯|说道|回|喊|低声说)")
+    tags = tag_pattern.findall(text)
+    if len(tags) < 5:
+        rep.record("P1", "H89", f"dialogue tag {len(tags)} 处过少, 跳过", True)
+        return
+
+    from collections import Counter
+    tag_counter = Counter()
+    for name, verb in tags:
+        tag_counter[f"{name}{verb}"] += 1
+
+    total = sum(tag_counter.values())
+    top_tag, top_count = tag_counter.most_common(1)[0]
+    top_pct = top_count / total
+
+    threshold_count = 12
+    threshold_pct = 0.5
+
+    issues = []
+    if top_count > threshold_count:
+        issues.append(f"'{top_tag}' {top_count} 次 > {threshold_count} 上限")
+    if top_pct > threshold_pct and total >= 10:
+        issues.append(f"'{top_tag}' 占 {top_pct:.0%} > {threshold_pct:.0%} (单调度过高)")
+
+    if issues:
+        rep.record(
+            "P1", "H89",
+            f"dialogue tag 单调度 {len(issues)} 项: {'; '.join(issues)} · "
+            f"top5: {', '.join(f'{t}={c}' for t,c in tag_counter.most_common(5))} · "
+            f"Ch50 实战 '陆沉说' 22 次单章 + 5 章 67 次累积 → dialogue checker 81 (Ch46-Ch50 五章持续下滑主因) · "
+            f"修法: 用'X 应/X 看/X 接/X 答/X 道'多样化 + 用动作描写代部分 dialogue tag",
+            False,
+        )
+    else:
+        rep.record("P1", "H89", f"dialogue tag 多样化 OK (top '{top_tag}' {top_count} 次, {top_pct:.0%})", True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("chapter", type=int, help="章号")
@@ -4153,6 +4333,10 @@ def main():
     check_intra_chapter_timestamp_sanity(root, args.chapter, rep)  # H85 · 同章内部 mins gap ≥5 必有 in-prose 解释 (Ch48 SMS 6min 实战)
     check_foreshadowing_planted_consistency(root, args.chapter, rep)  # H86 · chapter_meta 与 plot_threads foreshadowing_planted 对账 (Ch48 F-CH48-03 漂移 实战)
     check_cross_product_data_consistency(root, args.chapter, rep)  # H87 · Round 28.52 (Ch49 RCA): 正文实测 vs chapter_meta 跨产物对账 (word_count/dialogue_ratio/signature_density)
+
+    # Round 28.53 (Ch50 deep RCA) · 3 道新护栏 永久根治 内部 13 checker + audit 流程内漏检
+    check_intra_chapter_time_anchor_physical_consistency(root, args.chapter, rep)  # H88 · 同章内时间锚物理一致性 (Ch50 实战: L211 11:20 接电话 vs L239 11:28-32 才动手 = 物理悖论 gemini 抓内部全漏)
+    check_dialogue_tag_diversity(root, args.chapter, rep)  # H89 · dialogue tag 单调度防护 (Ch50 "陆沉说" 22次 + 5章累计 67 次 = dialogue checker 81→若不主动多样化 Ch51 会再跌)
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
