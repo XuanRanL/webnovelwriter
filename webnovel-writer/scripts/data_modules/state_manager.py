@@ -1932,6 +1932,12 @@ def main():
                 "external_avg",  # Step 3.5 多模型均分（必须能被 mirror-disk-scores 后手动校正）
                 "external_models_ok",  # Step 3.5 成功模型列表（list[str]）
                 "external_models_count",  # 成功模型数量
+                # Round 28.55 · Ch51 二轮 deep audit P1-3 跨项目根治
+                # 根因：R28.53 mandatory_human_review_models 引入后, effective_avg (剔除 outlier 后)
+                # 只在 audit_reports 中暂存, state 未持久化 → 跨章 audit grep 拿不到真值
+                # 修复：加白名单, data-agent process-chapter 必持久化 effective_avg + outlier_models
+                "external_review_effective_avg",  # 剔除 outlier (< 60 或 spread 大) 后的真实可信均分
+                "external_review_outlier_models",  # 被剔除的 outlier 模型列表（list[str]）
                 "total_words",  # post_draft 累计字数 SSOT（可与 word_count 不同，记录全章工序前后变化）
                 "dialogue_ratio",  # F2 对话占比闸门
                 "signature_density",  # 签名句式跨章扫描
