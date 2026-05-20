@@ -7,6 +7,54 @@
 
 ---
 
+## [Round 28.52] Ch49 commit 后 4 个 deep research subagent 共识 19 个 hidden bugs · 4 项跨项目脚本根治 + 项目 v5 polish
+
+**Trigger**: 用户要求 Ch49 commit 后 deep research, 4 个并行 subagent (audit-agent deep / reader-critic deep / process-integrity / cross-chapter-trend) 共识 19 个 hidden bug, 用户要"根治, 以后不会再出现"。
+
+### 4 个跨项目脚本根治 (scripts/)
+
+- **hygiene_check.py H87 (新)** 跨产物实测对账:
+  - 检测 word_count / dialogue_ratio / signature_density 三类指标 state vs 正文实测漂移
+  - 阈值: word_count > 2% / dialogue_ratio > 0.03 / signature_density 5 类 ≥ 3
+  - P1 warn 不阻断, 但精准定位漂移源
+  - 根因: Ch49 polish_report=3387 / audit=3397 / state=3783 / 实测=3783 三源不一致; signature_density state 写"了一X=0" 实测=11; dialogue_ratio state=0.257 vs 实测=0.205
+  - 修法: 加 check_cross_product_data_consistency 函数, 注册到 main() 跑序列
+
+- **hygiene_check.py canon-locked 白名单加 守夜人系统**:
+  - 加入 "守夜人系统" (Canon §66 D-3 启示诗 / §138 Lv1 推进规则)
+  - 根因: Ch49 实战 reader-pull-checker 报"守夜人系统"为 canon 灰区, 但 Canon Bible 已锁
+
+- **chapter_audit.py A3 effective_avg outlier expose**:
+  - measured 字段新增 raw_avg / effective_avg / outlier_count / outlier_models
+  - 让 audit-agent combined 决策有 outlier-aware 选项 (raw_avg=84.41 vs effective_avg=87.80 / gemini outlier 36.9 自动剔除)
+  - 根因: Ch49 gemini-3.1-pro 连 6 章 outlier (36.9/47.3), raw_avg 被拉低 -2.87 触发 5 章 external_avg 单调下滑
+
+### 项目 v5 polish commit (a81d911)
+
+- **删 L297-305 东边小巷翻墙段** (4 deep-research subagent 共识 P0):
+  - 现象: hygiene fix 引入 4 行对话 (林晚秋"东边那条小巷你今天别走 / 早上有人翻过墙 / 院里没说 / 老张早上提了一嘴")
+  - root cause: 与 Ch50 大纲 ⭐缺陷代价 苏瑾在中科院被暗算 钩头错位 misdirect 读者
+  - 修法: 改写成"苏瑾下午两点会再过来一趟 / 所里今晚要她加一会儿班" → 重定向为 Ch50 苏瑾受袭的近端预兆
+- **章末薄荷段 现场目击 vs 推断**: "应是切了丝送进了空盒" 推断式破坏陆沉精确观察 voice → 改"林晚秋下午切了丝放进空盒。盒盖盖了一半。她把剩下两枝留在盒口"现场目击式
+- **周明 5:41 三档精度软化**: "五十二。五十七" 3 字 < 5-8 voice 锁 → 改"接着十几分钟内陆续回。顺序错一档" 与 Ch49 苏瑾"两点过几分"软化精度统一
+
+### Ch49 4 deep research subagent 共识 19 hidden bugs
+
+**P0 (4)**: 东边小巷段 misdirect / F-CH49-03 翻墙者钩未登记 / 跨产物 word_count 3 源漂移 / signature_density 真源断裂
+**P1 (6)**: dialogue_ratio 4 源漂移 / A10 stale 升级 high / external_avg 5 章 -2.87 下滑 / D3 motif 拆名变体超阈 / D5 陆灵跨章 0 锚 / D6 守夜人系统 canon 灰区
+**P2 (9)**: A11 workflow artifact drift / 5:41 voice slip / 号头变灰/变回 新机制未 Canon / strand 连 2 章 fire / hook_close strength 5 章次低 / A2 命名变体 / Ch50 苏瑾远端 vs 东巷近端钩头错位 / plot_threads 未登记 F-CH49-01/02 / 审查报告 internal_avg 注解缺
+
+### 项目 CLAUDE.md 单独 commit (待用户决策)
+
+加 守夜人系统 + 灵泉 到 canon 术语白名单 — 因 H30 阻断常规 commit 修改 CLAUDE.md, 已回滚等用户单独 chore(canon) commit。
+
+### sync 状态
+
+- cache 同步: chapter_audit.py / hygiene_check.py 2 文件全部 sync
+- 单测: 暂未补 (H87 是新检测, R28.52 + Ch50 实战验证)
+
+---
+
 ## [Round 28.51] Ch49 RCA 8 项根因永久根治 + 3 个跨项目通用修复
 
 **Trigger**: Ch49 全流程跑完 commit=5c84a8f combined=86 后, deep RCA 发现 8 类根因, 用户要求"以后写不会再出现"。

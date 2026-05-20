@@ -802,6 +802,15 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
             measured["score_spread"] = round(max(model_scores.values()) - min(model_scores.values()), 1)
             measured["lowest_model"] = min(model_scores, key=model_scores.get)
             measured["highest_model"] = max(model_scores, key=model_scores.get)
+        # Round 28.52 (Ch49 RCA): 暴露 effective_avg 与 raw_avg 对比, 让 audit-agent 后续 combined 决策有 outlier-aware 选项
+        all_scores = list(model_scores.values()) + list(score_outliers.values())
+        if all_scores:
+            measured["raw_avg"] = round(sum(all_scores) / len(all_scores), 2)
+        if model_scores:
+            measured["effective_avg"] = round(sum(model_scores.values()) / len(model_scores), 2)
+            measured["outlier_count"] = len(score_outliers)
+            if score_outliers:
+                measured["outlier_models"] = sorted(score_outliers.keys())
 
         # Round 16 扁平判定：
         if valid_count < EXTERNAL_MODELS_HIGH_WARN_MIN:

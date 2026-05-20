@@ -963,9 +963,10 @@ def check_canon_locked_terms(root: Path, chapter: int, rep: HygieneReport):
         r"空气在[一-鿿]{1,3}",    # 空气在 X
     ]
     # Round 28.51 (Ch49): canon 已锁定金手指术语白名单, 任何搭配后缀都豁免
+    # Round 28.52 (Ch49 deep): 加 守夜人系统 (Canon §66/138 已锁)
     canon_locked_terms_whitelist = {
         "灵泉", "桃源", "印记", "沙漏", "生机值", "样苗", "母苗",
-        "失情绪", "黑雾", "守夜人",
+        "失情绪", "黑雾", "守夜人", "守夜人系统",
     }
     candidates = set()
     for pat in sensitive_patterns:
@@ -3990,6 +3991,87 @@ def check_foreshadowing_planted_consistency(root: Path, chapter: int, rep: Hygie
         rep.record("P0", "H86", "本章无 foreshadowing_planted (空集对齐)", True)
 
 
+def check_cross_product_data_consistency(root: Path, chapter: int, rep: HygieneReport):
+    """H87 (Round 28.52 · Ch49 RCA): 正文实测 vs chapter_meta 跨产物对账.
+
+    根因 (Ch49 deep research):
+      - polish_report.final_word_count=3387 / audit json=3397 / state.word_count=3783 → 3 源漂移 386 字
+      - state.dialogue_ratio=0.205 vs 实测 grep=0.246 → 漂移 0.041
+      - state.signature_density 写"了一X=0" vs 实测正文 grep "了一" = 9-12 → 严重低估
+    流程内 audit 不读正文实测, 只读 polish_report/CLI 输出, 漏检全部 3 类漂移.
+
+    检测策略:
+      读 chapter_meta.0049 的 word_count / dialogue_ratio / signature_density
+      grep 当前正文实测对比, 任何 ≥2% 漂移 → P1 warn (一次性精检)
+    """
+    chapter_str = f"{chapter:04d}"
+    state_path = root / ".webnovel" / "state.json"
+    if not state_path.exists():
+        rep.record("P1", "H87", "state.json 不存在, 跳过 cross-product 对账", True)
+        return
+    try:
+        with open(state_path, encoding="utf-8") as f:
+            state = json.load(f)
+    except Exception:
+        rep.record("P1", "H87", "state.json parse failed", True)
+        return
+
+    meta = state.get("chapter_meta", {}).get(chapter_str, {})
+    if not meta:
+        rep.record("P1", "H87", f"chapter_meta.{chapter_str} 不存在, 跳过", True)
+        return
+
+    chapter_files = list((root / "正文").glob(f"第{chapter_str}章*.md"))
+    if not chapter_files:
+        rep.record("P1", "H87", f"正文文件不存在, 跳过", True)
+        return
+    text = chapter_files[0].read_text(encoding="utf-8")
+
+    # 实测 word_count
+    import re as _re
+    actual_wc = len(_re.findall(r"[一-鿿]", text))
+    meta_wc = meta.get("word_count", 0)
+    drifts = []
+    if meta_wc and abs(actual_wc - meta_wc) / max(actual_wc, 1) > 0.02:
+        drifts.append(f"word_count state={meta_wc} 实测={actual_wc} 漂移{abs(actual_wc-meta_wc)}字")
+
+    # 实测 dialogue_ratio (引号内中文字符 / 总中文字符)
+    inside = 0; on = False
+    for ch in text:
+        if ch == "“": on = True
+        elif ch == "”": on = False
+        elif on and _re.match(r"[一-鿿]", ch): inside += 1
+    actual_ratio = inside / max(actual_wc, 1)
+    meta_ratio = meta.get("dialogue_ratio")
+    if isinstance(meta_ratio, (int, float)) and abs(meta_ratio - actual_ratio) > 0.03:
+        drifts.append(f"dialogue_ratio state={meta_ratio:.3f} 实测={actual_ratio:.3f} 漂移{abs(meta_ratio-actual_ratio):.3f}")
+
+    # 实测签名密度 (核心 5 类)
+    sig_actual = {
+        "了一X": len(_re.findall(r"了一[一-鿿]", text)),
+        "那一X": len(_re.findall(r"那一[一-鿿]", text)),
+        "没X": len(_re.findall(r"没[一-鿿]", text)),
+        "半X": len(_re.findall(r"半[一-鿿]", text)),
+        "点头": text.count("点头"),
+    }
+    sig_meta = meta.get("signature_density") or {}
+    for k, v_actual in sig_actual.items():
+        v_meta = sig_meta.get(k, sig_meta.get(k.replace("X", ""), None))
+        if isinstance(v_meta, int) and abs(v_actual - v_meta) >= 3:
+            drifts.append(f"sig_density.{k} state={v_meta} 实测={v_actual} 漂移{abs(v_actual-v_meta)}")
+
+    if drifts:
+        rep.record(
+            "P1", "H87",
+            f"跨产物数据漂移 {len(drifts)} 项: {'; '.join(drifts[:3])} · "
+            f"根因: polish 后 data-agent 未基于最新正文实测重算; polish_report / audit_report 未刷新 · "
+            f"修法: 用 state update --set-chapter-meta-field 覆盖 word_count/dialogue_ratio/signature_density 三字段为实测值",
+            False,
+        )
+    else:
+        rep.record("P1", "H87", "正文实测与 chapter_meta 三类指标对齐 (word_count / dialogue_ratio / signature_density)", True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("chapter", type=int, help="章号")
@@ -4070,6 +4152,7 @@ def main():
     check_emotion_climax_depth(root, args.chapter, rep)  # H84 · 情感高潮场景最小深度 (Ch48 林母 30秒打发 实战)
     check_intra_chapter_timestamp_sanity(root, args.chapter, rep)  # H85 · 同章内部 mins gap ≥5 必有 in-prose 解释 (Ch48 SMS 6min 实战)
     check_foreshadowing_planted_consistency(root, args.chapter, rep)  # H86 · chapter_meta 与 plot_threads foreshadowing_planted 对账 (Ch48 F-CH48-03 漂移 实战)
+    check_cross_product_data_consistency(root, args.chapter, rep)  # H87 · Round 28.52 (Ch49 RCA): 正文实测 vs chapter_meta 跨产物对账 (word_count/dialogue_ratio/signature_density)
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
