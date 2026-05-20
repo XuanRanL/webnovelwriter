@@ -4137,14 +4137,16 @@ def check_intra_chapter_time_anchor_physical_consistency(root: Path, chapter: in
     #   L211 (叙述) "十一点二十的时候，手机响" → 叙述时间 11:20
     #   L239 (引号内) "十一点二十八到三十二之间" → 对话内事件实际时刻 11:28-32
     #   悖论: 叙述 11:20 接电话, 对话却说事件 11:28-32 才发生 → 接电话时事件还没发生
-    # 触发条件 (全部满足):
+    # 触发条件 (Round 28.54 收紧 · Ch11 false positive 修复):
     #   1. 早时间锚 在叙述中 (不在引号内) — 章节叙事当前时刻
     #   2. 晚时间锚 在同章引号内 (人物对话内提及)
-    #   3. 引号内含"之间/到 XX/到 X 之间" 类表达事件时段
+    #   3. 引号内含强事件词 "之间/到 XX/动手/才发生" — "才" 单独不触发 (Ch11 "再过一周才会" 命中假阳)
     #   4. 时间差 ≥5 分钟 ≤90 分钟
-    #   5. 早晚时间锚 line 距离 ≤30 行 (同场景)
-    actual_event_in_quote_words = ["之间","到三十","到二十","到四十","到五十","到十","动手","才","才发生","到十五"]
+    #   5. 早晚时间锚 line 距离 ≥1 行 ≤30 行 (同行禁触发 防新闻播报式 false positive)
+    #   6. 同 (raw_early, raw_late) 对去重 (Ch11 同行 "四点 / 四点五点" 被 pattern 双匹配)
+    actual_event_strong_words = ["之间","到三十","到二十","到四十","到五十","到十","到十五","动手","才发生","刚刚动"]
     violations = []
+    seen_pairs = set()
     def is_in_quote(line: str, raw: str) -> bool:
         idx = line.find(raw)
         if idx < 0:
@@ -4159,7 +4161,9 @@ def check_intra_chapter_time_anchor_physical_consistency(root: Path, chapter: in
         if is_in_quote(line_t1, t1["raw"]):
             continue
         for t2 in time_anchors[i+1:]:
-            if abs(t2["line"] - t1["line"]) > 30:
+            line_distance = abs(t2["line"] - t1["line"])
+            # 5. 同行禁触发 (Ch11 false positive 根治) + 最大 ≤30 行
+            if line_distance < 1 or line_distance > 30:
                 continue
             mins_diff = t2["minutes"] - t1["minutes"]
             if mins_diff < 5 or mins_diff > 90:
@@ -4168,12 +4172,17 @@ def check_intra_chapter_time_anchor_physical_consistency(root: Path, chapter: in
             # 2. 晚时间锚必须在引号内 (对话内描述)
             if not is_in_quote(line_t2, t2["raw"]):
                 continue
-            # 3. 晚时间锚 line 附近含"事件实际时段"表达
+            # 3. 晚时间锚 line 附近含"强事件实际时段"表达
             late_window_lines = lines[max(0, t2["line"]-1):min(len(lines), t2["line"]+3)]
             late_ctx = "\n".join(late_window_lines)
-            has_actual_event = any(w in late_ctx for w in actual_event_in_quote_words)
-            if not has_actual_event:
+            has_strong_event = any(w in late_ctx for w in actual_event_strong_words)
+            if not has_strong_event:
                 continue
+            # 6. 去重 (raw_early, raw_late) 对
+            pair_key = (t1["raw"], t2["raw"])
+            if pair_key in seen_pairs:
+                continue
+            seen_pairs.add(pair_key)
             violations.append({
                 "early_line": t1["line"], "early_time": t1["raw"], "early_mins": t1["minutes"],
                 "late_line": t2["line"], "late_time": t2["raw"], "late_mins": t2["minutes"],

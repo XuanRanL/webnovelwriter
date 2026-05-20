@@ -7,6 +7,100 @@
 
 ---
 
+## [Round 28.54] Ch50 二轮 deep research 4 subagent 30+ bugs · 7 项跨项目根治 + 项目同步
+
+### 背景
+R28.53 commit 后用户要求**第二轮** deep research 找前一轮也漏掉的剩余问题。4 个 subagent (audit-agent-deep / 设定集对账 / R28.53 落地验证 / 自然度复审) 共识发现 **30+ 新 hidden bugs**，其中 **8 项 P0 是第一轮 deep research + 流程内审计**也漏掉的真硬伤。
+
+### 第二轮 deep research 8 项 P0 真实硬伤
+
+1. **DEEP-R2-1 H88 Ch11 false positive (R28.53 新引入 bug)**
+   - Ch11 L21 新闻播报式同行双锚 "凌晨四点 / 今晨四点至五点" 误报 P0
+   - 根因：同行 (line distance=0) 也被认为 trigger / "才" 单独触发 + pattern 双匹配
+   - **R28.54 修复**: 同行禁触发 + "才" 单独不触发 + (raw_early, raw_late) 去重
+
+2. **DEEP-R2-2 audit-agent.md 未读 mandatory_human_review_models (R28.53 设计断链)**
+   - chapter_audit.py 加了字段，但 agents/audit-agent.md 0 处提及
+   - 下次 audit-agent 调用 = R28.53 P0 根治形同虚设
+   - **R28.54 修复**: audit-agent.md 加红字消费协议 (检查字段 → 必读 outlier critical/high → 必升级 overall_decision)
+
+3. **DEEP-R2-3 state.chapter_meta.0050.power_realm 印记 Lv1 vs 三源 Lv2 漂移**
+   - Ch47-49 全 Lv2 / 主角卡 [Ch50] 写 Lv2 / 资产变动表 [Ch50] 写 Lv2
+   - 只 state.chapter_meta.0050 错写 Lv1 (data-agent process-chapter 凭印象 rollback)
+   - **R28.54 修复**: state update 改正 Lv2 + 加桃源 Lv2 主场加成首次具象
+
+4. **DEEP-R2-4 项目 CLAUDE.md voice canon 段缺周晓兰**
+   - 03-角色口径表.md [Ch50] 已锁周晓兰 voice canon 五件套 (R28.53 D1 carry-forward)
+   - 但项目根 CLAUDE.md (context-agent 必读) 段仅列周明/老吴/林母/林晚秋/外公 5 角色 0 周晓兰
+   - 风险: 下次 context-agent 抓 voice 锁漏掉周晓兰
+   - **R28.54 修复**: CLAUDE.md voice canon 段加周晓兰条目
+
+5. **DEEP-R2-5 canon SSOT 3 文档章号严重漂移 ("第60章 / 昏迷48小时")**
+   - 女主卡 L143 / 损失代价表 L136 / 里程碑表 L31+L94 全部写"第60章 苏瑾受伤 / 昏迷48小时"
+   - 详细大纲已对齐 Ch50 / 昏迷3天 = canon SSOT 跨 4 文档不一致
+   - **R28.54 修复**: 4 处全部改为 "第50章 / 昏迷3天 / Ch51-55 救援"
+
+6. **DEEP-R2-6 审查报告 frontmatter v1 stale (overall=85/wc=3068)**
+   - polish v5 后 archive 层未刷新, polish_cycle 后审查报告 stale
+   - state.overall_score = 87, 审查报告 header 仍 85
+   - **R28.54 修复**: 刷新到 v5 数据 (overall=87/wc=3328/internal_avg=86.54/narrative_version=v5)
+
+7. **DEEP-R2-7 Ch51 prep 漏 R28.53 deep research 关键 5 项**
+   - dialogue tag 多样化 / 秦岳 5 章 0-anchor / 跨章 reader-pull 下滑 trend / 19h 解释 / 印记 Lv2 延续 / 章末 mood 对位
+   - **R28.54 修复**: Ch51 prep 加 "七.5" 段, 9 项 R28.54 carry-forward P0/P1 清单
+
+8. **DEEP-R2-8 H87/H88/H89 + A3 mandatory_review 0 单测覆盖**
+   - 跨小说护栏无回归保护 (R28.5x 后续修改可能默默破坏)
+   - **R28.54 修复**: 加 `test_round28_53_h88_h89_hygiene.py` 10 个单测 (5 H88 + 3 H89 + 2 A3 mandatory_review)
+
+### 3 项跨项目脚本根治 (fork → cache 已 sync)
+
+#### A. hygiene_check.py H88 三严启发式收紧
+- 同行 (line distance=0) 禁触发 (Ch11 新闻播报式 false positive 根治)
+- "才" 单独不再触发 (需配合 "之间/到 XX/动手/才发生" 强词)
+- (raw_early, raw_late) 对去重 (防 pattern 双匹配)
+- 测试: Ch11/Ch49/Ch50 v5 全 silent pass / 人造 Ch50 v1 仍正确 fail
+
+#### B. agents/audit-agent.md A3 mandatory_human_review_models 红字消费协议
+- 加 "R28.54 A3 mandatory_human_review_models 消费协议" 完整章节
+- 强制 audit-agent 读字段 + 读 outlier critical/high issues + 升级 overall_decision
+- 防 R28.53 设计断链
+
+#### C. test_round28_53_h88_h89_hygiene.py 10 单测覆盖
+- H88 5 cases: Ch50 v1 paradox / Ch50 v5 fix / Ch11 same-line false positive / "才" alone / few anchors skipped
+- H89 3 cases: 22 次抓到 / few tags skipped / diverse silent
+- A3 mandatory_review 2 cases: gemini-3.1-pro 偏 ≥15 进 mandatory / 全模型紧凑无 mandatory
+
+**回归**: 573 passed / 4 skipped / 0 failed ✓ (R21.7 stale 测试同步修)
+
+### Ch50 项目本地 7 项同步修
+- CLAUDE.md voice canon 段 + 周晓兰条目
+- 设定集/女主卡.md L143 "第60章/48小时" → "第50章/3天"
+- 设定集/02-损失与代价表.md L136 同步
+- 设定集/04-基地视觉化里程碑表.md L31+L94 同步
+- 审查报告/第0050章审查报告.md frontmatter 刷新 v5 数据
+- editor_notes/ch0051_prep.md 加七.5 段 9 项 R28.54 carry-forward
+- state.chapter_meta.0050.power_realm 印记 Lv1 → Lv2 修正
+
+### R28.54 永久教训 (跨小说通用)
+
+**第一轮 deep research 不够 — 必须二轮才能找到自身根治引入的副作用**:
+- R28.53 H88 启发式启发不足精细 → Ch11 误报 → R28.54 收紧
+- R28.53 加新字段但 audit-agent.md 未同步消费协议 → 设计断链
+- 任何"加 measured 字段"必须同步加"agent 读取协议" 红字 (硬规则)
+
+**单测覆盖是跨小说护栏的硬约束**:
+- H87/H88/H89 在 R28.5x 跨 3 个 round 加入，但 0 单测
+- R28.54 一次性补齐 + 修预先存在的 R21.7 stale 测试
+- 后续 H 检查项加入必须同步加单测 (硬规则)
+
+**canon SSOT 跨文档章号一致性**:
+- 详细大纲 (active) vs 女主卡/损失代价表/里程碑表 (canon docs)
+- 章节计划重大调整时这些 canon docs 易 stale
+- 建议未来加 H90 check: 详细大纲与 canon docs 关键事件章号一致性
+
+---
+
 ## [Round 28.53] Ch50 commit 后 3 个 deep research subagent 共识 23 项 hidden bugs · 3 项跨项目脚本根治 + Ch50 v5 polish
 
 **Trigger**: 用户要求 Ch50 commit 后 deep research, 3 个并行 subagent (audit-agent deep / process-integrity / cross-chapter-trend) 共识 23 项 hidden bug, 其中 3 项 P0 是 13 内部 checker + 15 外部模型 + 7 层 audit 流程内**集体漏检**, 用户要"根治, 以后不会再出现"。

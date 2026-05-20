@@ -401,6 +401,37 @@ audit-agent 写 `editor_notes_for_next_chapter` 时，**任何**关于角色背�
 - 若外审 mtime < 正文 mtime → A10 critical warn：external_avg 是 pre-polish 数据，需重跑或标记 `external_avg_artifact: "pre_polish_invalid"`
 - audit-agent 推荐 remediation：调用 build_external_context.py + external_review.py 重跑（保持 polish 后的版本）
 
+> **🔴 Round 28.54 (Ch50 deep RCA) · A3 mandatory_human_review_models 消费协议**
+>
+> **Background**: Ch50 实战 — gemini-3.1-pro=62.3 (>60 不触发 critical outlier 剔除), 但抓到 3 个 critical 真硬伤 (时间悖论 11:20 vs 11:28-32 / 末世化报警系统 / 主角承诺 19h 脱节)。audit A3 effective_avg=raw_avg=86.78, outlier_count=0, 主审 0 见。**R28.53 加 mandatory_human_review_models 字段, R28.54 audit-agent 必须读它**。
+>
+> **规则**:
+> 1. audit-agent 收到 Part 1 CLI 输出的 A3.measured 时, **必须**检查 `mandatory_human_review_models` 字段（list[str], 可能不存在）
+> 2. 若该字段非空, 对其中每个模型 `M`:
+>    - 读 `.webnovel/tmp/external_review_{M}_ch{NNNN}.json` 的 `dimension_reports[*].issues[*]` 全部 critical/high
+>    - 在 audit_reports JSON `layers.A.checks.A3.mandatory_review_findings[M]` 列出该模型的 critical/high issue 摘要 (>= 3 字段: dimension, severity, quote 或 description)
+>    - **不可**因 outlier 自动 dismiss / 不可仅说 "outlier 已剔除" / 必须实读其内容
+> 3. 若 mandatory_review 模型抓到任一**真 critical** (gemini Ch50 时间悖论那种物理硬伤), audit overall_decision **必须**升级到 `block_pending_revision` 或 `approve_with_warnings` (不可 `approve`)
+> 4. 若该字段缺失或为空 → 跳过此协议
+>
+> **触发示例 (Ch50)**:
+> ```json
+> "A3": {
+>   "measured": {
+>     "effective_avg": 86.79,
+>     "mandatory_human_review_models": ["gemini-3.1-pro"]
+>   },
+>   "mandatory_review_findings": {
+>     "gemini-3.1-pro": [
+>       {"dimension": "consistency", "severity": "critical", "description": "L211 11:20 接电话 vs L239 11:28-32 才动手 = 物理悖论"},
+>       ...
+>     ]
+>   }
+> }
+> ```
+>
+> **违规风险**: 漏读 mandatory_review 的 critical issues → R28.53 设计完全断链 = Ch50 类时间悖论以后还会复发。这是 R28.53→R28.54 必须落地的护栏闭环。
+
 **F7 HIGH · 标题词在正文 0 次出现**：本章 Ch39 "失情绪的第七天" 标题，但 polish 前正文 grep `失情绪` = 0 / `第七天` = 0。Layer F 加：
 
 - F7 check：解析 chapter title 关键词（去虚词），grep 正文必须每个关键词 ≥1 次出现核心标题词（任一关键词命中即 pass，全部 0 显形才 fail）
