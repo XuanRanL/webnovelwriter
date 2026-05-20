@@ -811,6 +811,29 @@ def check_A3_external_models(project_root: Path, chapter: int) -> CheckResult:
             measured["outlier_count"] = len(score_outliers)
             if score_outliers:
                 measured["outlier_models"] = sorted(score_outliers.keys())
+        # Round 28.53 (Ch50 RCA): outlier 反向有害根治
+        # Ch50 gemini-3.1-pro=62.3 (> 60 不算 critical outlier), 但抓到 3 critical/high 真硬伤
+        # (时间悖论 11:20 接电话报告 11:28 才发生的事)。审计若只看 effective_avg=raw_avg 会漏 P0。
+        # 规则: lowest_model 与 effective_avg 偏差 ≥ 15 分 → mandatory_human_review_models (high warn)
+        # audit-agent 必须人工读其 critical/high issues 不可因 outlier 机制自动 dismiss
+        mandatory_review: List[str] = []
+        if model_scores and len(model_scores) >= 3:
+            eff_avg = sum(model_scores.values()) / len(model_scores)
+            for m_key, m_score in model_scores.items():
+                if eff_avg - m_score >= 15:
+                    mandatory_review.append(m_key)
+            # outlier (<60) 永远进 mandatory
+            mandatory_review.extend(sorted(score_outliers.keys()))
+            mandatory_review = sorted(set(mandatory_review))
+        if mandatory_review:
+            measured["mandatory_human_review_models"] = mandatory_review
+            review_note = (
+                f"mandatory_human_review_models={mandatory_review} · "
+                f"audit-agent 必须读其 critical/high issues 不可因 outlier 机制 dismiss · R28.53"
+            )
+            spread_alert_note = (
+                f"{spread_alert_note}; {review_note}" if spread_alert_note else review_note
+            )
 
         # Round 16 扁平判定：
         if valid_count < EXTERNAL_MODELS_HIGH_WARN_MIN:

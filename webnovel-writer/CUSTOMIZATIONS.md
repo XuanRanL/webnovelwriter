@@ -7,6 +7,82 @@
 
 ---
 
+## [Round 28.53] Ch50 commit 后 3 个 deep research subagent 共识 23 项 hidden bugs · 3 项跨项目脚本根治 + Ch50 v5 polish
+
+**Trigger**: 用户要求 Ch50 commit 后 deep research, 3 个并行 subagent (audit-agent deep / process-integrity / cross-chapter-trend) 共识 23 项 hidden bug, 其中 3 项 P0 是 13 内部 checker + 15 外部模型 + 7 层 audit 流程内**集体漏检**, 用户要"根治, 以后不会再出现"。
+
+### P0 真实硬伤 (流程内集体漏检 · 4 层审查全过)
+
+1. **DEEP-001 同章内时间悖论 L211/L225/L231/L239** [P0 critical]
+   - L211 (叙述) "十一点二十的时候，手机响"
+   - L225 (引号内) 同事 "门里头有血。我们从消防楼梯撬了一道边门进去"
+   - L239 (引号内) "十一点二十八到三十二之间动手"
+   - 物理冲突：陆沉 11:20 接电话却得知 11:28-32 才发生的事
+   - **gemini-3.1-pro 62.3 独立给 critical 2 条**, 但 audit Layer A3 outlier 自动降权 (effective_avg=raw_avg=86.78, outlier_count=0), 主审 0 见
+   - 内部 consistency(88)/continuity(89)/pacing(89)/audit D1 全过
+
+2. **DEEP-002 主角承诺与行动脱节** [high]
+   - "我让人过去" ×2 vs "天亮就动" — 19h 救援延迟
+   - 缺陷代价兑现, 但 audit 未跟踪 promise→action 跨章一致性
+
+3. **DEEP-007 dialogue tag 单调度** [high · 5 章 trend]
+   - 单章"陆沉说" 22 次 / 5 章 67 次累计
+   - dialogue-checker 81 (Ch46→Ch50 持续下滑主因)
+   - 内部 dialogue-checker 维度 0 抓 dialogue tag 模板化
+
+### 3 项跨项目脚本根治 (sync-cache 已生效)
+
+#### A. chapter_audit.py A3 mandatory_human_review_models
+- **文件**: `scripts/data_modules/chapter_audit.py` `check_A3_external_models`
+- **加固**: 增加 `mandatory_human_review_models` 字段:
+  - lowest_model 与 effective_avg 偏差 ≥ 15 分 → 强制人工读其 critical/high issues
+  - critical outlier (<60) 永远进 mandatory
+- **效果**: Ch50 gemini-3.1-pro (62.3 偏离 effective_avg 24 分) 会被强制 audit-agent 读其 3 critical issue
+
+#### B. hygiene H88 同章内时间锚物理一致性
+- **文件**: `scripts/hygiene_check.py` 新增 `check_intra_chapter_time_anchor_physical_consistency`
+- **触发条件 (全部满足)**:
+  1. 早时间锚不在引号内 (叙述当前时刻)
+  2. 晚时间锚在同章引号内 (人物对话内提及)
+  3. 晚时间锚附近含"实际事件发生时段"动词 (之间/到 XX/动手/才)
+  4. 时间差 ≥5 ≤90 分钟
+  5. 早晚 line 距离 ≤30 行 (同场景)
+- **P0 阻断 commit**
+- **测试**:
+  - Ch49 silent pass ✓
+  - Ch50 v5 修复后 silent pass ✓
+  - 人造 Ch50 v1 时间悖论 → L1 (11:20 叙述) vs L13 (11:28 引号内) 8 min 差 → P0 fail ✓
+
+#### C. hygiene H89 dialogue tag 单调度防护
+- **文件**: `scripts/hygiene_check.py` 新增 `check_dialogue_tag_diversity`
+- **检测**:
+  - 单章任一 tag > 12 次 → P1 warn
+  - 单章 top tag 占比 > 50% (≥10 总数) → P1 warn
+- **测试**: Ch50 v5 抓 "陆沉说" 22 次 → P1 warn ✓
+
+### Ch50 v5 项目本地 polish (commit 3ca92a2)
+- L211 "十一点二十" → "十一点四十" (20 min 缓冲)
+- 救护车末世化: "在路上。报警了。" → "合工大那边的车在路上。一一零没打通，先找熟的过来。"
+- hook_close v5 重分类
+
+### Round 28.53 永久教训 (跨小说通用)
+
+**外审 outlier 黄金原则**:
+- low-scoring outlier 多数情况是噪声, R28.52 effective_avg 剔除合理
+- **但**当 outlier 抓到 critical 真硬伤时, 自动降权反向有害
+- **新规则**: outlier critical/high issues 强制人工读 (mandatory_human_review_models)
+- audit-agent deep recheck 必须优先复审 mandatory_review 模型的低分维度
+
+**hygiene 同章物理一致性** (普适):
+- 同章时间锚 ≥3 必做物理因果检验
+- 启发式 false positive 风险高 — 必须用严格"早叙述+晚对话内"双约束
+
+**dialogue tag 跨章监控** (普适):
+- 单章 dialogue tag top 不超过 12 次 + 占比 ≤ 50%
+- 跨章 5 章累计 tag 占比 > 60% 应触发 trend 预警
+
+---
+
 ## [Round 28.52] Ch49 commit 后 4 个 deep research subagent 共识 19 个 hidden bugs · 4 项跨项目脚本根治 + 项目 v5 polish
 
 **Trigger**: 用户要求 Ch49 commit 后 deep research, 4 个并行 subagent (audit-agent deep / reader-critic deep / process-integrity / cross-chapter-trend) 共识 19 个 hidden bug, 用户要"根治, 以后不会再出现"。
