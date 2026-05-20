@@ -494,6 +494,47 @@ audit-agent 写 `editor_notes_for_next_chapter` 时，**任何**关于角色背�
 
 无卖点匹配时 Layer F 自动 skip 并标注 `no_selling_points_defined`。
 
+### Round 28.55 · D6 大纲时间线整段扫（Ch51 二轮 deep audit GLOBAL-1）
+
+**血教训**（Ch51 二轮 deep audit · P0-1）：v1 audit Layer D 只查 Canon-Bible.md，漏检 `大纲/第1卷-时间线.md` Ch51-76 整段 stale 10 天 + 剧情完全错位（"末世第 37 天 主角深入黑雾深域寻 A 级灵芝" vs 正文 D+27 救苏瑾）。R28.47 已为 Ch47 修订过单点 retiming，但 Ch51-76 整段从未一起修。
+
+**永久规则**：audit-agent Layer D 必须执行 D6_outline_timeline_sweep：
+
+1. **grep 全部大纲文件章号**（不止 Canon-Bible 与详细大纲）：
+   - `大纲/第N卷-时间线.md`
+   - `大纲/第N卷-详细大纲.md`
+   - `大纲/第N卷-节拍表.md`
+   - `大纲/第N卷-骨架.md`
+   - `大纲/总纲.md`
+2. **比对**：每个大纲文件中 `第\s*{chapter}\s*章` 段的时间锚 vs 当前章 chapter_meta.time_anchor / 正文实测时间锚
+3. **触发条件**：任一大纲 stale ≥3 天 或 剧情描述与 chapter_meta.summary 完全不匹配 → 写 Layer D6 medium warn + 给 fix path "整段 retime sweep"
+4. **stale 链式扫**：若发现 Ch{N} 时间锚 stale，**必须**继续 grep Ch{N+1}, Ch{N+2}, ..., Ch{卷末} 同一大纲文件，确认是否整段 stale 而非单点
+5. **跨小说强适用**：任何长篇小说（>50 章）在做过时间线 retiming 后都可能漏改大纲 stale 段。
+
+### Round 28.55 · A3 mandatory_review_findings 结构化字段必写（Ch51 二轮 deep audit GLOBAL-3）
+
+**血教训**（Ch51 二轮 deep audit · P1-3）：v1 audit A3.measured.mandatory_human_review_models=['gemini-3.1-pro'] 已识别 outlier 模型，但 `mandatory_review_findings` **结构化字段为空**——只在 evidence 自由文本里提，下游 Step 7 prep 与 audit-agent 主流程读不到。
+
+**永久规则**：audit-agent 写 audit_reports/ch{NNNN}.json 时，**必须**为 mandatory_human_review_models 中每个模型生成 `layers.A_process_integrity.checks[A3].mandatory_review_findings` 结构化字段：
+
+```json
+{
+  "mandatory_review_findings": {
+    "gemini-3.1-pro": {
+      "model_score": 59.6,
+      "critical_issues_implied": [
+        {"dim": "consistency", "evidence": "19h 救援延迟 PTSD 自责行为逻辑断裂", "verdict_by_audit": "已用 L23-25 屯溪路两道桩间接化解，建议 Ch52 补 1 处主角内省锚"},
+        {"dim": "dialogue_quality", "evidence": "起一句/落一句对话 tag 机械化 7 处", "verdict_by_audit": "polish 后减量但未清零，Ch52 必须清零"}
+      ],
+      "audit_decision_impact": "未升级 block / 但写入 next_chapter_prep mandatory_review_carryforward"
+    }
+  }
+}
+```
+
+无 outlier 时该字段为 `{}` 而非缺失。
+**跨小说强适用**：R28.53/R28.54 落地 fragmented，所有项目都需要此结构化字段。
+
 ## 观测日志
 
 每次运行追加一行到 `.webnovel/observability/chapter_audit.jsonl`：
