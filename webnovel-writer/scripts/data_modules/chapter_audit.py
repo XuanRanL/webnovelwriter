@@ -2675,8 +2675,17 @@ def _cmd_chapter(args) -> int:
     # Round 28.47 (Ch47 RCA · BUG-AUDIT-DECISION-FIELD-MISSING):
     # 加 decision + overall_decision 字段对齐 audit-agent (Part 2) 的 schema,
     # 防止 jsonl 同一文件 两个生产者 schema 不一致 导致下游 SQL/analytics NULL 半数
+    # Round 28.58 (Ch52 deep audit P1-9): 补 aggregate_score + mandatory_review_models + mandatory_review_consumed
+    # 防 R28.47 漂移再复发 — CLI entry 应与 agent entry 五元数据齐 (chapter_audit.jsonl 已是分析层真源)
     obs_path = project_root / ".webnovel" / "observability" / "chapter_audit.jsonl"
     obs_path.parent.mkdir(parents=True, exist_ok=True)
+    # R28.58: 提取 A3.measured.mandatory_human_review_models 用于 jsonl 元数据
+    _a3_check = None
+    for _c in report.get("layers", {}).get("A_process_integrity", {}).get("checks", []):
+        if _c.get("id") == "A3":
+            _a3_check = _c
+            break
+    _mandatory_models = _a3_check.get("measured", {}).get("mandatory_human_review_models", []) if _a3_check else []
     with open(obs_path, "a", encoding="utf-8") as f:
         f.write(json.dumps({
             "chapter": args.chapter,
@@ -2685,6 +2694,7 @@ def _cmd_chapter(args) -> int:
             "decision": report["cli_decision"],          # R28.47: alias 对齐 audit-agent
             "overall_decision": report["cli_decision"],  # R28.47: alias 对齐 audit-agent
             "cli_decision": report["cli_decision"],
+            "aggregate_score": report.get("aggregate_score"),  # R28.58: 与 agent entry 对齐
             "elapsed_ms": audit_elapsed_ms,              # R28.47: timing instrumentation
             "layer_scores": {
                 "A": report["layers"]["A_process_integrity"]["score"],
@@ -2693,6 +2703,7 @@ def _cmd_chapter(args) -> int:
             },
             "warnings_count": report["summary"]["warnings"],
             "blocking_count": report["summary"]["critical_fails"] + report["summary"]["high_fails"],
+            "mandatory_review_models": _mandatory_models,  # R28.58: 与 agent entry 对齐
         }, ensure_ascii=False) + "\n")
 
     # 同时输出 JSON 到 stdout
