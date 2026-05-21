@@ -4242,6 +4242,66 @@ def check_intra_chapter_time_anchor_physical_consistency(root: Path, chapter: in
         rep.record("P0", "H88", f"同章内 {len(time_anchors)} 时间锚物理一致 (R28.53 防 Ch50 时间悖论复发)", True)
 
 
+def check_chapter_meta_field_distribution(root: Path, chapter: int, rep: HygieneReport):
+    """H92 (Round 28.59 · Ch52 第三轮 deep audit RCA): chapter_meta 字段数分布检测.
+
+    根因 (Ch52 第三轮 deep audit P1-3):
+      实测 Ch22 chapter_meta = 28 字段 / Ch3 = 63 字段，跨章差 35 字段。
+      早期章节 Ch18-24 大多 ≤32 字段, Ch26+ 普遍 45-63 字段 — chapter_meta schema
+      自 R28.x 累积演化，旧章未回溯 backfill 新字段 (R28.55-patch2 等)。
+
+    检测策略:
+      计算所有 chapter_meta 字段数中位数 median，
+      若本章字段数 < median - 10 → P1 警告 backfill_pending.
+      不阻断 commit, 仅提示 R28.59 协议化 backfill 时序.
+    """
+    import json
+    chapter_str = f"{chapter:04d}"
+    state_path = root / ".webnovel" / "state.json"
+    if not state_path.exists():
+        rep.record("P1", "H92", "state.json 不存在 跳过", True)
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        rep.record("P1", "H92", "state.json parse failed 跳过", True)
+        return
+    cms = state.get("chapter_meta", {})
+    if not cms:
+        rep.record("P1", "H92", "chapter_meta 为空 跳过", True)
+        return
+    field_counts = {k: len(v) for k, v in cms.items() if isinstance(v, dict)}
+    if chapter_str not in field_counts:
+        rep.record("P1", "H92", f"chapter_meta.{chapter_str} 不存在 跳过", True)
+        return
+    counts = sorted(field_counts.values())
+    median = counts[len(counts) // 2] if counts else 0
+    current = field_counts[chapter_str]
+    threshold = median - 10
+    if current < threshold:
+        # 找出比中位数缺哪些字段最常见
+        all_fields = set()
+        for v in cms.values():
+            if isinstance(v, dict):
+                all_fields.update(v.keys())
+        # 取字段命中率前 90%（出现在 ≥90% 章节的字段）
+        common = []
+        for f in all_fields:
+            hit = sum(1 for v in cms.values() if isinstance(v, dict) and f in v)
+            if hit >= len(cms) * 0.9:
+                common.append(f)
+        missing = sorted(set(common) - set(cms[chapter_str].keys()))
+        rep.record(
+            "P1", "H92",
+            f"chapter_meta.{chapter_str} 字段数 {current} < median {median} - 10 = {threshold} · "
+            f"建议 backfill: {missing[:8]} (共 {len(missing)} 字段) · "
+            f"R28.59 candidate · 调 data-agent backfill 协议或手动 set-chapter-meta-field",
+            False,
+        )
+    else:
+        rep.record("P1", "H92", f"chapter_meta.{chapter_str} 字段数 {current} 在 median {median} 容差内", True)
+
+
 def check_r28_55_patch2_mirror_fields(root: Path, chapter: int, rep: HygieneReport):
     """H90 (Round 28.57 · Ch52 deep audit RCA): chapter_meta R28.55-patch2 字段必填.
 
@@ -4446,6 +4506,7 @@ def main():
     check_intra_chapter_time_anchor_physical_consistency(root, args.chapter, rep)  # H88 · 同章内时间锚物理一致性 (Ch50 实战: L211 11:20 接电话 vs L239 11:28-32 才动手 = 物理悖论 gemini 抓内部全漏)
     check_dialogue_tag_diversity(root, args.chapter, rep)  # H89 · dialogue tag 单调度防护 (Ch50 "陆沉说" 22次 + 5章累计 67 次 = dialogue checker 81→若不主动多样化 Ch51 会再跌)
     check_r28_55_patch2_mirror_fields(root, args.chapter, rep)  # H90 · Round 28.57 (Ch52 deep audit RCA): chapter_meta R28.55-patch2 mirror 字段必填 (external_review_effective_avg/outlier_models/raw_avg/audit_decision/aggregate_score)
+    check_chapter_meta_field_distribution(root, args.chapter, rep)  # H92 · Round 28.59 (Ch52 第三轮 deep audit): chapter_meta 字段数分布检测 (median-10 阈值)
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)
