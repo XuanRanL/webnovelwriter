@@ -606,6 +606,10 @@ elif high_count in (1,2):
     assert d['decision']=='approve_with_warnings', f'high 1-2 必须 approve_with_warnings'
 elif medium_count >= 5:
     assert d['decision']=='approve_with_warnings', f'medium>=5 必须 approve_with_warnings'
+elif medium_count in (1, 2, 3, 4):  # R28.57 补 medium in [1,4] 分支防 regression
+    assert d['decision']=='approve_with_warnings', f'medium 1-4 必须 approve_with_warnings (R28.57 补)'
+else:  # all checks pass
+    assert d['decision']=='approve', f'all pass 必须 approve'
 ```
 
 ### 自检 4: A3 mandatory_review_findings 结构化字段强制（R28.55 实战未落 → R28.56 升级）
