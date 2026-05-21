@@ -544,3 +544,114 @@ audit-agent 写 `editor_notes_for_next_chapter` 时，**任何**关于角色背�
 ```
 
 供 Layer G 跨章趋势分析读取。
+
+---
+
+## Round 28.56 · audit-agent 落盘强制自检（Ch52 deep audit 复发根治）
+
+**血教训**（Ch52 commit 1374f70 deep audit · 跨 3 章重复 P0）：
+
+Ch50/Ch51/Ch52 三次 audit-agent **声称已落盘 `audit_reports/ch{NNNN}.json`，但实际未写盘**——主流程必须用 `python -c "import json,..."` 手动重建 audit_report 才能通过 `audit check-decision`。重建过程往往退化 schema（缺 `overall_decision` / `layers[*].checks[]` / `time_budget_seconds` / `mandatory_review_findings`）。
+
+**永久规则**：audit-agent 在 Task 内部 return 之前，**必须**执行以下三道自检，任一失败 → 立即重写 + 再检 + 返回 disk-verified 报告：
+
+### 自检 1: 落盘文件存在性 + 大小
+
+```bash
+# audit-agent 内部 Bash 最后一步必跑
+for f in \
+  ".webnovel/audit_reports/ch{NNNN}.json" \
+  ".webnovel/editor_notes/ch{NNNN+1}_prep.md" \
+  ".webnovel/observability/chapter_audit.jsonl"; do
+  if [ ! -f "${PROJECT_ROOT}/$f" ] || [ ! -s "${PROJECT_ROOT}/$f" ]; then
+    echo "AUDIT-DISK-LANDING-FAIL: $f missing or empty · 立即用 Write 工具重写"
+    exit 1  # 触发 audit-agent 自身重跑
+  fi
+done
+```
+
+### 自检 2: audit_reports/ch{NNNN}.json schema 完整性
+
+```python
+import json
+d = json.load(open(f'.webnovel/audit_reports/ch{NNNN}.json', encoding='utf-8'))
+required_top = {'chapter','audit_version','mode','decision','overall_decision',
+                'time_budget_seconds','time_elapsed_seconds','time_exhausted',
+                'layers','blocking_issues','warnings','quality_scores',
+                'editor_notes_for_next_chapter'}
+missing = required_top - set(d.keys())
+assert not missing, f'AUDIT-SCHEMA-FAIL: 顶层缺 {missing}'
+assert d['decision'] == d['overall_decision'], f'decision/overall_decision 不一致'
+for layer_key in ['A_process_integrity','B_cross_artifact_consistency','C_reader_experience',
+                  'D_work_continuity','E_craft_quality','F_genre_fitness','G_cross_chapter_trend']:
+    L = d['layers'].get(layer_key)
+    assert L is not None, f'layer {layer_key} 缺失'
+    assert 'checks' in L and isinstance(L['checks'], list), f'{layer_key}.checks 必须是 list'
+    for c in L['checks']:
+        for k in ('id','name','status','severity','evidence'):
+            assert k in c, f'{layer_key} check 缺 {k}'
+```
+
+### 自检 3: decision matrix runtime 强制（Ch52 实战触发 · F2/A10/F7 三 high 实际是 block 但写成 approve_with_warnings）
+
+```python
+critical_count = sum(1 for w in d['warnings'] + d['blocking_issues'] if w.get('severity')=='critical')
+high_count = sum(1 for w in d['warnings'] if w.get('severity')=='high')
+medium_count = sum(1 for w in d['warnings'] if w.get('severity')=='medium')
+if critical_count > 0:
+    assert d['decision']=='block', f'critical>0 必须 block，实际 {d["decision"]}'
+elif high_count >= 3:
+    assert d['decision']=='block', f'high>=3 必须 block，实际 {d["decision"]} (F2/A10/F7 实战触发)'
+elif high_count in (1,2):
+    assert d['decision']=='approve_with_warnings', f'high 1-2 必须 approve_with_warnings'
+elif medium_count >= 5:
+    assert d['decision']=='approve_with_warnings', f'medium>=5 必须 approve_with_warnings'
+```
+
+### 自检 4: A3 mandatory_review_findings 结构化字段强制（R28.55 实战未落 → R28.56 升级）
+
+如果 `A3.measured.mandatory_human_review_models` 非空，**必须**：
+```python
+a3 = next((c for c in d['layers']['A_process_integrity']['checks'] if c['id']=='A3'), None)
+mandatory = a3.get('mandatory_review_findings', None)
+assert mandatory is not None, 'A3.mandatory_review_findings 字段缺失 (R28.55/56)'
+for m in a3.get('measured',{}).get('mandatory_human_review_models', []):
+    assert m in mandatory, f'A3.mandatory_review_findings 缺 {m} 模型的结构化条目'
+    assert isinstance(mandatory[m], list) and len(mandatory[m]) >= 1, \
+        f'A3.mandatory_review_findings[{m}] 必须含 1+ critical/high issue 摘要'
+```
+
+### 自检 5: chapter_audit.jsonl 追加成功
+
+```bash
+last_line=$(tail -1 "${PROJECT_ROOT}/.webnovel/observability/chapter_audit.jsonl")
+echo "$last_line" | python -c "import json,sys; d=json.loads(sys.stdin.read()); assert d['chapter']==${NNNN}, 'jsonl 最后一行非本章'"
+```
+
+### 自检 6: E3 / drift warning 反幻觉守门（Ch52 实战 audit 报"了一X grep=7 vs state=0"是虚构）
+
+任何包含 "drift" / "vs state" / "vs grep" 字眼的 warning **必须**含 measured 字段，且 `disk_value` 与 `grep_value` 都来自同一审计运行的真实测量：
+```python
+for w in d['warnings']:
+    desc = w.get('description','')
+    if 'drift' in desc or 'vs state' in desc or 'vs grep' in desc:
+        m = w.get('measured', {})
+        assert 'disk_value' in m and 'grep_value' in m, \
+            f'drift warning 必须 measured.disk_value + measured.grep_value (反幻觉)'
+```
+
+### 失败处理
+
+任一自检失败 → audit-agent **不得 return**，必须立即用 Write 工具重写产物，再次自检通过才能 return。若 3 次自检仍 fail，写 audit_reports/ch{NNNN}.json 时把 `decision='block'` + `blocking_issues` 含 `AUDIT_SELF_CHECK_TRIPLE_FAIL` 项，主流程拒绝继续 Step 7。
+
+**主流程侧验证（Step 6 complete-step 之前）**：
+
+```bash
+test -f "${PROJECT_ROOT}/.webnovel/audit_reports/ch${chapter_padded}.json" || { echo "FAIL"; exit 1; }
+test -s "${PROJECT_ROOT}/.webnovel/audit_reports/ch${chapter_padded}.json" || { echo "FAIL: empty"; exit 1; }
+test -f "${PROJECT_ROOT}/.webnovel/editor_notes/ch$(printf %04d $((chapter_num+1)))_prep.md" || { echo "FAIL: prep missing"; exit 1; }
+# 再次跑自检 1+2+3+4+5+6（同上脚本）
+```
+
+**跨小说强适用**：所有项目共享此规则，无需项目级别豁免。Ch50/Ch51/Ch52 三连复发证明 prose-level 规则不足以约束 LLM，必须 runtime 强制。
+
