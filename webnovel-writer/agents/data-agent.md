@@ -614,6 +614,35 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 
 所有追加必须带 `[Ch{N}]` 章节标注。Step K 失败不阻断流程。
 
+#### ⚠️ Round 28.56 · Step K 扩展白名单同步硬规则（Ch52 实战根治）
+
+**血教训**（Ch52 commit 1374f70）：Data Agent Step K 仅追加 3 个 default targets（伏笔追踪/资产变动表/主角卡），但 `pre_commit_step_k.py` 扩展白名单 还要求 `01-卷一承诺-兑现表.md / 02-损失与代价表.md / 11-反派压强表.md` 同步追加。Ch52 Step K 完成后，pre_commit_step_k 报 `STEP_K_EXTENDED_HIGH` 阻塞 commit（≥2 缺失 = high block · R28.50 升级），主流程手动补 3 文件才解锁。
+
+**永久规则**：data-agent Step K **完成后**，必须按 EXTENDED_TARGETS_OPTIONAL 清单同步追加：
+
+```python
+# data-agent Step K 末尾必跑
+EXTENDED_TARGETS = [
+    "设定集/01-卷一承诺-兑现表.md",  # 兑现追踪
+    "设定集/02-损失与代价表.md",      # 损失与代价
+    "设定集/11-反派压强表.md",        # 反派压强
+]
+
+for target in EXTENDED_TARGETS:
+    p = project_root / target
+    if not p.exists():
+        # 文件不存在 silent skip（项目未启用此扩展白名单）
+        continue
+    content = p.read_text(encoding='utf-8')
+    if f'[Ch{N}]' not in content:
+        # 自动追加章节段
+        append_section_to_file(p, chapter=N, content_type=infer_from_filename(target))
+```
+
+**自检**：pre_commit_step_k 已 hardcoded EXTENDED_TARGETS_OPTIONAL（pre_commit_step_k.py L48-52），R28.50 升级到 `STEP_K_EXTENDED_HIGH` 阻塞（≥2 缺失即阻塞 commit）。data-agent Step K 必须在 chapter_meta 写库 + 主流程 commit 之间完成此步，否则下游 pre_commit_step_k 强制阻塞。
+
+**跨小说强适用**：所有项目共享此规则。即使本项目 .webnovel/step_k_config.json 只列 3 个 default，扩展白名单仍需检测。
+
 #### ⚠️ Round 28.46 · Step K markdown header 格式硬规则（防 pre_commit_step_k 阻塞）
 
 **血教训**（Ch46 R28.46 #3）：data-agent Step K 写设定集时用了 `### Ch46 推进+新埋（...）` 三级 header，但 `pre_commit_step_k.py` 严格匹配 `[Ch46`（带方括号）字面，**未命中 → 阻塞 commit**。主流程手动 Edit 改成 `## [Ch46] ...` 二级 header 才修。
