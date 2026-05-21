@@ -2686,6 +2686,25 @@ def _cmd_chapter(args) -> int:
             _a3_check = _c
             break
     _mandatory_models = _a3_check.get("measured", {}).get("mandatory_human_review_models", []) if _a3_check else []
+    # R28.59 (Ch52 deep audit P0-1 根治): CLI report 没 aggregate_score 字段, 但应自计算
+    # 从 layer_scores 加权 mean (A=0.2 / B=0.15 / G=0.15 仅 3 个 CLI 已知; C/D/E/F agent 算)
+    # CLI 没全 7 layer 分数, 只算 cli_aggregate 表示部分聚合, agent entry 才有真 aggregate_score
+    _cli_layer_scores = [
+        report["layers"]["A_process_integrity"]["score"],
+        report["layers"]["B_cross_artifact_consistency"]["score"],
+        report["layers"]["G_cross_chapter_trend"]["score"],
+    ]
+    _cli_aggregate = round(sum(_cli_layer_scores) / len(_cli_layer_scores), 1) if all(s is not None for s in _cli_layer_scores) else None
+    # 检查 audit_reports/ch{NNNN}.json 是否已存在 agent Part 2 产物, 优先采纳其 aggregate_score
+    _audit_report_path = project_root / ".webnovel" / "audit_reports" / f"ch{args.chapter:04d}.json"
+    _agent_aggregate = None
+    if _audit_report_path.exists():
+        try:
+            _agent_report = json.loads(_audit_report_path.read_text(encoding="utf-8"))
+            _agent_aggregate = _agent_report.get("aggregate_score")
+        except Exception:
+            pass
+    _final_aggregate = _agent_aggregate if _agent_aggregate is not None else _cli_aggregate
     with open(obs_path, "a", encoding="utf-8") as f:
         f.write(json.dumps({
             "chapter": args.chapter,
@@ -2694,7 +2713,8 @@ def _cmd_chapter(args) -> int:
             "decision": report["cli_decision"],          # R28.47: alias 对齐 audit-agent
             "overall_decision": report["cli_decision"],  # R28.47: alias 对齐 audit-agent
             "cli_decision": report["cli_decision"],
-            "aggregate_score": report.get("aggregate_score"),  # R28.58: 与 agent entry 对齐
+            "aggregate_score": _final_aggregate,         # R28.59: 优先 agent Part 2 真值，回退 CLI 3 layer 均值
+            "cli_aggregate_partial": _cli_aggregate,     # R28.59: 显式 CLI 部分聚合（A+B+G 均值）便于 trend
             "elapsed_ms": audit_elapsed_ms,              # R28.47: timing instrumentation
             "layer_scores": {
                 "A": report["layers"]["A_process_integrity"]["score"],

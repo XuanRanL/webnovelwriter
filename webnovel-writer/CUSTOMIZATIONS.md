@@ -5576,3 +5576,114 @@ Canon 真源。
 - H67 false negative 减少
 
 **跨小说强适用**：5 类修复全跨项目，无需项目级别豁免。
+
+---
+
+## Round 28.58（2026-05-21）Ch52 第二轮 4 路 deep research 16 P0/P1 全清
+
+**问题来源**: R28.57 commit 后第二轮 4 路 deep research subagent 并发审查 Ch52 v2 (commit 0e21978) 发现 16 类剩余真问题：
+
+5 类跨产物历史漂移 P0:
+1. state.protagonist_state.countdown.current = "D-11" stale 40+ 章 (实际 Ch52 = D+28)
+2. state.total_words 顶层 85735 漂移 48% (实际 chapter_meta sum 153480)
+3. CLAUDE.md L118 "22 cells initial" 错 (Canon §6 锁初始 30 / 当前 22)
+4. CLAUDE.md L100-107 立即执行序 Ch10 时代 staging (Canon Bible 填充等已完成)
+5. chapter_meta Ch50/51 R28.55-patch2 字段历史 backfill 缺失
+
+5 类跨章 P1:
+6. Ch53 carry-forward 硬约束 (Ch52 章末双钩与 Ch53 D+29 苏瑾醒 + 日常 buffer 冲突)
+7. 项目本地 .webnovel/hygiene_check.py 裸跑 ModuleNotFoundError (PYTHONPATH 不在 fork/cache 之外)
+8. chapter_audit CLI jsonl entry 缺 aggregate_score (R28.47 漂移复发)
+9. index.db chapters 表 5/52 章 (47 章 metadata 全缺)
+10. last_stable_state.artifacts polish v2 未同步
+
+3 类元数据清理 P1:
+11. 审查报告 7 处 "未复测" 标签 (R28.55-patch2 后约定改为 "保持")
+12. ch0053_prep word_count 2547 老 v1 (应 2812 v2)
+13. 307 楼/307 室/中科院 三方称呼 - 08-连续性已锁 / Ch51 历史保留
+
+3 类网文质量 (Ch52 v3 polish 落地):
+14. L33 "袖口里那线凉转一档" 跨章 motif H79 过载
+15. L71 三连否定"不坐下不靠床不碰她"机器人感
+16. 章首跨章 deja vu 推到 Ch53 必换模板
+
+**修复**:
+
+跨项目根治 3 处 (fork commit fa84bb3):
+
+1. scripts/hygiene_check.py
+   - 新增 `_ensure_workflow_manager_on_path()` 4 路 fallback (Path.parent / CLAUDE_PLUGIN_ROOT / cache 默认位置 / WEBNOVEL_PLUGIN_SCRIPTS_DIR)
+   - 项目本地复制版从此可裸跑 (no PYTHONPATH 也 OK)
+
+2. scripts/data_modules/chapter_audit.py
+   - CLI jsonl entry 补 aggregate_score + mandatory_review_models 字段
+   - 与 audit-agent (Part 2) entry 五元数据一致 (防 R28.47 漂移再复发)
+   - **R28.59 后续 patch**: CLI 自计算 cli_aggregate_partial (A+B+G 均值)，aggregate_score 优先从 audit_reports/ch{NNNN}.json (agent Part 2) 拉真值
+
+项目级修复 (commit e371651 + 016e46f):
+3. CLAUDE.md / state.json / chapter_meta 历史 backfill (5 P0 跨产物漂移 + 8 P1)
+4. 设定集/03-角色口径表 + 大纲骨架同步
+5. index.db reindex 47 章 + ch0053_prep R28.58 carry-forward
+
+**测试**: pytest 583 passed (R28.57 8 单测维持) / 4 skipped / coverage 75.84%
+
+**Ch53 写前 carry-forward**:
+- 网文质量：章首必换模板（禁 末世第N天 打头）+ Ch52 双钩 200 字悬置 + 男频锚密度提
+- voice canon 漂移：粗扫含 false positive (朵朵复述)，Ch9/14/15/17/19/Ch48 5 章人工复核
+- R28.59 候选：voice canon H91 + chapter_audit CLI 单测固化 + R28.55-patch2 backfill 协议化
+
+**影响**:
+- Ch53+ 起 hygiene_check 项目本地可裸跑
+- chapter_audit CLI/agent jsonl entry 五元数据一致 (防 R28.47 漂移复发)
+- chapter_meta R28.55-patch2 字段统一标准 (Ch50/51 backfill 后历史齐)
+
+**跨小说强适用**: 2 处 fork 改 (hygiene fallback + chapter_audit CLI) 所有项目共享，无项目级别豁免。
+
+---
+
+## Round 28.59（2026-05-21）Ch52 第三轮 4 路 deep research P0-P1 全清 + 卷一收官规划
+
+**问题来源**: R28.58 三 commit 后第三轮 4 路 deep research 发现：
+
+4 类 P0 真实剩余:
+1. Ch52 chapter_audit.jsonl CLI entry aggregate_score=null (R28.58 fix CLI report 本身没此字段 → 仍 null)
+2. CUSTOMIZATIONS.md 缺 R28.58 entry (R28.55-patch2/R28.56/R28.57 都齐，R28.58 commit 自己漏)
+3. word_count 跨产物漂移 26 章 (chapter_meta sum 153494 vs CJK 实测 164065 缺 10571 字)
+   - Ch18 polish 后 chapter_meta.word_count=2645 vs file=3875 缺 1230 字 (32%)
+4. last_stable_state.artifacts narrative_version=v2 与正文 v3 不一致 (R28.58 漏改)
+
+3 类 P1:
+5. R28.58 改动 0 新单测覆盖 (退步)
+6. chapter_meta Ch52 缺顶层 outlier_models / mandatory_review_models
+7. chapter_meta 字段数 28-63 不均 (Ch18-24 ≤32 / Ch26+ 45-63)
+
+**修复**:
+
+跨项目根治 (fork R28.59 commit 待):
+
+1. scripts/data_modules/chapter_audit.py
+   - CLI aggregate_score 优先从 audit_reports/ch{NNNN}.json (agent Part 2) 真值，回退 cli_aggregate_partial (A+B+G 3 layer 均值)
+   - 新增 cli_aggregate_partial 字段显式 CLI 部分聚合便于 trend 分析
+
+项目级修复 (commit 待):
+2. CUSTOMIZATIONS.md 补 R28.58 + R28.59 entry
+3. chapter_meta word_count 批量 reflow Ch1-52 (26 章 polish 后未刷 / state.total_words 85735→163904)
+4. last_stable_state.artifacts v2→v3 + word_count 2812→2826 + aggregate_score 86 同步
+5. chapter_meta Ch52 顶层 outlier_models/mandatory_review_models + mandatory_review_consumed 补
+
+**R28.59 跨小说候选** (待 R28.60 落):
+- chapter_audit CLI jsonl 单测固化 (4 case + 字段类型守门防 R28.47 漂移再复发)
+- CUSTOMIZATIONS.md fork pre-commit hook (fork 改 scripts/agents 但 CUSTOMIZATIONS 未改 → warn / WEBNOVEL_FORK_HOOK_STRICT=1 阻断)
+- data-agent backfill 协议化 (Step D 扫历史章 chapter_meta 缺 REQUIRED_MIRROR_FIELDS → audit warnings 报 backfill_pending)
+- countdown stale H93 (last_updated_chapter vs current_chapter 差 ≥10 → P1)
+- hygiene H92 chapter_meta 字段数分布警告 (字段数 < median-10 → warn 强制 backfill)
+
+**网文 R28.59 deep research 关键发现**:
+- Ch52 v3 真实评分 85.5 (v2=85.92 微降 0.4)，consistency +2，naturalism -2 (motif swap 不是 motif delete)，reader-critic -2 (暖意句对章末情绪锚无救助)
+- Ship Ch52 v3 不再 v4 (边际收益递减)
+- 卷一目标 28-30 万字数学不可达，建议改为 23-26 万字 (avg 3200/章 × 76)
+- Ch53-Ch76 24 章 83% 占位 stub，需补 19 章独立标题/主推进
+- Ch64 二阶生物冲击是中段最大爆款窗口
+- 拆 Ch74-Ch76 三章 + 加 Ch75 余烬缓冲
+
+**跨小说强适用**: chapter_audit CLI aggregate_score 修 + R28.59 candidate 跨项目通用，所有项目共享。
