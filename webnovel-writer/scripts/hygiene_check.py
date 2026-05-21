@@ -73,6 +73,42 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+# R28.58 (Ch52 deep audit P1-8 根治): 项目本地 .webnovel/hygiene_check.py 复制版
+# Path(__file__).parent 指向 .webnovel/ 而非 fork/scripts/, workflow_manager.py 不在那
+# 自动 fallback 找 plugin cache scripts dir
+def _ensure_workflow_manager_on_path():
+    """Find workflow_manager.py and add its dir to sys.path. Used by both fork
+    and project-local copies of this script. Fallback order:
+    1. Path(__file__).parent (works for fork/scripts/hygiene_check.py)
+    2. CLAUDE_PLUGIN_ROOT/scripts (env var fallback)
+    3. ~/.claude/plugins/cache/webnovel-writer-marketplace/webnovel-writer/{version}/scripts
+    4. WEBNOVEL_PLUGIN_SCRIPTS_DIR (env override)
+    """
+    import os
+    candidates = []
+    candidates.append(_SCRIPTS_DIR)
+    if os.environ.get('CLAUDE_PLUGIN_ROOT'):
+        candidates.append(Path(os.environ['CLAUDE_PLUGIN_ROOT']) / 'scripts')
+    if os.environ.get('WEBNOVEL_PLUGIN_SCRIPTS_DIR'):
+        candidates.append(Path(os.environ['WEBNOVEL_PLUGIN_SCRIPTS_DIR']))
+    # default cache locations (Windows / Unix)
+    home = Path(os.path.expanduser('~'))
+    cache_base = home / '.claude' / 'plugins' / 'cache' / 'webnovel-writer-marketplace' / 'webnovel-writer'
+    if cache_base.exists():
+        for version_dir in sorted(cache_base.iterdir(), reverse=True):  # latest first
+            if (version_dir / 'scripts' / 'workflow_manager.py').exists():
+                candidates.append(version_dir / 'scripts')
+                break
+    for c in candidates:
+        wm = c / 'workflow_manager.py'
+        if wm.exists():
+            if str(c) not in sys.path:
+                sys.path.insert(0, str(c))
+            return c
+    return None
+
+_ensure_workflow_manager_on_path()
+
 from workflow_manager import (  # noqa: E402  (sys.path must be primed first)
     REQUIRED_ARTIFACT_FIELDS,
     PLACEHOLDER_ONLY_FIELDS,
