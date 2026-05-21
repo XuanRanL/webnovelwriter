@@ -985,8 +985,10 @@ def check_canon_locked_terms(root: Path, chapter: int, rep: HygieneReport):
         # Round 28.46 加入：动作/介词 + 名词 自然短语首字
         "把", "拿", "给", "摸", "抓", "掐", "翻", "捏", "捧", "端", "挑",
         "用", "对", "向", "从", "为", "和", "跟", "与",
-        # Round 28.56 加入 (Ch52 实战 "按在金银花根上方" 分词误判): 介词补全
-        "在", "到", "于", "至", "朝", "往", "顺", "依", "按", "靠",
+        # Round 28.56 / Round 28.57 修正 (Ch52 实战 "按在金银花根上方" 分词误判 + deep audit 收紧)
+        # 仅扩"按/在/到/于"四个 已 grep 验证安全的 + R28.57 移除 朝/往/顺/依
+        # (朝/往/顺/依 4 词命中"朝桃浦/往307/顺西郊/依山势"等真新地名风险)
+        "在", "按", "到", "于", "至", "靠",
         # Round 28.46 加入：代词/人称
         "他", "她", "它", "我", "你", "咱",
         # Round 28.46 加入：常见配角姓名首字（项目可扩展）
@@ -4204,6 +4206,65 @@ def check_intra_chapter_time_anchor_physical_consistency(root: Path, chapter: in
         rep.record("P0", "H88", f"同章内 {len(time_anchors)} 时间锚物理一致 (R28.53 防 Ch50 时间悖论复发)", True)
 
 
+def check_r28_55_patch2_mirror_fields(root: Path, chapter: int, rep: HygieneReport):
+    """H90 (Round 28.57 · Ch52 deep audit RCA): chapter_meta R28.55-patch2 字段必填.
+
+    根因 (Ch52 跨产物对账 P0):
+      R28.55-patch2 commit 6161790 加 chapter_meta 白名单字段 external_review_effective_avg
+      + external_review_outlier_models, Ch51 已生效 (effective=87.65, outliers=[gemini-3.1-pro]).
+      Ch52 复发缺失 — data-agent 没把这俩字段从审查报告 frontmatter mirror 到 chapter_meta.
+      下游 H68/H69 disk-state 对账失去 raw_avg/outlier 真源, A3 mandatory_review 追溯断链.
+
+    检测策略:
+      若 审查报告/第{N}章审查报告.md 存在 (即本章已完成 Step 3.5):
+        chapter_meta.{NNNN} 必含:
+          - external_review_effective_avg (float)
+          - external_review_outlier_models (list, 可空)
+          - external_review_raw_avg (float)
+          - audit_decision (str, approve/approve_with_warnings/block)
+          - aggregate_score (int)
+        缺任一 → P1 警告.
+    """
+    import json
+    chapter_str = f"{chapter:04d}"
+    review_report = root / "审查报告" / f"第{chapter_str}章审查报告.md"
+    if not review_report.exists():
+        rep.record("P1", "H90", f"审查报告不存在 跳过 R28.55-patch2 mirror 字段检查", True)
+        return
+    state_path = root / ".webnovel" / "state.json"
+    if not state_path.exists():
+        rep.record("P1", "H90", "state.json 不存在 跳过", True)
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        rep.record("P1", "H90", "state.json parse failed 跳过", True)
+        return
+    cm = state.get("chapter_meta", {}).get(chapter_str)
+    if not cm:
+        rep.record("P1", "H90", f"chapter_meta.{chapter_str} 不存在 跳过", True)
+        return
+    required = [
+        "external_review_effective_avg",
+        "external_review_outlier_models",
+        "external_review_raw_avg",
+        "audit_decision",
+        "aggregate_score",
+    ]
+    missing = [k for k in required if k not in cm or cm.get(k) is None]
+    if missing:
+        rep.record(
+            "P1", "H90",
+            f"chapter_meta.{chapter_str} 缺 R28.55-patch2 mirror 字段 {len(missing)} 项: {missing} · "
+            f"修法: data-agent Step D 从审查报告 frontmatter 抽取 effective_avg/outlier_models, "
+            f"从 audit_reports/ch{chapter_str}.json 抽取 decision/aggregate_score, "
+            f"用 state update --set-chapter-meta-field 写入. (R28.57 Ch52 复发根治)",
+            False,
+        )
+    else:
+        rep.record("P1", "H90", f"chapter_meta R28.55-patch2 mirror 字段齐 ({len(required)}/{len(required)})", True)
+
+
 def check_dialogue_tag_diversity(root: Path, chapter: int, rep: HygieneReport):
     """H89 (Round 28.53 · Ch50 deep RCA): dialogue tag 单调度防护.
 
@@ -4348,6 +4409,7 @@ def main():
     # Round 28.53 (Ch50 deep RCA) · 3 道新护栏 永久根治 内部 13 checker + audit 流程内漏检
     check_intra_chapter_time_anchor_physical_consistency(root, args.chapter, rep)  # H88 · 同章内时间锚物理一致性 (Ch50 实战: L211 11:20 接电话 vs L239 11:28-32 才动手 = 物理悖论 gemini 抓内部全漏)
     check_dialogue_tag_diversity(root, args.chapter, rep)  # H89 · dialogue tag 单调度防护 (Ch50 "陆沉说" 22次 + 5章累计 67 次 = dialogue checker 81→若不主动多样化 Ch51 会再跌)
+    check_r28_55_patch2_mirror_fields(root, args.chapter, rep)  # H90 · Round 28.57 (Ch52 deep audit RCA): chapter_meta R28.55-patch2 mirror 字段必填 (external_review_effective_avg/outlier_models/raw_avg/audit_decision/aggregate_score)
 
     # P2 检查
     check_context_snapshot(root, args.chapter, rep)

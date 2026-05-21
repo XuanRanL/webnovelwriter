@@ -618,30 +618,106 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" styl
 
 **血教训**（Ch52 commit 1374f70）：Data Agent Step K 仅追加 3 个 default targets（伏笔追踪/资产变动表/主角卡），但 `pre_commit_step_k.py` 扩展白名单 还要求 `01-卷一承诺-兑现表.md / 02-损失与代价表.md / 11-反派压强表.md` 同步追加。Ch52 Step K 完成后，pre_commit_step_k 报 `STEP_K_EXTENDED_HIGH` 阻塞 commit（≥2 缺失 = high block · R28.50 升级），主流程手动补 3 文件才解锁。
 
-**永久规则**：data-agent Step K **完成后**，必须按 EXTENDED_TARGETS_OPTIONAL 清单同步追加：
+**永久规则**：data-agent Step K **完成后**，必须按 `EXTENDED_TARGETS` 清单同步追加。**实现要求**：必须用 Edit 工具直接追加 markdown 段，**禁止**使用未实现的 helper 函数（R28.57 修复：原 R28.56 文档伪代码 `append_section_to_file` / `infer_from_filename` 不存在，data-agent 真执行会 NameError）。
 
 ```python
-# data-agent Step K 末尾必跑
-EXTENDED_TARGETS = [
-    "设定集/01-卷一承诺-兑现表.md",  # 兑现追踪
-    "设定集/02-损失与代价表.md",      # 损失与代价
-    "设定集/11-反派压强表.md",        # 反派压强
-]
+# data-agent Step K 末尾必跑 · R28.57 explicit implementation
+EXTENDED_TARGETS = {
+    "设定集/01-卷一承诺-兑现表.md": "promise_payoff",   # 承诺兑现追踪
+    "设定集/02-损失与代价表.md": "loss_cost",            # 损失与代价
+    "设定集/11-反派压强表.md": "antagonist_pressure",    # 反派压强
+}
 
-for target in EXTENDED_TARGETS:
-    p = project_root / target
-    if not p.exists():
-        # 文件不存在 silent skip（项目未启用此扩展白名单）
-        continue
-    content = p.read_text(encoding='utf-8')
-    if f'[Ch{N}]' not in content:
-        # 自动追加章节段
-        append_section_to_file(p, chapter=N, content_type=infer_from_filename(target))
+# 章节段模板（按 content_type 分支选模板）：
+TEMPLATES = {
+    "promise_payoff": "## [Ch{N}] 兑现追踪 · {date}\n\n| 承诺源 | 兑现状态 | 触发场景 |\n|---|---|---|\n{rows}",
+    "loss_cost": "## [Ch{N}] 损失与代价 · {date}\n\n- **生机值**: {vital_force_before} → {vital_force_after}（{cost_description}）\n- **印记**: {imprint_state}\n- **沙漏**: {hourglass_state}\n- **时间代价**: {time_cost}\n- **物证负担**: {evidence_burden}\n- **关系代价**: {relationship_cost}\n",
+    "antagonist_pressure": "## [Ch{N}] 反派压强 · {date}\n\n| 反派 | 当前压强 | 行动锚 |\n|---|---|---|\n{rows}",
+}
+
+# data-agent Step K 末尾 Bash 中实际执行（用 Edit 工具或 Python pathlib）：
+# 1. for target_path, content_type in EXTENDED_TARGETS.items():
+# 2.    if not (project_root / target_path).exists(): continue  # silent skip
+# 3.    if f"[Ch{N}]" in (project_root / target_path).read_text(encoding='utf-8'): continue  # already有
+# 4.    # 用 chapter_meta + summary 数据填模板
+# 5.    section = TEMPLATES[content_type].format(N=N, date=today_iso, ...)
+# 6.    Edit 工具：在文件末尾追加 section（用 Edit's append 模式 / 或 Python p.open('a').write(section)）
 ```
 
-**自检**：pre_commit_step_k 已 hardcoded EXTENDED_TARGETS_OPTIONAL（pre_commit_step_k.py L48-52），R28.50 升级到 `STEP_K_EXTENDED_HIGH` 阻塞（≥2 缺失即阻塞 commit）。data-agent Step K 必须在 chapter_meta 写库 + 主流程 commit 之间完成此步，否则下游 pre_commit_step_k 强制阻塞。
+**实现样例（Ch52 实战，data-agent 应当生成等价代码）**：
+
+```python
+import pathlib, datetime
+project_root = pathlib.Path("...")
+N = 52
+today = datetime.date.today().isoformat()
+
+# 01-卷一承诺-兑现表 追加示例
+target = project_root / "设定集/01-卷一承诺-兑现表.md"
+if target.exists() and f"[Ch{N}]" not in target.read_text(encoding='utf-8'):
+    rows = "\n".join([
+        f"| F-CH{prev_n}-{fid} {desc} | {status} | Ch{N} {scene} |"
+        for fid in chapter_meta['foreshadowing_paid']
+    ])
+    section = f"\n\n## [Ch{N}] 兑现追踪 · {today}\n\n| 承诺源 | 兑现状态 | 触发场景 |\n|---|---|---|\n{rows}\n"
+    with target.open('a', encoding='utf-8') as f:
+        f.write(section)
+```
+
+**自检**：pre_commit_step_k 已 hardcoded EXTENDED_TARGETS_OPTIONAL（pre_commit_step_k.py L48-52），R28.50 升级到 `STEP_K_EXTENDED_HIGH` 阻塞（≥2 缺失即阻塞 commit）。data-agent Step K 必须在 chapter_meta 写库 + 主流程 commit 之间完成此步。
 
 **跨小说强适用**：所有项目共享此规则。即使本项目 .webnovel/step_k_config.json 只列 3 个 default，扩展白名单仍需检测。
+
+#### ⚠️ Round 28.57 · chapter_meta R28.55-patch2 字段必填硬规则（Ch52 复发根治）
+
+**血教训**（Ch52 deep audit · 跨产物对账 P0）：R28.55-patch2 commit 6161790 把 `external_review_effective_avg / external_review_outlier_models` 加入 chapter_meta 白名单，Ch51 已生效（effective=87.65, outliers=[gemini-3.1-pro]）。Ch52 **复发缺失**——data-agent 没把这俩字段从审查报告 frontmatter mirror 到 chapter_meta。后续 H68/H69 disk-state 对账失去 raw_avg/outlier 真源，A3 mandatory_review 追溯断链。
+
+**永久规则**：data-agent Step D（state/index 写入）必须从 `审查报告/第{NNNN}章审查报告.md` frontmatter 抽取以下字段并 mirror 到 `chapter_meta.{NNNN}`：
+
+```python
+REQUIRED_MIRROR_FIELDS = {
+    'external_review_effective_avg': float,   # 剔除 outlier 后均分
+    'external_review_outlier_models': list,   # outlier 模型 list（可空）
+    'external_review_raw_avg': float,         # 未剔除均分
+    'audit_decision': str,                    # approve / approve_with_warnings / block
+    'aggregate_score': int,                   # audit 七层聚合分
+    'anti_ai_force_check': str,               # pass / fail
+    'polish_log': list,                       # polish 历史（含 narrative_version+timestamp+notes）
+    'new_entities': list,                     # 本章首次登场实体（人物/地名/术语）
+    'unresolved_questions': list,             # 章末未解决问题
+    'emotion_rhythm': str,                    # 情感节奏文字描述
+    'hook_type': str,                         # hook_close primary_type
+    'pov_character': str,                     # 视角人物
+    'pov_mode': str,                          # 视角模式
+    'strand': str,                            # pacing-checker dominant strand
+    'strand_sub': str,                        # 子线类型
+    'mode': str,                              # writer 模式 standard/fast/minimal
+}
+```
+
+**抽取来源链**：
+1. 审查报告 frontmatter (overall_score / external_avg_effective / outlier_models)
+2. audit_reports/ch{NNNN}.json (decision / aggregate_score / quality_scores)
+3. polish_reports/ch{NNNN}.md (anti_ai_force_check / polish_log)
+4. context/ch{NNNN}_context.json (emotion_rhythm / pov_character / pov_mode)
+5. Step 3 review_metrics + Step 5 pacing-checker disk JSON
+
+**自检**：写库后必须 grep `chapter_meta.{NNNN}` 验证 16 个字段全在且非空 → 失败立即用 `set-chapter-meta-field` CLI 补。
+
+#### ⚠️ Round 28.57 · 新登场配角强制入 canon（Ch52 复发根治）
+
+**血教训**（Ch52 deep audit · canon SSOT P0）：陈守岱 / 罗振 / 陈林（陈医生）三新角色 Ch52 首次具名登场，但 **03-角色口径表.md 0 hits** + **CLAUDE.md voice canon 节 0 hits** + **08-连续性锁死表 缺**。下章 Ch53 苏瑾醒 + 陈守岱八点到，三人即将多次开口对话，voice 不锁会出现 context-agent 抓取偏差（Round 28.54 Ch50 周晓兰漏 voice 同款根因）。
+
+**永久规则**：data-agent 检测到 `summary.characters` 含**新名**（不在 03-角色口径表 / CLAUDE.md voice 节既有列表内）且 `dialogue_ratio > 0`（即新角色有对白）→ **强制**:
+
+1. 追加 `## [Ch{N}] 新登场配角 voice canon 补全` 段到 `设定集/03-角色口径表.md` 末尾，每个新角色含：称谓 / voice 口径 / 必带物 / 边界（✅/❌）/ 触发点
+2. 追加 voice 锁条目到 `CLAUDE.md` "## 角色 voice canon 锁" 节
+3. 追加角色行到 `设定集/08-连续性锁死表.md` 对应章节"人物锁死"节
+4. （若反派端）同步 `设定集/11-反派压强表.md`
+
+**自检**：写库后 grep 三文件 + CLAUDE.md，每个新名命中 ≥1 处。否则 audit Layer A 给 high warning，下章 reader-flow 风险拉高。
+
+**跨小说强适用**：所有项目共享此规则。新角色出场即刻 voice canon 锁，零延迟。
 
 #### ⚠️ Round 28.46 · Step K markdown header 格式硬规则（防 pre_commit_step_k 阻塞）
 

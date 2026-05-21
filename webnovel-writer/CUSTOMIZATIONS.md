@@ -5523,3 +5523,56 @@ Canon 真源。
 - 已 sync-cache（cache v5.6.0 同步 18 文件）
 - 已 sync-agents（工作区 .claude/agents 同步 15 文件）
 - Ch37+ 起草将受益于 5 项修复
+
+---
+
+## Round 28.55-patch2（2026-05-20）chapter_meta 白名单加 external_review_effective_avg + outlier_models
+
+**问题**：Ch51 deep audit 发现 chapter_meta.0051 缺 `external_review_effective_avg`（剔除 outlier 后均分）+ `external_review_outlier_models`（outlier 模型 list）。R28.55 仅 prose-level 加描述但 chapter_meta 真源未落字段，下游 H68/H69 disk-state 对账无 raw_avg / outlier 真源。
+
+**修复**：scripts/state_manager.py PROTECTED_FIELDS 白名单加这俩字段；data-agent.md 加抽取来源链；Ch51 chapter_meta 补 (effective=87.65, outliers=[gemini-3.1-pro])。
+
+**影响**：Ch51 单点修补，未做成 data-agent 真覆盖逻辑 → Ch52 复发（详见 R28.57）
+
+---
+
+## Round 28.56（2026-05-21）Ch52 audit-agent 落盘 + 跨产物根治
+
+**问题**：Ch50/51/52 三章连续 audit-agent 在 Task return 时 claim "已落盘 audit_reports/ch{NNNN}.json + editor_notes/ch{NNNN+1}_prep.md" 但实际文件未写。主流程被迫用 Python 手动重建 audit_report 才能通过 `audit check-decision`。重建过程往往退化 schema（缺 overall_decision / layers[*].checks[] / time_budget_seconds / mandatory_review_findings）。
+
+**修复**：
+1. agents/audit-agent.md 加 R28.56 6 道自检 (落盘存在性 + schema 强制 + decision matrix runtime + A3 mandatory_review_findings 结构化 + chapter_audit.jsonl tail 验证 + drift 反幻觉 measured.disk_value/grep_value)
+2. agents/data-agent.md 加 R28.56 Step K 扩展白名单同步规则 (01-卷一承诺/02-损失代价/11-反派压强 3 文件)
+3. scripts/hygiene_check.py H67 natural_phrase_prefixes 加 10 个介词 修 "按在金银花根上方" 分词误判
+
+**影响**：已 sync-cache + sync-agents。Ch53+ 起 audit-agent 落盘 + schema + matrix runtime 自检强制。但 R28.56 自身有 4 项漏 (详 R28.57)。
+
+---
+
+## Round 28.57（2026-05-21）Ch52 4 路 deep research 5 类新 P0 根治
+
+**问题来源**：Ch52 commit 后 4 路 deep research subagent 并发审查发现上一轮 audit 漏检 5 类新 P0：
+
+1. **chapter_meta R28.55-patch2 字段绕过**：Ch52 缺 external_review_effective_avg / outlier_models / audit_decision / aggregate_score 等 12 字段 (R28.55-patch2 是 Ch51 单点修补未做成 data-agent 真覆盖逻辑)
+2. **data-agent.md R28.56 伪代码**：`append_section_to_file` / `infer_from_filename` 不存在，data-agent 真执行会 NameError
+3. **audit-agent.md 自检 3 缺 medium in [1,4] 分支**：若 medium=3 且 high=0/critical=0 → 自检不抓 → 仍允许 decision='approve' 违反矩阵
+4. **新登场配角 canon SSOT 缺口**：陈守岱 / 罗振 / 陈林 三新角色 03-角色口径表 + CLAUDE.md voice canon + 08-连续性 全部 0 hits (Ch53 即开口 → context-agent voice 抓取偏差风险)
+5. **H67 介词 prefix 过广**：朝/往/顺/依 4 词命中"朝桃浦/往307/顺西郊/依山势"等真新地名 false negative 风险
+
+**修复**：
+1. agents/data-agent.md：伪代码改 explicit Python pathlib + Edit 工具样例 + R28.55-patch2 字段强制 mirror 协议 (REQUIRED_MIRROR_FIELDS 16 字段) + 新登场配角自动入 03-角色口径表/CLAUDE.md voice/08-连续性 协议
+2. agents/audit-agent.md：自检 3 补 medium in [1,4] 分支 + all-pass approve 兜底
+3. scripts/hygiene_check.py：
+   - 新增 H90 check_r28_55_patch2_mirror_fields：审查报告存在即 chapter_meta 必含 R28.55-patch2 5 字段
+   - H67 natural_phrase_prefixes 收紧 (移除朝/往/顺/依 4 词，保留在/按/到/于/至/靠 6 词)
+4. CUSTOMIZATIONS.md 补 R28.55-patch2 + R28.56 + R28.57 entry
+
+**单测**：tests/test_hygiene_h90_r28_57_mirror_fields.py 新增 (覆盖 6 case)
+
+**影响**：
+- Ch53+ 起 chapter_meta R28.55-patch2 字段缺失会被 H90 P1 警告
+- data-agent Step K 扩展白名单同步从伪代码改可执行模板
+- audit-agent 自检 3 medium 分支补漏
+- H67 false negative 减少
+
+**跨小说强适用**：5 类修复全跨项目，无需项目级别豁免。

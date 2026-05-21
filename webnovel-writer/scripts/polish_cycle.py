@@ -119,10 +119,19 @@ def detect_chapter_changed(project_root: Path, chapter_file: Path) -> tuple[bool
     return True, diff_lines
 
 
-def run_subprocess(cmd: list[str], cwd: Path) -> tuple[int, str]:
+def run_subprocess(cmd: list[str], cwd: Path, env: dict | None = None) -> tuple[int, str]:
     try:
+        # R28.57: 默认把 SCRIPTS_DIR 加进 PYTHONPATH，让本地 hygiene_check.py
+        # 能 import workflow_manager（项目本地 shim 缺这层依赖 → 之前 polish_cycle 跑挂）
+        full_env = os.environ.copy()
+        sd = str(Path(__file__).resolve().parent)
+        existing = full_env.get("PYTHONPATH", "")
+        if sd not in existing.split(os.pathsep):
+            full_env["PYTHONPATH"] = sd + (os.pathsep + existing if existing else "")
+        if env:
+            full_env.update(env)
         out = subprocess.run(
-            cmd, cwd=cwd, capture_output=True, timeout=120
+            cmd, cwd=cwd, capture_output=True, timeout=120, env=full_env
         )
         text = out.stdout.decode("utf-8", errors="replace") + out.stderr.decode(
             "utf-8", errors="replace"
