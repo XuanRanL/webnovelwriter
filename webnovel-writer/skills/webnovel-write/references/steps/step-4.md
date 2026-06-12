@@ -5,6 +5,19 @@
 
 ### Step 4：润色（问题修复优先）
 
+> **🔴 Round 29 Phase 7 · 标准模式默认 Task(polish-agent) 执行修复**
+>
+> 主流程到 Step 4 时上下文拥挤是 polish "凭印象造设定"副作用的结构性诱因（R28.36/28.46/28.15）。
+> 标准模式默认派发子代理，主流程只做三件事：
+> 1. 汇总 Step 3+3.5 的 critical/high issues 清单；
+> 2. **预先 canon-grep**：对 issues 涉及的有名角色/物件/地点，grep 设定集锁定口径，汇成
+>    `canon_anchors` 摘录（agent 禁止发明摘录之外的事实）；
+> 3. `Task(polish-agent, {chapter, chapter_file, issues, canon_anchors, reading_line_priority, word_count_policy})`，
+>    等待返回后用其 `fixes/anti_ai_force_check/polish_report` 填 Step 4 artifact，再发起 Step 4.5 盲评复测。
+>
+> `--fast` / `--minimal` 允许主流程内联修复（仍守本文件全部规则）。polish-agent 不可用
+> （Task fallback 检测）时退回内联并在 deviation 记录。
+
 > **🔴 Round 28.46 · polish 新增有名角色行为 / 物件位置前必 grep（防 R28.36 v5 + R28.46 同源根因）**
 >
 > 在 polish 修复涉及到新增"角色 X 在 Y 地点 / 与 Z 交互"或"物件 X 在桌上 / 兜里 / 手上"等段落前，**必须**先 grep Canon + 同章正文确认：

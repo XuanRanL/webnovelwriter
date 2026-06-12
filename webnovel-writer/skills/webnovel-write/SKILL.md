@@ -172,7 +172,7 @@ cat "${SKILL_ROOT}/references/steps/step-3.5.md"
 cat "${SKILL_ROOT}/references/steps/step-4.md"
 ```
 
-要点：修复顺序 critical（必须）→ high（修复或 deviation）→ medium/low（**默认不修**，登记"放弃修复"即可 · R29）；polish 新增有名角色行为/物件位置前必 canon-grep；字数预算（净增 ≤200 · 不破 hard_max）；产出润色后正文 + 润色报告（`polish_reports/` 落盘，含 `anti_ai_force_check`，fail 不得进入 Step 5）。Step 4.5 复测触发档（<75 强制 / <80 近线 / 下滑 ≥5 / HIGH-issue 全面），**盲评复测**不传 prev_score（R29 去锚定）；复测组合调用后必须最后重设 `overall_score = combined`。
+要点：标准模式默认 `Task(polish-agent)` 干净上下文执行修复（主流程负责 issues 汇总 + 预先 canon-grep 出 `canon_anchors` · R29 P7）；修复顺序 critical（必须）→ high（修复或 deviation）→ medium/low（**默认不修** · R29）；字数预算（净增 ≤200 · 不破 hard_max）；产出润色后正文 + 润色报告（`polish_reports/` 落盘，含 `anti_ai_force_check`，fail 不得进入 Step 5）。Step 4.5 复测触发档（<75 强制 / <80 近线 / 下滑 ≥5 / HIGH-issue 全面），**盲评复测**不传 prev_score（R29 去锚定）；复测组合调用后必须最后重设 `overall_score = combined`。
 
 ### Step 5：Data Agent（状态与索引回写）
 

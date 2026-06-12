@@ -7,6 +7,21 @@
 
 ---
 
+## [Round 29 · Phase 7] polish 子代理化：干净上下文执行修复
+
+### 背景
+polish 副作用（凭印象造设定 R28.36 传染 12 处 / R28.46 canon 冲突 / R28.15 三章副作用）全部发生在主流程上下文拥挤状态下。
+
+### 改动
+1. **`agents/polish-agent.md` 新 subagent**：输入只有 issues 清单（critical/high）+ 主流程预先 canon-grep 的 `canon_anchors` 摘录 + 字数预算 + reading_line_priority。硬约束：禁止发明 canon_anchors 之外的事实（需要新事实写 deviation 交主流程裁决）、最小修复面、只动本章正文 + 润色报告；复测不由本 agent 执行（防自评偏差）。
+2. **steps/step-4.md + 骨架**：标准模式默认 Task(polish-agent)，主流程负责 issues 汇总 + canon-grep + artifact 回填 + Step 4.5 盲评复测；--fast/--minimal 可内联；fallback 检测退回内联。
+3. workflow_manager `expected_step_owner` 的 "Step 4"→"polish-agent" 标签由概念变为真实 agent（无代码改动）。
+
+### 注意
+新 agent → sync-agents + 重启 session 生效。polish-guide.md 51KB 分册化推迟到 P3/P5 session 一并做。
+
+---
+
 ## [Round 29 · Phase 4] audit 决议代码化：agent 只产 findings，决议与落盘由 finalize CLI 兑现
 
 ### 背景
