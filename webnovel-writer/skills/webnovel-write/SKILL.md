@@ -6,6 +6,9 @@ allowed-tools: Read Write Edit Grep Bash Task
 
 # Chapter Writing (Structured Workflow)
 
+> Round 29 Phase 2：本文件为骨架（目标 / 模式 / 跨步硬约束 / 闸门清单）。每个 Step 的完整执行协议
+> 已拆分到 `references/steps/step-N.md`，**进入该步时必须先 `cat` 对应文件全文再执行**。
+
 ## 目标
 
 - 以稳定流程产出可发布章节：优先使用 `正文/第{NNNN}章-{title_safe}.md`，无标题时回退 `正文/第{NNNN}章.md`。
@@ -22,7 +25,7 @@ allowed-tools: Read Write Edit Grep Bash Task
   - **禁止伪造区间**：禁止在 editor_notes / context JSON / 审查报告写 2900-3800 / 2700-3300 / 2400-3300 等自造区间（硬 min/max 之外的数字）· 禁止引用不存在的 state 字段名（如 `target_words_per_chapter_target`）
   - **冲突解决**：editor_notes（audit-agent 写）与 state.json SSOT 冲突时**以 state.json 为准**，context-agent 静默覆盖并在执行包 `warnings[]` 追加 `EDITOR_NOTES_WORD_COUNT_DRIFT`
   - **硬闸门**：post_draft_check.py 第 8 项 warn 扫描 editor_notes/context 字数漂移；audit-agent.md §8 block 凭印象自造区间
-- 保证审查、润色、数据回写完整闭环，避免“写完即丢上下文”。
+- 保证审查、润色、数据回写完整闭环，避免"写完即丢上下文"。
 - 输出直接可被后续章节消费的结构化数据：`review_metrics`、`summaries`、`chapter_meta`。
 
 ## 执行原则
@@ -32,12 +35,13 @@ allowed-tools: Read Write Edit Grep Bash Task
 3. 参考资料严格按步骤按需加载，不一次性灌入全部文档。
 4. Step 2B 与 Step 4 职责分离：2B 只做风格转译，4 只做问题修复与质控。
 5. 任一步失败优先做最小回滚，不重跑全流程。
+6. **每个 Step 开始时必须先 `cat "${SKILL_ROOT}/references/steps/step-N.md"` 全文**（Round 29 拆分）；未加载该文件不得执行该步任何动作。
 
 ## 模式定义
 
 - `/webnovel-write`：Step 0 → 0.5 → 1 → 2A → 2B → 3+3.5(并行) → 4 → 5 → 6 → 7
 - `/webnovel-write --fast`：Step 0 → 0.5 → 1 → 2A → 3+3.5(并行) → 4 → 5 → 6 → 7（跳过 2B）
-- `/webnovel-write --minimal`：Step 0 → 0.5 → 1 → 2A → 3（仅3个基础审查，跳过3.5）→ 4 → 5 → 6 → 7
+- `/webnovel-write --minimal`：Step 0 → 0.5 → 1 → 2A → 3（仅5个基础审查，跳过3.5）→ 4 → 5 → 6 → 7
 
 最小产物（所有模式）：
 - `正文/第{NNNN}章-{title_safe}.md` 或 `正文/第{NNNN}章.md`
@@ -48,31 +52,26 @@ allowed-tools: Read Write Edit Grep Bash Task
 ### 流程硬约束（禁止事项）
 
 - **禁止并步**：不得将两个 Step 合并为一个动作执行（如同时做 2A 和 3）。**唯一例外**：Step 2A 可被 context-agent 在 Step 1 尾部内联调度（详见 `workflow_manager.py` 的 `OPTIONAL_PRECEDING_STEPS`），但即使内联执行也必须显式 `workflow start-step --step-id "Step 2A"` 和 `complete-step`，让工作流登记完整。
-- **禁止跳步**：不得跳过未被模式定义标记为可跳过的 Step。即使批量写多章、赶进度、上下文紧张，也必须每章完整执行所有 Step。任何“先写完再补审”、“跳过 Context Agent 直接起草”、“只跑外部审查不跑内部审查”的行为均视为违规。
-- **禁止赶进度降级**：批量写作多章时，每一章都必须独立走完完整流程（Step 0→1→2A→2B→3→3.5→4→5→6→7）。不得因为“后面还有很多章”而简化任何一章的流程。质量优先于速度，这是不可协商的硬规则。
+- **禁止跳步**：不得跳过未被模式定义标记为可跳过的 Step。即使批量写多章、赶进度、上下文紧张，也必须每章完整执行所有 Step。任何"先写完再补审"、"跳过 Context Agent 直接起草"、"只跑外部审查不跑内部审查"的行为均视为违规。
+- **禁止赶进度降级**：批量写作多章时，每一章都必须独立走完完整流程（Step 0→1→2A→2B→3→3.5→4→5→6→7）。不得因为"后面还有很多章"而简化任何一章的流程。质量优先于速度，这是不可协商的硬规则。
 - **禁止省略审查报告**：Step 3 完成后必须生成审查报告文件（`审查报告/第{NNNN}章审查报告.md`），包含所有审查器的结果汇总。不得只在内存中汇总分数而不写文件。
-- **审查报告模板规范 (Round 28.27 加入 · 防 B4 regex 冲突)**：
-  - `overall_score: X` 字段**必须唯一出现在 frontmatter 顶头**（首条 `> overall_score: X`）
-  - 其他位置的 score（如 reader-thrill）**必须**用别名（`综合分` / `thrill_score` / `sub_score`）而非 `overall_score`，否则 B4 regex 抓到第二条命中导致 audit B4 high fail（：thrill section `- overall_score: 55` 触发，应改为 `- 综合分: 55`）
-  - 各 checker 行**禁止共用同一 token ≥3 次**（如多个 `(未复测)`），否则 audit A2 检测为 checker 坍缩 critical fail（：5+ checker 共用"未复测"误判）
-  - 外部模型矩阵中每个 score**必须用 disk JSON `overall_score` 字段真值**，而非 stdout 早期值或自己估的值（：minimax-m2.7-hs 写 73.2 实际 disk 88.5，差 15.3）
+- **审查报告模板规范 (Round 28.27)**：`overall_score: X` 唯一出现在 frontmatter 顶头；其他位置分数用别名（`综合分`/`thrill_score`/`sub_score`）；各 checker 行禁共用同一 token ≥3 次；外部模型分数必须用 disk JSON 真值。细则见 `references/steps/step-3.md`。
 - **禁止临时改名**：不得将 Step 的输出产物改写为非标准文件名或格式。
-- **禁止自创模式**：`--fast` / `--minimal` 只允许按上方定义裁剪步骤，不允许自创混合模式、“半步”或“简化版”。
+- **禁止自创模式**：`--fast` / `--minimal` 只允许按上方定义裁剪步骤，不允许自创混合模式、"半步"或"简化版"。
 - **禁止自审替代**：Step 3 审查必须由 Task 子代理执行，主流程不得内联伪造审查结论。
-- **禁止主观估分**：`overall_score` 必须来自审查子代理的聚合结果，不得因为“子代理还没返回”而自行估算分数。
+- **禁止主观估分**：`overall_score` 必须来自审查子代理的聚合结果，不得因为"子代理还没返回"而自行估算分数。
 - **禁止源码探测**：脚本调用方式以本文档与 data-agent 文档中的命令示例为准，命令失败时查日志定位问题，不去翻源码学习调用方式。
 - **禁止裸跑 polish commit**：Step 7 commit 之后任何对正文文件（`正文/第NNNN章*.md`）的修改，**必须**通过 `polish_cycle.py`（Step 8）完成，**严禁**直接 `git add . && git commit -m "polish"` 或 `git commit --amend`。裸跑会绕过 `post_draft_check`/`hygiene_check`，让 ASCII 引号、word_count 漂移、checker 数据滞留，并且 polish 任务在 `workflow_state.json` 不留痕。
-
-- **禁止三连排比金句 / 诗化对偶金句 (Round 28.30 加入 · 防 reader-critic 79 三连金句 critical 重发)**：起草宣告/独白/认知里程碑场面时，单章 ABAB 三连排比 ≥1 组（如"一棵一棵种。一户一户教。一年一年做。"）或诗化对偶金句 ≥3 处（如"到头来不是X是Y"/"不是X，是Y"），post_draft_check H15 AI_SLOGAN 闸门 warn 1 / block 2 阻断。Ch43 实测 reader-critic / ooc / dialogue / flow / density / prose 6 checker 共识 critical/high。**修法**：宣告完整落字一次即可，**不要反复回响 / 不要排比 / 不要诗化收束**；对偶宣言保留核心 1-2 句，排比四联缩二联或单句，金句去承接词。
-- **禁止 META_DRIFT 阻塞 commit (Round 28.30 自动根治)**：Step 4/6 polish 修复后只改 word_count/score 不改 updated_at → 正文 mtime > chapter_meta.updated_at + 300s → pre_commit_step_k.py META_DRIFT 阻塞 commit。**根治**：state_manager.py 已加 auto-touch updated_at（任何非 updated_at 字段修改后自动同步），无需手动 set-chapter-meta-field updated_at。
-- **禁止 A2 false positive 误判 (Round 28.30 audit 启发式扩展)**：5+ 未复测 checker 行共享"未复测/PASS/unchanged"等状态文案 → audit A2 启发式判 ≥3 token 重复 → critical fallback 警报。**根治**：chapter_audit._normalize_checker_snippet 已扩展 12 类状态词排除（未复测/未跑/不变/PASS_WITH_NOTE/REVISION_RECOMMENDED 等）。**写报告硬规则**：不复测 checker 行用"-"或留空，禁止用 "(未复测)" 标签。
+- **禁止三连排比金句 / 诗化对偶金句 (Round 28.30 · post_draft H15 AI_SLOGAN warn 1 / block 2)**：单章 ABAB 三连排比 ≥1 组或诗化对偶金句 ≥3 处即触发。修法细则见 `references/steps/step-2a.md`。
+- **META_DRIFT 自动根治 (Round 28.30)**：state_manager 已 auto-touch updated_at，无需手动同步；背景见 `references/steps/step-7.md`。
+- **A2 未复测标签禁用 (Round 28.30)**：不复测 checker 行用"-"或留空，禁止 "(未复测)" 标签；细则见 `references/steps/step-3.md`。
 
 ### 章节间闸门（Chapter Gate）
 
 在开始下一章的任何步骤（包括 Step 0）之前，必须验证当前章的以下条件全部满足：
 
 1. Step 3 的内部 checker 全部返回并汇总出 overall_score。**术语固定**（见 `feedback_checker_count_13`）：`checker` = 跑的 subagent 数量 = 评分维度数量（**Round 13 v2 取消 veto 架构**，全部 checker 平等参与评分）。标准/`--fast` = **13 checker / 13 评分维度**（2 读者视角维度：naturalness + reader-critic，11 工艺维度含 flow-checker）。`--minimal` = **5 checker**（naturalness + reader-critic + consistency + continuity + ooc）。`overall_score = avg(所有评分维度)`。**两个读者视角 checker 不 block 流程**，其 problems 和其他 checker 同等进入 Step 4 定向修复。极端情况（Step 4 修复后 critical 仍未消除）才回 Step 2A 重写。
-2. Step 3.5 的 15 个外部模型审查已完成；健康线为 ≥10/15 有效，8-9/15 degraded_ok，5-7/15 degraded_warn，<5/15 critical。每个模型审查 **13 个维度**（10 工艺维度 + reader_flow + naturalness + reader_critic）；Round 21.4 默认每模型一次 combined 请求返回 13 维，失败才 split fallback（`--minimal` 模式跳过此条件）
+2. Step 3.5 的 15 模型外部审查已完成；健康线为 ≥10/15 有效，8-9/15 degraded_ok，5-7/15 degraded_warn，<5/15 critical。每个模型审查 **13 个维度**（10 工艺维度 + reader_flow + naturalness + reader_critic）；Round 21.4 默认每模型一次 combined 请求返回 13 维，失败才 split fallback（`--minimal` 模式跳过此条件）
 3. 所有 critical 问题已修复，high 问题已修复或有 deviation 记录
 4. 审查报告 .md 文件已生成（标准/`--fast` 模式含内部 13 评分维度分数 + 外部 15 模型×13 维度评分矩阵；`--minimal` 模式仅含内部 5 评分维度分数）
 5. Step 4 的 `anti_ai_force_check=pass`
@@ -98,100 +97,18 @@ git log --oneline -1 | grep "第${chapter_num}章"
 ## 引用加载等级（strict, lazy）
 
 - L0：未进入对应步骤前，不加载任何参考文件。
-- L1：每步仅加载该步“必读”文件。
-- L2：仅在触发条件满足时加载“条件必读/可选”文件。
+- L1：每步仅加载该步"必读"文件——首先是 `references/steps/step-N.md`，其内列明该步其余必读。
+- L2：仅在触发条件满足时加载"条件必读/可选"文件（触发条件清单见 `references/reference-index.md`）。
 
 路径约定：
 - `references/...` 相对当前 skill 目录。
 - `../../references/...` 指向全局共享参考。
 
-## References（逐文件引用清单）
+## References（索引）
 
-### 根目录
-
-- `references/step-3-review-gate.md`
-  - 用途：Step 3 审查调用模板、汇总格式、落库 JSON 规范。
-  - 触发：Step 3 必读。
-- `references/step-3.5-external-review.md`
-  - 用途：Step 3.5 外部模型审查完整规范（15模型架构 · Round 25/供应商 fallback 链/Prompt模板/输出JSON Schema/路由验证/审查报告模板）。
-  - 触发：Step 3.5 必读。
-- `references/step-5-debt-switch.md`
-  - 用途：Step 5 债务利息开关规则（默认关闭）。
-  - 触发：Step 5 必读。
-- `references/step-6-audit-gate.md`
-  - 用途：Step 6 审计闸门调用模板、执行时序、决议逻辑、产物约定、失败恢复路径。
-  - 触发：Step 6 必读（主流程 + audit-agent 共同消费）。
-- `references/step-6-audit-matrix.md`
-  - 用途：Step 6 七层审计矩阵（A 过程真实性 / B 跨产物一致性 / C 读者体验 / D 作品连续性 / E 创作工艺 / F 题材兑现 / G 跨章趋势），约 70 个检查项。
-  - 触发：Step 6 必读（audit-agent 执行时加载）。
-- `../../references/shared/core-constraints.md`
-  - 用途：Step 2A 写作硬约束（大纲即法律 / 设定即物理 / 发明需识别）。
-  - 触发：Step 2A 必读。
-- `references/polish-guide.md`
-  - 用途：Step 4 问题修复、Anti-AI 与 No-Poison 规则。
-  - 触发：Step 4 必读。
-- `references/no-meta-leak.md`
-  - 用途：正文严禁创作术语 / 元叙述泄漏（28 类禁止词全表 + 11 个修复模板 + self-check 清单）。
-  - 触发：Step 2A 起草前必读 + Step 4 polish 必检 + 任何项目都适用（本插件所有项目）。
-  - hygiene H40 P0 闸门自动检测（commit 前阻断）。
-- `references/writing/typesetting.md`
-  - 用途：Step 4 移动端阅读排版与发布前速查。
-  - 触发：Step 4 必读。
-- `references/style-adapter.md`
-  - 用途：Step 2B 风格转译规则，不改剧情事实。
-  - 触发：Step 2B 执行时必读（`--fast`/`--minimal` 跳过）。
-- `references/anti-ai-guide.md`
-  - 用途：Step 2A 起草前 AI 倾向预防（8 倾向 + 5 即时检查 + 替代速查表 + 本作 N1-N5 根因映射）。
-  - 触发：Step 2A 执行时必读（与 core-constraints.md 并列加载）。
-- `references/first-chapter-hook-rubric.md`
-  - 用途：Ch1 专属“读者 3 秒决定追读”硬规则，叠加 Round 10 既有 9 项严格规则
-  - 触发：chapter == 1 时由 reader-pull-checker 加载并强制走；chapter ∈ (2,3) 跨章衔接弱检查
-- `references/visual-concreteness-rubric.md`
-  - 用途：Step 2A 起草时即时遵守 + Step 3 prose-quality-checker 评分硬卡
-  - 触发：永久加载（与 anti-ai-guide.md 并列）
-- `references/chapter-end-hook-taxonomy.md`
-  - 用途：reader-pull-checker 必读 + data-agent Step K 必读
-  - 触发：永久加载（每章 Step 3 reader-pull-checker 评分 + Step 5 data-agent 落库）
-- `references/style-variants.md`
-  - 用途：Step 1（内置 Contract）开头/钩子/节奏变体与重复风险控制。
-  - 触发：Step 1 当需要做差异化设计时加载。
-- `../../references/reading-power-taxonomy.md`
-  - 用途：Step 1（内置 Contract）钩子、爽点、微兑现 taxonomy。
-  - 触发：Step 1 当需要追读力设计时加载。
-- `../../references/genre-profiles.md`
-  - 用途：Step 1（内置 Contract）按题材配置节奏阈值与钩子偏好。
-  - 触发：Step 1 当 `state.project.genre` 已知时加载。
-- `references/writing/genre-hook-payoff-library.md`
-  - 用途：电竞/直播文/克苏鲁的钩子与微兑现快速库。
-  - 触发：Step 1 题材命中 `esports/livestream/cosmic-horror` 时必读。
-- `references/post-commit-polish.md`
-  - 用途：Step 8（Post-Commit Polish）完整规范：触发场景、polish_cycle.py 用法、多轮 polish、跨章影响、审计兼容性、恢复策略。
-  - 触发：Step 7 commit 之后任何修改正文前必读。
-- `references/gate-matrix.md`
-  - 用途：充分性闸门 vs hygiene_check H* 项的一一对应表 + 多层防御设计 + 同步维护规则。
-  - 触发：新增/修改/删除任一闸门前必读；调试闸门打架时必读。
-- `references/round20-quality-floor.md`
-  - 用途：Round 20.x 累积的 5 道质量护栏完整规范（A9 dimension floor / reader-thrill 6 子维度 / H26 hook_close 落库一致性 / H27 sunk cost 警报 / polish_cycle max-rounds + deviation 出口）。
-  - 触发：所有项目通用必读；Step 3+3.5 → Step 4 → Step 6 → Step 8 链路涉及评分判定/polish 决策/hygiene 检查时必读。
-- `references/outline-release-plans-template.md`
-  - 用途：所有新书 `大纲/总纲.md` 必含的三计划 schema：`golden_finger_release_plan` / `conflict_release_plan` / `title_promise_payoff_plan`。
-  - 触发：`/webnovel-init` 创建新书时 + Step 1 context-agent 读取三计划生成执行包硬约束 + reader-thrill-checker 比对兑现度。
-
-### writing（问题定向加读）
-
-- `references/writing/combat-scenes.md`
-  - 触发：战斗章或审查命中“战斗可读性/镜头混乱”。
-- `references/writing/dialogue-writing.md`
-  - 触发：审查命中 OOC、对话说明书化、对白辨识差。
-- `references/writing/emotion-psychology.md`
-  - 触发：情绪转折生硬、动机断层、共情弱。
-- `references/writing/scene-description.md`
-  - 触发：场景空泛、空间方位不清、切场突兀。
-- `references/writing/desire-description.md`
-  - 触发：主角目标弱、欲望驱动力不足。
-- `references/writing/classical-references.md`
-  - 用途：典故/诗词/史料/原创口诀/互联网梗的融入技巧、密度控制、“典故即伏笔”技法、项目设定集模板。
-  - 触发：Step 1 设计引用方案时 / 审查命中“引用生硬/炫学/出处错误” / Step 4 修复引用问题。
+- **每步执行协议（L1 必读）**：`references/steps/step-0.md`（含 Step 0.5 + 搜索规则）/ `step-1.md` / `step-2a.md` / `step-2b.md` / `step-3.md` / `step-3.5.md` / `step-4.md`（含 4.5）/ `step-5.md` / `step-6.md` / `step-7.md`（含 Step 8）
+- **逐文件引用索引（L2 触发条件）**：`references/reference-index.md`
+- **充分性闸门 vs hygiene H* 对应表**：`references/gate-matrix.md`（新增/修改/删除任一闸门前必读）
 
 ## 工具策略（按需）
 
@@ -201,1252 +118,93 @@ git log --oneline -1 | grep "第${chapter_num}章"
 
 ## 交互流程
 
-### Step 0：预检与上下文最小加载
-
-必须做：
-- 解析真实书项目根（book project_root）：必须包含 `.webnovel/state.json`。
-- 校验核心输入：`大纲/总纲.md`、`${CLAUDE_PLUGIN_ROOT}/scripts/extract_chapter_context.py` 存在。
-- 规范化变量：
-  - `WORKSPACE_ROOT`：Claude Code 打开的工作区根目录（可能是书项目的父目录，例如 `D:\wk\xiaoshuo`）
-  - `PROJECT_ROOT`：真实书项目根目录（必须包含 `.webnovel/state.json`，例如 `D:\wk\xiaoshuo\凡人资本论`）
-  - `SKILL_ROOT`：skill 所在目录（固定 `${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write`）
-  - `SCRIPTS_DIR`：脚本目录（固定 `${CLAUDE_PLUGIN_ROOT}/scripts`）
-  - `chapter_num`：当前章号（整数）
-  - `chapter_padded`：四位章号（如 `0007`）
-
-环境设置（bash 命令执行前）：
-```bash
-# Round 15.2 ()：CLAUDE_PLUGIN_ROOT 在某些 shell（如 Git Bash）不会被自动 export。
-# AI 应先用下面这段自动推导 fallback 代替 `:?CLAUDE_PLUGIN_ROOT is required` 硬失败。
-# 根因：Ch5 Step 0 preflight 在 bash 里直接报 "CLAUDE_PLUGIN_ROOT: CLAUDE_PLUGIN_ROOT is required"，
-#      AI 需要手工 export 才能继续。Round 15.2 加入这套 fallback 解析后，Ch6+ 可免手工导出。
-if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-  # 从 PATH 里的 plugin bin 目录反推（claude-code 启动时会把 {PLUGIN_ROOT}/bin 加到 PATH）
-  _pg=$(echo "$PATH" | tr ':' '\n' | grep -i "plugins/cache/webnovel-writer.*/bin$" | head -1)
-  if [ -n "$_pg" ]; then export CLAUDE_PLUGIN_ROOT="${_pg%/bin}"; fi
-  # 如果上面没找到，再用常见位置兜底（按优先级）
-  for _cand in \
-    "$HOME/.claude/plugins/cache/webnovel-writer-marketplace/webnovel-writer/5.6.0" \
-    "C:/Users/$USERNAME/.claude/plugins/cache/webnovel-writer-marketplace/webnovel-writer/5.6.0"; do
-    [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "$_cand/scripts" ] && export CLAUDE_PLUGIN_ROOT="$_cand"
-  done
-fi
-if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
-  echo "ERROR: CLAUDE_PLUGIN_ROOT 未能自动推导，请手动 export 后重试" >&2
-  exit 1
-fi
-
-export WORKSPACE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-export SCRIPTS_DIR="${CLAUDE_PLUGIN_ROOT}/scripts"
-export SKILL_ROOT="${CLAUDE_PLUGIN_ROOT}/skills/webnovel-write"
-
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" preflight
-export PROJECT_ROOT="$(python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${WORKSPACE_ROOT}" where)"
-```
-
-**硬门槛**：`preflight` 必须成功。它统一校验 `CLAUDE_PLUGIN_ROOT` 派生出的 `SKILL_ROOT` / `SCRIPTS_DIR`、`webnovel.py`、`extract_chapter_context.py` 和解析出的 `PROJECT_ROOT`。任一失败都立即阻断。
-
-**plugin 同步闸门**（preflight 两个非阻断警告，必须在 Step 1 前全部清零）：
-
-Claude Code 的 plugin 系统是**三层缓存架构**：
-```
-fork (你改代码的地方) → marketplace mirror (~/.claude/plugins/marketplaces/...) → cache (~/.claude/plugins/cache/...)
-```
-AI 运行时通过 `CLAUDE_PLUGIN_ROOT` 从 **cache** 加载脚本和 subagent 定义，**不从 fork 读取**。fork 修改后 cache 不会自动同步——这是 Ch6 flow-checker 空跑的根因（fork 已含 flow-checker，但 cache 是旧版）。
-
-### warning 1: `ERROR agents_sync`
-
-说明 plugin `agents/` 新增/修改的 subagent 未同步到**工作区** `.claude/agents/`（工作区 fallback 层，独立于 cache）。Task(subagent) 会静默 fallback 到 general-purpose，导致 checker 空跑（：flow-checker 加入后未同步到工作区，Step 3 Batch 2 只实际跑了 5 个而非 6 个，审查报告里写“内部 10 维度”其实应该是 11）。
-
-一键修复：
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" sync-agents
-```
-
-### warning 2: `ERROR cache_sync`
-
-说明 fork 内容与 plugin cache 不一致（通常因为 `git pull` 后没同步）。**直接后果：AI 跑的是 cache 的旧代码**，fork 的 bug fix / 新 checker / 新维度都不生效。例证：
-
--c511802 commit 在 fork 加入 reader_flow，但 cache 没同步 → Ch6 外部审查只跑 10 维度（应 11）
--某次修复把 chapter_audit.py 中文注释写坏，cache 同步了 37 行 `??????` → 后续审计 evidence 全乱码
-
-**注意：`sync-cache` 必须从 fork 跑，不能从 cache 跑**（：从 cache 跑会自反拷贝 + 无法找到 fork）。生产里 AI 会通过 `CLAUDE_PLUGIN_ROOT`（= cache 路径）跑 `webnovel.py`，所以：
-
-一键修复（**必须 cd 到 fork 目录跑，不是从 cache 跑**）：
-```bash
-# 从 fork 目录跑（替换为你的 fork 路径）：
-cd /path/to/fork/webnovel-writer
-python -X utf8 scripts/webnovel.py sync-cache
-```
-
-该命令：
-1. 把 fork 所有文件复制到 `~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/`，按 bytes diff 只更新变化文件
-2. 清理 cache 里的 `.pyc`（防止 stale bytecode shadow 新 `.py`）
-3. 写入 `~/.claude/plugins/webnovel-fork-registry.json`，登记 fork 路径，让后续 preflight（从 cache 跑）也能检测到漂移
-
-**`preflight` 的 cache_sync 检查**：
-- 从 fork 跑：直接 fork↔cache 漂移对比，有漂移 → ERROR
-- 从 cache 跑（生产路径）：先通过 `WEBNOVEL_FORK_PATH` env var 或 fork-registry 找 fork；找到则对比；找不到则输出 NOTE “fork 未登记，跳过”（不阻断，但提示修复）
-- **从 fork 跑过一次 sync-cache 后，registry 自动建立，后续从 cache 跑也能查漂移**
-
-### 硬规则
-
-**任何 `ERROR agents_sync` / `ERROR cache_sync` / `ERROR polish_drift` 必须在 Step 1 前清零**。不得“跳过 warning 开始写章”，因为：
-- agents_sync 漂移 → Task checker 空跑（你看不见 fallback，章节走完了才发现审查报告维度少了）
-- cache_sync 漂移 → 所有 fix / 新功能不生效（你 commit 了但 AI 跑的是老代码）
-- **polish_drift P0 漂移**→ 上一章正文已手动改但未走 polish_cycle，直接进入下章会污染上下文。修法：对每个 drifted 章节运行 `polish_cycle.py <N> --reason '补录裸跑 commit' --narrative-version-bump`；若是 WIP（未完成）改动则 `git stash` 暂存
-
-**触发 sync-cache 的时机**（硬约束）：
-1. 每次 `git pull` 或 `git checkout` 切换 fork 分支后
-2. 每次你修改 plugin 源码文件（`webnovel-writer/scripts/*.py` / `agents/*.md` / `skills/*.md` / `references/*.md`）后
-3. 每次使用 Claude Code 开始新 session 时（preflight 会提示）
-
-**预检一次通过模板**（推荐放 Step 0 起始）：
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" preflight
-# 若看到 ERROR agents_sync：
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" sync-agents
-# 若看到 ERROR cache_sync（注意：SKILL 里的 SCRIPTS_DIR 指向 cache，sync-cache 从 cache 跑会失败，
-# 必须 cd 到 fork 再跑）：
-#   cd /path/to/fork/webnovel-writer
-#   python scripts/webnovel.py sync-cache
-# 若看到 NOTE "invoked_from_cache 且 fork 未登记"：
-#   说明从 cache 跑 preflight 时找不到 fork。从 fork 跑一次 sync-cache 即自动登记 registry。
-# 然后重跑 preflight 确认全 OK
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" preflight
-```
-
-**可选：安装 git pre-commit hook**：
+### Step 0 + 0.5：预检与工作流登记
 
 ```bash
-# 一次性安装（幂等，重跑无副作用）
-python -X utf8 "${SCRIPTS_DIR}/install_git_hooks.py" --project-root "${PROJECT_ROOT}"
-
-# 或卸载（仅恢复到 webnovel hook 安装前的状态）
-python -X utf8 "${SCRIPTS_DIR}/install_git_hooks.py" --project-root "${PROJECT_ROOT}" --uninstall
+cat "${SKILL_ROOT}/references/steps/step-0.md"
 ```
 
-安装后效果：任何 `git commit` 带 staged 章节文件但 message 不符合 `第N章 v{X}: ... [polish:...]`（polish_cycle 产出）或 `第N章: {title}`（Step 7 产出）格式时，pre-commit 会阻断并打印修复提示。可用 `git commit --no-verify` 主动绕过（但会被下次 preflight 的 polish_drift 检查到）。
+要点：`preflight` 必须成功（CLAUDE_PLUGIN_ROOT fallback 推导见 step-0.md）；`agents_sync` / `cache_sync` / `polish_drift` 任何 ERROR 必须在 Step 1 前清零；`workflow start-task` 必须成功。Step 登记三件套（start-step → 工作 → complete-step 带语义 artifact）贯穿全流程，strict 默认开启（无 start-step 的 complete-step 直接被拒）；shell 类步骤优先用 `workflow run-step` 原子包装。搜索统一走 `tavily_search.py`（禁 MCP 工具），失败必须停下报告用户。
 
-**非强制安装**：preflight + hygiene_check 已是主要防线；此 hook 是锦上添花的第三层。若你只用 Claude Code 的 webnovel skill 流程，可以不装；若你担心 AI 偶尔手滑裸跑 commit，推荐装上。
-
-典故引用库检查（非阻断，仅提示）：
-```bash
-test -f "${PROJECT_ROOT}/设定集/典故引用库.md" && echo "典故引用库: 已就绪" || echo "典故引用库: 未创建（建议创建以提升文化质感，模板见 references/writing/classical-references.md）"
-test -f "${PROJECT_ROOT}/设定集/原创诗词口诀.md" && echo "原创诗词口诀: 已就绪" || echo "原创诗词口诀: 未创建（可选）"
-```
-
-输出：
-- “已就绪输入”与“缺失输入”清单；缺失则阻断并提示先补齐。
-- 典故引用库存在状态（不阻断，仅提示建议）。
-
-### Step 0.5：工作流登记（必做，不可伪造）
-
-工作流登记是 Step 6 Layer A（过程真实性）和 hygiene_check 的信任基础。**禁止使用 `|| true` 吞掉错误，禁止手动编辑 workflow_state.json，禁止用 `{"v2": true}` 之类占位 artifact 填充**。
+### Step 1：Context Agent（内置 Context Contract）
 
 ```bash
-# 章节开始：start-task 必须成功（失败则阻断）
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-task --command webnovel-write --chapter ${chapter_num}
-
-# 每个 Step 开始前：start-step（必须成功）
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 1" --step-name "Context Agent"
-
-# Step 执行完毕：complete-step 必须带语义 artifact（不可只写 {"ok": true} 或 {"v2": true}）
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 1" --artifacts '{"ok": true, "file": ".webnovel/context/ch0001_context.json", "snapshot": ".webnovel/context_snapshots/ch0001.json"}'
-
-# 推荐（Round 29）：shell 类步骤（Step 3.5 / Step 6 Part 1 / Step 7 等）用 run-step 一次完成
-# start-step → 命令执行 → complete-step；命令非零退出自动 fail-step 并透传退出码。
-# artifacts 在命令执行后才产生时用 --artifacts-file（命令把 artifacts JSON 写到该路径）。
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow run-step \
-  --step-id "Step 3.5" --step-name "External review" \
-  --artifacts-file "${PROJECT_ROOT}/.webnovel/tmp/step35_artifacts.json" \
-  -- python -X utf8 "${SCRIPTS_DIR}/external_review.py" --project-root "${PROJECT_ROOT}" --chapter ${chapter_num} --mode dimensions --model-key all --dimension-strategy auto
-
-# 全部 Step（Step 1 → Step 7）完成后：complete-task 必须成功
-# 注：complete-task 不受 REQUIRED_ARTIFACT_FIELDS 约束，但仍应给真实字段。示例里的 ${COMMIT_SHA}/${overall_score}
-# 必须是已定义的 shell 变量，不得是 <sha>/<int> 占位。
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-task --artifacts "{\"chapter_completed\": true, \"commit\": \"${COMMIT_SHA}\", \"overall_score\": ${overall_score}}"
+cat "${SKILL_ROOT}/references/steps/step-1.md"
 ```
 
-**artifact 语义字段白名单**（每个 Step 至少一个必须存在；以 `REQUIRED_ARTIFACT_FIELDS` 代码定义为权威，本节为人读说明）：
-
-| Step | 至少一个必需字段 | 备注 |
-|---|---|---|
-| Step 1 | `file` / `snapshot` / `context_file` | 执行包 JSON 路径、context_snapshot 路径 |
-| Step 2A | `word_count` | 正文字数（整数，>0） |
-| Step 2B | `style_applied` / `deviation_notes` | 正常执行填 `style_applied: true`；跳过则填 `deviation_notes: "..."` |
-| Step 3 | `overall_score` / `checker_count` / `internal_avg` / `review_score` / `naturalness_verdict` / `naturalness_score` / `reader_critic_verdict` / `reader_critic_score` | 内部 13 checker = 13 评分维度（Batch 0 的 2 个读者视角维度：naturalness + reader-critic；Batch 1 的 6 含 flow-checker；Batch 2 的 5）；`overall_score = avg(13 维度)`。**Round 13 v2 取消 veto 架构**：两个读者视角 checker 输出 score + problems 与其他 checker 同等进入 Step 4 修复，不 block 流程。`naturalness_verdict ∈ {PASS, POLISH_NEEDED, REWRITE_RECOMMENDED, REJECT_HIGH, REJECT_CRITICAL}` / `reader_critic_verdict ∈ {yes, hesitant, no}` 作为严重度信号记录（不 block） |
-| Step 3.5 | `external_avg` / `models_ok` / `external_models_ok` | 外部多模型均分 + 成功模型列表 |
-| Step 4 | `anti_ai_force_check` / `polish_report` / `fixes` | `pass`/`fail`, 润色报告路径, 修复项列表 |
-| Step 5 | `state_modified` / `entities` / `foreshadowing` / `scene_count` / `chapter_meta_fields` | data-agent 写库确认 + 实体/伏笔/场景计数 |
-| Step 6 | `decision` / `audit_report` / `audit_decision` | `approve` / `approve_with_warnings` / `block` |
-| Step 7 | `commit` / `branch` / `commit_sha` / `word_count` | git commit SHA + 分支名 + 最终字数|
-
-**占位字段（不能单独存在）**：`v2`, `ok`, `chapter_completed`, `committed` 只有在至少一个语义字段存在时才被允许。单独用这些字段会被 `workflow_manager.complete_step` 直接 reject，参考 `_validate_artifact_has_semantic_field` 源码。
-
-**硬规则**：
-- `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 3.5` / `Step 4` / `Step 5` / `Step 6` / `Step 7`
-- **所有 Step（含 2B/3.5/4/5）在执行任何 Edit/Task/脚本之前必须先 start-step**。Round 29 起 strict workflow **默认开启**：complete-step 没有预先 start-step 会被直接拒绝（不再有 implicit_start 兜底）；被拒后当场补 `start-step` 再 `complete-step` 即可。遗留恢复场景可设 `WEBNOVEL_STRICT_WORKFLOW=0` 临时关闭。
-- 任何 `workflow` 子命令失败都必须立即阻断并报错，禁止 `|| true` 吞错误
-- complete-step 的 artifact 必须包含至少一个上述白名单字段，否则 Step 6 Layer A 会 fail
-- **严禁**任何形式的“事后补登记”：不得用 Python/Edit 工具直接修改 `workflow_state.json`，不得用 `{"v2": true}` 或类似占位填充；违规将被 hygiene_check H3/H16 检出并阻断 commit
-- Step 6 审计通过后 Step 7 git commit 成功才调用 `complete-task`，**顺序不可调换**
-
-### Search Tool 使用规则（全流程适用）
-
-**搜索统一使用 Tavily 直连 API 脚本**（`${SCRIPTS_DIR}/tavily_search.py`），禁止使用 MCP 工具（WebSearch/WebFetch）。
-
-**两种搜索模式**：
-- **快速搜索**（大多数场景）：`python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" search "查询词" --max 5`
-- **深度研究**（复杂专业领域）：`python -X utf8 "${SCRIPTS_DIR}/tavily_search.py" research "研究问题" --model pro`
-
-搜索触发规则：
-- **强制触发**：涉及专业领域（机甲技术/军事/科学/法律）→ 搜索术语和真实细节
-- **强制触发**：需要特定案例或参考（如“真实驾驶舱布局”“地下通道地质结构”）→ 搜索具体资料
-- **推荐触发**：章节类型特殊（战斗/情感/揭秘/追逐/谈判）→ 搜索该类型写作技巧
-- **推荐触发**：新卷首章或Ch1-3 → 搜索同题材开篇技巧
-- **推荐触发**：审查发现 HIGH 级 STYLE/PACING 问题 → 搜索改进方法
-- **按需触发**：普通推进章无特殊场景 → 不搜索
-
-各 Step 的具体搜索内容：
-- Step 1：搜索本章场景类型的写作技巧（“机甲战斗 描写技巧”“谈判场景 张力写法”）
-- Step 2A：搜索专业领域术语和真实细节（“机甲驾驶舱 操控界面”“军事通讯 加密术语”）
-- Step 2B：搜索风格参考（“硬核科幻 技术描写 范例”）
-- Step 4：搜索审查问题的改进方法（“对话平淡 改进技巧”“节奏拖沓 如何加快”）
-
-搜索结果归档：有价值的专业信息保存到 `调研笔记/` 对应主题文件，供后续章节复用。
-
-**Search 失败处理协议（硬规则）**：
-如果 `tavily_search.py` 执行失败（API key 缺失/全部 key 耗尽/网络超时）：
-1. 立即停止当前工作
-2. 告知用户搜索脚本执行失败及具体错误信息
-3. 建议用户检查 API key 配置（环境变量 `TAVILY_API_KEYS` / `.env` 文件 / `~/.claude.json`）
-4. 等待用户修复配置后再继续
-5. 不要跳过搜索步骤直接继续——搜索获取的专业细节直接影响质量
-
-### Step 1：Context Agent（内置 Context Contract，生成直写执行包）
-
-使用 Task 调用 `context-agent`，参数：
-- `chapter`
-- `project_root`
-- `storage_path=.webnovel/`
-- `state_file=.webnovel/state.json`
-
-Context Agent 额外输入（必读）：
-- `设定集/伏笔追踪.md`（所有“活跃”伏笔线，确保长线伏笔不被遗忘）
-- `设定集/道具与技术.md`（带章节时间线，防止引用“还没出现的”道具）
-- `设定集/典故引用库.md`（若存在：检查本章大纲是否有引用锚点，推荐 0-2 条引用并标注载体与融入方式。无锚点时输出“本章不引用”。若不存在：跳过）
-- `设定集/原创诗词口诀.md`（若存在：原创口诀优先级高于外部典故，检查本章是否命中使用规划。若不存在：跳过）
-- `大纲/第N卷-节拍表.md`（本卷宏观节奏锚点）
-- 相关角色卡的“语音规则”段落（注入 beat 的对话风格指导）
-
-硬要求：
-- 若 `state` 或大纲不可用，立即阻断并返回缺失项。
-- 输出必须同时包含：
-  - 8 板块任务书（核心任务/承接/角色/场景约束/时间约束/风格指导/连续性与伏笔/追读力策略）；
-  - Context Contract 全字段（目标/阻力/代价/本章变化/未闭合问题/核心冲突一句话/开头类型/情绪节奏/信息密度/是否过渡章/追读力设计/爽点规划/情感锚点规划/时间约束）；
-  - Step 2A 可直接消费的“写作执行包”（章节节拍、不可变事实清单、禁止事项、终检清单）。
-- 写作执行包的每个 beat 必须包含：字数分配、场景描述（地点+氛围）、情绪曲线位置、感官锚点（至少1个画面）、情感锚点（情感beat：锚点类型+梯度位置）、关键对话方向+语音规则（若有对话）、本beat禁止事项。
-- 合同与任务书出现冲突时，以“大纲与设定约束更严格者”为准。
-
-输出：
-- 单一“创作执行包”（任务书 + Context Contract + 直写提示词），供 Step 2A 直接消费。Context Contract 内置于 Step 1，无独立 Step。
-- context-agent 必须同时把执行包落盘为 `.webnovel/context/ch{NNNN}_context.json` 与 `.webnovel/context/ch{NNNN}_context.md`（见 `agents/context-agent.md` 的 Step 7）。
-
-Step 1 完成后必须同时验证三份产物（Step 6 A1 审计硬依赖）：
-```bash
-test -f "${PROJECT_ROOT}/.webnovel/context_snapshots/ch${chapter_padded}.json" && echo "snapshot OK" || { echo "FAIL: context_snapshot 未生成"; exit 1; }
-test -f "${PROJECT_ROOT}/.webnovel/context/ch${chapter_padded}_context.json" && echo "execution package JSON OK" || { echo "FAIL: 执行包 JSON 未落盘"; exit 1; }
-test -f "${PROJECT_ROOT}/.webnovel/context/ch${chapter_padded}_context.md" && echo "execution package MD OK" || { echo "FAIL: 执行包 MD 未落盘"; exit 1; }
-```
-
-若 context_snapshot 缺失，手动补跑：
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" context -- --chapter ${chapter_num}
-```
-若执行包 JSON/MD 缺失，**禁止进入 Step 2A**，必须让 context-agent 重跑直到落盘成功。Step 1 的 `workflow complete-step` artifact 必须写 `{"ok": true, "file": ".webnovel/context/ch{NNNN}_context.json", "snapshot": ".webnovel/context_snapshots/ch{NNNN}.json"}`，严禁只写 `{"ok": true}` 或 `{"v2": true}`。
-
-开篇黄金协议（Ch1-3 专用，叠加在标准流程之上）：
-- Ch1：主角在前 500 字内出场且用行动展示（非旁白介绍）
-- Ch1：核心冲突或世界规则在前 1000 字内暗示（Show not Tell）
-- Ch1：章末钩子强度强制 strong
-- Ch1-2：金手指至少暗示存在
-- Ch1-3：人物名字总数不超过 5 个
-- Ch1-3：至少 5 个冲突点
-- Ch1-3：第一个场景必须包含至少 1 个具象数字（展示世界观量级）
-
-**首章专属审查 rubric**：
-当 chapter == 1 时，下列 checker 自动启用“首章加严”子项：
-
-| Checker | 首章额外检查 | 触发条件 → 判级 |
-|---|---|---|
-| consistency-checker | **金手指激活时序交叉校验**（设定集·激活章节 vs 正文·前世闪回描写） | “前世 + 金手指具名使用”共现句 → critical |
-| reader-pull-checker | **核心悬念不裸露**（payoff ≥80 章的 A 级伏笔，Ch1 不得泄露内容关键字） | 首章泄露跨卷悬念 → high |
-| reader-pull-checker | **大纲爽点兑现**（卷大纲承诺本章爽点必须落点） | 承诺未兑现 → high |
-| density-checker | **前 500 字认知载入量**（新设定计数） | ≥10 个 → high；7-9 个 → medium |
-| density-checker | **信息锚点密度**（新设定必须有 ≥2 个具象锚） | 纯抽象新设定（无视觉/触觉/数字锚） → medium |
-| emotion-checker | **首章 distress 具身化**（主角绝望情绪必须有外化生理反应） | 只内心描写无具身动作 → medium |
-| pacing-checker | **前 500 字节奏分段合理性**（避免多个大信息同段轰炸） | 单段 ≥ 4 个新设定 → high |
-| prose-quality-checker | **反派妥协博弈深度**（首章反派决策至少经过 1 次“先拒绝/压价” 拉扯） | 反派一次性通过主角要求 → medium |
-| external-review-agent | **quote 存在性验证**（外部模型引用的“原文”必须真实在正文出现） | 幻觉 quote → 该 issue severity 降一档 |
+要点：Task 调用 `context-agent` 产出单一创作执行包（8 板块任务书 + Contract 全字段 + 直写提示词）；完成后必须验证三份产物落盘（context_snapshot + 执行包 JSON + MD），任一缺失禁止进入 Step 2A。Ch1-3 叠加开篇黄金协议与首章加严 rubric。
 
 ### Step 2A：正文起草
 
-执行前必须加载：
 ```bash
-cat "${SKILL_ROOT}/../../references/shared/core-constraints.md"
-cat "${SKILL_ROOT}/references/anti-ai-guide.md"
-cat "${SKILL_ROOT}/references/visual-concreteness-rubric.md"
-# Round 19.1 P0-3：chapter ≤ 5 时必须加载 first-chapter-hook-rubric（首章追读契约 + Ch2-3 跨章弱版）
-if [ "${CHAPTER_NUM}" -le 5 ]; then
-  cat "${SKILL_ROOT}/references/first-chapter-hook-rubric.md"
-fi
+cat "${SKILL_ROOT}/references/steps/step-2a.md"
 ```
 
-#### Round 19.1 P0-3 · 前 5 章写前自检（X1 强制流程，对应 anti-ai-guide.md §"前 5 章 reader-critic 写前自检清单"）
-
-仅当 `chapter ≤ 5` 时，**起草前**必须输出 `tmp/pre_draft_self_check_ch{NNNN}.json`，含 5 类自检项：
-
-```json
-{
-  "chapter": 3,
-  "phase": "pre_draft_self_check",
-  "items": [
-    {"id": "1_golden_finger_timing", "verdict": "PASS|WARN|FAIL", "evidence": "本章金手指披露符合 state.golden_finger 梯度"},
-    {"id": "2_unbacked_terms", "verdict": "...", "evidence": "新出场实体均有 1 句以上身份暗示"},
-    {"id": "3_climax_payoff_rate", "verdict": "...", "evidence": "outline 列出爽点 2/2 兑现"},
-    {"id": "4_loop_pacing", "verdict": "...", "evidence": "新铺设钩子 1 条，先闭上章 2 条"},
-    {"id": "5_reader_stuck_points", "verdict": "...", "evidence": "无突兀编号 / 无单段说明 / 无跨语境隐喻"}
-  ],
-  "verdict": "PASS|NEEDS_ADJUST|REWRITE_RECOMMENDED",
-  "all_fail_count": 0,
-  "all_warn_count": 0
-}
-```
-
-**自检 verdict 处理规则**（违反即阻断 Step 2A）：
-
-- `verdict=REWRITE_RECOMMENDED`（≥ 2 FAIL）→ writer 必须**回 Step 1** 重做大纲再起草，禁止本步进入正文起草
-- `verdict=NEEDS_ADJUST`（1 FAIL 或 ≥ 3 WARN）→ writer 起草时刻意规避，并在 `tmp/pre_draft_self_check_ch{NNNN}.json` 同时写 `writing_constraints_addendum`：起草中至少包含对应规避动作 1 处
-- `verdict=PASS` → 正常起草
-
-5 类自检项详细定义见 `references/anti-ai-guide.md` § "Round 19 Phase X1 · 前 5 章 reader-critic 写前自检清单"。
-
-**与 Phase X1 reader-critic <75 全卷 P0 阻止配套**：写前自检接住 Ch1-5 的"金手指披露突兀 / 编号无铺垫 / 爽点未兑现 / 伏笔超载"等高风险（这些是 reader-critic Ch3=62/Ch4=58 历史谷底的真实根因）。
-
-硬要求：
-- 只输出纯正文到章节正文文件；若详细大纲已有章节名，优先使用 `正文/第{chapter_padded}章-{title_safe}.md`，否则回退为 `正文/第{chapter_padded}章.md`。
-- 默认按 2200-3800 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
-- 禁止占位符正文（如 `[TODO]`、`[待补充]`）。
-- 保留承接关系：若上章有明确钩子，本章必须回应（可部分兑现）。
-- 爽点密度约束：每 800 字至少安排 1 个微爽点（信息揭示/小胜/认可/逆转/兑现）；纯铺垫章允许降至每 1200 字 1 个，但全章不得为零。
-- 典故引用融入：若 Context Agent 在执行包中推荐了引用（0-2 条），按推荐的载体和融入方式写入正文。化用 > 引用，角色内化 > 旁白注释。判断不适合时可跳过——**允许不用**。无推荐时不主动引用。（详见 `references/writing/classical-references.md`）
-- **复述前章人物原话必须 Grep 原文校验**。任何时候在正文写"X说过/告诉过/吩咐过/警告过……"等复述句，**起草前必须 Grep 该角色名+关键词在前章正文**确认原话。Ch42 L9 凭印象写"<antagonist>告诉他……合作化路那处守得严，先别动"——但 Grep Ch19/Ch20 发现<antagonist>原话只说"金陵饭店人最齐别先去"，从未提合作化路守严——continuity-checker 给出 13 分 critical。**规则**：复述句中的"原话"必须 100% 在前章正文 Grep 命中，禁止凭印象添加细节或合成多段对白。
-- **禁止"X章前/X章后/X章之前"等数字章号距离指代**。这是 H40 元叙述泄漏的隐蔽变体——把"Ch19 第十九章"换成更隐蔽的"二十二章前"仍属章号自我指称，post_draft_check.py 已扩展 cn_chapter_meta_pattern 涵盖多位中文数词。用"那一晚/上个月/那回/记忆里那次"等自然时间表达替代。
-
-中文思维写作约束（硬规则）：
-- **禁止“先英后中”**：不得先用英文工程化骨架（如 ABCDE 分段、Summary/Conclusion 框架）组织内容，再翻译成中文。
-- **中文叙事单元优先**：以“动作、反应、代价、情绪、场景、关系位移”为基本叙事单元，不使用英文结构标签驱动正文生成。
-- **禁止英文结论话术**：正文、审查说明、润色说明、变更摘要、最终报告中不得出现 Overall / PASS / FAIL / Summary / Conclusion 等英文结论标题。
-- **英文仅限机器标识**：CLI flag（`--fast`）、checker id（`consistency-checker`）、DB 字段名（`anti_ai_force_check`）、JSON 键名等不可改的接口名保持英文，其余一律使用简体中文。
-
-> **🔴 Round 28.51 · Step 2A 起草前必跑 outline + signature self-check (Ch49 RCA)**
->
-> Ch49 v1 走完全流程后 reader-critic=72 critical blocking, root cause = 大纲 L130 "周晓兰生日 + 秦岳第二次出手" 中"秦岳第二次出手"在起草时完全漏写; root cause 2 = 单章签名词 "了一X" 34 / "那一X" 23 / "没X" 39 全部 block 阈值; root cause 3 = Ch48 末"外公递水"段 6-gram 重合 10 处。
->
-> **新 self-check 模板** (Step 2A 起草前必跑):
-> ```bash
-> # 1. outline 大纲点逐项核对
-> grep -nE "^[|│] Ch${chapter_num}" 大纲/第1卷-详细大纲.md | head -3
-> # 输出大纲 L${chapter_num} 行, 起草前必须 100% 兑现 (含小括号"轻触"等定语)
->
-> # 2. 签名词起草前预算 (近 5 章累计)
-> for w in 了一 那一 半 没 点头 一档 桌沿 没掉头 指尖; do
->   echo "  $w: $(grep -hroE "$w" 正文/第00{$((chapter_num-5))..$((chapter_num-1))}章*.md 2>/dev/null | wc -l) / 100 (5章累计上限)"
-> done
->
-> # 3. 跨章 6-gram 自查 (起草后立即)
-> python -c "
-> import re
-> prev = open('正文/第00${prev_chapter}章<title>.md', encoding='utf-8').read()
-> cur = open('正文/第00${chapter_num}章<title>.md', encoding='utf-8').read()
-> prev_grams = set(prev[i:i+6] for i in range(len(prev)-5) if re.match(r'^[一-鿿]+$', prev[i:i+6]))
-> cur_grams = set(cur[i:i+6] for i in range(len(cur)-5) if re.match(r'^[一-鿿]+$', cur[i:i+6]))
-> overlap = prev_grams & cur_grams
-> n_open = sum(1 for g in overlap if g in cur[:500])
-> print(f'前 500 字与上章 6-gram 重合: {n_open}')
-> assert n_open < 6, '首段与上章 6-gram 过载, 必须重写开篇'
-> "
-> ```
->
-> **修法**: 起草前先核对大纲点 → 实时计数签名词 → 起草后立即验证首段不与上章 deja vu。
-
-> **🔴 Round 28.49 · Step 2A 起草后必跑 4 项 self-check (Ch48 deep audit 漏检根治)**
->
-> Ch48 v1 走完 13 checker + 15 外模型 + Step 4.5 复测后, deep research subagent 仍发现 4 高问题被全部审查机制漏检:
->
-> 1. **NPC entry/exit pairing 缺**: 老吴 L37 入场 → L77 最后一句 → L205 章末"竹篮还在桌沿"但无出门描写 = ghost-exit. **修法**: Step 2A 起草后 grep 所有有名角色, 验证每个 entry 必有 exit (出门/告别/视线离开) 至少 1 句
-> 2. **Timeline transition fill 缺**: L3 "六点整" → L37 "老吴七点四十到" = 100 分钟无 atmosphere/action 桥. **修法**: Step 2A 时间锚之间 >30 min 必须至少 1 句过渡 (等候 / 物动 / 环境变化)
-> 3. **Emotional 高潮 minimum depth 缺**: 林母 50米共享规则首次质疑这种 critical relationship beat 仅 6 句对话被 "妈,洒水" 打发 = 法律咨询语气而非"商量恳求语气". **修法**: 情感锚 ≥2 轮对话 + 身体语言 ≥3 处 + reaction shot ≥1 个 (孩子拽衣角 / 同辈触碰 / 物理位置变化 等)
-> 4. **同章内部 timestamp 精度 sanity 缺**: L141 八点整 vs L171 SMS 七点五十四 = 6 分钟 gap 无 in-prose 解释 (收到延迟 / 静音 / 设备故障). **修法**: 同章内部时间精度 mins 差 ≥5 必须有 in-prose 解释
->
-> **新 self-check 模板** (Step 2A complete-step 前必跑):
-> ```python
-> # 1. NPC entry/exit pair
-> grep -n "<NPC名>" 正文/第${chapter_padded}章*.md
-> # 验证每个 NPC 入场后有出场描写
->
-> # 2. Time anchor transition
-> grep -nE "六点|七点|八点|九点|十点|中午|下午|晚上" 正文/第${chapter_padded}章*.md
-> # 验证相邻时间锚之间有过渡行
->
-> # 3. Emotional climax depth
-> # 手动检查情感锚场景 dialogue rounds + body-lang + reaction shots
->
-> # 4. Internal timestamp sanity
-> grep -nE "[0-9一二三四五六七八九十]+点[0-9一二三四五六七八九十]*" 正文/第${chapter_padded}章*.md
-> # 验证 mins 差 ≥5 必有解释
-> ```
-
-引号与格式清洁硬约束（起草时必须严格遵守）：
-- **禁止 ASCII 半角引号 `"`**：从第一笔起就必须用 U+201C（“）/U+201D（”）中文弯引号对。不得“先用 ASCII 写完再批量替换”——批量 flip-pair 脚本在段内多重嵌套引号时会跨段翻转配对，导致 7 处+错乱。
-- **禁止 Markdown 标题/分隔线**：正文不得含 `#` / `##` / `---` / 粗体 `**...**`。章节文件直接以第一段叙事开头。
-- **禁止 CRLF**：所有写入必须 LF 行尾。Windows 下注意 Write 工具的默认行尾。
-- **禁止全角数字** 用于时间锚（“13:40” 保持半角，“一小时五十八分钟” 允许中文数字作叙述）。
-
-ASCII 引号自动扫描（起草后立即执行，**任何 >0 必须停下来修**）：
-```bash
-python -c "
-import pathlib, glob
-files = glob.glob('${PROJECT_ROOT}/正文/第${chapter_padded}章*.md')
-if not files: raise SystemExit('no chapter file')
-t = pathlib.Path(files[0]).read_text(encoding='utf-8')
-ascii_q = t.count(chr(34))
-if ascii_q:
-    raise SystemExit(f'FAIL: {ascii_q} ASCII 双引号（必须用 U+201C/U+201D）')
-print('quote check: 0 ASCII, OK')
-"
-```
-
-> **🔴 Round 28.49 · Write 工具中文引号 known bug 兜底（Ch48 实战 142 个 ASCII 复发）**
->
-> Claude Code Write 工具有 known bug: 大段中文正文写入时, U+201C/U+201D 可能被转为 ASCII `"` 落地。每次 Write 中文正文 / 起草后, **必须**紧跟自动配对修复脚本（成对替换不依赖原始位置）：
->
-> ```bash
-> python -X utf8 -c "
-> import pathlib, glob
-> files = glob.glob('${PROJECT_ROOT}/正文/第${chapter_padded}章*.md')
-> p = pathlib.Path(files[0])
-> t = p.read_text(encoding='utf-8')
-> out = []; depth = 0
-> for ch in t:
->     if ch == chr(34):
->         out.append('“' if depth % 2 == 0 else '”'); depth += 1
->     else: out.append(ch)
-> p.write_text(''.join(out), encoding='utf-8')
-> print(f'paired {depth} ASCII -> Chinese curly')
-> "
-> ```
->
-> 此脚本配对策略: 第1/3/5... 个 ASCII `"` → U+201C(`“`), 第2/4/6... → U+201D(`”`)。**适用于 Write 单次写入** (引号配对完整时)。若 Edit 局部替换出现奇数 ASCII 残留, 改用人工 Edit 精确修复。
-
-
-U+FFFD 编码验证（写入后立即执行）：
-```bash
-python -c "
-import glob, pathlib, sys
-files = glob.glob('${PROJECT_ROOT}/正文/第${chapter_padded}章*.md')
-if not files: sys.exit('No chapter file found')
-t = pathlib.Path(files[0]).read_text(encoding='utf-8')
-n = t.count('\ufffd')
-print(f'FFFD check: {n} corrupted chars in {files[0]}')
-sys.exit(1 if n > 0 else 0)
-"
-```
-若检测到 U+FFFD（通常因上下文压缩截断中文字符），立即用 Grep 定位损坏位置，用 Edit 修复，修复后重新验证。**禁止带 FFFD 进入下一步。**
-
-**起草后硬闸门**（Step 2A 完成后、Step 2B 开始前必跑 新增）：
-```bash
-python -X utf8 "${SCRIPTS_DIR}/post_draft_check.py" ${chapter_num} --project-root "${PROJECT_ROOT}"
-```
-7 类硬检查（详见 `references/post-draft-gate.md`）：
-1. ASCII 双引号 = 0（必须 U+201C/U+201D）
-2. U+FFFD = 0
-3. Markdown（# 标题 / --- 分隔 / ** 粗体）= 0
-4. 章号敏感禁用词（项目 `.webnovel/post_draft_config.json` 配置，如 Ch1 <power-faction>/<golden-finger-space>/灵泉）
-5. 破例预算（如主角粗口 Ch1 最多 1 次）
-6. 必须伏笔种子（如 Ch1 系统首发必含“你不是第一个”/“#4732”等精确短语）
-7. 字数在 state.json 的 `average_words_per_chapter_min/max` 区间内
-
-exit=0 才能进入 Step 2B。**禁止带任何 hard fail 进入 Step 3**——审查子代理的 13 内部 + 14 外部算力不应被机械问题浪费。
-
-输出：
-- 章节草稿（可进入 Step 2B 或 Step 3）。
+要点：起草前必读 core-constraints / anti-ai-guide / visual-concreteness（前 5 章另加 first-chapter-hook-rubric + 写前自检）；起草前 outline + 签名预算 self-check、起草后 4 项 self-check；只输出纯正文（禁 Markdown / ASCII 引号 / U+FFFD / 元叙述 / 章号距离指代）；起草后必跑引号扫描 + FFFD 验证 + `post_draft_check.py` exit=0 才能进入下一步。
 
 ### Step 2B：风格适配（`--fast` / `--minimal` 跳过）
 
-执行前加载：
 ```bash
-cat "${SKILL_ROOT}/references/style-adapter.md"
+cat "${SKILL_ROOT}/references/steps/step-2b.md"
 ```
 
-硬要求：
-- 只做表达层转译，不改剧情事实、事件顺序、角色行为结果、设定规则。
-- 对"模板腔、说明腔、机械腔"做定向改写，为 Step 4 留出问题修复空间。
+要点：只做表达层转译，不改剧情事实；起草已符合项目风格时可声明 no-op，但必须显式登记 deviation_notes；完成后再跑一次 post_draft_check + FFFD 验证。
 
-> **🔴 Round 28.51 · Step 2B no-op 显式声明 (Ch49 RCA)**
->
-> Ch49 实战发现 Step 2B 与 Step 4 polish 职责重叠: 当 Step 2A 已严格按项目克制风格起草 + 签名密度 OK + 无模板腔时, Step 2B 实际改动量 < 5 字 / 章, 接近 no-op。
-> **新规则**: 起草已符合项目风格时, Step 2B 可声明 no-op, 但必须显式登记:
->
-> ```bash
-> python webnovel.py workflow start-step --step-id "Step 2B" --step-name "Style adapter"
-> # ... 实际只做 grep verify (无 Edit), 或 1-2 处微调
-> python webnovel.py workflow complete-step --step-id "Step 2B" \
->   --artifacts '{"style_applied": false, "deviation_notes": "Step 2A 已严格按项目克制风格起草 + post_draft_check 通过 + 0 模板腔, Step 2B 仅 grep verify 无 Edit"}'
-> ```
->
-> deviation_notes 必填, 留 audit-agent trace。**禁止**完全跳过 Step 2B 登记。
-
-输出：
-- 风格化正文（覆盖原章节文件）或 verify-only artifact。
-
-U+FFFD 编码验证（同 Step 2A，风格转译后再次执行，确保转译未引入损坏）。
-
-**起草后硬闸门再次执行**（Step 2B 后 · 转译可能引入新问题）：
-```bash
-python -X utf8 "${SCRIPTS_DIR}/post_draft_check.py" ${chapter_num} --project-root "${PROJECT_ROOT}"
-```
-
-### Step 3：审查（全量审查，必须由 Task 子代理执行）
-
-执行前加载：
-```bash
-cat "${SKILL_ROOT}/references/step-3-review-gate.md"
-```
-
-> **🔴 Round 28.22 checker JSON quote 字段 ASCII 引号嵌套硬禁（H71 三复发根治）**
->
-> 所有 14 个 checker subagent 在写 JSON 时，**`quote` / `reason` / `suggestion` / `description` / `improvement_notes` 等字符串字段内禁止嵌套 ASCII `"` 和中文 `""`**，否则 JSON parse fail → hygiene H71 P0 阻断 commit。
->
-> 正文若含中文弯引号 `""""`，写入 JSON 时**必须**替换为括号 `()` / `〈〉` / `...`（省略）。
->
-> Ch33/Ch37 三复发
-> - 反例：`"quote": "一种属于"我的兄弟在替我挡着"的什么"` → JSON parse error
-> - 正例：`"quote": "一种属于(我的兄弟在替我挡着)的什么"` / `"quote": "一种属于...的什么"`
->
-> 全部 14 checker subagent 落盘前必须做字符串字段值 `"` 字符自检。主流程在 Step 3 complete-step 前必须 `python -c "import json; json.load(open(f))"` 逐文件验证。
-
-调用约束：
-- 必须用 `Task` 调用审查 subagent，禁止主流程伪造审查结论。
-- **标准/--fast 模式必须分批启动**（0+6+5 三段，详见 `step-3-review-gate.md`），禁止 13 个 checker 同时并发（Claude Code Agent 并发池上限约 4-6 个）。
-- 必须等待全部 checker 返回后才能统一聚合 `issues/severity/overall_score`。
-- **禁止在任何 checker 仍在运行时进入 Step 4**。即使外部审查已完成，内部 checker 未全部返回也不得开始润色。
-- **Round 13 v2 · 取消 veto block**：两个读者视角 checker（naturalness + reader-critic）和其他 11 个 checker **平等参与评分**。它们的 `problems` 和其他 checker 的 `issues` 同等进入 Step 4 修复。不再单方面 block 流程——因为 block 回 Step 2A 重写整章对大多数问题是浪费，Step 4 能修的就应该在 Step 4 修。
-
-审查器（标准模式全部执行，0+6+5 三段）：
-- **Batch 0（读者视角维度，2 个并行先跑，Round 13 v2）**：
-  - `reader-naturalness-checker`（汉语母语自然度 · 独立于规则污染 · 专补 Ch1 v1 “<protagonist>在死”语病被 10+9 审查器集体放行的盲区）
-  - `reader-critic-checker`（读者锐评 · 极简 prompt · 无规则约束 · 模拟追更读者本能反应 · Round 13 新增，专补“规则 pass 但读者会弃”的盲区）
-  - 两个 checker 都返回 `overall_score` 和 `problems`，统一计入 `internal_avg`
-  - Batch 0 先跑的原因：规模小（2 个）+ 读者视角反馈对 Batch 1/2 无依赖，早跑早反馈
-- Batch 1（核心优先，6 个并发）：
-  - `consistency-checker`（设定一致性）
-  - `continuity-checker`（连贯性）
-  - `ooc-checker`（人物OOC）
-  - `reader-pull-checker`（追读力）
-  - `high-point-checker`（爽点密度）
-  - `flow-checker`（读者视角流畅度 · 失忆裸读协议）
-- Batch 2（Batch 1 全部返回后启动，6 个并发 · Round 20 新增 reader-thrill-checker）：
-  - `pacing-checker`（节奏平衡）
-  - `dialogue-checker`（对话质量）
-  - `density-checker`（信息密度）
-  - `prose-quality-checker`（文笔质感）
-  - `emotion-checker`（情感表现）
-  - `reader-thrill-checker`（**P0 新增**）爽感强度 6 子维度（金手指释放/主角胜利/反派受挫/信息差兑现/标题承诺兑现/节奏推进）· 与 reader-pull-checker（追读力）+ reader-critic-checker（读者批评）+ high-point-checker（爽点密度）互补：thrill 评"读完爽不爽"，pull 评"会不会追下一章"
-  - **reader-thrill-checker 触发 block 规则**：前 5 章 verdict ∈ {tepid, frustrating} 且 reader-critic-checker < 80 → 双 floor 联动 block；连续 3 章 golden_finger_release ≤ 50（前 5 章为 high）→ critical block
-
-模式说明：
-- 标准/`--fast`：全量 13 个审查器（2 + 6 + 5），分段执行。
-- `--minimal`：固定核心 5 个（naturalness + reader-critic + consistency + continuity + ooc），单批并发。**两个读者视角 checker 即使在 minimal 也必跑**。
-
-审查指标落库（必做）：
-```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" index save-review-metrics --data "@${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json"
-```
-
-review_metrics 字段约束（当前工作流约定只传以下字段）：
-```json
-{
-  "start_chapter": 100,
-  "end_chapter": 100,
-  "overall_score": 85.0,
-  "dimension_scores": {"consistency-checker": 80, "continuity-checker": 90, "ooc-checker": 82, "reader-pull-checker": 87, "high-point-checker": 85, "pacing-checker": 78, "dialogue-checker": 83, "density-checker": 88, "prose-quality-checker": 82, "emotion-checker": 80, "flow-checker": 84, "reader-naturalness-checker": 86, "reader-critic-checker": 81},
-  "severity_counts": {"critical": 0, "high": 1, "medium": 2, "low": 0},
-  "critical_issues": ["问题描述"],
-  "report_file": "审查报告/第0100章审查报告.md",
-  "notes": "单个字符串；selected_checkers / timeline_gate / anti_ai_force_check 等扩展信息压成单行文本写入此字段"
-}
-```
-- `notes` 在当前执行契约中必须是单个字符串，不得传入对象或数组。
-- 当前工作流不额外传入其它顶层字段；脚本侧未在此处做新增硬校验。
-
-硬要求：
-- `--minimal` 也必须产出 `overall_score`。
-- 未落库 `review_metrics` 不得进入 Step 5。
-- `overall_score` 必须按 `step-3-review-gate.md` 的“内外部分数合并规则”计算：`round(internal * 0.6 + external_avg * 0.4)`。若 Step 3.5 全部失败或被模式跳过（`--minimal`），则退化为纯内部分数。
-
-### Round 28.24 · checker_scores 双通道落库硬规则（防 H18 P0 重发）
-
-**血教训**（Ch39 Step 7 hygiene H18 P0 阻断 commit）：Step 3 仅把 13 个 checker 分数写到 `review_metrics.dimension_scores`（索引层），未逐个写到 `chapter_meta.checker_scores`（状态层）。Step 4.5 复测后 data-agent PROTECTED_FIELDS 只保留已存在的 4 个 canonical key，导致 hygiene H18 检测 `chapter_meta.checker_scores` 缺 10 个 canonical key → P0 阻断 commit，必须手动 set-checker-score × 10 + reset overall_score 才解除。
-
-**永久规则**：Step 3 落库时必须**同时**做两件事：
-
-1. **索引层**（已有 · 必做）：`index save-review-metrics --data "@review_metrics.json"`
-2. **状态层**（新增 · 必做）：对 13 个 canonical checker 逐个 `state update --set-checker-score`，触发 chapter_meta.checker_scores 落库 + auto-sync overall
-
-**批量落库脚本模板**（Step 3 13 个 checker 全部返回后 + review_metrics 落库后立即执行）：
+### Step 3：内部审查（13 checker · 必须由 Task 子代理执行）
 
 ```bash
-# 读 review_metrics.json 把 13 个 dimension_scores 逐个 set-checker-score
-python -X utf8 -c "
-import json, subprocess, sys
-data = json.load(open('${PROJECT_ROOT}/.webnovel/tmp/review_metrics.json', encoding='utf-8'))
-chap = data['start_chapter']
-for ckr, score in data['dimension_scores'].items():
-    payload = json.dumps({'chapter': chap, 'checker': ckr, 'score': score}, ensure_ascii=False)
-    r = subprocess.run(['python', '-X', 'utf8', '${SCRIPTS_DIR}/webnovel.py',
-                        '--project-root', '${PROJECT_ROOT}',
-                        'state', 'update', '--set-checker-score', payload],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        print(f'FAIL {ckr}: {r.stderr}', file=sys.stderr); sys.exit(1)
-    print(f'OK {ckr}={score}')
-# 最后修 overall_score 到 combined（避免被纯内部均分覆盖）
-overall = data['overall_score']
-payload = json.dumps({'chapter': chap, 'field': 'overall_score', 'value': overall}, ensure_ascii=False)
-subprocess.run(['python', '-X', 'utf8', '${SCRIPTS_DIR}/webnovel.py',
-                '--project-root', '${PROJECT_ROOT}',
-                'state', 'update', '--set-chapter-meta-field', payload], check=True)
-"
+cat "${SKILL_ROOT}/references/steps/step-3.md"
 ```
 
-**Step 4.5 复测后**：用 `--set-checker-score` 覆盖单维度新分 + `--append-recheck` 留 before/after，然后再用 `--set-chapter-meta-field overall_score` 修回 combined 值。
+要点：0+6+5 三批启动（Batch 0 读者视角双 checker 先行）；全部 checker 返回前禁止进入 Step 4；13 份 checker JSON 落盘逐一验证 parseable（H71 嵌套引号自检）；`review_metrics` 落库 + `checker_scores` 双通道落库（索引层 + 状态层）缺一不可；`overall_score = round(internal*0.6 + external*0.4)`。
 
-**Step 4.5 触发的复测档（CLI 自动重算 overall）必然把 overall_score 拉到纯内部均分**，所以每次复测组合调用结束后**必须**最后一步重新设置 overall_score = combined。
-
-**hygiene H18 检测点**：
-- chapter_meta.checker_scores 必须含 **13 canonical key + overall**（共 14 项）
-- 缺任一 → P0 阻断 commit
-- 修法：用上面的批量脚本一次性补齐
-
-**违反此规则 → Step 7 commit 必然 P0 失败**（Ch24 H18 升级 + Ch39 实战验证）。
-- **A9 评分硬底线（apply_overall_floor）**：`set-checker-score` 写库时自动应用 floor 重算 overall：
-  - 任一维度 < 60 → overall ≤ **70**（FLOOR_HARD）+ Step 6 audit Layer A9 fail critical block
-  - 任一维度 < 75 → overall ≤ **85**（FLOOR_SOFT）+ A9 warn high
-  - 前 5 章 reader-critic < 80 → overall ≤ **80**（FLOOR_EARLY_RC，首章追读契约保护）+ A9 fail critical block
-  - **不得手动 Edit state.json 绕过 floor**（hygiene H9 score_alignment 会检测 overall vs checker_scores.overall 不一致）
-  - Round 20 上线 · Ch4 Round 20.2 重写实战验证（cons 47 / rc 58 双触发 → cap 70 → 重写后全维 ≥75 解除 floor）
-- **reader-thrill-checker 6 子维度评分**（`agents/reader-thrill-checker.md`）：
-  - 6 子维度：`golden_finger_release` / `protagonist_victory` / `antagonist_setback` / `info_advantage_payoff` / `title_promise_payoff` / `plot_momentum`
-  - 4 verdict 档：`thrilling`(≥80) / `neutral`(65-79) / `tepid`(50-64) / `frustrating`(<50)
-  - **不计入 13 canonical**（避免触发 7 处真源同步），单独写 `chapter_meta.thrill_score`
-  - 落库通道：`set-chapter-meta-field --field thrill_score --value '{...嵌套 dict...}'`
-  - block 规则：前 5 章 verdict ∈ {tepid, frustrating} 且 reader-critic-checker < 80 → 双 floor 联动 block；连续 3 章 golden_finger_release ≤ 50（前 5 章为 high）→ critical block
-  - THRILL_HARD_001：标题反向（如标题种田，本章只搞文学独白）→ critical block
-- **Round 13 v2 · naturalness 和 reader-critic 作为常规评分维度**：两个读者视角 checker 的 `overall_score` 和 `problems` 与其他 11 个 checker **平等进入 `overall_score` 聚合**，不 block 流程。它们的 high/critical problems 与其他 checker 的 issues **合并**给 Step 4 做定向修复。**极端 block 条件**：仅当 Step 4 polish 后重新审查，`naturalness` 或 `reader-critic` 仍返回 `REJECT_CRITICAL` / `will_continue_reading=no`，才回到 Step 2A 重写。背景：Ch1 v1 case 中 19 审查器 + 7 层审计给 91 分 approve_with_warnings，但用户一眼看出“<protagonist>在死”语病——说明规则同源污染会让评分系统集体失灵。解决方案不是 block，而是**把读者视角纳入评分，强制 Step 4 必须修**。
-
-### Step 3.5：外部模型审查（与 Step 3 并行或紧接执行）
-
-执行前必须加载：
-```bash
-cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
-```
-
-硬要求：
-- **必须使用 `--model-key all --dimension-strategy auto` 一次性执行全部 15 模型**，禁止手动逐个调用（防止遗漏模型）。
-- 默认 combined：每个模型 1 次请求返回 13 个 `dimension_reports`，避免 13 次重复发送完整上下文；JSON 不可用或维度缺失时自动 split fallback。
-- 不再有核心3必成硬耦合；Step 6 A3 按 ≥10/15 有效模型判定健康。
-- 按 reference 文件中的 Prompt 模板构建 system 消息。
-- 每次 API 调用后验证路由（检查 response.model 字段）。
-- Round 14+ 3-tier fallback 链：ark-coding（火山，主 · 重试 2 次）/ openclawroot（主 · fail-fast）→ siliconflow（兜底，仅 glm-5/glm-4.7/deepseek/V4-Flash 备用或主路）。
-- 输出 JSON 必须包含 model_actual、routing_verified、provider_chain、cross_validation。
-- 生成审查报告必须包含 15 模型 × 13 维度（含 reader_flow + naturalness + reader_critic · Round 13 v2）评分矩阵 + 共识问题 + Step 4 修复清单。
-
-**上下文文件准备（调用脚本前必须完成）**：
-
-脚本从 `{PROJECT_ROOT}/.webnovel/tmp/external_context_ch{chapter_padded}.json` 加载上下文。**若文件不存在，脚本将报错退出（exit 1）**。主流程必须在调用脚本前构建此文件，包含 **14 个字段**（核心 6 + 质感 3 + 典故 2 + 状态 + 前章）：
+### Step 3.5：外部模型审查（15 模型 × 13 维度 · `--minimal` 跳过）
 
 ```bash
-# 收集设定集、大纲、前章正文，写入 14 字段 context JSON
-python -X utf8 "${SCRIPTS_DIR}/build_external_context.py" \
-  --project-root "${PROJECT_ROOT}" \
-  --chapter ${chapter_num}
+cat "${SKILL_ROOT}/references/steps/step-3.5.md"
 ```
 
-`build_external_context.py` 加载的 14 字段：
-- 核心 6：总纲 / 主角卡 / 金手指设计 / 女主卡 / 反派设计 / 力量体系 / 世界观
-- 质感 3：叙事声音 / 情感蓝图 / 开篇策略
-- 典故 2：典故引用库 / 原创诗词口诀（存在即加载，不存在自动跳过）
-- 状态：protagonist_state（来自 state.json）
-- 前章：前 N-1 章正文（最多 15000 字）
+要点：`build_external_context.py` 构建 14 字段上下文 → healthcheck → `external_review.py --model-key all --dimension-strategy auto` 一次性跑全部 15 模型；≥10/15 有效为健康线；与 Step 3 并行但必须显式 start-step。**Step 3+3.5 完成闸门（5 项验证）全部通过才可进入 Step 4**（清单见 step-3.5.md）。
 
-若脚本失败，手动从设定集文件读取并用 `Write` 工具写入 JSON。**禁止跳过此步骤直接调用 external_review.py**。**禁止回退到旧的 9 字段内联脚本，否则外部 15 个模型将盲评无法看到作者要求的克制风格、情感蓝图、典故伏笔等关键信息。**
+### Step 4 / 4.5：润色与选择性复测
 
-> **🔴 Round 28.50 · 调用前必跑 healthcheck (Ch48 实战 4/15 静默挂死 根治)**
->
-> Ch48 实战首次 `python external_review.py --model-key all` 后台跑 → 4/15 模型完成后**静默卡死**, stderr 0 行, 必须手动重启才完成 15/15. 根因: 多并发 + 单个 provider 超时未触发 fast-fail.
->
-> **永久根治** — 主调用之**前**必跑 healthcheck:
->
-> ```bash
-> # Step A: healthcheck (验证 API key + provider 可用 · ~30s)
-> python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
->   --project-root "${PROJECT_ROOT}" \
->   --chapter {chapter_num} \
->   --healthcheck
-> # 输出 .webnovel/tmp/external_healthcheck_{ts}.json
-> # 若 healthy_count < 10/15 → 修复 API key 或换 provider 再继续
-> ```
-
-调用命令：
 ```bash
-python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
-  --project-root "${PROJECT_ROOT}" \
-  --chapter {chapter_num} \
-  --mode dimensions \
-  --model-key all \
-  --dimension-strategy auto \
-  --max-concurrent 5   # Round 28.50 · 默认 6, 降到 5 防 timeout 集群挂死
-```
-⚠️ 脚本仅支持：`--project-root`, `--chapter`, `--mode`, `--model-key`, `--models`, `--dimension-strategy`, `--model-concurrent`, `--max-concurrent`, `--rpm-override`, `--rpm-override-provider`, `--no-merge-partial`, `--healthcheck`。不要传其他参数。
-
-输出：
-- 每模型一个 `.webnovel/tmp/external_review_{model_key}_ch{NNNN}.json`（共15个文件；combined 正常路径每文件由 1 次模型请求生成）
-- 审查报告 `审查报告/第{NNNN}章审查报告.md`（含 15 模型 × 13 维度矩阵，包括 reader_flow + naturalness + reader_critic · Round 13 v2）
-
-### Step 3+3.5 完成闸门（进入 Step 4 前必须通过）
-
-**硬规则：Step 4 不得在 Step 3 或 Step 3.5 有任何子任务仍在运行时开始。**
-
-验证方式：
-1. 逐一检查所有 Step 3 内部 checker 的 Task 状态（`TaskOutput` 或等价轮询），确认每个 checker 都已返回结果（非空输出）。
-2. 确认 Step 3.5 外部审查脚本已退出且 15 个 `external_review_{model_key}_ch{NNNN}.json` 文件已生成。
-3. 按 `step-3-review-gate.md` 的“内外部分数合并规则”计算 `overall_score`（需要内部 + 外部都有分数）。
-4. 生成审查报告（含内部 13 评分维度 + 外部 15 模型×13 维度矩阵，内外均含 reader_flow + naturalness + reader_critic · Round 13 v2 读者视角双维度进入外部模型评分体系）。
-5. 落库 `review_metrics`。
-
-**以上 5 步全部完成后，方可进入 Step 4。等待是流程的一部分。**
-
-**Step 3→4 闸门强制验证**（在标记 Step 3 完成前必须执行）：
-1. 对每个已启动的内部 checker Task 调用 `TaskOutput`，确认输出非空。若任一 checker 输出为空，继续等待（轮询间隔30s，每批最多等待10分钟，总超时20分钟）。超时仍未返回的 checker 标记为 timeout 并写入审查报告。注意：0+6+5 三段模式下，Batch 0（2 个读者视角 checker 并行：naturalness + reader-critic · Round 13 v2）先跑，两个都返回后启动 Batch 1（6 个含 flow-checker），Batch 1 全部返回后再启动 Batch 2（5 个），每段独立计时。Round 13 v2 取消 veto block——Batch 0 的结果直接合并进聚合，不单独 block。
-2. 检查 `.webnovel/tmp/external_review_{model}_ch{NNNN}.json`：统计有效模型数；≥10/15 为健康，8-9/15 degraded_ok，5-7/15 degraded_warn，<5/15 critical。
-3. 聚合分数：内部 13 个评分维度取平均（含 flow-checker + naturalness + reader-critic · Round 13 v2）；外部已成功模型取平均（13 维度）；合并 `round(internal * 0.6 + external * 0.4)`。
-4. 写审查报告 + 落库 review_metrics。
-**违规后果**：跳过此验证直接进入 Step 4，Step 6 审计 A2 检查项将检测到 checker 坍缩并可能 block 提交。
-
-：5 个 checker（reader-pull / reader-naturalness / reader-critic / consistency / continuity）返回 findings 后未自动 Write 落盘，hygiene_check.py H26+H63 报 P0 阻断 commit，必须手动补盘 5 个 JSON 才能通过。
-
-**根因**：subagent 定义 tools 列表此前缺 `Write`（已修：Round 28.21 给 14 个 checker 全部加上 Write 工具），但 subagent 仍可能"忘记调用 Write"。
-
-**双保险硬规则**：
-
-1. **subagent 侧**（已修复）：14 个 checker 的 tools 全部含 `Write`；每个 checker.md 的"执行"段第 4 步明确"Write 落盘到 `.webnovel/tmp/{checker_id}_ch{NNNN}.json`"。
-2. **主流程侧**（本节硬约束）：Step 3 complete-step 之前，**必须**逐一验证 13 个 `.webnovel/tmp/{checker_id}_ch{NNNN}.json` 落盘存在；任一缺失则**主流程 Write 工具补盘**（用 subagent 返回的 findings 重建 JSON）。
-3. **完整 checker JSON 文件名清单**（13 canonical）：
-   - `reader_naturalness_check_ch{NNNN}.json`
-   - `reader_critic_check_ch{NNNN}.json`
-   - `consistency_check_ch{NNNN}.json`
-   - `continuity_check_ch{NNNN}.json`
-   - `ooc_check_ch{NNNN}.json`
-   - `reader_pull_ch{NNNN}.json`（注：reader-pull 文件名约定无 `_check` 后缀）
-   - `high_point_check_ch{NNNN}.json`
-   - `flow_check_ch{NNNN}.json` 或 `flow_ch{NNNN}.json`（双名兼容）
-   - `pacing_check_ch{NNNN}.json`
-   - `dialogue_check_ch{NNNN}.json`
-   - `density_check_ch{NNNN}.json`
-   - `prose_quality_check_ch{NNNN}.json`
-   - `emotion_check_ch{NNNN}.json`
-4. **Step 3 complete-step 前 sanity check (Round 28.27 加强：必须 parseable)**：
-   ```bash
-   python -X utf8 -c "
-   import json, os
-   chap = '${chapter_padded}'
-   files = ['reader_naturalness_check','reader_critic_check','consistency_check','continuity_check','ooc_check','reader_pull','high_point_check','flow_check','pacing_check','dialogue_check','density_check','prose_quality_check','emotion_check']
-   for cid in files:
-       p = f'.webnovel/tmp/{cid}_ch{chap}.json'
-       if not os.path.exists(p):
-           print(f'MISSING: {cid}'); continue
-       try:
-           json.load(open(p, encoding='utf-8'))
-       except json.JSONDecodeError as e:
-           # H71 嵌套引号 / 编码错误 / 截断 → 必须先修复
-           print(f'BROKEN: {cid}: {e}')
-   "
-   ```
-   任一 MISSING 必须先补盘再 complete-step。任一 BROKEN（通常因 H71 ASCII 引号嵌套）必须先用以下脚本修复：
-   ```python
-   # 自动 repair：把嵌套 ASCII " 改成括号 ( )
-   import json, pathlib, re
-   p = pathlib.Path('.webnovel/tmp/<broken_file>.json')
-   raw = p.read_text(encoding='utf-8')
-   out = []
-   for line in raw.split('\n'):
-       m = re.match(r'(\s*"[a-z_]+"\s*:\s*")(.*)("(,?)\s*)$', line)
-       if m and not line.strip().startswith('"problems"'):
-           prefix, content, suffix, _ = m.groups()
-           depth = 0; new = []
-           for ch in content:
-               if ch == '"':
-                   new.append('(' if depth % 2 == 0 else ')'); depth += 1
-               else:
-                   new.append(ch)
-           out.append(prefix + ''.join(new) + suffix)
-       else:
-           out.append(line)
-   fixed = '\n'.join(out)
-   json.loads(fixed)  # 验证
-   p.write_text(fixed, encoding='utf-8')
-   ```
-   **Round 28.27 RCA**: Ch41 reader-critic / ooc-recheck 两份 JSON 都 H71 复发, 即使
-   subagent.md 已写禁嵌套规则。根因是 subagent prompt 落盘前未做 json.load 自检——
-   主流程必须代替 subagent 做这道闸门, 否则 hygiene H71 P0 阻断 commit 才发现就晚了。
-
-### Step 4：润色（问题修复优先）
-
-> **🔴 Round 28.46 · polish 新增有名角色行为 / 物件位置前必 grep（防 R28.36 v5 + R28.46 同源根因）**
->
-> 在 polish 修复涉及到新增"角色 X 在 Y 地点 / 与 Z 交互"或"物件 X 在桌上 / 兜里 / 手上"等段落前，**必须**先 grep Canon + 同章正文确认：
->
-> ```bash
-> # § canon-grep — 任何有名角色 (非临时配角) 新增段
-> grep -n "<角色名>" 设定集/00-Canon-Bible.md
-> grep -n "<角色名>" 设定集/08-连续性锁死表.md  # 或 SSOT
-> grep -nE "<角色名>.*(觉醒|印记|入基地|移居|住|学校)" 设定集/
-> # § physical-state-trace — 任何随身物 / 容器内物新增位置
-> grep -nE "(物件名)" 正文/第00{N}章*.md  # 看前后位置链
-> ```
->
-> **R28.36 v5 教训**: Ch45 polish 凭印象造"合肥物科院"传染 12 处。
-> **R28.46 #1 教训**: Ch46 polish 凭印象写"陆灵今晚在内院" — Canon SSOT 一.D-7 锁"未移居" 硬冲突。
-> **R28.46 #6 教训**: Ch46 polish L341 引入折角广告纸"兜里→桌上"瞬移，flow recheck 报 high。
->
-> 详见 `references/polish-guide.md` §2.0c.bis (canon-grep) + §2.0c.tri (physical-state-trace)。
-
-执行前必须加载：
-```bash
-cat "${SKILL_ROOT}/references/polish-guide.md"
-cat "${SKILL_ROOT}/references/writing/typesetting.md"
+cat "${SKILL_ROOT}/references/steps/step-4.md"
 ```
 
-执行顺序：
-1. 修复 `critical`（必须）
-2. 修复 `high`（不能修复则记录 deviation）
-3. 处理 `medium/low`（按收益择优）
-4. 执行 Anti-AI 与 No-Poison 全文终检（必须输出 `anti_ai_force_check: pass/fail`）
-
-**字数预算硬约束**：
-
-**为什么需要**：
-- Step 2B 后字数 3453（在 2600-3200 推进章区间偏上）
-- Step 4 polish 加 4 critical + 9 high 新内容 → 字数涨到 3638（超 3500 硬上限 +138 字）
-- 手动压缩 5 次才回到 3493（浪费 10+ 分钟）
-- 根因：polish 没有“字数预算”意识，加内容前不算账
-
-**硬规则**：
-1. **净增上限 +200**：polish 导致字数净增超过 200，必须自检是否冗余
-2. **硬上限**：polish 后总字数 ≤ state.json `word_count_policy.hard_max`（默认 3800 · Round 21.1），否则触发强制压缩
-3. **推荐顺序**：先删冗余段（reader-critic/pacing 标记的“非必要对话/描写”）再扩 critical 修复，而不是“先加后砍”
-4. **边界豁免**：若项目有 `word_count_policy.hard_max_polish_allowance`（如 +5%），polish 期可临时用，但 Step 5 前必须压回 hard_max 内
-
-**检查点**（Step 4 complete 前必跑）：
-```bash
-python -X utf8 "${SCRIPTS_DIR}/post_draft_check.py" ${chapter_num} --project-root "${PROJECT_ROOT}"
-```
-hard_max 超限会直接 fail，回 Step 4 继续压缩。
-
-输出（两个必须同时产出，缺一视为 Step 4 未完成）：
-1. **润色后正文**（覆盖 `正文/第{chapter_padded}章-{title_safe}.md`）
-2. **润色报告**（必须落盘到 `.webnovel/polish_reports/ch{chapter_padded}.md`，结构规范如下）
-
-润色报告必须 Markdown 格式，且至少含下列段落：
-```markdown
-# 第{N}章 润色报告
-
-> chapter: {N}
-> polished_at: {ISO-8601 UTC}
-> anti_ai_force_check: pass | fail
-> final_weighted_score: {数值}
-
-## 修复项（critical + high）
-- [CONS_001] 设定一致性问题描述 → 修法: ...
-- [OOC_002] 对话人设偏差 → 修法: ...
-
-## 保留项（未修复并附 deviation 理由）
-- [PACING_003] 节奏偏慢 → 保留: 本章为铺垫章，节奏克制是设计
-
-## 放弃修复（medium/low）
-- [PROSE_008] 比喻略平淡 → 成本高收益低
-
-## Anti-AI 全文终检
-- 禁语扫描: pass
-- 重复句式扫描: pass
-- 结论: **anti_ai_force_check = pass**
-
-## 变更摘要（与原稿 diff 的 key changes）
-- Beat 3 扩写 80 字：加入母亲照片特写
-- Beat 6 缩写 40 字：删除重复情绪副词
-- Ch 末尾钩子从 medium 升到 strong（新增"信里最后那句话"）
-```
-
-**持久化硬要求**：
-- `.webnovel/polish_reports/ch{chapter_padded}.md` 必须由主 agent 用 Write 工具写入，不得用“变更摘要打印到 stdout 就算数”的方式处理
-- `anti_ai_force_check` 必须为字符串 `pass` 或 `fail`，不允许 `None` / 空字符串
-- 若 Step 4 `anti_ai_force_check=fail`，留在 Step 4 继续改写，**不进入 Step 5**（见充分性闸门 #6）
-- 充分性闸门 #6 新增一条：`.webnovel/polish_reports/ch{chapter_padded}.md` 存在且非空
-
-**为什么必须落盘**：
-1. **跨章工艺学习**：近 5 章反复被改写的 beat 类型可以注入 context-agent 的 quality_feedback，Step 2A 提前规避
-2. **作者自我反思**：某章为什么质感突然好/差，看润色报告就知道
-3. **Step 6 Layer F/G 依赖**：审计要读 anti_ai_force_check 和 fixes 列表，没有文件就只能假设 pass
-
-### Step 4.5：选择性复测
-
-**定位**：Step 4 polish 后，对被 polish 集中修复的低分 checker 做**选择性复测**，确保 `chapter_meta.checker_scores` 反映的是修后真实分数，而不是修前数据。
-
-**为什么需要**：
-- Step 3 pacing-checker=58（Beat 2 超限 + B2/B3 结构同构 + B4 过短）
-- Step 4 针对性全部修复（拆段 + 差异化 + 扩写）
-- Step 4 直接进入 Step 5，`checker_scores.pacing-checker` 仍是 58
-- Step 6 审计 C6 警告 “pacing 58 FAIL polish-only no retest”
-- 本次 Ch7 后追加复测：pacing 58→90（+32），真实 overall 应为 88 而非 85
-- **后果**：chapter_meta 存的是修前数据，下章 trend 监控误判“Ch7 pacing 突降”
-
-**触发规则（硬约束 · Round 28.1 第 4 档加入）**：
-- **强制复测档**：Step 3 任一 checker 首次分数 `< 75` → Step 4 polish 后**必须**重跑该 checker（旧规则保留）
-- **近线复测档**：Step 3 任一 checker 首次分数 `< 80` 且该次 polish 报告含针对此 checker 的 fix（PACE_/FLOW_/EMO_/HP_/PRO_/OOC_/CONT_/CONS_/DIA_/DEN_ 任一前缀）→ **必须**重跑该 checker（验证修复真效）
-- **下滑复测档**：Step 3 任一 checker 首次分数与上一章同维度差 `≥ 5` 且 polish 含此 checker 修法 → **必须**重跑（验证回归是否被止住）
-- **HIGH-issue 全面复测档**：Step 3 任一 checker 输出含 `severity=high` 的 issue → Step 4 polish 后**必须**重跑该 checker，且复测分数必须比修前 **≥ +3**（验证 HIGH 问题真正修复，不是表面替换）。即使首次分数已 ≥ 80 也强制走，因为 ：prose_quality 81 含 3 HIGH，polish 后仍 81——显示修复无效但因 ≥75 跳过复测。
-- 复测均使用 `_recheck_ch{NNNN}.json` 作为输出文件名
-
-**补充**：Step 3 prose-quality=81 含 3 HIGH（PRO_001/PRO_002/PRO_003），polish 后名义"修了"但 不是X是Y 16→14、像 16→11、D-3/D-2/D-1 仅替换标签——量化未达 target，复测会暴露分数不动甚至下滑。HIGH 全面复测档会在所有这种情况触发，通过对比 before/after 分数来 GATE 真伪修复。
-
-**Round 21.2 血教训背景**：Ch16 的 emotion 78 / pacing 78 / high-point 79 / prose 82 / ooc 81 五个维度全部相对 Ch15 下滑 8-16 分，但因为都 ≥75，旧 trigger 不命中，post_polish_recheck 整章未触发，结果 polish 是否真起效完全不可验证。新档命中后，下次再发生类似 −10 量级回归会被 Step 4.5 强制兜住。
-
-**执行模板**：
-```bash
-# 在 Step 4 complete-step 前
-# 对每个首次分数 <75 的 checker 做 Task 复测
-Task(pacing-checker, chapter=N, chapter_file=..., post_polish=true, prev_score=58)
-
-# 更新 checker_scores（自动重算 overall 为 13 canonical 平均 + 同步 overall_score）
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
-  state update --set-checker-score '{"chapter":N,"checker":"pacing-checker","score":90}'
-
-# 追加 post_polish_recheck（before/after/delta/reason）
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
-  state update --append-recheck '{"chapter":N,"checker":"pacing-checker","before":58,"after":90,"reason":"Beat2 拆段+B3 差异化+B4 扩写"}'
-```
-
-**CLI 参数契约**（R3.1 实现 ）：
-- `--set-checker-score` 参数：`{chapter, checker (canonical 13 之一), score}` · 自动重算 `checker_scores.overall` 与 `overall_score`
-- `--append-recheck` 参数：`{chapter, checker, before, after, reason?}` · `delta = after - before` 自动计算
-- **两个 CLI 是 Step 4.5 的唯一正确接口**，禁止用 `state update --set-chapter-meta-field` 写 `checker_scores` 子键（白名单不含），也禁止走 data-agent `process-chapter` 全量回写（容易 hallucinate `before` 值 · 见 R2）
-
-**硬规则**：
-- 复测 checker ≥ 75：更新 checker_scores · 重算 overall · 记入 post_polish_recheck
-- 复测 checker 仍 < 75：Step 4 未完成，继续 polish 直到 ≥ 75（或回到 Step 2A 重写该 beat）
-- **不许**因为“不想再跑”而跳过复测；Step 6 审计 C6 会 block
-
-**审计兼容性**：
-- audit-agent 读 `chapter_meta.post_polish_recheck` 判断修前/修后数据
-- 如无该字段且 Step 4 fixes 列表含 checker id 的 PACE_/FLOW_/etc，audit C6 自动 warn
-
-**字数预算硬约束**：
-
-：writer 首稿 1930 字（-33% 预算 2900）· 对话占比 0.124（<0.20 硬线）· 用户 3 次手动扩写才达标。根治在 Step 2A 执行包（`context-agent` 与 `build_execution_package.py`）硬写入：
-
-- **首稿总字数 ≥ hard_min**（默认 2200）：低于 hard_min 自动 post_draft_check fail
-- **每 Beat 字数 ≥ 目标 85%**：如规划 700 字，首稿该 Beat < 595 字 → post_draft_check warn `BEAT_UNDERRUN`
-- **对话占比 ≥ 0.20**（饭局/对峙/情感章 ≥ 0.25）：低于阈值 post_draft_check fail `DIALOGUE_RATIO`
-- **chapter_type 特例**：空间视觉章/纯动作章可将 dialogue_min 降到 0.10，必须在 `context_contract.structural_exemptions.dialogue_ratio_override` 声明
+要点：修复顺序 critical（必须）→ high（修复或 deviation）→ medium/low（择优）；polish 新增有名角色行为/物件位置前必 canon-grep；字数预算（净增 ≤200 · 不破 hard_max）；产出润色后正文 + 润色报告（`polish_reports/` 落盘，含 `anti_ai_force_check`，fail 不得进入 Step 5）。Step 4.5 复测触发档（<75 强制 / <80 近线 / 下滑 ≥5 / HIGH-issue 全面）；复测组合调用后必须最后重设 `overall_score = combined`。
 
 ### Step 5：Data Agent（状态与索引回写）
 
-使用 Task 调用 `data-agent`，参数：
-- `chapter`
-- `chapter_file` 必须传入实际章节文件路径；若详细大纲已有章节名，优先传 `正文/第{chapter_padded}章-{title_safe}.md`，否则传 `正文/第{chapter_padded}章.md`
-- `review_score=Step 3 overall_score`
-- `project_root`
-- `storage_path=.webnovel/`
-- `state_file=.webnovel/state.json`
-
-Data Agent 默认子步骤（全部执行）：
-- A. 加载上下文
-- B. AI 实体提取
-- C. 实体消歧
-- D. 写入 state/index
-- E. 写入章节摘要
-- F. AI 场景切片
-- G. RAG 向量索引（`rag index-chapter --scenes ...`）
-- H. 风格样本评估（`style extract --scenes ...`，仅 `review_score >= 80` 时）
-- I. 债务利息（默认跳过）
-- J. 生成处理报告（必须记录 A-I 每步耗时；写入 `.webnovel/observability/data_agent_timing.jsonl`）
-- K. 设定集同步检查（每章执行，best-effort，失败不阻断）
-
-`--scenes` 来源优先级（G/H 步骤共用）：
-1. 优先从 `index.db` 的 scenes 记录获取（Step F 写入的结果）
-2. 其次按 `start_line` / `end_line` 从正文切片构造
-3. 最后允许单场景退化（整章作为一个 scene）
-
-Step 5 失败隔离规则：
-- 若 G/H 失败原因是 `--scenes` 缺失、scene 为空、scene JSON 格式错误：只补跑 G/H 子步骤，不回滚或重跑 Step 1-4。
-- 若 A-E 失败（state/index/summary 写入失败）：仅重跑 Step 5，不回滚已通过的 Step 1-4。
-- 禁止因 RAG/style 子步骤失败而重跑整个写作链。
-
-执行后检查（最小白名单）：
-- `.webnovel/state.json`
-- `.webnovel/index.db`
-- `.webnovel/summaries/ch{chapter_padded}.md`
-- `.webnovel/observability/data_agent_timing.jsonl`（观测日志）
-
-**数据完整性后验证（Step 5 完成后必须执行）**：
-```python
-# 用 Bash 执行以下 Python 验证，任一项 FAIL 则必须立即补修
-import json, re
-with open('.webnovel/state.json','r',encoding='utf-8') as f: s=json.load(f)
-meta = s['chapter_meta'][f'{chapter:04d}']
-# 1. checker_scores 非空 + 13 个 canonical key
-assert meta.get('checker_scores') and len(meta['checker_scores']) >= 3, 'FAIL: checker_scores empty'
-_canonical_set = {"consistency-checker","continuity-checker","ooc-checker","reader-pull-checker","high-point-checker","pacing-checker","dialogue-checker","density-checker","prose-quality-checker","emotion-checker","flow-checker","reader-naturalness-checker","reader-critic-checker","overall"}
-_banned = {"Anti-AI","anti-ai","naturalness_veto"}
-_alias_lists = [["设定一致性","一致性检查","伏笔埋设","伏笔检查"],["连贯性","连续性检查"],["人物塑造","人物OOC","OOC检查","人物"],["追读力","追读检查","钩子强度","钩子检查"],["爽点密度","爽点检查"],["节奏控制","节奏检查","节奏"],["对话质量","对话检查","对话"],["信息密度","密度检查"],["文笔质感","文笔检查","Prose质量","Prose","文笔"],["情感表现","情感检查","情绪曲线","情感"],["读者流畅度","读者视角流畅度","流畅度检查"],["汉语母语自然度","自然度","naturalness","reader-naturalness"],["读者锐评","reader-critic","读者视角锐评"]]
-_bad_keys = [k for k in meta['checker_scores'].keys() if k in _banned or (k not in _canonical_set and not any(k in al for al in _alias_lists))]
-assert not _bad_keys, f'FAIL: checker_scores 含非 canonical/banned key: {_bad_keys}（需用 13 个英文 checker 名）'
-# 2. word_count 准确（用标准方法重算对比，误差<=2%）
-with open(chapter_file,'r',encoding='utf-8') as f: text=f.read()
-actual = len(re.findall(r'[\u4e00-\u9fff]', text))
-assert abs(meta['word_count'] - actual) / actual < 0.02, f'FAIL: word_count {meta["word_count"]} vs actual {actual}'
-# 3. strand_tracker 与 chapter_meta 一致
-history = s['strand_tracker']['history']
-tracker_strand = [h for h in history if h['chapter']==chapter][0]['dominant']
-assert tracker_strand == meta['strand_dominant'].lower(), f'FAIL: strand mismatch {tracker_strand} vs {meta["strand_dominant"]}'
+```bash
+cat "${SKILL_ROOT}/references/steps/step-5.md"
 ```
 
-性能要求：
-- 读取 timing 日志最近一条；
-- 当 `TOTAL > 30000ms` 时，输出最慢 2-3 个环节与原因说明。
-
-观测日志说明：
-- `call_trace.jsonl`：外层流程调用链（agent 启动、排队、环境探测等系统开销）。
-- `data_agent_timing.jsonl`：Data Agent 内部各子步骤耗时。
-- 当外层总耗时远大于内层 timing 之和时，默认先归因为 agent 启动与环境探测开销，不误判为正文或数据处理慢。
-
-债务利息：
-- 默认关闭，仅在用户明确要求或开启追踪时执行（见 `step-5-debt-switch.md`）。
-
-设定集同步（Step K）：
-- 每章执行，检查新实体/道具状态变化/伏笔/资产变动，追加到设定集文件
-- 所有追加带 `[Ch{N}]` 章节标注
-- 失败不阻断流程
+要点：Task 调用 `data-agent` 执行 A-K 子步全量；完成后必跑数据完整性后验证（checker_scores 13 canonical key / word_count 误差 ≤2% / strand 一致）；失败隔离——G/H 子步失败只补跑子步，禁止重跑写作链。
 
 ### Step 6：审计闸门（Audit Gate）
 
-> **定位**：Step 6 是 git 提交前的最后一道防线，跨步骤/跨产物/跨章审链路真实性、承诺兑现、作品连续性。完整规范见 `references/step-6-audit-gate.md` 与 `references/step-6-audit-matrix.md`（audit-agent 必读）。
+```bash
+cat "${SKILL_ROOT}/references/steps/step-6.md"
+```
 
-Step 6 一次调用由两部分组成，**必须全部完成**：
+要点：Part 1 CLI 结构审计（Layer A/B/G）+ Part 2 audit-agent 深度审计（Layer C/D/E/F）都必须完成；`audit_reports/ch{NNNN}.json` 与下章 `editor_notes` 必须落盘；decision=block 禁止进入 Step 7；超时 300s 视为未完成。
 
-**Part 1 — CLI 结构审计（快速路径，< 5s）**
+### Step 7：Git 备份 + workflow 收尾
 
 ```bash
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
-  audit chapter --chapter ${chapter_num} --mode ${mode} \
-  --out "${PROJECT_ROOT}/.webnovel/tmp/audit_layer_abg_ch${chapter_padded}.json"
+cat "${SKILL_ROOT}/references/steps/step-7.md"
 ```
 
-完成 Layer A（过程真实性）、Layer B（跨产物一致性）、Layer G（跨章趋势）的确定性检查。退出码：0=pass / 1=critical fail / 2=warnings / 3=CLI 错误。
+要点：顺序锁死——Step 6 complete-step → **(step gap) hygiene_check + pre_commit_step_k 双闸 exit=0** → start-step Step 7 → git commit → complete-step → complete-task。在 Step 7 active 状态跑 hygiene 会 H3 P0；commit 失败必须 fail-step 且不得调 complete-task。
 
-**Part 2 — audit-agent 深度审计（60-300s）**
-
-```
-Task(audit-agent, {
-  chapter: <chapter_num>,
-  project_root: <PROJECT_ROOT>,
-  mode: <standard|fast|minimal>,
-  chapter_file: <正文/第NNNN章-*.md>,
-  time_budget_seconds: 300
-})
-```
-
-audit-agent 自动读取 Part 1 的 JSON 输出，完成 Layer C / D / E / F 判断性检查，聚合所有层级，产出最终 `.webnovel/audit_reports/ch{NNNN}.json` 与下章 `editor_notes/ch{NNNN+1}_prep.md`。
-
-**决议规则**：
-- `decision == block` → 按 blocking_issues 的 remediation 修复，重跑对应步骤，**不得进入 Step 7**
-- `decision == approve_with_warnings` → 记录 warnings，进入 Step 7，commit message 附 `[audit:warn:layerX]`
-- `decision == approve` → 直接进入 Step 7
-
-**硬要求**：
-- Part 1 与 Part 2 都必须完成；即使 Part 1 失败，Part 2 仍要执行以给出完整诊断
-- `audit_reports/ch{NNNN}.json` 必须成功写出（不可跳过 editor_notes 与 trend 日志）
-- audit-agent 只读不写（除审计产物），禁止修改正文/设定集/state
-- Step 6 超时（300s）视为未完成，block 进入 Step 7
-- 禁止强制跳过（除非用户显式确认且记录到 forced_skip 字段）
-
-### Step 7：Git 备份 + workflow 收尾（必须同时完成）
-
-**⚠ 顺序严格固定**：
-
-> **关键时序约束**：hygiene_check + pre_commit_step_k 这两个**前置闸门**必须在 **Step 6 已 complete-step** 之后、**Step 7 还没 start-step** 之前的 **step gap** 状态下执行。
->
-> **不能**先 `workflow start-step --step-id "Step 7"` 再跑 hygiene_check —— hygiene 的 H3 检查项会判定为“current_task running 且正在执行 Step 7：不应在 step 中间调 hygiene”并 P0 fail（即使其他质量项全过）。
->
-> 正确顺序：
-> ```
-> Step 6 complete-step  →  (step gap)  →  hygiene_check + pre_commit_step_k  →
->   start-step Step 7  →  git commit  →  complete-step Step 7  →  complete-task
-> ```
-
-**commit 前硬闸门**：
-```bash
-python -X utf8 "${SCRIPTS_DIR}/pre_commit_step_k.py" ${chapter_num} --project-root "${PROJECT_ROOT}"
-```
-2 类检查（详见 `references/post-draft-gate.md`）：
-1. 核心设定集文件（`.webnovel/step_k_config.json` 配置，默认 伏笔追踪/资产变动表/主角卡）含 `[Ch{N}]` 标注
-2. `chapter_meta.{NNNN}.foreshadowing_planted` 里新增伏笔 ID 在 `设定集/伏笔追踪.md` 可查
-
-**为什么需要这个闸门**：Data Agent Step K 会把新增实体/状态写入 index.db + state.json，但 Markdown 追加通常被推给主 agent。若主 agent 忘记追加，设定集与 state 长期脱节，下章 context-agent 读不到新增，质量连锁下降。本闸门阻塞 commit 直到追加完成。
-
-exit=0 后才能走 commit：
-```bash
-# 前置：AI 必须先在 shell 里 export 下列变量（来自 Step 3 / 章节大纲）。
-# 未 export 会让后续命令产出非法 JSON（'"overall_score":' 后面为空）。
-export chapter_num=3
-export chapter_padded=0003
-export title="本章标题（去除特殊字符）"
-export overall_score=92          # 来自 Step 3 的合并加权分（必须整数）
-export audit_decision="approve_with_warnings"  # Step 6 决议
-
-# 0) commit 前硬闸门：hygiene_check 必须 exit 0
-# ⚠ MUST run in step gap (after Step 6 complete-step, BEFORE Step 7 start-step)
-# ⚠ NEVER run inside Step 7 active state — hygiene H3 will P0 fail
-python -X utf8 "${PROJECT_ROOT}/.webnovel/hygiene_check.py" ${chapter_num} || { echo "FAIL: hygiene_check 未通过，禁止 commit"; exit 1; }
-
-# 1) start-step Step 7（hygiene 通过后才登记 Step 7 active）
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow start-step --step-id "Step 7" --step-name "Git backup"
-
-# 2) 执行 git commit
-git add .
-git -c i18n.commitEncoding=UTF-8 commit -m "第${chapter_num}章: ${title}"
-export COMMIT_SHA=$(git rev-parse HEAD)
-
-# 3) complete-step 带语义 artifact（必须在 git commit 成功后调用）
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 7" --artifacts "{\"commit\": \"${COMMIT_SHA}\", \"branch\": \"master\", \"pushed\": false}"
-
-# 4) complete-task 收尾（标记整个 webnovel-write 任务结束）
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-task --artifacts "{\"chapter_completed\": true, \"commit\": \"${COMMIT_SHA}\", \"overall_score\": ${overall_score}, \"audit_decision\": \"${audit_decision}\"}"
-```
-
-**JSON 转义说明**：bash 的 `"..."` 字符串内需要 `\"` 转义内部双引号。`${var}` 替换仍生效。**避免**用单引号 `'...'` 包 artifact，因为单引号内 `${var}` 不会替换。
-
-**PowerShell 专属转义**：
-PowerShell 下 `--artifacts '{"commit": "..."}'` 会导致 Python argparse 看到 `{commit: ...}` 缺双引号解析失败。必须用反斜杠转义：
-```powershell
-$j = '{\"commit\": \"abc\", \"branch\": \"master\"}'
-python -X utf8 ... workflow complete-step --step-id "Step 7" --artifacts $j
-```
-或用 here-string + 双引号：
-```powershell
-$j = @"
-{"commit": "$COMMIT_SHA", "branch": "master"}
-"@
-```
-
-**工作流 unfail 恢复路径**：
-若 complete-step 因 JSON escape 错误失败 → 紧接 complete-task 会把 task 标 failed → 此时用 `--force` 恢复：
-```bash
-# 确认 Step 1-7 全部 completed + 无 active step running 时：
-python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-task --force --artifacts "${final_artifacts_json}"
-# 输出：🔧 --force 已解除 failed 状态 · 🎀 任务完成
-```
-`--force` 的硬约束：
-- 所有 `REQUIRED_STEPS`（Step 1/2A/3/3.5/4/5/6/7）的 id 必须在 `completed_steps` 列表里
-- `current_step` 必须已 None 或 status ∈ {completed}
-- 否则拒绝并打印 diag 信息
-
-规则：
-- 提交时机：Step 6 审计通过 + hygiene_check 通过 + pre_commit_step_k 通过后最后执行。
-- 提交信息默认中文，格式：`第{chapter_num}章: {title}`；若 Step 6 决议为 `approve_with_warnings`，追加 `[audit:warn:layerX]` 后缀。
-- 若 commit 失败：先 `workflow fail-step --step-id "Step 7" --reason "git commit failed: ..."`，再报告失败原因与未提交文件范围；**不得调用 complete-task**。
-- `complete-task` 必须在 git commit 成功后才能调用，顺序不可调换。
-- **违规场景**（任何一条都视为 Step 7 失败）：
-  - 跳过 hygiene_check 直接 commit
-  - 跳过 start-step/complete-step 直接 commit
-  - 用 Edit/Write 工具直接改 `workflow_state.json`
-  - complete-step artifact 为空或只含 `{"ok": true}` / `{"v2": true}`
-
-### Step 8：Post-Commit Polish Loop（提交后再润色循环 新增）
-
-**定位**：Step 7 commit 完成后，**任何对正文的修改**都必须走本步骤，**严禁裸跑 `git commit`**。
-
-**为什么需要**：
-Round 13 v2 上线 13 checker 后，作者/AI 经常根据 reader-critic / reader-naturalness 反馈手动改正文，然后裸跑 `git commit -m "v3 polish"`。结果：
-- `post_draft_check.py` 不再跑 → 58 个 ASCII 引号漏过去（H5 P0 fail）
-- `hygiene_check.py` 不再跑 → `word_count` 漂移（state=3498 vs actual=3084）
-- `workflow_state.json` 不再登记 → polish 任务在工作流系统里“不存在”
-- `chapter_meta.narrative_version` 不变 → 下章 context-agent 看到旧版本
-- `checker_scores` 仍是旧 10 维 → A2 审计跨章 trend 失真
-
-**触发场景**（满足任一即必须走 Step 8）：
-- 根据读者视角 checker 反馈修正语病/AI 腔/逻辑跳跃
-- 根据外部模型 reader_flow 反馈修读者卡点
-- 修复 hygiene_check 报告的 P1 警告（如 ASCII 引号、字数误差）
-- 任何在 Step 7 commit 之后对 `正文/第NNNN章*.md` 的内容修改
-
-**唯一入口**（禁止替代）：
+### Step 8：Post-Commit Polish Loop（提交后再润色循环）
 
 ```bash
-python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
-  --project-root "${PROJECT_ROOT}" \
-  --reason "读者视角 6 medium 修复" \
-  --narrative-version-bump \
-  --round-tag round13v2 \
-  [--checker-scores '{"reader-naturalness-checker": 91, "reader-critic-checker": 88}']
+cat "${SKILL_ROOT}/references/steps/step-7.md"
 ```
 
-`polish_cycle.py` 自动完成 7 步（**commit 是最后一步原子落盘**，与 Step 7 对称设计）：
-1. **变化检测**：`git show HEAD:正文/...` vs 工作区文件，无变化默认拒绝（`--allow-no-change` 例外）
-2. **`post_draft_check`**：必须 exit 0（ASCII 引号/Markdown/字数/U+FFFD/虚词等 7 类硬约束）
-3. **state.json 同步**：
-   - `chapter_meta.{NNNN}.word_count` ← 实测中文字符数
-   - `chapter_meta.{NNNN}.narrative_version` ← `vN+1`（或手动指定）
-   - `chapter_meta.{NNNN}.updated_at` ← 当前 UTC
-   - `chapter_meta.{NNNN}.polish_log[]` ← 追加 `{version, timestamp, notes}`
-   - 可选：`chapter_meta.{NNNN}.checker_scores` ← 补录新 checker 分
-4. **`hygiene_check`**：必须 exit 0（P0 fail = block，P1 warn 允许继续但建议修）
-5. **workflow 预登记**：在 `history[]` 追加 `task_id=polish_NNN`，`Step 8` artifact 含 `narrative_version` / `reason` / `diff_lines` / `state_diff`（`commit_sha=None` 占位）— 与 Step 7 的 `start-step` 对称，确保 commit 里含 workflow 痕迹
-6. **`git commit`**（真正最后一步原子落盘）：一次 commit 包含正文 + `state.json` + `workflow_state.json` 三者全部变更。消息格式 `第N章 v{X}: {reason} [polish:roundN]`
-7. **回填 commit_sha**：把 commit 的 sha 写回 workflow_state 刚登记的 polish task — 这是唯一尾巴，与 Step 7 的 `complete-step` 尾巴性质一致；即使回填失败，commit message `[polish:{round_tag}]` 标签 + `git log --grep` 也能重建 sha 映射
-
-**硬约束**：
-- 退出码 0 = 全通过 + commit 完成；1 = 检查 fail 必须先修；2 = 结构错（无变化/state 缺失）；3 = git fail
-- `--no-commit` 模式仅供 dry-run / CI；正常流程必须 commit
-- **禁止**：`git commit -m "polish"` / `git commit --amend --no-verify` 等绕过手段
-- **禁止**：用 Edit/Write 直接改 `state.json` 的 `word_count` / `narrative_version`（必须经 polish_cycle.py）
-- 同一章节多轮 polish 应每轮独立调用一次（每轮 v3 → v4 → v5），保留完整 polish_log
-- **polish 轮数硬上限**（`--max-rounds` 默认 3）：
-  - 单章 polish_log >= 3 轮 → polish_cycle.py exit 1 给出协议提示
-  - 突破上限必须 `--allow-exceed-max-rounds --deviation-reason "为何还要再修"`
-  - deviation 自动写入 `audit_reports/chNNNN.json.deviations[]`
-  - 配套 H27 sunk cost 警报（v3+polish≥2+5 项 80 一线 → P1 提示考虑 Step 0 重写）
-  - Ch1 v7 11 轮 polish 沉没成本加法导向 polish 会陷死循环
-
-**与 Step 1-7 的关系**：
-- Step 8 是 **Step 7 之后的开放循环**，可无限次触发（每次产生一个 `polish_NNN` task）
-- Step 8 **不替代** Step 1-7：从草稿到首次 commit 必须走完整 Step 1-7
-- Step 8 的 `Step 8` 只是 `completed_steps` 里的单步标识，不与 Step 1-7 序号冲突
-- 触发新章节写作时，下章 context-agent 读取 `state.json` 自动获取最新 `narrative_version` 与 polish_log
-
-完整规范见 `references/post-commit-polish.md`（含恢复策略、多轮 polish、跨章影响、审计兼容性）。
+要点：Step 7 commit 之后任何正文修改的**唯一入口**是 `polish_cycle.py`（自动完成 7 步，commit 是最后一步原子落盘；轮数上限 3，突破需 deviation）。严禁裸跑 `git commit` / `--amend`。完整规范另见 `references/post-commit-polish.md`（Post-Commit Polish 触发场景 / 多轮 / 恢复策略）。
 
 ## 充分性闸门（必须通过）
 
@@ -1482,6 +240,8 @@ python -X utf8 "${SCRIPTS_DIR}/polish_cycle.py" ${chapter_num} \
 28. **H59 静默改分检测**：任一 checker 与 review_metrics 漂移 >1 必须在 `post_polish_recheck` 留 before/after 记录；无记录则 P1 警告。`state update --set-checker-score` 必须配套 `--append-recheck`，违反 Step 3+4.5 真源不可篡改原则。
 29. **H61 progress 字段对齐**：`state.last_completed_chapter` 与 `state.current_chapter` 必须 == max(chapter_meta keys)。Ch24 写到 24 但二字段停在 20（连续 4 章累积漂移），P1 警告。
 30. **post_draft 那一X 阈值收紧**：`那一X` block 阈值 18→12（warn 仍 10）。Ch24 实测 14 次仍只 warn 不 block，整章 polish 回避了这个签名。≥12 直接 block 阻止 commit。
+
+闸门与 hygiene H* 的一一对应、多层防御设计与同步维护规则见 `references/gate-matrix.md`。
 
 ## 验证与交付
 
@@ -1521,4 +281,4 @@ tail -n 1 "${PROJECT_ROOT}/.webnovel/observability/chapter_audit.jsonl" || true
    - 摘要/状态缺失：只重跑 Step 5；
    - Step 6 audit block：按 `audit_reports/ch{NNNN}.json` 的 `blocking_issues` 逐项 remediation（通常回到 Step 1/3/3.5/4/5），修复后重跑 Step 6；
    - Step 6 audit 超时：重跑 audit-agent（增量模式，仅跑未完成 layers）；
-3. 重新执行“验证与交付”全部检查，通过后结束。
+3. 重新执行"验证与交付"全部检查，通过后结束。

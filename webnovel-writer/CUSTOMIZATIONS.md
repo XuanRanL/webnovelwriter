@@ -7,6 +7,25 @@
 
 ---
 
+## [Round 29 · Phase 2] SKILL.md 骨架化：1525 行 → 215 行 + 按步 lazy-load
+
+### 背景
+webnovel-write SKILL.md 膨胀到 1525 行（约 40% 为 RCA 叙事），主 agent 全程常驻加载——起草正文时上下文里塞着 Step 3-8 的 ~800 行细节。本期按其自身 L0/L1/L2 懒加载哲学把步骤细节拆出。
+
+### 改动
+1. **15 个 Step 段落原文移入 `skills/webnovel-write/references/steps/step-{0,1,2a,2b,3,3.5,4,5,6,7}.md`**（机械切分，内容 verbatim；step-0 含 Step 0.5 + 搜索规则；step-3.5 含 Step 3+3.5 完成闸门；step-4 含 4.5；step-7 含 Step 8）。
+2. **骨架 SKILL.md（215 行）保留**：目标/字数 SSOT、执行原则（新增第 6 条：每步必先 cat 对应 steps 文件）、模式定义、流程硬约束、章节间闸门、每步"加载命令+要点"、充分性闸门 30 条全文、验证与交付、失败处理。
+3. **References 逐文件清单移入 `references/reference-index.md`**（L2 条件加载触发条件）。
+4. **4 条长篇禁止事项细则归位**：审查报告模板规范 + A2 未复测标签 → steps/step-3.md；H15 三连排比 → steps/step-2a.md；META_DRIFT → steps/step-7.md（骨架留一行 + 指针）。
+5. **新建 `docs/RCA-CHANGELOG.md`**：RCA 叙事归档落点（agent 不加载）。
+6. 修复原文内部矛盾：模式定义 `--minimal`"仅3个基础审查"→"仅5个"（与 Chapter Gate 的 Round 13 v2 口径对齐）。
+7. 测试锚点字符串全部保留（Step 8 / polish_cycle.py / Post-Commit Polish / 自动完成 7 步 / commit 是最后一步 / gate-matrix.md / 15 模型），全量 600 测试通过。
+
+### 收益
+主 agent 常驻 prompt 负担 −86%；起草期（Step 2A）上下文不再含后续步骤细节，留给正文素材。
+
+---
+
 ## [Round 29 · Phase 1] workflow 簿记代码化：strict 默认开启 + run-step 包装器
 
 ### 背景
