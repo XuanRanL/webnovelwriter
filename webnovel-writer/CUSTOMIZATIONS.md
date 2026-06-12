@@ -7,6 +7,23 @@
 
 ---
 
+## [Round 29 · Phase 8] 追读力体制升级：让"读者会不会爱看"获得独立通道（跨项目通用）
+
+### 背景
+52 章实测：overall 长期 86-89 看似健康，但 thrill verdict 仅 9/39 章 thrilling（Ch51 frustrating/Ch52-53 tepid 连败）、reader-critic 首稿 77/72/68 三连低、近 8 章 0 情绪钩。读者去留维度被 overall 的 1/13 平均稀释，趋势信号只是报告备注无人消费——系统在优化"不出错"而非"被爱看"（起点商业评分 76 的根源）。
+
+### 改动（全部 plugin 层，作用于所有项目与新书）
+1. **`state get-reading-trend` 新 CLI**（state_manager.compute_reading_trend 纯函数 + 6 单测）：thrill 连败 / rc<85 连败 / 决策・情绪钩 8 章饥饿 / 钩子同型 → 输出结构化 `prescriptions[]`（THRILL_RELEASE_DUE / EMOTION_HOOK_DUE / DECISION_HOOK_DUE / HOOK_SHAPE_VARY / READING_LINE_POLISH_PRIORITY）。实测对 Ch54 立即开出 2 张正确处方。
+2. **`agents/arc-review-checker.md` 新 subagent**：每 5 章（chapter%5==1 且 >5）Step 1 前连读上一章块，6 维评估（胜利节奏/金手指曲线/题材承诺占比/悬念配给/情感温度/连读疲劳），产出 `arc_reviews/arc_ch{s}-{e}.json` + 下 5 章处方。评分不进 13 canonical。
+3. **Step 1 接线**（steps/step-1.md + 骨架）：每章必跑 get-reading-trend、每 5 章必跑 arc-review；context-agent 新增 §追读处方消费——每条处方必须落成执行包具体 beat（`reading_pull_strategy.prescriptions_consumed`），有处方不消费 = Step 1 未完成。
+4. **追读双达标线**（steps/step-3.md + step-4.md）：Step 3 聚合显式输出追读线状态（rc 目标 ≥85 + thrill verdict）；Step 4 修复排序追读维度优先，工艺 ≥85 不再为提分 polish。不做硬 block（防 sunk-cost 死循环），是 polish 预算的方向规则。
+5. **两条通用工艺判据**：reader-pull-checker 加 HOOK_DEFLATED（钩末泄压句）/ HOOK_SAME_SHAPE（同型同语态钩）/ SUSPENSE_STARVED（悬置实体 3 提及零配给）；emotion-checker 加 EMO_SUPPRESSED_FLAT（克制型主角情感顶点必须漏一道缝，克制≠无情绪，优先级高于签名密度顾虑）。全部是语境判据非数量配额。
+
+### 注意
+agents/ 有新增（arc-review-checker）→ 必须 sync-agents + **重启 session** 才能 Task 调用（第四层缓存血教训）。
+
+---
+
 ## [Round 29 · Phase 6] 质量纠偏：撤销有实证副作用的机械写作约束
 
 ### 背景
