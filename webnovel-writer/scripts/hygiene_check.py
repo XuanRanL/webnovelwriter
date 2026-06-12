@@ -115,23 +115,17 @@ from workflow_manager import (  # noqa: E402  (sys.path must be primed first)
     _is_semantically_empty,
 )
 
-CORE_META_FIELDS = {
-    "chapter", "title", "word_count", "summary", "hook_strength", "scene_count",
-    "key_beats", "characters", "locations", "created_at", "updated_at",
-    "protagonist_state", "location_current", "power_realm", "golden_finger_level",
-    "time_anchor", "end_state", "foreshadowing_planted", "foreshadowing_paid",
-    "strand_dominant", "review_score", "checker_scores", "allusions_used",
-}
+# Round 29 Phase 3 · 单一真源：定义移到 data_modules/meta_fields.py（写库时即检），
+# 此处 import 保持全部旧名可用（is-identity 单测锁死，防两份 hardcode 漂移的两年血教训）。
+from data_modules.meta_fields import (  # noqa: E402
+    CORE_META_FIELDS,
+    CORE_META_LIST_FIELDS_ALLOW_EMPTY,
+)
+
 # Back-compat alias: older code referenced CORE_22_FIELDS even though the set
 # actually contains 23 fields (allusions_used was added in Round 9). Keep the
 # alias so any straggler import keeps working; drop after a deprecation cycle.
 CORE_22_FIELDS = CORE_META_FIELDS
-# Fields in CORE_META where an empty list/dict is semantically valid
-# (e.g. Ch1 has 0 paid foreshadowing; a bridge chapter has 0 new allusions)
-CORE_META_LIST_FIELDS_ALLOW_EMPTY = {
-    "foreshadowing_planted", "foreshadowing_paid", "allusions_used",
-    "key_beats", "characters", "locations", "checker_scores",
-}
 CORE_22_LIST_FIELDS_ALLOW_EMPTY = CORE_META_LIST_FIELDS_ALLOW_EMPTY
 
 ALLUSION_REQUIRED_KEYS = {"id", "snippet", "type", "source", "carrier", "function", "is_original"}
