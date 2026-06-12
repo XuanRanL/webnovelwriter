@@ -2641,6 +2641,226 @@ def run_audit(project_root: Path, chapter: int, mode: str = "standard") -> Dict[
     }
 
 
+# ==================== Round 29 Phase 4 · audit finalize（决议矩阵代码化） ====================
+
+_FINAL_LAYER_KEYS = (
+    "A_process_integrity",
+    "B_cross_artifact_consistency",
+    "C_reader_experience",
+    "D_work_continuity",
+    "E_craft_quality",
+    "F_genre_fitness",
+    "G_cross_chapter_trend",
+)
+_AGENT_REQUIRED_LAYERS = (
+    "C_reader_experience",
+    "D_work_continuity",
+    "E_craft_quality",
+    "F_genre_fitness",
+)
+
+
+def aggregate_final_decision(layers: dict) -> dict:
+    """按 step-6-audit-matrix.md 决议矩阵计算最终决议（纯函数）。
+
+    口径：命中 = check.status ∈ {warn, fail}（Ch52 实战：A10 warn-high 必须计入三 high）。
+    critical 任一命中 → block；high ≥3 → block；high 1-2 → approve_with_warnings；
+    medium 任一命中 → approve_with_warnings；low 仅记录。pass/skipped 不计。
+    """
+    hits = []
+    for layer in (layers or {}).values():
+        for chk in (layer or {}).get("checks", []) or []:
+            if (chk.get("status") or "") in ("warn", "fail"):
+                hits.append(chk)
+
+    critical_hits = [c for c in hits if c.get("severity") == "critical"]
+    high_hits = [c for c in hits if c.get("severity") == "high"]
+    medium_hits = [c for c in hits if c.get("severity") == "medium"]
+    low_hits = [c for c in hits if c.get("severity") == "low"]
+
+    if critical_hits:
+        decision = "block"
+    elif len(high_hits) >= 3:
+        decision = "block"
+    elif high_hits or medium_hits:
+        decision = "approve_with_warnings"
+    else:
+        decision = "approve"
+
+    blocking = list(critical_hits)
+    if len(high_hits) >= 3:
+        blocking.extend(high_hits)
+    blocking_ids = {id(c) for c in blocking}
+    warnings = [c for c in hits if id(c) not in blocking_ids]
+
+    return {
+        "decision": decision,
+        "critical_hits": len(critical_hits),
+        "high_hits": len(high_hits),
+        "medium_hits": len(medium_hits),
+        "low_hits": len(low_hits),
+        "blocking_issues": blocking,
+        "warnings": warnings,
+    }
+
+
+def merge_audit_layers(part1: dict, agent_findings: dict) -> dict:
+    """合并 Part 1 CLI 层（A/B/F子集/G）与 agent findings 层（C/D/E/F）。
+
+    F 层按 check id 合并，agent 判断覆盖 CLI 子集同 id 项。
+    """
+    p_layers = (part1 or {}).get("layers", {}) or {}
+    a_layers = (agent_findings or {}).get("layers", {}) or {}
+
+    merged: dict = {}
+    for key in ("A_process_integrity", "B_cross_artifact_consistency", "G_cross_chapter_trend"):
+        if key in p_layers:
+            merged[key] = p_layers[key]
+    for key in ("C_reader_experience", "D_work_continuity", "E_craft_quality"):
+        if key in a_layers:
+            merged[key] = a_layers[key]
+
+    f_cli = p_layers.get("F_genre_fitness") or {}
+    f_agent = a_layers.get("F_genre_fitness") or {}
+    f_checks: dict = {}
+    for chk in (f_cli.get("checks") or []):
+        if chk.get("id"):
+            f_checks[chk["id"]] = chk
+    for chk in (f_agent.get("checks") or []):  # agent 后写 → 同 id 覆盖
+        if chk.get("id"):
+            f_checks[chk["id"]] = chk
+    if f_cli or f_agent:
+        merged["F_genre_fitness"] = {
+            "score": f_agent.get("score", f_cli.get("score")),
+            "checks": list(f_checks.values()),
+        }
+    return merged
+
+
+def finalize_audit_report(
+    project_root: Path,
+    chapter: int,
+    part1: dict,
+    agent_findings: dict,
+    *,
+    mode: str = "standard",
+    time_elapsed_seconds: int | None = None,
+) -> dict:
+    """组装最终审计报告 + 落盘 audit_reports/ch{NNNN}.json + 追加 chapter_audit.jsonl。
+
+    替代 audit-agent 旧自检 1（落盘）/2（schema）/3（决议矩阵 runtime）/5（jsonl tail）——
+    这些保证由本函数确定性兑现。agent findings 缺 C/D/E/F 任一层 → ValueError（强制完整）。
+    """
+    a_layers = (agent_findings or {}).get("layers", {}) or {}
+    missing = [k for k in _AGENT_REQUIRED_LAYERS if k not in a_layers]
+    if missing:
+        raise ValueError(f"agent findings 缺必需层: {missing}（C/D/E/F 必须齐，禁止部分产出）")
+
+    layers = merge_audit_layers(part1, agent_findings)
+    agg = aggregate_final_decision(layers)
+
+    def _score(key):
+        return (layers.get(key) or {}).get("score")
+
+    layer_scores = {k: _score(k) for k in _FINAL_LAYER_KEYS}
+    known = [v for v in layer_scores.values() if isinstance(v, (int, float))]
+    aggregate_score = round(sum(known) / len(known), 1) if known else None
+
+    report = {
+        "chapter": chapter,
+        "audit_version": "2.0-r29",
+        "mode": mode,
+        "source": "audit_finalize_cli",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "decision": agg["decision"],
+        "overall_decision": agg["decision"],
+        "time_elapsed_seconds": time_elapsed_seconds,
+        "layers": {k: layers[k] for k in _FINAL_LAYER_KEYS if k in layers},
+        "summary": {
+            "critical_hits": agg["critical_hits"],
+            "high_hits": agg["high_hits"],
+            "medium_hits": agg["medium_hits"],
+            "low_hits": agg["low_hits"],
+        },
+        "blocking_issues": agg["blocking_issues"],
+        "warnings": agg["warnings"],
+        "aggregate_score": aggregate_score,
+        "quality_scores": {
+            "process": layer_scores["A_process_integrity"],
+            "reader": layer_scores["C_reader_experience"],
+            "craft": layer_scores["E_craft_quality"],
+            "continuity": layer_scores["D_work_continuity"],
+            "genre_fit": layer_scores["F_genre_fitness"],
+            "trend": layer_scores["G_cross_chapter_trend"],
+        },
+        "editor_notes_for_next_chapter": (agent_findings or {}).get("editor_notes_for_next_chapter") or {},
+        "deviations": (agent_findings or {}).get("deviations") or [],
+        "mandatory_review_consumed": (agent_findings or {}).get("mandatory_review_consumed"),
+    }
+
+    report_path = project_root / ".webnovel" / "audit_reports" / f"ch{chapter:04d}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    obs_path = project_root / ".webnovel" / "observability" / "chapter_audit.jsonl"
+    obs_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(obs_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "chapter": chapter,
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "source": "audit_finalize_cli",
+            "decision": agg["decision"],
+            "overall_decision": agg["decision"],
+            "aggregate_score": aggregate_score,
+            "elapsed_ms": (time_elapsed_seconds or 0) * 1000,
+            "layer_scores": {k[0]: v for k, v in layer_scores.items()},
+            "warnings_count": len(agg["warnings"]),
+            "blocking_count": len(agg["blocking_issues"]),
+            "mandatory_review_models": ((agent_findings or {}).get("mandatory_review_models") or []),
+        }, ensure_ascii=False) + "\n")
+
+    return report
+
+
+def _cmd_finalize(args) -> int:
+    from .cli_output import print_error
+    try:
+        project_root = Path(args.project_root).resolve()
+    except Exception as exc:
+        print_error("invalid_project_root", str(exc))
+        return 3
+    part1 = _read_json(Path(args.part1))
+    if part1 is None:
+        print_error("part1_missing", f"{args.part1} 不存在或非法 JSON",
+                    suggestion="先运行 audit chapter --out 生成 Part 1 JSON")
+        return 3
+    findings = _read_json(Path(args.agent_findings))
+    if findings is None:
+        print_error("agent_findings_missing", f"{args.agent_findings} 不存在或非法 JSON",
+                    suggestion="audit-agent 必须先把 C/D/E/F findings 写到 tmp JSON")
+        return 3
+    try:
+        report = finalize_audit_report(
+            project_root, args.chapter, part1, findings,
+            mode=args.mode, time_elapsed_seconds=args.time_elapsed_seconds,
+        )
+    except ValueError as exc:
+        print_error("agent_findings_incomplete", str(exc))
+        return 3
+    print(json.dumps({
+        "status": "success",
+        "decision": report["decision"],
+        "aggregate_score": report["aggregate_score"],
+        "report": str(project_root / ".webnovel" / "audit_reports" / f"ch{args.chapter:04d}.json"),
+        "summary": report["summary"],
+    }, ensure_ascii=False, indent=2))
+    if report["decision"] != "block":
+        next_notes = project_root / ".webnovel" / "editor_notes" / f"ch{args.chapter + 1:04d}_prep.md"
+        if not next_notes.exists():
+            print(f"REMINDER: decision={report['decision']} → 必须写 {next_notes}（充分性闸门 #11）")
+    return _DECISION_TO_EXIT_CODE.get(report["decision"], 3)
+
+
 # ==================== CLI ====================
 
 def _cmd_chapter(args) -> int:
@@ -2789,12 +3009,24 @@ def main() -> None:
     p_dec.add_argument("--require", default="approve,approve_with_warnings",
                        help="允许的决议值 (逗号分隔)")
 
+    p_fin = sub.add_parser(
+        "finalize",
+        help="R29: 合并 Part1 + agent findings → 决议矩阵代码计算 → 落盘最终报告 + jsonl",
+    )
+    p_fin.add_argument("--chapter", type=int, required=True)
+    p_fin.add_argument("--part1", required=True, help="Part 1 CLI JSON 路径（audit chapter --out 产物）")
+    p_fin.add_argument("--agent-findings", required=True, help="audit-agent C/D/E/F findings JSON 路径")
+    p_fin.add_argument("--mode", choices=["standard", "fast", "minimal"], default="standard")
+    p_fin.add_argument("--time-elapsed-seconds", type=int, default=None)
+
     args = parser.parse_args()
 
     if args.cmd == "chapter":
         raise SystemExit(_cmd_chapter(args))
     if args.cmd == "check-decision":
         raise SystemExit(_cmd_check_decision(args))
+    if args.cmd == "finalize":
+        raise SystemExit(_cmd_finalize(args))
     raise SystemExit(2)
 
 

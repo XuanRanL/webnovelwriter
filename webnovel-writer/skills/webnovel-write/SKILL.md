@@ -188,7 +188,7 @@ cat "${SKILL_ROOT}/references/steps/step-5.md"
 cat "${SKILL_ROOT}/references/steps/step-6.md"
 ```
 
-要点：Part 1 CLI 结构审计（Layer A/B/G）+ Part 2 audit-agent 深度审计（Layer C/D/E/F）都必须完成；`audit_reports/ch{NNNN}.json` 与下章 `editor_notes` 必须落盘；decision=block 禁止进入 Step 7；超时 300s 视为未完成。
+要点：Part 1 CLI 结构审计（Layer A/B/G）+ Part 2 audit-agent 深度审计（Layer C/D/E/F findings）都必须完成；**决议与落盘由 `audit finalize` CLI 确定性完成**（R29：agent 只产 findings 不自算 decision）；下章 `editor_notes` 由 agent 写（非 block 必写）；decision=block 禁止进入 Step 7；超时 300s 视为未完成。
 
 ### Step 7：Git 备份 + workflow 收尾
 

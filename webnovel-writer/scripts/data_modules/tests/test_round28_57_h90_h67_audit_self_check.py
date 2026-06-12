@@ -177,14 +177,20 @@ def test_h67_prefix_strictness_removed_zhao_wang_shun_yi(tmp_path):
         assert required in block_text, f"R28.57 应保留 {required} prefix"
 
 
-# ===== audit-agent self-check 3 medium in [1,4] 分支补漏（regression test）=====
+# ===== audit-agent 决议协议（R28.57 自检 3 → R29 Phase 4 finalize CLI 替代）=====
 
-def test_audit_agent_self_check_3_medium_branch_present():
-    """R28.57 验证：audit-agent.md 自检 3 含 medium in [1,4] 分支."""
+def test_audit_agent_uses_finalize_cli_not_inline_matrix():
+    """R29 Phase 4：决议矩阵由 audit finalize CLI 代码计算（含 medium [1,4] 与 all-pass 分支，
+    见 chapter_audit.aggregate_final_decision 单测）；audit-agent.md 必须改走 finalize 协议，
+    不得再要求 agent runtime 自算 decision（R28.57 自检 3 的 prose 矩阵已废除）。"""
     audit_md = REPO_ROOT / "agents" / "audit-agent.md"
     src = audit_md.read_text(encoding="utf-8")
-    # 必须含 medium in (1, 2, 3, 4) 或 medium in [1,4] 等价写法
-    assert "medium_count in (1, 2, 3, 4)" in src or "medium_count in [1, 2, 3, 4]" in src, \
-        "R28.57 必须补 medium in [1,4] 分支防 regression"
-    # 必须含 all-pass approve 兜底
-    assert "all pass" in src.lower() or "approve" in src
+    assert "audit finalize" in src, "audit-agent.md 必须含 finalize CLI 调用协议"
+    assert "audit_agent_findings_ch" in src, "audit-agent.md 必须定义 findings JSON 落盘路径"
+    # 旧 runtime 矩阵 prose 必须移除（防止双真源漂移）
+    assert "medium_count in (1, 2, 3, 4)" not in src, "旧自检 3 prose 矩阵应已删除（真源在 CLI）"
+    # CLI 侧矩阵分支由 test_round29_audit_finalize.py 锁定
+    from data_modules.chapter_audit import aggregate_final_decision
+    one_medium = {"E": {"score": 90, "checks": [{"id": "E1", "status": "warn", "severity": "medium"}]}}
+    assert aggregate_final_decision(one_medium)["decision"] == "approve_with_warnings"
+    assert aggregate_final_decision({})["decision"] == "approve"

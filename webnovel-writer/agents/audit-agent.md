@@ -145,53 +145,41 @@ A 层增加 A-DB-DEP（low warn，不阻断）：
   - C 层缺失（所有外部模型 reader_flow 失败）→ 仅用 A 层数据，标注 `c_layer_missing=true`，不 block
   - 两层都缺 → C13/C15 skip，输出 `skipped_reason='no_flow_data'`，不扣分
 
-### 第三步：聚合判定
+### 第三步：findings 落盘 + 调用 finalize CLI（Round 29 Phase 4 · 决议不再由 agent 计算）
 
-综合所有层级结果产出决议（权威规范见 `step-6-audit-matrix.md` 决议矩阵，本段必须与其保持一致）：
+> **为什么改**：让 LLM 在 70 项检查末尾做矩阵运算必然出错（Ch52 实战三 high 应 block 写成
+> approve_with_warnings）；三章连续"claim 落盘实际未写"（Ch50-52）。R29 起决议矩阵、最终报告
+> 组装、audit_reports 落盘、jsonl 追加全部由 `audit finalize` CLI 确定性完成。
 
-```
-overall_decision = 
-  block                    if any(Layer A critical fail)
-  block                    if any(Layer B critical fail)  
-  block                    if any(Layer C critical fail)
-  block                    if any(Layer D critical fail)
-  block                    if any(Layer F critical fail)
-  block                    if count(high) >= 3
-  approve_with_warnings    if count(high) in [1, 2]
-  approve_with_warnings    if count(medium) >= 5
-  approve_with_warnings    if count(medium) in [1, 4]
-  approve                  if all checks pass
-```
-
-> **权威源**：决议矩阵以 `step-6-audit-matrix.md` 为准。此处为简化摘要。
-
-说明：
-- Layer E/G 没有 critical 等级检查项（最高 high），不会单独触发 critical block
-- `low` 等级的 fail 仅记录，不影响决议
-- `skipped` 状态不计入任何 fail 或 warn 计数
-
-### 第四步：写出产物
-
-1. **审计 JSON**（机读）：
+1. 把 C/D/E/F 四层判断结果（每个 check 含 `id/name/status/severity/evidence/measured/remediation`）
+   + `editor_notes_for_next_chapter` + `mandatory_review_consumed` 写到 findings JSON：
    ```
-   .webnovel/audit_reports/ch{NNNN}.json
+   .webnovel/tmp/audit_agent_findings_ch{NNNN}.json
    ```
-   完整 7 层结果 + 决议 + remediation 清单。
+   结构：`{"chapter": N, "layers": {"C_reader_experience": {"score": int, "checks": [...]}, "D_work_continuity": ..., "E_craft_quality": ..., "F_genre_fitness": ...}, "editor_notes_for_next_chapter": {...}, "deviations": [...], "mandatory_review_models": [...], "mandatory_review_consumed": ...}`
+   **C/D/E/F 四层缺一不可**——finalize 会直接拒绝部分产出。
+2. 调用 finalize（决议矩阵代码计算 · 命中=warn|fail · critical 任一→block · high≥3→block）：
+   ```bash
+   python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+     audit finalize --chapter ${chapter_num} \
+     --part1 "${PROJECT_ROOT}/.webnovel/tmp/audit_layer_abg_ch${chapter_padded}.json" \
+     --agent-findings "${PROJECT_ROOT}/.webnovel/tmp/audit_agent_findings_ch${chapter_padded}.json" \
+     --mode ${mode} --time-elapsed-seconds ${elapsed}
+   ```
+   CLI 自动完成：7 层合并（F 层同 id agent 覆盖 CLI 子集）→ 决议 → `audit_reports/ch{NNNN}.json`
+   落盘 → `chapter_audit.jsonl` 追加。退出码 0=approve / 2=approve_with_warnings / 1=block。
+3. **禁止** agent 自行 Write `audit_reports/ch{NNNN}.json` 或自行追加 jsonl——唯一合法产出路径是
+   findings JSON + finalize CLI。
 
-2. **追加人读报告**：
-   在 `审查报告/第{NNNN}章审查报告.md` 末尾追加一个 `## Step 6 审计闸门` 段，展示每层通过/警告/阻断项 + 用户可直接执行的修复命令。
+### 第四步：agent 仍负责的两份人读产物
 
-3. **下章准备**（`approve` / `approve_with_warnings` 时写入）：
+1. **追加人读报告**：在 `审查报告/第{NNNN}章审查报告.md` 末尾追加 `## Step 6 审计闸门` 段，
+   展示每层通过/警告/阻断项 + 用户可直接执行的修复命令（以 finalize 输出的 decision 为准）。
+2. **下章准备**（finalize 决议 ∈ {approve, approve_with_warnings} 时写入）：
    ```
    .webnovel/editor_notes/ch{NNNN+1}_prep.md
    ```
    按 `step-6-audit-gate.md` 定义的格式写入：上章警告、未兑现承诺、跨章趋势建议、Step-specific 改进建议。
-
-4. **追加趋势日志**：
-   ```
-   .webnovel/observability/chapter_audit.jsonl
-   ```
-   追加单行 JSON：`{chapter, decision, layer_scores, timing, warnings_count}`，供后续章节 Layer G 读取基线。
 
 ## 输出 Schema（严格）
 
@@ -547,92 +535,25 @@ audit-agent 写 `editor_notes_for_next_chapter` 时，**任何**关于角色背�
 
 ---
 
-## Round 28.56 · audit-agent 落盘强制自检（Ch52 deep audit 复发根治）
+## 内容级自检（Round 29 Phase 4 精简 · 原 R28.56 六道自检中四道已由 finalize CLI 替代）
 
-**血教训**（Ch52 commit 1374f70 deep audit · 跨 3 章重复 P0）：
+> **Round 29 Phase 4 · 旧自检 1/2/3/5 已废除**：落盘存在性、schema 完整性、决议矩阵、jsonl 追加
+> 全部由 `audit finalize` CLI 确定性兑现（见第三步），agent 无需也不得自行重建这些保证。
+> 历史背景（Ch50-52 三连假落盘 / Ch52 决议算错）见 docs/RCA-CHANGELOG.md。
+> 保留下面两道**内容级**自检（CLI 无法替代的判断完整性）：
 
-Ch50/Ch51/Ch52 三次 audit-agent **声称已落盘 `audit_reports/ch{NNNN}.json`，但实际未写盘**——主流程必须用 `python -c "import json,..."` 手动重建 audit_report 才能通过 `audit check-decision`。重建过程往往退化 schema（缺 `overall_decision` / `layers[*].checks[]` / `time_budget_seconds` / `mandatory_review_findings`）。
+### 自检 1: A3 mandatory_review_findings 结构化字段强制（R28.55 实战未落 → R28.56 升级）
 
-**永久规则**：audit-agent 在 Task 内部 return 之前，**必须**执行以下三道自检，任一失败 → 立即重写 + 再检 + 返回 disk-verified 报告：
-
-### 自检 1: 落盘文件存在性 + 大小
-
-```bash
-# audit-agent 内部 Bash 最后一步必跑
-for f in \
-  ".webnovel/audit_reports/ch{NNNN}.json" \
-  ".webnovel/editor_notes/ch{NNNN+1}_prep.md" \
-  ".webnovel/observability/chapter_audit.jsonl"; do
-  if [ ! -f "${PROJECT_ROOT}/$f" ] || [ ! -s "${PROJECT_ROOT}/$f" ]; then
-    echo "AUDIT-DISK-LANDING-FAIL: $f missing or empty · 立即用 Write 工具重写"
-    exit 1  # 触发 audit-agent 自身重跑
-  fi
-done
-```
-
-### 自检 2: audit_reports/ch{NNNN}.json schema 完整性
-
+如果 Part 1 `A3.measured.mandatory_human_review_models` 非空，findings JSON **必须**含对应结构化条目：
 ```python
-import json
-d = json.load(open(f'.webnovel/audit_reports/ch{NNNN}.json', encoding='utf-8'))
-required_top = {'chapter','audit_version','mode','decision','overall_decision',
-                'time_budget_seconds','time_elapsed_seconds','time_exhausted',
-                'layers','blocking_issues','warnings','quality_scores',
-                'editor_notes_for_next_chapter'}
-missing = required_top - set(d.keys())
-assert not missing, f'AUDIT-SCHEMA-FAIL: 顶层缺 {missing}'
-assert d['decision'] == d['overall_decision'], f'decision/overall_decision 不一致'
-for layer_key in ['A_process_integrity','B_cross_artifact_consistency','C_reader_experience',
-                  'D_work_continuity','E_craft_quality','F_genre_fitness','G_cross_chapter_trend']:
-    L = d['layers'].get(layer_key)
-    assert L is not None, f'layer {layer_key} 缺失'
-    assert 'checks' in L and isinstance(L['checks'], list), f'{layer_key}.checks 必须是 list'
-    for c in L['checks']:
-        for k in ('id','name','status','severity','evidence'):
-            assert k in c, f'{layer_key} check 缺 {k}'
+# 对 findings JSON（audit_agent_findings_ch{NNNN}.json）自检
+for m in mandatory_human_review_models:
+    assert m in findings.get('mandatory_review_findings', {}), f'缺 {m} 模型的结构化条目'
+    assert len(findings['mandatory_review_findings'][m]) >= 1, f'{m} 必须含 1+ critical/high issue 摘要'
+# 并在 findings 顶层写 mandatory_review_consumed: true
 ```
 
-### 自检 3: decision matrix runtime 强制（Ch52 实战触发 · F2/A10/F7 三 high 实际是 block 但写成 approve_with_warnings）
-
-```python
-critical_count = sum(1 for w in d['warnings'] + d['blocking_issues'] if w.get('severity')=='critical')
-high_count = sum(1 for w in d['warnings'] if w.get('severity')=='high')
-medium_count = sum(1 for w in d['warnings'] if w.get('severity')=='medium')
-if critical_count > 0:
-    assert d['decision']=='block', f'critical>0 必须 block，实际 {d["decision"]}'
-elif high_count >= 3:
-    assert d['decision']=='block', f'high>=3 必须 block，实际 {d["decision"]} (F2/A10/F7 实战触发)'
-elif high_count in (1,2):
-    assert d['decision']=='approve_with_warnings', f'high 1-2 必须 approve_with_warnings'
-elif medium_count >= 5:
-    assert d['decision']=='approve_with_warnings', f'medium>=5 必须 approve_with_warnings'
-elif medium_count in (1, 2, 3, 4):  # R28.57 补 medium in [1,4] 分支防 regression
-    assert d['decision']=='approve_with_warnings', f'medium 1-4 必须 approve_with_warnings (R28.57 补)'
-else:  # all checks pass
-    assert d['decision']=='approve', f'all pass 必须 approve'
-```
-
-### 自检 4: A3 mandatory_review_findings 结构化字段强制（R28.55 实战未落 → R28.56 升级）
-
-如果 `A3.measured.mandatory_human_review_models` 非空，**必须**：
-```python
-a3 = next((c for c in d['layers']['A_process_integrity']['checks'] if c['id']=='A3'), None)
-mandatory = a3.get('mandatory_review_findings', None)
-assert mandatory is not None, 'A3.mandatory_review_findings 字段缺失 (R28.55/56)'
-for m in a3.get('measured',{}).get('mandatory_human_review_models', []):
-    assert m in mandatory, f'A3.mandatory_review_findings 缺 {m} 模型的结构化条目'
-    assert isinstance(mandatory[m], list) and len(mandatory[m]) >= 1, \
-        f'A3.mandatory_review_findings[{m}] 必须含 1+ critical/high issue 摘要'
-```
-
-### 自检 5: chapter_audit.jsonl 追加成功
-
-```bash
-last_line=$(tail -1 "${PROJECT_ROOT}/.webnovel/observability/chapter_audit.jsonl")
-echo "$last_line" | python -c "import json,sys; d=json.loads(sys.stdin.read()); assert d['chapter']==${NNNN}, 'jsonl 最后一行非本章'"
-```
-
-### 自检 6: E3 / drift warning 反幻觉守门（Ch52 实战 audit 报"了一X grep=7 vs state=0"是虚构）
+### 自检 2: E3 / drift warning 反幻觉守门（Ch52 实战 audit 报"了一X grep=7 vs state=0"是虚构）
 
 任何包含 "drift" / "vs state" / "vs grep" 字眼的 warning **必须**含 measured 字段，且 `disk_value` 与 `grep_value` 都来自同一审计运行的真实测量：
 ```python
@@ -646,16 +567,17 @@ for w in d['warnings']:
 
 ### 失败处理
 
-任一自检失败 → audit-agent **不得 return**，必须立即用 Write 工具重写产物，再次自检通过才能 return。若 3 次自检仍 fail，写 audit_reports/ch{NNNN}.json 时把 `decision='block'` + `blocking_issues` 含 `AUDIT_SELF_CHECK_TRIPLE_FAIL` 项，主流程拒绝继续 Step 7。
+- `audit finalize` 退出码 3（findings 不完整 / 文件缺失）→ 补齐 findings JSON 重跑 finalize；
+- 两道内容级自检失败 → 修正 findings JSON 后重跑 finalize；
+- finalize 成功即代表落盘 + 决议 + jsonl 全部兑现，agent 直接 return finalize 的 decision。
 
 **主流程侧验证（Step 6 complete-step 之前）**：
 
 ```bash
-test -f "${PROJECT_ROOT}/.webnovel/audit_reports/ch${chapter_padded}.json" || { echo "FAIL"; exit 1; }
-test -s "${PROJECT_ROOT}/.webnovel/audit_reports/ch${chapter_padded}.json" || { echo "FAIL: empty"; exit 1; }
-test -f "${PROJECT_ROOT}/.webnovel/editor_notes/ch$(printf %04d $((chapter_num+1)))_prep.md" || { echo "FAIL: prep missing"; exit 1; }
-# 再次跑自检 1+2+3+4+5+6（同上脚本）
+test -s "${PROJECT_ROOT}/.webnovel/audit_reports/ch${chapter_padded}.json" || { echo "FAIL: audit report missing"; exit 1; }
+# decision != block 时 editor_notes 必须存在（充分性闸门 #11）
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" audit check-decision --chapter ${chapter_num} --require approve,approve_with_warnings,block
 ```
 
-**跨小说强适用**：所有项目共享此规则，无需项目级别豁免。Ch50/Ch51/Ch52 三连复发证明 prose-level 规则不足以约束 LLM，必须 runtime 强制。
+**跨小说强适用**：所有项目共享此规则，无需项目级别豁免。
 
