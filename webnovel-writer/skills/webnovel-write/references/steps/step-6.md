@@ -31,7 +31,22 @@ Task(audit-agent, {
 })
 ```
 
-audit-agent 自动读取 Part 1 的 JSON 输出，完成 Layer C / D / E / F 判断性检查，聚合所有层级，产出最终 `.webnovel/audit_reports/ch{NNNN}.json` 与下章 `editor_notes/ch{NNNN+1}_prep.md`。
+audit-agent 自动读取 Part 1 的 JSON 输出，完成 Layer C / D / E / F 判断性检查，把 findings 写到
+`.webnovel/tmp/audit_agent_findings_ch{NNNN}.json`，然后**调用 finalize CLI 完成决议与落盘**
+（Round 29 Phase 4 · 决议矩阵代码计算，agent 不再自算 decision）：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+  audit finalize --chapter ${chapter_num} \
+  --part1 "${PROJECT_ROOT}/.webnovel/tmp/audit_layer_abg_ch${chapter_padded}.json" \
+  --agent-findings "${PROJECT_ROOT}/.webnovel/tmp/audit_agent_findings_ch${chapter_padded}.json" \
+  --mode ${mode}
+```
+
+finalize 确定性完成：7 层合并 → 决议矩阵（命中=warn|fail · critical→block · high≥3→block）→
+`audit_reports/ch{NNNN}.json` 落盘 → `chapter_audit.jsonl` 追加。退出码 0=approve /
+2=approve_with_warnings / 1=block。agent 仍负责两份人读产物：审查报告追加段 + 下章
+`editor_notes/ch{NNNN+1}_prep.md`（决议非 block 时必写）。
 
 **决议规则**：
 - `decision == block` → 按 blocking_issues 的 remediation 修复，重跑对应步骤，**不得进入 Step 7**

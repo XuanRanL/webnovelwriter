@@ -7,6 +7,21 @@
 
 ---
 
+## [Round 29 · Phase 4] audit 决议代码化：agent 只产 findings，决议与落盘由 finalize CLI 兑现
+
+### 背景
+Ch50-52 三章连续 audit-agent claim 落盘实际未写；Ch52 决议矩阵算错（三 high 应 block 写成 approve_with_warnings）。让 LLM 在 70 项检查末尾做矩阵运算必然出错，R28.56 的修法是加 6 道 prose 自检（文档更长更难执行）。
+
+### 改动
+1. **`audit finalize` 新 CLI**（chapter_audit.py：`aggregate_final_decision` + `merge_audit_layers` + `finalize_audit_report` 三个纯函数 + 8 单测）：合并 Part1(A/B/G/F子集) + agent findings(C/D/E/F) → 决议矩阵代码计算（命中=warn|fail · critical 任一→block · high≥3→block · medium 任一→warnings）→ 落盘 audit_reports/ch{NNNN}.json + 追加 chapter_audit.jsonl。findings 缺 C/D/E/F 任一层直接拒绝。退出码 0/2/1 对应三种决议。
+2. **audit-agent.md 改协议**：第三步改为 findings 落盘（`tmp/audit_agent_findings_ch{NNNN}.json`）+ 调 finalize；禁止 agent 自行写 audit_reports / jsonl / 自算 decision。旧自检 1/2/3/5 四道废除（CLI 兑现），保留内容级自检 2 道（A3 mandatory_review 结构化 + drift 反幻觉）。
+3. steps/step-6.md + SKILL 骨架同步 finalize 协议；R28.57 旧测试更新为"prose 矩阵必须已删除 + CLI 矩阵分支锁定"。
+
+### 消灭的 bug 家族
+假落盘（Ch50-52 三连）/ 决议算错（Ch52）/ schema 退化重建——整类物理不可能。
+
+---
+
 ## [Round 29 · Phase 8] 追读力体制升级：让"读者会不会爱看"获得独立通道（跨项目通用）
 
 ### 背景
