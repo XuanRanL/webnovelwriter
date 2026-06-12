@@ -561,15 +561,17 @@ def complete_step(step_id, artifacts_json=None):
         pending_steps = task.get("pending_steps", []) or []
         completed_ids = {row.get("id") for row in task.get("completed_steps", [])}
         if step_id in pending_steps and step_id not in completed_ids:
-            # Round 28.1 · Ch25 RCA：strict mode 拒绝 implicit_start
-            # 根因：Ch25 Step 5 implicit_start=True 导致 audit A6 HIGH warn 累积。
-            # 修法：设环境变量 WEBNOVEL_STRICT_WORKFLOW=1 → implicit_start 直接 reject。
-            # 默认仍允许 fallback 兼容历史，但 print 加红字提醒。
-            strict = os.environ.get("WEBNOVEL_STRICT_WORKFLOW") == "1"
+            # Round 28.1 · Ch25 RCA：strict mode 拒绝 implicit_start。
+            # Round 29 Phase 1：strict 改为默认开启——implicit_start 兜底让遗忘 start-step
+            # 静默降级为 A6 审计债，在 4 个步骤上各复发一次（R28.1/28.22/28.46/28.49）。
+            # 默认拒绝后失误当场暴露、当场自愈（补一次 start-step 即可），不再累积。
+            # 逃生口：WEBNOVEL_STRICT_WORKFLOW=0 显式恢复 implicit_start（仅手动恢复场景）。
+            strict = os.environ.get("WEBNOVEL_STRICT_WORKFLOW", "1") != "0"
             if strict:
                 print(
                     f"❌ STRICT_WORKFLOW: {step_id} 没有预先 start-step。"
-                    f" 修：先调 `workflow start-step --step-id \"{step_id}\"` 再调 complete-step。"
+                    f" 修：先调 `workflow start-step --step-id \"{step_id}\"` 再调 complete-step"
+                    f"（或改用 `workflow run-step`；遗留恢复场景可设 WEBNOVEL_STRICT_WORKFLOW=0）。"
                 )
                 safe_append_call_trace(
                     "step_complete_rejected_strict",
@@ -759,6 +761,69 @@ def fail_step(step_id, reason="step_marked_failed", artifacts_json=None):
         },
     )
     print(f"⚠️ {step_id} 已标记失败: {reason}")
+
+
+def run_step(step_id, step_name=None, command_argv=None, artifacts_json=None, artifacts_file=None):
+    """Round 29 Phase 1 · 原子化 step 执行包装器：start-step → 命令 → complete-step。
+
+    把"开始登记 / 执行 / 完成登记"合成一次调用，消灭"做完了工作忘记 start-step"
+    这一类失误（R28.1/28.22/28.46/28.49 四轮 RCA 的同源根因）。
+
+    Args:
+        step_id: 步骤 ID（如 "Step 3.5"）。
+        step_name: 步骤显示名，缺省用 step_id。
+        command_argv: 要执行的命令 argv 列表；为空则只做 start+complete 括号登记。
+        artifacts_json: 内联 artifacts JSON 字符串。
+        artifacts_file: 命令执行完成后读取的 artifacts JSON 文件路径
+            （命令自身产出 artifacts 的场景；优先于 artifacts_json）。
+
+    Returns:
+        int 退出码：0 成功；命令失败时透传其退出码；2 任务/步骤登记失败；1 完成登记被拒。
+    """
+    step_name = step_name or step_id
+
+    state = load_state()
+    task = state.get("current_task")
+    if not task or task.get("status") != TASK_STATUS_RUNNING:
+        print("⚠️ run-step: 无运行中任务，请先 start-task")
+        return 2
+
+    start_step(step_id, step_name)
+    state = load_state()
+    task = state.get("current_task") or {}
+    current_step = task.get("current_step") or {}
+    if current_step.get("id") != step_id:
+        # start_step 被拒（顺序违规 / 其他 step 占用），诊断已由 start_step 打印
+        print(f"⚠️ run-step: {step_id} start-step 未生效，中止")
+        return 2
+
+    if command_argv:
+        safe_append_call_trace(
+            "run_step_command",
+            {"step_id": step_id, "command_argv": list(command_argv)},
+        )
+        proc = subprocess.run(list(command_argv))
+        if proc.returncode != 0:
+            fail_step(step_id, f"run-step 命令退出码 {proc.returncode}")
+            return proc.returncode
+
+    resolved_artifacts = artifacts_json
+    if artifacts_file:
+        try:
+            resolved_artifacts = Path(artifacts_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            fail_step(step_id, f"run-step artifacts 文件不可读: {exc}")
+            return 1
+
+    complete_step(step_id, resolved_artifacts)
+
+    state = load_state()
+    task = state.get("current_task") or {}
+    completed_ids = {row.get("id") for row in task.get("completed_steps", [])}
+    if step_id not in completed_ids:
+        # complete_step 被拒（artifact 语义校验等），诊断已打印；step 留在 running 态供修复重试
+        return 1
+    return 0
 
 
 def complete_task(final_artifacts_json=None, force=False):
@@ -1345,6 +1410,24 @@ if __name__ == "__main__":
     p_complete_step.add_argument("--artifacts", help="Artifacts JSON")
     p_complete_step.add_argument("--reason", default="step_marked_failed", help="失败原因（仅 failed 时使用）")
 
+    p_run_step = subparsers.add_parser(
+        "run-step",
+        help="原子化执行 Step：start-step → 命令 → complete-step（Round 29）",
+    )
+    add_project_root_arg(p_run_step)
+    p_run_step.add_argument("--step-id", required=True, help="Step ID")
+    p_run_step.add_argument("--step-name", help="Step 名称（缺省用 step-id）")
+    p_run_step.add_argument("--artifacts", help="内联 Artifacts JSON")
+    p_run_step.add_argument(
+        "--artifacts-file",
+        help="命令执行后读取的 artifacts JSON 文件（命令自身产出 artifacts 的场景，优先于 --artifacts）",
+    )
+    p_run_step.add_argument(
+        "cmd",
+        nargs=argparse.REMAINDER,
+        help="-- 之后为要执行的命令 argv（可省略，仅做 start+complete 括号登记）",
+    )
+
     p_complete_task = subparsers.add_parser("complete-task", help="完成任务")
     add_project_root_arg(p_complete_task)
     p_complete_task.add_argument("--artifacts", help="Final artifacts JSON")
@@ -1381,6 +1464,19 @@ if __name__ == "__main__":
             fail_step(args.step_id, args.reason, args.artifacts)
         else:
             complete_step(args.step_id, args.artifacts)
+    elif args.action == "run-step":
+        command_argv = list(args.cmd or [])
+        if command_argv and command_argv[0] == "--":
+            command_argv = command_argv[1:]
+        raise SystemExit(
+            run_step(
+                args.step_id,
+                args.step_name,
+                command_argv,
+                artifacts_json=args.artifacts,
+                artifacts_file=args.artifacts_file,
+            )
+        )
     elif args.action == "complete-task":
         complete_task(args.artifacts, force=getattr(args, "force", False))
     elif args.action == "fail-task":

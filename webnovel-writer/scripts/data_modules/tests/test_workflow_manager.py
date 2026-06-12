@@ -270,6 +270,155 @@ def test_fail_step_marks_task_failed_and_records_trace(tmp_path, monkeypatch):
     assert any(row.get("event") == "step_failed" for row in lines)
 
 
+# ---------------------------------------------------------------------------
+# Round 29 Phase 1 · strict workflow 默认开启 + run-step 包装器
+# ---------------------------------------------------------------------------
+
+
+def _setup_project(module, tmp_path, monkeypatch, chapter):
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+    (tmp_path / ".webnovel").mkdir(parents=True, exist_ok=True)
+    module.start_task("webnovel-write", {"chapter_num": chapter})
+
+
+def test_complete_step_without_start_rejected_by_default(tmp_path, monkeypatch):
+    """Round 29: 未设环境变量时 strict 默认开启，complete-step 无 start-step 直接拒绝。"""
+    module = _load_module()
+    monkeypatch.delenv("WEBNOVEL_STRICT_WORKFLOW", raising=False)
+    _setup_project(module, tmp_path, monkeypatch, 30)
+
+    module.start_step("Step 1", "Context")
+    module.complete_step("Step 1", json.dumps({"file": ".webnovel/context/ch0030_context.json"}))
+    # Step 2A 没有 start-step 直接 complete → 必须被 strict 拒绝（不再 implicit_start 兜底）
+    module.complete_step("Step 2A", json.dumps({"word_count": 2500}))
+
+    state = module.load_state()
+    completed = [row["id"] for row in state["current_task"]["completed_steps"]]
+    assert "Step 2A" not in completed
+
+    trace_path = module.get_call_trace_path()
+    lines = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    events = [row.get("event") for row in lines]
+    assert "step_complete_rejected_strict" in events
+    assert "step_implicit_start" not in events
+
+
+def test_complete_step_implicit_start_when_strict_disabled(tmp_path, monkeypatch):
+    """Round 29: WEBNOVEL_STRICT_WORKFLOW=0 显式关闭时保留 implicit_start 兼容路径。"""
+    module = _load_module()
+    monkeypatch.setenv("WEBNOVEL_STRICT_WORKFLOW", "0")
+    _setup_project(module, tmp_path, monkeypatch, 31)
+
+    module.start_step("Step 1", "Context")
+    module.complete_step("Step 1", json.dumps({"file": ".webnovel/context/ch0031_context.json"}))
+    module.complete_step("Step 2A", json.dumps({"word_count": 2500}))
+
+    state = module.load_state()
+    completed = {row["id"]: row for row in state["current_task"]["completed_steps"]}
+    assert "Step 2A" in completed
+    assert completed["Step 2A"].get("implicit_start") is True
+
+
+def test_run_step_success_brackets_start_and_complete(tmp_path, monkeypatch):
+    """Round 29: run-step 一次完成 start → 命令执行 → complete，返回 0。"""
+    module = _load_module()
+    _setup_project(module, tmp_path, monkeypatch, 32)
+
+    rc = module.run_step(
+        "Step 1",
+        "Context",
+        [sys.executable, "-c", "print('ok')"],
+        artifacts_json=json.dumps({"file": ".webnovel/context/ch0032_context.json"}),
+    )
+    assert rc == 0
+
+    state = module.load_state()
+    task = state["current_task"]
+    assert task["current_step"] is None
+    completed = {row["id"]: row for row in task["completed_steps"]}
+    assert "Step 1" in completed
+    assert completed["Step 1"]["artifacts"]["file"] == ".webnovel/context/ch0032_context.json"
+    assert completed["Step 1"].get("implicit_start") is not True
+
+
+def test_run_step_command_failure_marks_step_failed(tmp_path, monkeypatch):
+    """Round 29: 包装命令非零退出 → fail-step + 透传退出码。"""
+    module = _load_module()
+    _setup_project(module, tmp_path, monkeypatch, 33)
+
+    rc = module.run_step(
+        "Step 1",
+        "Context",
+        [sys.executable, "-c", "import sys; sys.exit(3)"],
+        artifacts_json=json.dumps({"file": "ctx.json"}),
+    )
+    assert rc == 3
+
+    state = module.load_state()
+    task = state["current_task"]
+    assert task["status"] == module.TASK_STATUS_FAILED
+    assert task["failed_steps"][-1]["id"] == "Step 1"
+    completed = [row["id"] for row in task["completed_steps"]]
+    assert "Step 1" not in completed
+
+
+def test_run_step_reads_artifacts_file_written_by_command(tmp_path, monkeypatch):
+    """Round 29: --artifacts-file 在命令执行后读取（命令产出 artifacts 的场景）。"""
+    module = _load_module()
+    _setup_project(module, tmp_path, monkeypatch, 34)
+
+    art_path = tmp_path / "step1_artifacts.json"
+    writer = (
+        "import json, pathlib; "
+        f"pathlib.Path({str(art_path)!r}).write_text("
+        "json.dumps({'file': 'ctx34.json'}), encoding='utf-8')"
+    )
+    rc = module.run_step(
+        "Step 1",
+        "Context",
+        [sys.executable, "-c", writer],
+        artifacts_file=str(art_path),
+    )
+    assert rc == 0
+
+    state = module.load_state()
+    completed = {row["id"]: row for row in state["current_task"]["completed_steps"]}
+    assert completed["Step 1"]["artifacts"]["file"] == "ctx34.json"
+
+
+def test_run_step_rejects_placeholder_artifacts(tmp_path, monkeypatch):
+    """Round 29: 占位 artifacts 被 complete-step 语义校验拒绝时，run-step 返回非零。"""
+    module = _load_module()
+    _setup_project(module, tmp_path, monkeypatch, 35)
+
+    rc = module.run_step(
+        "Step 1",
+        "Context",
+        [sys.executable, "-c", "print('ok')"],
+        artifacts_json=json.dumps({"ok": True}),
+    )
+    assert rc != 0
+
+    state = module.load_state()
+    completed = [row["id"] for row in state["current_task"]["completed_steps"]]
+    assert "Step 1" not in completed
+
+
+def test_run_step_without_active_task_returns_error(tmp_path, monkeypatch):
+    """Round 29: 无活动任务时 run-step 返回 2，不产生任何 step 状态。"""
+    module = _load_module()
+    monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)
+    (tmp_path / ".webnovel").mkdir(parents=True, exist_ok=True)
+
+    rc = module.run_step(
+        "Step 1",
+        "Context",
+        [sys.executable, "-c", "print('ok')"],
+        artifacts_json=json.dumps({"file": "ctx.json"}),
+    )
+    assert rc == 2
+
+
 def test_cleanup_artifacts_requires_confirm(tmp_path, monkeypatch):
     module = _load_module()
     monkeypatch.setattr(module, "find_project_root", lambda: tmp_path)

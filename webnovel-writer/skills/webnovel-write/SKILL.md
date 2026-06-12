@@ -354,6 +354,14 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 # Step 执行完毕：complete-step 必须带语义 artifact（不可只写 {"ok": true} 或 {"v2": true}）
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow complete-step --step-id "Step 1" --artifacts '{"ok": true, "file": ".webnovel/context/ch0001_context.json", "snapshot": ".webnovel/context_snapshots/ch0001.json"}'
 
+# 推荐（Round 29）：shell 类步骤（Step 3.5 / Step 6 Part 1 / Step 7 等）用 run-step 一次完成
+# start-step → 命令执行 → complete-step；命令非零退出自动 fail-step 并透传退出码。
+# artifacts 在命令执行后才产生时用 --artifacts-file（命令把 artifacts JSON 写到该路径）。
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" workflow run-step \
+  --step-id "Step 3.5" --step-name "External review" \
+  --artifacts-file "${PROJECT_ROOT}/.webnovel/tmp/step35_artifacts.json" \
+  -- python -X utf8 "${SCRIPTS_DIR}/external_review.py" --project-root "${PROJECT_ROOT}" --chapter ${chapter_num} --mode dimensions --model-key all --dimension-strategy auto
+
 # 全部 Step（Step 1 → Step 7）完成后：complete-task 必须成功
 # 注：complete-task 不受 REQUIRED_ARTIFACT_FIELDS 约束，但仍应给真实字段。示例里的 ${COMMIT_SHA}/${overall_score}
 # 必须是已定义的 shell 变量，不得是 <sha>/<int> 占位。
@@ -378,6 +386,7 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 
 **硬规则**：
 - `--step-id` 仅允许：`Step 1` / `Step 2A` / `Step 2B` / `Step 3` / `Step 3.5` / `Step 4` / `Step 5` / `Step 6` / `Step 7`
+- **所有 Step（含 2B/3.5/4/5）在执行任何 Edit/Task/脚本之前必须先 start-step**。Round 29 起 strict workflow **默认开启**：complete-step 没有预先 start-step 会被直接拒绝（不再有 implicit_start 兜底）；被拒后当场补 `start-step` 再 `complete-step` 即可。遗留恢复场景可设 `WEBNOVEL_STRICT_WORKFLOW=0` 临时关闭。
 - 任何 `workflow` 子命令失败都必须立即阻断并报错，禁止 `|| true` 吞错误
 - complete-step 的 artifact 必须包含至少一个上述白名单字段，否则 Step 6 Layer A 会 fail
 - **严禁**任何形式的“事后补登记”：不得用 Python/Edit 工具直接修改 `workflow_state.json`，不得用 `{"v2": true}` 或类似占位填充；违规将被 hygiene_check H3/H16 检出并阻断 commit
@@ -676,18 +685,6 @@ exit=0 才能进入 Step 2B。**禁止带任何 hard fail 进入 Step 3**——�
 
 ### Step 2B：风格适配（`--fast` / `--minimal` 跳过）
 
-> **🔴 Round 28.46 · 必须显式 start-step（H64/A6 防累积）**
->
-> 调用风格适配 Edit / 子代理之**前**，必须先显式登记 Step 2B 开始：
->
-> ```bash
-> python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
->   workflow start-step --step-id "Step 2B" --step-name "Style adapter"
-> ```
->
-> **根因**：Ch46 R28.46 #2 实战 — 主流程直接 Edit polish 后才调 complete-step → workflow_manager 兜底 implicit_start=True → audit A6 HIGH warn 累积。Step 2B 与 Step 5 / Step 3.5 同等优先级，必须显式登记。
-> 设环境变量 `WEBNOVEL_STRICT_WORKFLOW=1` 后，complete-step 会直接 reject 没预先 start-step 的调用。
-
 执行前加载：
 ```bash
 cat "${SKILL_ROOT}/references/style-adapter.md"
@@ -861,21 +858,6 @@ subprocess.run(['python', '-X', 'utf8', '${SCRIPTS_DIR}/webnovel.py',
 
 ### Step 3.5：外部模型审查（与 Step 3 并行或紧接执行）
 
-> **🔴 Round 28.22 · A6 implicit_start 根治**
->
-> Step 3.5 与 Step 3 并行/紧接执行，但 **workflow 仍要求显式 start-step**。直接 complete-step 会触发 `AUDIT-A6 HIGH: Step 3.5 implicit_start=True`（累积警告，下章流程感知）。
->
-> 正确顺序：
-> ```bash
-> # Step 3 complete-step 后立即（或与 Step 3 并行起就）：
-> python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
->   workflow start-step --step-id "Step 3.5" --step-name "External review"
-> # 然后调 build_external_context.py + external_review.py
-> # 完成后 complete-step
-> ```
->
-> ：跳过 start-step 直接 complete-step → A6 HIGH 累积。
-
 执行前必须加载：
 ```bash
 cat "${SKILL_ROOT}/references/step-3.5-external-review.md"
@@ -1031,19 +1013,6 @@ python -X utf8 "${SCRIPTS_DIR}/external_review.py" \
    主流程必须代替 subagent 做这道闸门, 否则 hygiene H71 P0 阻断 commit 才发现就晚了。
 
 ### Step 4：润色（问题修复优先）
-
-> **🔴 Round 28.49 · Step 4 polish 必须显式 start-step（Ch48 实战 A6 HIGH 警告根治）**
->
-> 调用 polish Edit / 子代理之**前**，必须先显式登记 Step 4 开始：
->
-> ```bash
-> python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
->   workflow start-step --step-id "Step 4" --step-name "Polish"
-> ```
->
-> **根因**: Ch48 R28.49 实战 — 完成 Step 3.5 后直接调 polish Edit, complete-step 时 workflow_manager 兜底 `implicit_start=True` → audit Layer A6 HIGH warn 累积。Step 4 与 Step 2B / Step 5 / Step 3.5 同等优先级，必须显式登记。
->
-> 设环境变量 `WEBNOVEL_STRICT_WORKFLOW=1` 后，complete-step 会直接 reject 没预先 start-step 的调用。
 
 > **🔴 Round 28.46 · polish 新增有名角色行为 / 物件位置前必 grep（防 R28.36 v5 + R28.46 同源根因）**
 >
@@ -1203,19 +1172,6 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
 - **chapter_type 特例**：空间视觉章/纯动作章可将 dialogue_min 降到 0.10，必须在 `context_contract.structural_exemptions.dialogue_ratio_override` 声明
 
 ### Step 5：Data Agent（状态与索引回写）
-
-> **🔴 Round 28.1 · 必须显式 start-step（H64/A6 防累积）**
->
-> 调用 data-agent 之**前**，必须先显式登记 Step 5 开始：
->
-> ```bash
-> python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
->   workflow start-step --step-id "Step 5" --step-name "Data Agent"
-> ```
->
-> **根因**：Ch17/Ch25 都犯过同一错——直接调 data-agent → workflow_manager 兜底 implicit_start=True → audit A6 HIGH warn 累积。
-> 设环境变量 `WEBNOVEL_STRICT_WORKFLOW=1` 后，complete-step 会直接 reject 没预先 start-step 的调用。
-> hygiene H64 检测到 implicit_start=True 会标 P1 warn。
 
 使用 Task 调用 `data-agent`，参数：
 - `chapter`
