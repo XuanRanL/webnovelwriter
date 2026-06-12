@@ -7,6 +7,22 @@
 
 ---
 
+## [Round 29 · Phase 1] workflow 簿记代码化：strict 默认开启 + run-step 包装器
+
+### 背景
+R29 系统性 deload 重构第一期。"忘记 start-step → implicit_start 兜底 → audit A6 警告累积"同一类失误在 Step 2B/3.5/4/5 上各复发一次（R28.1/28.22/28.46/28.49），每次修复都是往 SKILL.md 加一段红字，文档膨胀且防不住。本期改为代码强制。
+
+### 改动
+1. **`workflow_manager.py` strict 默认开启**：`WEBNOVEL_STRICT_WORKFLOW` 未设置时即 strict——complete-step 无预先 start-step 直接拒绝（trace 事件 `step_complete_rejected_strict`），当场补 start-step 即自愈，不再产生 implicit_start 审计债。显式设 `=0` 恢复 implicit_start 兼容路径（仅遗留恢复场景）。
+2. **`workflow run-step` 新子命令**：原子化 `start-step → 命令执行 → complete-step`；命令非零退出自动 fail-step 并透传退出码；`--artifacts-file` 支持命令执行后才产生 artifacts 的场景（优先于 `--artifacts`）。适用于 shell 类步骤（Step 3.5 / Step 6 Part 1 / Step 7）。
+3. **SKILL.md 删除 4 段重复 start-step 红字块**（Step 2B/3.5/4/5），收敛为 Step 0.5 硬规则一条 + run-step 用法示例。
+4. **新增 7 个单测**（test_workflow_manager.py：strict 默认拒绝 / =0 兼容 / run-step 成功・失败透传・artifacts-file・占位拒绝・无任务），全量 600 测试通过。
+
+### 元规则（R29 起生效）
+新护栏一律优先落为 CLI 闸门 + 单测；prompt 文件只留一行指令，RCA 叙事写入 docs/RCA-CHANGELOG.md（agent 不加载）。
+
+---
+
 ## [Round 28.54] Ch50 二轮 deep research 4 subagent 30+ bugs · 7 项跨项目根治 + 项目同步
 
 ### 背景
