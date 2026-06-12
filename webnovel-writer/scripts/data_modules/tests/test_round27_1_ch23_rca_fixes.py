@@ -87,7 +87,11 @@ def test_R6_narrative_version_default_v1(tmp_path):
 
 
 def test_R4_signature_aggregate_block(tmp_path):
-    """Ch23 RCA R4: 没/未/不曾/无回信 累计 ≥ 25/千字 → block (避免没X→未X 替换循环)。"""
+    """Ch23 RCA R4: 没/未/不曾/无回信 累计 ≥ 25/千字 → 触发 SIGNATURE_AGGREGATE。
+
+    Round 29 Phase 6.1 起默认 warn-only（替换循环正是 block 驱动的副作用），
+    本测试改为断言 errors+warnings 合并命中（enforcement 契约见 test_round29_phase6.py）。
+    """
     import post_draft_check
 
     proj = tmp_path
@@ -115,10 +119,10 @@ def test_R4_signature_aggregate_block(tmp_path):
 
     # post_draft_check 函数签名: check(project_root, chapter)
     errors, warnings = post_draft_check.check(proj, 99)
-    aggr_errors = [e for e in errors if "SIGNATURE_AGGREGATE" in e]
-    assert aggr_errors, (
-        f"R4 FAIL: 没/未/不曾 累计 30+/千字 应触发 SIGNATURE_AGGREGATE block; "
-        f"errors={errors}"
+    aggr_hits = [m for m in errors + warnings if "SIGNATURE_AGGREGATE" in m]
+    assert aggr_hits, (
+        f"R4 FAIL: 没/未/不曾 累计 30+/千字 应触发 SIGNATURE_AGGREGATE; "
+        f"errors={errors} warnings={warnings}"
     )
 
 

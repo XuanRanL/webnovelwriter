@@ -7,6 +7,25 @@
 
 ---
 
+## [Round 29 · Phase 6] 质量纠偏：撤销有实证副作用的机械写作约束
+
+### 背景
+R29 全面审查认定 5 类机制在降低小说质量（实证：没X→未X 替换污染三复发 / 过+量词替代效应 / 填充句义务 / polish 副作用 canon 漂移 / 复测锚定）。共同模式：用机械阈值替代读者视角 checker 的判断，驱动模型满足阈值而非写好。
+
+### 改动
+1. **6.1 签名族闸门 warn-only**（`post_draft_check.py`）：SIGNATURE_DENSITY / SIGNATURE_AGGREGATE / DASH_DENSITY / H78 超阈默认进 warnings 不再 block；SIGNATURE_SUMMARY 全量计数仍可见；家族级开关 `signature_density_config.json` `"_enforcement": "block"` 可恢复硬闸。新增 test_round29_phase6.py 6 测试 + 更新 R4 旧测试契约。AI_CLICHE / H15 AI_SLOGAN / 元叙述 H40 等非签名族闸门**不变**。
+2. **6.2 anti-ai-guide.md 瘦身**（251→179 行）：删除 R28.21 替换池段——其前提是打败 block 阈值，正是替换污染的发动机；保留 8 倾向 / 5 即时检查 / 替代速查表 / N1-N5 根因映射 / X1 前五章自检。
+3. **6.3 起草期机械义务降级**（steps/step-2a.md）：签名预算 loop、6-gram assert、NPC entry/exit 配对、>30min 过渡句、情感场面深度配额（2轮对话+3身体语言+1 reaction）、时间戳解释——不再是起草硬义务（hygiene H82-H85 P1 + checker 语境判断兜底）；保留大纲点逐项核对（唯一前置硬项）；每 800 字微爽点配额改为章节类型感知指引（日常/buffer 章不设配额）。
+4. **6.4 Step 2B 默认 verify-only**（steps/step-2b.md）：默认 grep verify 不动笔 + deviation_notes 登记；模板腔 ≥3 处 / 执行包要求 / 用户要求才改写。每多一次全文 pass = 多一次 canon 漂移机会（R28.36/28.46 实证）。
+5. **6.5 Step 4.5 复测去锚定**（steps/step-4.md）：复测 Task 禁传 prev_score/post_polish 标记，盲评后主流程算 delta；删除"必须 ≥+3"（诱导分数通胀），改 delta<0 或 HIGH issue 未消 → 继续 polish 或 deviation。
+6. **6.6 medium/low 默认不修**（steps/step-4.md）：登记"放弃修复"即可，仅 critical/high 同段顺手零风险时处理。
+7. **6.7 Tavily 触发口径统一**：普通推进章按需不硬凑（专业领域/特殊场景/新卷首章仍强制）；memory feedback_force_tavily_search 已同步修订。
+
+### 明确不动
+13 checker + 15 外部模型全量审查、A9 floor、H40 元叙述、H15 排比闸、AI_CLICHE、对话占比/字数 SSOT、polish_cycle 唯一入口——全部保留。
+
+---
+
 ## [Round 29 · Phase 2] SKILL.md 骨架化：1525 行 → 215 行 + 按步 lazy-load
 
 ### 背景

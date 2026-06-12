@@ -52,7 +52,7 @@ fi
 - 默认按 2200-3800 字执行；若大纲为关键战斗章/高潮章/卷末章或用户明确指定，则按大纲/用户优先。
 - 禁止占位符正文（如 `[TODO]`、`[待补充]`）。
 - 保留承接关系：若上章有明确钩子，本章必须回应（可部分兑现）。
-- 爽点密度约束：每 800 字至少安排 1 个微爽点（信息揭示/小胜/认可/逆转/兑现）；纯铺垫章允许降至每 1200 字 1 个，但全章不得为零。
+- 爽点密度（按章节类型，Round 29 调整为指引而非配额）：推进/战斗/高潮章建议每 800 字 1 个微爽点（信息揭示/小胜/认可/逆转/兑现）；日常/buffer/铺垫章**不设配额**，以执行包的爽点规划与 high-point-checker 的语境评估为准——为凑配额插入假爽点比密度不足伤害更大（R22.x 调性裁决：前期日常种田节奏优先）。
 - 典故引用融入：若 Context Agent 在执行包中推荐了引用（0-2 条），按推荐的载体和融入方式写入正文。化用 > 引用，角色内化 > 旁白注释。判断不适合时可跳过——**允许不用**。无推荐时不主动引用。（详见 `references/writing/classical-references.md`）
 - **复述前章人物原话必须 Grep 原文校验**。任何时候在正文写"X说过/告诉过/吩咐过/警告过……"等复述句，**起草前必须 Grep 该角色名+关键词在前章正文**确认原话。Ch42 L9 凭印象写"<antagonist>告诉他……合作化路那处守得严，先别动"——但 Grep Ch19/Ch20 发现<antagonist>原话只说"金陵饭店人最齐别先去"，从未提合作化路守严——continuity-checker 给出 13 分 critical。**规则**：复述句中的"原话"必须 100% 在前章正文 Grep 命中，禁止凭印象添加细节或合成多段对白。
 - **禁止"X章前/X章后/X章之前"等数字章号距离指代**。这是 H40 元叙述泄漏的隐蔽变体——把"Ch19 第十九章"换成更隐蔽的"二十二章前"仍属章号自我指称，post_draft_check.py 已扩展 cn_chapter_meta_pattern 涵盖多位中文数词。用"那一晚/上个月/那回/记忆里那次"等自然时间表达替代。
@@ -63,63 +63,21 @@ fi
 - **禁止英文结论话术**：正文、审查说明、润色说明、变更摘要、最终报告中不得出现 Overall / PASS / FAIL / Summary / Conclusion 等英文结论标题。
 - **英文仅限机器标识**：CLI flag（`--fast`）、checker id（`consistency-checker`）、DB 字段名（`anti_ai_force_check`）、JSON 键名等不可改的接口名保持英文，其余一律使用简体中文。
 
-> **🔴 Round 28.51 · Step 2A 起草前必跑 outline + signature self-check (Ch49 RCA)**
+> **🔴 Round 28.51 · Step 2A 起草前必跑 outline self-check（Ch49 RCA · R29 瘦身保留核心）**
 >
-> Ch49 v1 走完全流程后 reader-critic=72 critical blocking, root cause = 大纲 L130 "周晓兰生日 + 秦岳第二次出手" 中"秦岳第二次出手"在起草时完全漏写; root cause 2 = 单章签名词 "了一X" 34 / "那一X" 23 / "没X" 39 全部 block 阈值; root cause 3 = Ch48 末"外公递水"段 6-gram 重合 10 处。
->
-> **新 self-check 模板** (Step 2A 起草前必跑):
 > ```bash
-> # 1. outline 大纲点逐项核对
+> # outline 大纲点逐项核对（起草前必跑）
 > grep -nE "^[|│] Ch${chapter_num}" 大纲/第1卷-详细大纲.md | head -3
 > # 输出大纲 L${chapter_num} 行, 起草前必须 100% 兑现 (含小括号"轻触"等定语)
->
-> # 2. 签名词起草前预算 (近 5 章累计)
-> for w in 了一 那一 半 没 点头 一档 桌沿 没掉头 指尖; do
->   echo "  $w: $(grep -hroE "$w" 正文/第00{$((chapter_num-5))..$((chapter_num-1))}章*.md 2>/dev/null | wc -l) / 100 (5章累计上限)"
-> done
->
-> # 3. 跨章 6-gram 自查 (起草后立即)
-> python -c "
-> import re
-> prev = open('正文/第00${prev_chapter}章<title>.md', encoding='utf-8').read()
-> cur = open('正文/第00${chapter_num}章<title>.md', encoding='utf-8').read()
-> prev_grams = set(prev[i:i+6] for i in range(len(prev)-5) if re.match(r'^[一-鿿]+$', prev[i:i+6]))
-> cur_grams = set(cur[i:i+6] for i in range(len(cur)-5) if re.match(r'^[一-鿿]+$', cur[i:i+6]))
-> overlap = prev_grams & cur_grams
-> n_open = sum(1 for g in overlap if g in cur[:500])
-> print(f'前 500 字与上章 6-gram 重合: {n_open}')
-> assert n_open < 6, '首段与上章 6-gram 过载, 必须重写开篇'
-> "
 > ```
 >
-> **修法**: 起草前先核对大纲点 → 实时计数签名词 → 起草后立即验证首段不与上章 deja vu。
+> 背景：Ch49 大纲点"秦岳第二次出手"起草漏写 → reader-critic=72 critical。大纲点兑现是起草期唯一必须前置核对的硬项。
 
-> **🔴 Round 28.49 · Step 2A 起草后必跑 4 项 self-check (Ch48 deep audit 漏检根治)**
->
-> Ch48 v1 走完 13 checker + 15 外模型 + Step 4.5 复测后, deep research subagent 仍发现 4 高问题被全部审查机制漏检:
->
-> 1. **NPC entry/exit pairing 缺**: 老吴 L37 入场 → L77 最后一句 → L205 章末"竹篮还在桌沿"但无出门描写 = ghost-exit. **修法**: Step 2A 起草后 grep 所有有名角色, 验证每个 entry 必有 exit (出门/告别/视线离开) 至少 1 句
-> 2. **Timeline transition fill 缺**: L3 "六点整" → L37 "老吴七点四十到" = 100 分钟无 atmosphere/action 桥. **修法**: Step 2A 时间锚之间 >30 min 必须至少 1 句过渡 (等候 / 物动 / 环境变化)
-> 3. **Emotional 高潮 minimum depth 缺**: 林母 50米共享规则首次质疑这种 critical relationship beat 仅 6 句对话被 "妈,洒水" 打发 = 法律咨询语气而非"商量恳求语气". **修法**: 情感锚 ≥2 轮对话 + 身体语言 ≥3 处 + reaction shot ≥1 个 (孩子拽衣角 / 同辈触碰 / 物理位置变化 等)
-> 4. **同章内部 timestamp 精度 sanity 缺**: L141 八点整 vs L171 SMS 七点五十四 = 6 分钟 gap 无 in-prose 解释 (收到延迟 / 静音 / 设备故障). **修法**: 同章内部时间精度 mins 差 ≥5 必须有 in-prose 解释
->
-> **新 self-check 模板** (Step 2A complete-step 前必跑):
-> ```python
-> # 1. NPC entry/exit pair
-> grep -n "<NPC名>" 正文/第${chapter_padded}章*.md
-> # 验证每个 NPC 入场后有出场描写
->
-> # 2. Time anchor transition
-> grep -nE "六点|七点|八点|九点|十点|中午|下午|晚上" 正文/第${chapter_padded}章*.md
-> # 验证相邻时间锚之间有过渡行
->
-> # 3. Emotional climax depth
-> # 手动检查情感锚场景 dialogue rounds + body-lang + reaction shots
->
-> # 4. Internal timestamp sanity
-> grep -nE "[0-9一二三四五六七八九十]+点[0-9一二三四五六七八九十]*" 正文/第${chapter_padded}章*.md
-> # 验证 mins 差 ≥5 必有解释
-> ```
+> **Round 29 · 起草期机械义务降级说明**：签名词预算、跨章 6-gram 自查、NPC entry/exit 配对、
+> 时间锚过渡句、情感场面深度配额、时间戳精度解释——这些**不再作为起草期硬义务**。
+> 理由：机械配额驱动填充句和公式化场面（时间跳切、人物淡出本是正常技法）。
+> 兜底仍在：post_draft SIGNATURE_SUMMARY/H78 警示可见、hygiene H82-H85 P1 提示、
+> continuity/emotion/naturalness checker 按语境判断真问题。起草时按执行包的 beat 设计自然书写即可。
 
 引号与格式清洁硬约束（起草时必须严格遵守）：
 - **禁止 ASCII 半角引号 `"`**：从第一笔起就必须用 U+201C（“）/U+201D（”）中文弯引号对。不得“先用 ASCII 写完再批量替换”——批量 flip-pair 脚本在段内多重嵌套引号时会跨段翻转配对，导致 7 处+错乱。
