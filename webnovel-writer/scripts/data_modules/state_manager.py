@@ -1615,6 +1615,53 @@ def compute_reading_trend(chapter_meta: dict, last_n: int = 8) -> dict:
     }
 
 
+def compute_writing_facts(state: dict, chapter: int, recent_n: int = 3) -> dict:
+    """Round 29 Phase 5 · context-agent 机械事实包（纯函数，CLI get-writing-facts 调用）。
+
+    动机：context-agent 伪造字数子区间 3+ 轮复发（Ch9/Ch13）——检索清单过长导致编造。
+    字数 SSOT / 进度 / 最近章承接（时间锚·钩子·版本）/ 追读处方 由代码一次产出，
+    context-agent **只许原样引用，禁止自行生成这些数字**。
+    """
+    state = state or {}
+    policy = ((state.get("project_info") or {}).get("word_count_policy") or {})
+    if policy.get("hard_min") and policy.get("hard_max"):
+        word_policy = {
+            "hard_min": policy["hard_min"],
+            "hard_max": policy["hard_max"],
+            "source": "state.project_info.word_count_policy",
+        }
+    else:
+        word_policy = {"hard_min": 2200, "hard_max": 3800, "source": "default(Round 21.1)"}
+
+    chapter_meta = state.get("chapter_meta") or {}
+    chs = sorted(int(k) for k in chapter_meta if str(k).isdigit())
+    recent = []
+    for ch in chs[-recent_n:]:
+        m = chapter_meta.get(f"{ch:04d}") or {}
+        hc = m.get("hook_close") or {}
+        recent.append({
+            "chapter": ch,
+            "time_anchor": m.get("time_anchor"),
+            "end_state": m.get("end_state"),
+            "hook_close_primary": hc.get("primary_type"),
+            "narrative_version": m.get("narrative_version"),
+            "word_count": m.get("word_count"),
+        })
+
+    return {
+        "chapter": chapter,
+        "word_count_policy": word_policy,
+        "progress": {
+            "total_words": (state.get("progress") or {}).get("total_words"),
+            "last_completed_chapter": state.get("last_completed_chapter"),
+            "current_chapter": state.get("current_chapter"),
+        },
+        "protagonist_state": state.get("protagonist_state") or {},
+        "recent_chapters": recent,
+        "reading_trend": compute_reading_trend(chapter_meta),
+    }
+
+
 def main():
     import argparse
     import sys
@@ -1736,6 +1783,13 @@ def main():
         help="追读力跨章趋势：thrill 连败 / reader-critic 连低 / 钩子饥饿与同型 → 下一章节奏处方",
     )
     reading_trend_parser.add_argument("--last-n", type=int, default=8)
+
+    # Round 29 Phase 5 · context-agent 机械事实包（字数 SSOT / 进度 / 承接 / 追读处方）
+    facts_parser = subparsers.add_parser(
+        "get-writing-facts",
+        help="context-agent 机械事实包：字数 SSOT + 进度 + 最近章承接 + 追读处方（只许引用禁止编造）",
+    )
+    facts_parser.add_argument("--chapter", type=int, required=True)
 
     argv = normalize_global_project_root(sys.argv[1:])
     args = parser.parse_args(argv)
@@ -1876,6 +1930,14 @@ def main():
         last_n = int(getattr(args, "last_n", 8) or 8)
         emit_success(compute_reading_trend(chapter_meta, last_n), message="reading_trend")
 
+    elif args.command == "get-writing-facts":
+        # Round 29 Phase 5 · 机械事实包（纯函数 compute_writing_facts，单测覆盖）
+        emit_success(
+            compute_writing_facts(manager._state, args.chapter),
+            message="writing_facts",
+            chapter=args.chapter,
+        )
+
     elif args.command == "get-entity":
         entity = manager.get_entity(args.id)
         if entity:
@@ -1917,7 +1979,21 @@ def main():
 
         warnings = manager.process_chapter_result(args.chapter, validated.model_dump(by_alias=True))
         manager.save_state()
-        emit_success({"chapter": args.chapter, "warnings": warnings}, message="chapter_processed", chapter=args.chapter)
+        # Round 29 Phase 3 · core 字段完整性前移到写库时刻（与 hygiene H2 同语义同真源）。
+        # 此前缺字段要到 Step 7 commit 才被 H2 P0 抓（Ch18/24/29/32 四次复发）。
+        # core_fields_missing 非空 = data-agent 必须当场补填 extract JSON 后重跑本命令。
+        from .meta_fields import missing_core_fields
+        final_meta = (manager._state.get("chapter_meta") or {}).get(f"{int(args.chapter):04d}") or {}
+        core_missing = missing_core_fields(final_meta)
+        if core_missing:
+            warnings.append(
+                f"core_fields_missing: {core_missing} · 必须补填后重跑 process-chapter（否则 Step 7 hygiene H2 P0 阻断）"
+            )
+        emit_success(
+            {"chapter": args.chapter, "warnings": warnings, "core_fields_missing": core_missing},
+            message="chapter_processed" if not core_missing else "chapter_processed_core_fields_missing",
+            chapter=args.chapter,
+        )
 
     elif args.command == "update":
         # At least one of the mutation flags must be provided

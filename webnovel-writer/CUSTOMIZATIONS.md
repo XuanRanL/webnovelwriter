@@ -7,6 +7,30 @@
 
 ---
 
+## [Round 29 · Phase 3] data-agent 唯一写库协议：core 字段完整性前移到写库时刻
+
+### 背景
+core 字段漏写 4 次复发（Ch18 6/23、Ch24、Ch29、Ch32）：schema 不强制 core 字段，缺字段要到 Step 7 commit 才被 hygiene H2 P0 抓，返工成本最高。CORE_META_FIELDS 还是 hygiene 内两份 hardcode 漂移风险。
+
+### 改动
+1. **`data_modules/meta_fields.py` 新单一真源**：CORE_META_FIELDS / CORE_META_LIST_FIELDS_ALLOW_EMPTY / `missing_core_fields()`（语义与 H2 完全一致）；hygiene_check.py 改 import + 旧名全保留，is-identity 单测锁死（沿用 REQUIRED_ARTIFACT_FIELDS 模式）。
+2. **`state process-chapter` 写库后即报 `core_fields_missing`**：非空时 message 变为 chapter_processed_core_fields_missing + warnings 提示，data-agent 必须当场补填 extract JSON 重跑（不再留给 commit 期）。
+3. **data-agent.md 唯一写库协议**：判断结果组装成单一 `tmp/data_agent_extract_ch{NNNN}.json` → 单次 process-chapter → 验 core_fields_missing=[]；禁止 Step 5 内 Edit/Write 改 state.json、禁止用 set-chapter-meta-field 拼凑 core 字段。判断侧（B 实体提取/B.5 典故/C 消歧/F 场景切片）不动——历史从未在判断侧出事。
+4. 接口规范段加代码真源指针。5 新单测。
+
+---
+
+## [Round 29 · Phase 5] context-agent 机械事实包：get-writing-facts CLI
+
+### 背景
+context-agent 伪造字数子区间 3+ 轮复发（Ch9/Ch13）、time_anchor 承接错位、读旧 narrative_version——检索清单过长导致 agent 编造机械事实。
+
+### 改动
+1. **`state get-writing-facts --chapter N` 新 CLI**（compute_writing_facts 纯函数 + 6 单测）：一次产出 字数 SSOT（含 source）/ progress / protagonist_state / 最近 3 章承接事实（time_anchor/end_state/hook_close/narrative_version/word_count）/ reading_trend 追读处方。
+2. **context-agent.md 顶部新红线**：执行任何检索前第一步必跑该 CLI；执行包中机械事实必须原样引用，禁止自行生成或"凭印象修正"数字；字数白名单子区间由其派生。
+
+---
+
 ## [Round 29 · Phase 7] polish 子代理化：干净上下文执行修复
 
 ### 背景

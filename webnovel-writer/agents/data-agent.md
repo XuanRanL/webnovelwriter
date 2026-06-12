@@ -300,22 +300,19 @@ Data Agent 自身无 search 能力（只有 Read/Write/Bash），但若扫描发
 
  **更新精简版 state.json**:
 
-**⚠️ Round 28.6 process-chapter 前必须自检 23 Core 字段**：
-
-在调用 `state process-chapter` 之前，你必须在 `chapter_meta` JSON 中自检以下全部 23 个字段均存在且非空（非 None / "" / [] / {}）：
-
-```
-必须字段（CORE_META_FIELDS，缺任一则 hygiene H2 P0 阻断）：
-chapter, title, word_count, summary, hook_strength, scene_count,
-key_beats, characters, locations, created_at, updated_at,
-protagonist_state, location_current, power_realm, golden_finger_level,
-time_anchor, end_state, foreshadowing_planted, foreshadowing_paid,
-strand_dominant, review_score, checker_scores, allusions_used
-```
-
-允许为空列表 `[]` 的字段：`foreshadowing_planted`, `foreshadowing_paid`, `allusions_used`, `key_beats`, `characters`, `locations`, `checker_scores`
-
-**禁止调用 process-chapter 前 chapter_meta 缺少上述任何字段**（：data-agent 只填了 13/23 字段，导致后续手动补填 5 个 CLI 命令）。若某字段无法从正文推断（如 `power_realm`），使用占位值（如 `"普通人"`）而非省略。
+> **🔴 Round 29 Phase 3 · 唯一写库协议（单 extract JSON · 缺字段写库时即报）**
+>
+> 1. 把本次全部判断结果组装成**一份** extract JSON 落盘：
+>    `.webnovel/tmp/data_agent_extract_ch{NNNN}.json`
+>    （DataAgentOutput 结构：entities_appeared / entities_new / state_changes /
+>    relationships_new / uncertain / warnings + `chapter_meta` 扁平对象）。
+> 2. **单次调用**写库：`state process-chapter --chapter N --data "@tmp/data_agent_extract_ch{NNNN}.json"`。
+> 3. CLI 输出含 **`core_fields_missing`**（与 hygiene H2 同真源 `data_modules/meta_fields.py`，
+>    写库时即检）。**非空 → 必须当场补填 extract JSON 后重跑**，直到 `core_fields_missing: []`；
+>    禁止留给 Step 7 hygiene H2 P0（Ch18/24/29/32 四次复发的根治）。
+>    若某字段无法从正文推断（如 `power_realm`），使用占位值（如 `"普通人"`）而非省略。
+> 4. **禁止**在 Step 5 内用 Edit/Write 直接改 state.json、禁止绕过 process-chapter 用多次
+>    `--set-chapter-meta-field` 拼凑 core 字段（该 CLI 仅用于下方 7 个扩展字段与事后修复）。
 
 **⚠️ Round 28.22 23 Core 之外的 7 个扩展字段也必填（H69 P1 根治）**：
 
@@ -342,7 +339,8 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
 ```
 
  ```bash
-  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state process-chapter --chapter 100 --data '{...}'
+  python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" state process-chapter --chapter 100 --data "@.webnovel/tmp/data_agent_extract_ch0100.json"
+  # 输出 core_fields_missing 非空 → 补填 extract JSON 后重跑（见上方唯一写库协议）
  ```
 
 写入内容：
@@ -887,6 +885,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 **chapter_meta schema 分两层定义**：
 
 ### 第一层 · Core 22 必需字段（audit B9 硬依赖，缺失 > 30% 判 fail）
+
+> **代码真源**：`data_modules/meta_fields.py` 的 `CORE_META_FIELDS`（R29 Phase 3 · hygiene H2 与
+> `state process-chapter` 的 `core_fields_missing` 共用同一对象）。本表为人读说明，改字段先改代码真源。
 
 | 字段 | 类型 | 来源说明 |
 |------|------|---------|

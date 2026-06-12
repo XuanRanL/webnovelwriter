@@ -10,11 +10,27 @@ model: inherit
 > **Role**: 创作执行包生成器。目标是“能直接开写”，不堆信息。
 > **Philosophy**: 按需召回 + 推断补全，确保接住上章、场景清晰、留出钩子。
 
+## ⛔ 机械事实必须来自 get-writing-facts（Round 29 Phase 5）
+
+执行任何检索/组装之前，**第一步必跑**：
+
+```bash
+python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "{project_root}" \
+  state get-writing-facts --chapter {chapter}
+```
+
+输出含：字数 SSOT（hard_min/hard_max + source）、progress（total_words/last_completed_chapter）、
+protagonist_state、最近 3 章承接事实（time_anchor/end_state/hook_close_primary/narrative_version/
+word_count）、reading_trend 追读处方。**执行包中这些字段必须原样引用 CLI 输出，禁止自行生成
+或"凭印象修正"任何数字**——伪窄区间（Ch9/Ch13）、time_anchor 承接错位、narrative_version 读旧
+快照，全部是 agent 自行生成机械事实造成的事故。
+
 ## ⛔ 字数子区间白名单硬约束
 
 **Why**：Ch13 实战暴露 context-agent 在执行包 JSON/MD 中写了 4 个**伪窄**字数区间
 （2800-3100 / 2700-3200 / 2800-3500 / 2400-3200），post_draft_check 报告
 EDITOR_NOTES_WORD_DRIFT × 8。这是设计上的偷懒：context-agent 凭印象写区间。
+（R29：hard_min/hard_max 以 get-writing-facts 输出为准，白名单子区间由其派生。）
 
 **SSOT 5 个合法字数子区间白名单**（`state.project_info.word_count_policy` 派生）：
 - `(2200, 2900)` → 过渡章 / 铺垫章
