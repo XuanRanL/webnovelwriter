@@ -33,7 +33,7 @@ cat "${SKILL_ROOT}/references/writing/typesetting.md"
 执行顺序：
 1. 修复 `critical`（必须）
 2. 修复 `high`（不能修复则记录 deviation）
-3. 处理 `medium/low`（按收益择优）
+3. `medium/low` **默认不修**（Round 29 Phase 6.6）：登记到润色报告"放弃修复"段即可；仅当与某个 critical/high 修复同段、顺手可改且零扩散风险时处理。理由：28 个审查源的 medium/low 全修 = 委员会平均化 + polish 副作用面扩大（R28.15/R28.36/R28.46 的 canon 漂移均发生在 polish pass）。
 4. 执行 Anti-AI 与 No-Poison 全文终检（必须输出 `anti_ai_force_check: pass/fail`）
 
 **字数预算硬约束**：
@@ -117,8 +117,12 @@ hard_max 超限会直接 fail，回 Step 4 继续压缩。
 - **强制复测档**：Step 3 任一 checker 首次分数 `< 75` → Step 4 polish 后**必须**重跑该 checker（旧规则保留）
 - **近线复测档**：Step 3 任一 checker 首次分数 `< 80` 且该次 polish 报告含针对此 checker 的 fix（PACE_/FLOW_/EMO_/HP_/PRO_/OOC_/CONT_/CONS_/DIA_/DEN_ 任一前缀）→ **必须**重跑该 checker（验证修复真效）
 - **下滑复测档**：Step 3 任一 checker 首次分数与上一章同维度差 `≥ 5` 且 polish 含此 checker 修法 → **必须**重跑（验证回归是否被止住）
-- **HIGH-issue 全面复测档**：Step 3 任一 checker 输出含 `severity=high` 的 issue → Step 4 polish 后**必须**重跑该 checker，且复测分数必须比修前 **≥ +3**（验证 HIGH 问题真正修复，不是表面替换）。即使首次分数已 ≥ 80 也强制走，因为 ：prose_quality 81 含 3 HIGH，polish 后仍 81——显示修复无效但因 ≥75 跳过复测。
+- **HIGH-issue 全面复测档**：Step 3 任一 checker 输出含 `severity=high` 的 issue → Step 4 polish 后**必须**重跑该 checker。即使首次分数已 ≥ 80 也强制走，因为 ：prose_quality 81 含 3 HIGH，polish 后仍 81——显示修复无效但因 ≥75 跳过复测。
 - 复测均使用 `_recheck_ch{NNNN}.json` 作为输出文件名
+- **复测必须盲评（Round 29 Phase 6.5 去锚定）**：复测 Task **不得**传 `prev_score` / `post_polish=true` 等任何提示"上次多少分、这次该涨"的参数——告知阅卷人修前分数 + 要求"必须 ≥ +3"诱导的是分数通胀而非真实评估。复测 prompt 与首测完全一致（同一 checker 标准输入），delta 由主流程在拿到盲评分后自行计算并判定：
+  - `delta > 0`：正常记入 post_polish_recheck
+  - `delta == 0` 且原 HIGH issue 在复测 problems 中消失：接受（修复有效但总分平移）
+  - `delta < 0` 或原 HIGH issue 仍在：修复无效——继续 polish 或登记 deviation，**禁止**重跑复测刷分
 
 **补充**：Step 3 prose-quality=81 含 3 HIGH（PRO_001/PRO_002/PRO_003），polish 后名义"修了"但 不是X是Y 16→14、像 16→11、D-3/D-2/D-1 仅替换标签——量化未达 target，复测会暴露分数不动甚至下滑。HIGH 全面复测档会在所有这种情况触发，通过对比 before/after 分数来 GATE 真伪修复。
 
@@ -127,8 +131,8 @@ hard_max 超限会直接 fail，回 Step 4 继续压缩。
 **执行模板**：
 ```bash
 # 在 Step 4 complete-step 前
-# 对每个首次分数 <75 的 checker 做 Task 复测
-Task(pacing-checker, chapter=N, chapter_file=..., post_polish=true, prev_score=58)
+# 对每个命中复测档的 checker 做 Task 盲评复测（R29: 不传 prev_score / post_polish 标记）
+Task(pacing-checker, chapter=N, chapter_file=...)
 
 # 更新 checker_scores（自动重算 overall 为 13 canonical 平均 + 同步 overall_score）
 python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \

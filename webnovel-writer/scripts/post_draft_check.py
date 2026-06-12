@@ -522,6 +522,25 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
                     )
         except Exception:
             pass
+    # Round 29 Phase 6.1 · 签名族闸门默认 warn-only（家族级开关）
+    # 实证副作用：没X→未X 替换污染三复发（Ch16/Ch23）/ 过+量词替代效应（R28.33）——
+    # block 驱动的是"换一个更不自然的词"而非"写得更好"（详见 docs/RCA-CHANGELOG.md R29）。
+    # 自然度真源 = reader-naturalness checker。覆盖：SIGNATURE_DENSITY / SIGNATURE_AGGREGATE /
+    # DASH_DENSITY / H78。项目恢复硬闸：signature_density_config.json 设 {"_enforcement": "block"}。
+    sig_enforcement = "warn"
+    if sig_cfg_path.exists():
+        try:
+            _enf = json.loads(sig_cfg_path.read_text(encoding="utf-8")).get("_enforcement")
+            if _enf in ("warn", "block"):
+                sig_enforcement = _enf
+        except Exception:
+            pass
+    sig_breach_sink = errors if sig_enforcement == "block" else warnings
+    sig_breach_note = (
+        ""
+        if sig_enforcement == "block"
+        else ' · R29 默认警示不阻断（恢复硬闸：signature_density_config.json 设 "_enforcement": "block"）'
+    )
     # Round 28.22 Ch37 RCA · 累积 signature_summary（即使未触发也显示）
     # 防御场景：polish 第一次只 fix 触发的（没X），不知道临界的（未X 4/5 warn 1/3 block）
     # 替换"没X→未X"后反向触发 未X 17/3 block，造成第二轮 polish。
@@ -535,10 +554,10 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
             f"  · {sig_name}: {count} 次 (warn {sig_cfg['warn']} / block {sig_cfg['block']}) [{status}]"
         )
         if count >= sig_cfg["block"]:
-            errors.append(
+            sig_breach_sink.append(
                 f"[SIGNATURE_DENSITY] 签名句式'{sig_name}' {count} 次 ≥ block {sig_cfg['block']} · "
-                f"AI 签名外溢硬线（Round 17.2 Ch8 P0-R5）· "
-                f"必须 polish 降到 < {sig_cfg['warn']}"
+                f"AI 签名外溢（Round 17.2 Ch8 P0-R5）· "
+                f"polish 优先重写句式而非同义替换{sig_breach_note}"
             )
         elif count >= sig_cfg["warn"]:
             warnings.append(
@@ -573,10 +592,10 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         except Exception:
             pass
     if aggr_per_kchar >= aggr_cfg["block"]:
-        errors.append(
+        sig_breach_sink.append(
             f"[SIGNATURE_AGGREGATE] 否定签名累计 {aggr_count} 次 ({aggr_per_kchar:.1f}/千字) "
             f">= block {aggr_cfg['block']}/千字 · 没/未/不曾/无回信 累计外溢 (Round 27.1 · Ch23 RCA R4) · "
-            f"polish 不得只在 没X/未X/不曾 之间互换，必须用 不/重写句式"
+            f"polish 不得只在 没X/未X/不曾 之间互换，必须用 不/重写句式{sig_breach_note}"
         )
     elif aggr_per_kchar >= aggr_cfg["warn"]:
         warnings.append(
@@ -693,9 +712,9 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
         except Exception:
             pass
     if dash_count >= dash_block_abs or dash_per_k >= dash_per_k_block:
-        errors.append(
+        sig_breach_sink.append(
             f"[DASH_DENSITY] 破折号 '——' {dash_count} 次（{dash_per_k:.2f}/千字）"
-            f" ≥ block 阈值 · 节奏断裂硬线 · 必须 polish 改为句号/逗号/省略号"
+            f" ≥ block 阈值 · 节奏断裂信号 · polish 建议改为句号/逗号/省略号{sig_breach_note}"
         )
     elif dash_count >= dash_warn_abs or dash_per_k >= dash_per_k_warn:
         warnings.append(
@@ -828,10 +847,10 @@ def check(project_root: Path, chapter: int) -> tuple[list[str], list[str]]:
                 overlap_count = len(overlap_filtered)
 
                 if overlap_count >= cross_cfg["block_threshold"]:
-                    errors.append(
+                    sig_breach_sink.append(
                         f"[H78_CROSS_CHAPTER_REUSE] 与上一章首尾 {ngram_size}-gram 重合 {overlap_count} 处 ≥ block {cross_cfg['block_threshold']} · "
                         f"跨章意象 1:1 复用（样本：{overlap_filtered[:5]}）· "
-                        f"读者会感到 deja vu · 必须改写开篇或末段"
+                        f"读者会感到 deja vu · 强烈建议改写开篇或末段{sig_breach_note}"
                     )
                 elif overlap_count >= cross_cfg["warn_threshold"]:
                     warnings.append(

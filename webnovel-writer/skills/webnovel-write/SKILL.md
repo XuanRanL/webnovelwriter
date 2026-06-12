@@ -140,7 +140,7 @@ cat "${SKILL_ROOT}/references/steps/step-1.md"
 cat "${SKILL_ROOT}/references/steps/step-2a.md"
 ```
 
-要点：起草前必读 core-constraints / anti-ai-guide / visual-concreteness（前 5 章另加 first-chapter-hook-rubric + 写前自检）；起草前 outline + 签名预算 self-check、起草后 4 项 self-check；只输出纯正文（禁 Markdown / ASCII 引号 / U+FFFD / 元叙述 / 章号距离指代）；起草后必跑引号扫描 + FFFD 验证 + `post_draft_check.py` exit=0 才能进入下一步。
+要点：起草前必读 core-constraints / anti-ai-guide / visual-concreteness（前 5 章另加 first-chapter-hook-rubric + 写前自检）；起草前仅一项硬自检：大纲点逐项核对 100% 兑现；只输出纯正文（禁 Markdown / ASCII 引号 / U+FFFD / 元叙述 / 章号距离指代）；起草后必跑引号扫描 + FFFD 验证 + `post_draft_check.py` exit=0 才能进入下一步（签名/破折号/6-gram 为 warn 级参考，自然度以 reader-naturalness checker 为准）。
 
 ### Step 2B：风格适配（`--fast` / `--minimal` 跳过）
 
@@ -148,7 +148,7 @@ cat "${SKILL_ROOT}/references/steps/step-2a.md"
 cat "${SKILL_ROOT}/references/steps/step-2b.md"
 ```
 
-要点：只做表达层转译，不改剧情事实；起草已符合项目风格时可声明 no-op，但必须显式登记 deviation_notes；完成后再跑一次 post_draft_check + FFFD 验证。
+要点：Round 29 默认 verify-only no-op（grep 扫模板腔，不动笔，登记 deviation_notes）；仅当检出模板腔 ≥3 处 / 执行包明确要求 / 用户要求才走改写路径；改写后再跑 post_draft_check + FFFD 验证。禁止跳过登记。
 
 ### Step 3：内部审查（13 checker · 必须由 Task 子代理执行）
 
@@ -172,7 +172,7 @@ cat "${SKILL_ROOT}/references/steps/step-3.5.md"
 cat "${SKILL_ROOT}/references/steps/step-4.md"
 ```
 
-要点：修复顺序 critical（必须）→ high（修复或 deviation）→ medium/low（择优）；polish 新增有名角色行为/物件位置前必 canon-grep；字数预算（净增 ≤200 · 不破 hard_max）；产出润色后正文 + 润色报告（`polish_reports/` 落盘，含 `anti_ai_force_check`，fail 不得进入 Step 5）。Step 4.5 复测触发档（<75 强制 / <80 近线 / 下滑 ≥5 / HIGH-issue 全面）；复测组合调用后必须最后重设 `overall_score = combined`。
+要点：修复顺序 critical（必须）→ high（修复或 deviation）→ medium/low（**默认不修**，登记"放弃修复"即可 · R29）；polish 新增有名角色行为/物件位置前必 canon-grep；字数预算（净增 ≤200 · 不破 hard_max）；产出润色后正文 + 润色报告（`polish_reports/` 落盘，含 `anti_ai_force_check`，fail 不得进入 Step 5）。Step 4.5 复测触发档（<75 强制 / <80 近线 / 下滑 ≥5 / HIGH-issue 全面），**盲评复测**不传 prev_score（R29 去锚定）；复测组合调用后必须最后重设 `overall_score = combined`。
 
 ### Step 5：Data Agent（状态与索引回写）
 
@@ -239,7 +239,7 @@ cat "${SKILL_ROOT}/references/steps/step-7.md"
 27. **H58 真源对账**：`chapter_meta.checker_scores` 与 `review_metrics.dimension_scores` 13 个 canonical 项漂移 ≤±1。例外：`post_polish_recheck` 中的 checker（Step 4.5 合法 polish 真值改）。Ch24 实测 9 项漂移最大 14 分（prose-quality 89 vs 75 真源），P1 警告。
 28. **H59 静默改分检测**：任一 checker 与 review_metrics 漂移 >1 必须在 `post_polish_recheck` 留 before/after 记录；无记录则 P1 警告。`state update --set-checker-score` 必须配套 `--append-recheck`，违反 Step 3+4.5 真源不可篡改原则。
 29. **H61 progress 字段对齐**：`state.last_completed_chapter` 与 `state.current_chapter` 必须 == max(chapter_meta keys)。Ch24 写到 24 但二字段停在 20（连续 4 章累积漂移），P1 警告。
-30. **post_draft 那一X 阈值收紧**：`那一X` block 阈值 18→12（warn 仍 10）。Ch24 实测 14 次仍只 warn 不 block，整章 polish 回避了这个签名。≥12 直接 block 阻止 commit。
+30. **签名族闸门 warn-only（Round 29 Phase 6.1）**：SIGNATURE_DENSITY / SIGNATURE_AGGREGATE / DASH_DENSITY / H78 超阈默认进 warnings 不阻断（SIGNATURE_SUMMARY 全量计数仍每次可见）；自然度真源 = reader-naturalness checker。项目可在 `.webnovel/signature_density_config.json` 设 `"_enforcement": "block"` 恢复整族硬闸。
 
 闸门与 hygiene H* 的一一对应、多层防御设计与同步维护规则见 `references/gate-matrix.md`。
 
