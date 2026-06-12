@@ -1496,6 +1496,125 @@ class StateManager:
 
 # ==================== CLI 接口 ====================
 
+def compute_reading_trend(chapter_meta: dict, last_n: int = 8) -> dict:
+    """Round 29 Phase 8 · 追读力跨章趋势 + 下一章节奏处方（纯函数，CLI get-reading-trend 调用）。
+
+    动机：thrill / reader-critic 是读者去留的真维度，但被 overall 的 1/13 平均稀释；
+    趋势信号（连败/钩子饥饿）此前只是报告备注，无消费方。本函数输出结构化 prescriptions，
+    供 context-agent（Step 1 必读）与 arc-review-checker（每 5 章连读审查）直接消费。
+
+    数据缺失策略：thrill_verdict / reader_critic 为 None 的章打断连败（保守，防缺测误开处方）。
+    """
+    chs = sorted(int(k) for k in (chapter_meta or {}) if str(k).isdigit())
+    recent = chs[-last_n:] if len(chs) >= last_n else chs
+
+    rows = []
+    for ch in recent:
+        m = chapter_meta.get(f"{ch:04d}") or {}
+        th = m.get("thrill_score")
+        th = th if isinstance(th, dict) else {}
+        cs = m.get("checker_scores") or {}
+        hc = m.get("hook_close") or {}
+        rows.append(
+            {
+                "chapter": ch,
+                "thrill_verdict": th.get("verdict"),
+                "golden_finger_release": th.get("golden_finger_release"),
+                "reader_critic": cs.get("reader-critic-checker"),
+                "hook_primary": hc.get("primary_type") or "",
+            }
+        )
+
+    def _trailing_streak(predicate):
+        n = 0
+        for row in reversed(rows):
+            if predicate(row):
+                n += 1
+            else:
+                break
+        return n
+
+    non_thrilling_streak = _trailing_streak(
+        lambda r: r["thrill_verdict"] is not None and r["thrill_verdict"] != "thrilling"
+    )
+    rc_below_85_streak = _trailing_streak(
+        lambda r: r["reader_critic"] is not None and r["reader_critic"] < 85
+    )
+
+    last_8_primaries = [r["hook_primary"] for r in rows[-8:]]
+    no_decision_hook_8 = len(last_8_primaries) >= 8 and "决策钩" not in last_8_primaries
+    no_emotion_hook_8 = len(last_8_primaries) >= 8 and "情绪钩" not in last_8_primaries
+    last_two_same_hook = (
+        len(rows) >= 2
+        and rows[-1]["hook_primary"]
+        and rows[-1]["hook_primary"] == rows[-2]["hook_primary"]
+    )
+
+    prescriptions = []
+    if non_thrilling_streak >= 3:
+        prescriptions.append(
+            {
+                "id": "THRILL_RELEASE_DUE",
+                "severity": "high",
+                "prescription": (
+                    f"连续 {non_thrilling_streak} 章 thrill verdict ≤ neutral：下一章执行包必须安排"
+                    "至少一个释放节拍（金手指实质产出 / 主角可见胜利 / 反派实际失分）并在章内兑现；"
+                    "蓄力-压制 arc 超过 3 章不释放，读者弃书风险陡增"
+                ),
+            }
+        )
+    if no_emotion_hook_8:
+        prescriptions.append(
+            {
+                "id": "EMOTION_HOOK_DUE",
+                "severity": "medium",
+                "prescription": "近 8 章章末 0 情绪钩：下一章优先用情绪钩收章（关系顶点 / 牵挂 / 未说完的话）",
+            }
+        )
+    if no_decision_hook_8:
+        prescriptions.append(
+            {
+                "id": "DECISION_HOOK_DUE",
+                "severity": "high",
+                "prescription": "近 8 章章末 0 决策钩（H25 P0 同源信号）：下一章章末必须是决策钩或给主角一次 ≥80 的可见胜利",
+            }
+        )
+    if last_two_same_hook:
+        prescriptions.append(
+            {
+                "id": "HOOK_SHAPE_VARY",
+                "severity": "medium",
+                "prescription": (
+                    f"连续 2 章章末主钩同型（{rows[-1]['hook_primary']}）：下一章必须换钩型，"
+                    "且避免同语态复用（如连续'抬脚迈一步'式身体动作钩）"
+                ),
+            }
+        )
+    if rc_below_85_streak >= 3:
+        prescriptions.append(
+            {
+                "id": "READING_LINE_POLISH_PRIORITY",
+                "severity": "high",
+                "prescription": (
+                    f"reader-critic 连续 {rc_below_85_streak} 章 < 85（追读线未达标）：下一章 Step 4 polish"
+                    "预算必须优先投向 reader-critic / thrill / reader-pull 的 problems，工艺维度 ≥85 后不再为提分 polish"
+                ),
+            }
+        )
+
+    return {
+        "last_n": last_n,
+        "chapters": [r["chapter"] for r in rows],
+        "rows": rows,
+        "non_thrilling_streak": non_thrilling_streak,
+        "rc_below_85_streak": rc_below_85_streak,
+        "no_decision_hook_8": no_decision_hook_8,
+        "no_emotion_hook_8": no_emotion_hook_8,
+        "last_two_same_hook": last_two_same_hook,
+        "prescriptions": prescriptions,
+    }
+
+
 def main():
     import argparse
     import sys
@@ -1610,6 +1729,13 @@ def main():
         help="查询最近 N 章 hook_close.primary_type 序列 + 自动判定连续 5 章同型 / 8 章缺类",
     )
     trend_parser.add_argument("--last-n", type=int, default=5)
+
+    # Round 29 Phase 8 · 追读力趋势 + 下一章节奏处方（context-agent / arc-review-checker 必读）
+    reading_trend_parser = subparsers.add_parser(
+        "get-reading-trend",
+        help="追读力跨章趋势：thrill 连败 / reader-critic 连低 / 钩子饥饿与同型 → 下一章节奏处方",
+    )
+    reading_trend_parser.add_argument("--last-n", type=int, default=8)
 
     argv = normalize_global_project_root(sys.argv[1:])
     args = parser.parse_args(argv)
@@ -1743,6 +1869,12 @@ def main():
             "last_8_primaries": last_8_primaries,
         }
         emit_success(out, message="hook_trend")
+
+    elif args.command == "get-reading-trend":
+        # Round 29 Phase 8 · 追读力趋势处方（纯函数 compute_reading_trend，单测覆盖）
+        chapter_meta = manager._state.get("chapter_meta", {}) or {}
+        last_n = int(getattr(args, "last_n", 8) or 8)
+        emit_success(compute_reading_trend(chapter_meta, last_n), message="reading_trend")
 
     elif args.command == "get-entity":
         entity = manager.get_entity(args.id)

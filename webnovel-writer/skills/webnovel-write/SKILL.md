@@ -132,7 +132,7 @@ cat "${SKILL_ROOT}/references/steps/step-0.md"
 cat "${SKILL_ROOT}/references/steps/step-1.md"
 ```
 
-要点：Task 调用 `context-agent` 产出单一创作执行包（8 板块任务书 + Contract 全字段 + 直写提示词）；完成后必须验证三份产物落盘（context_snapshot + 执行包 JSON + MD），任一缺失禁止进入 Step 2A。Ch1-3 叠加开篇黄金协议与首章加严 rubric。
+要点：**Step 1 前必跑 `state get-reading-trend`**（追读处方传给 context-agent）；`chapter % 5 == 1` 且 >5 时先 `Task(arc-review-checker)` 连读审查上一章块（R29 Phase 8）。然后 Task 调用 `context-agent` 产出单一创作执行包（8 板块任务书 + Contract 全字段 + 直写提示词）；完成后必须验证三份产物落盘（context_snapshot + 执行包 JSON + MD），任一缺失禁止进入 Step 2A。Ch1-3 叠加开篇黄金协议与首章加严 rubric。
 
 ### Step 2A：正文起草
 

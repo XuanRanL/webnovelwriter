@@ -5,6 +5,25 @@
 
 ### Step 1：Context Agent（内置 Context Contract，生成直写执行包）
 
+> **🔴 Round 29 Phase 8 · Step 1 前置：追读趋势 + arc 连读审查（所有项目通用）**
+>
+> 1. **每章必跑**（Step 1 之前，~1s）：
+>    ```bash
+>    python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" \
+>      state get-reading-trend --last-n 8
+>    ```
+>    输出的 `prescriptions[]`（THRILL_RELEASE_DUE / EMOTION_HOOK_DUE / DECISION_HOOK_DUE /
+>    HOOK_SHAPE_VARY / READING_LINE_POLISH_PRIORITY）**原样传给 context-agent**，
+>    context-agent 必须把每条处方落进执行包的追读力策略/beat 设计（见 context-agent.md §追读处方消费）。
+> 2. **每 5 章一跑**（`chapter % 5 == 1` 且 `chapter > 5`）：Step 1 之前先
+>    `Task(arc-review-checker, {start_chapter: N-5, end_chapter: N-1, next_chapter: N})`，
+>    等待其落盘 `.webnovel/arc_reviews/arc_ch{start}-{end}.json` 后，把 `prescriptions_next_5`
+>    一并传给 context-agent。arc 审查抓的是单章 checker 看不见的跨章病（连续无胜利/题材跑偏/
+>    悬念拖延/情感压平/连读疲劳），是追读质量的主防线。
+>
+> 设计依据：52 章实测 thrill thrilling 仅 9/39、reader-critic 首稿三连 68-77，而 overall 86-89
+> 完全看不出来——读者去留信号必须有独立消费通道，不能靠 1/13 平均。
+
 使用 Task 调用 `context-agent`，参数：
 - `chapter`
 - `project_root`

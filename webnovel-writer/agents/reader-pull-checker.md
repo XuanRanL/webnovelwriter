@@ -165,3 +165,10 @@ CLI 返回 `recent_primary` 数组 + 自动判定字段。按以下规则把命�
 - `no_emotion_hook_8 == true` → issue (severity=medium, id=SOFT_HOOK_EMOTION_GAP)
 
 cross_chapter_trend 子对象作为 reader-pull 输出附加字段。
+
+
+## Round 29 Phase 8 · 追读判据补充（所有项目通用）
+
+- **钩末泄压检测**：章末钩必须是全章最后一拍。钩子句之后若还有泄压收尾（如"但那是下午的事了。现在他想回去吃饭。"），张力被作者亲手放掉 → issue (severity=high, id=HOOK_DEFLATED)。修法：把泄压句移到钩子句之前或删除。
+- **同型同语态钩检测**：与上一章章末对比（输入含 prev_chapter_tail 时），主钩同型且同语态（如连续两章"抬脚/迈一步"式身体动作钩）→ issue (severity=medium, id=HOOK_SAME_SHAPE)。
+- **悬念信息配给（suspense economy）**：对章内出现的悬置实体（"那位/那个人/某组织"等刻意不命名的指称）：本章重复提及 ≥3 次但零新信息零代价 → issue (severity=high, id=SUSPENSE_STARVED)，理由：人为悬念靠不命名制造期待，读者第三次读到开始觉得作者装腔。判据是语境的：悬置本身合法，拖延不给配给才是问题。

@@ -911,6 +911,34 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" ind
 
 ---
 
+## 追读处方消费（Round 29 Phase 8 · 必做）
+
+> 主流程在 Step 1 之前已跑 `state get-reading-trend`（每章）和 arc-review-checker（每 5 章），
+> 并把 `prescriptions[]` / `prescriptions_next_5[]` 作为输入传给本 agent。**每条处方必须落成
+> 执行包里的具体 beat 或硬约束，不得只转抄文字。**
+
+| 处方 id | 必须落成 |
+|---|---|
+| THRILL_RELEASE_DUE | 章节节拍中安排 ≥1 个释放节拍（金手指实质产出 / 主角可见胜利 / 反派实际失分），写明在哪个 beat 兑现 |
+| EMOTION_HOOK_DUE | 章末钩设计指定为情绪钩，并给出情绪锚素材（关系顶点 / 牵挂 / 未说完的话） |
+| DECISION_HOOK_DUE | 章末钩设计指定为决策钩，或安排主角一次 ≥80 强度的可见胜利 |
+| HOOK_SHAPE_VARY | 章末钩类型/语态明确区别于上一章（写明上一章用了什么、本章换成什么） |
+| READING_LINE_POLISH_PRIORITY | 在执行包 warnings[] 标注：本章 Step 4 polish 预算优先 reader 维度 |
+| arc prescriptions_next_5 | 命中本章号的处方逐条落进对应 beat；未命中本章的写入"后续章节备忘" |
+
+执行包输出新增字段：
+```json
+{
+  "reading_pull_strategy": {
+    "prescriptions_consumed": [{"id": "THRILL_RELEASE_DUE", "landed_in": "beat 4: 桃源首次量产兑现"}],
+    "arc_review_ref": ".webnovel/arc_reviews/arc_ch0049-0053.json"
+  }
+}
+```
+处方存在却未消费（`prescriptions_consumed` 缺失或为空）视为 Step 1 未完成。
+
+---
+
 ## 成功标准
 
 1. ✅ 创作执行包可直接驱动 Step 2A（无需补问）

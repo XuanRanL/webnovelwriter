@@ -80,6 +80,11 @@ review_metrics 字段约束（当前工作流约定只传以下字段）：
 - `--minimal` 也必须产出 `overall_score`。
 - 未落库 `review_metrics` 不得进入 Step 5。
 - `overall_score` 必须按 `step-3-review-gate.md` 的“内外部分数合并规则”计算：`round(internal * 0.6 + external_avg * 0.4)`。若 Step 3.5 全部失败或被模式跳过（`--minimal`），则退化为纯内部分数。
+- **追读线状态必须显式输出（Round 29 Phase 8）**：Step 3 聚合时除 overall 外，单独报告一行追读线：
+  `追读线: reader-critic={分} (目标 ≥85) · thrill={verdict}/gf_release={分} · reader-pull={分}`。
+  追读线未达标（rc < 85 或 thrill ∈ {tepid, frustrating}）**不 block**，但 Step 4 的修复排序必须
+  以追读维度 problems 优先（见 steps/step-4.md 追读线规则）。理由：overall 的 1/13 平均会把
+  读者去留信号淹没（52 章实测 overall 86-89 vs thrill thrilling 仅 9/39）。
 
 ### Round 28.24 · checker_scores 双通道落库硬规则（防 H18 P0 重发）
 

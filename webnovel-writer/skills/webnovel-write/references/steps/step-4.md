@@ -36,6 +36,15 @@ cat "${SKILL_ROOT}/references/writing/typesetting.md"
 3. `medium/low` **默认不修**（Round 29 Phase 6.6）：登记到润色报告"放弃修复"段即可；仅当与某个 critical/high 修复同段、顺手可改且零扩散风险时处理。理由：28 个审查源的 medium/low 全修 = 委员会平均化 + polish 副作用面扩大（R28.15/R28.36/R28.46 的 canon 漂移均发生在 polish pass）。
 4. 执行 Anti-AI 与 No-Poison 全文终检（必须输出 `anti_ai_force_check: pass/fail`）
 
+> **🔴 Round 29 Phase 8 · polish 预算方向：追读线优先（所有项目通用）**
+>
+> 同 severity 的修复排序按**追读线**优先：reader-critic / reader-thrill / reader-pull / flow 的
+> problems 排在工艺维度（prose/pacing/density 等）前面。两条方向性规则：
+> 1. 工艺维度 ≥ 85 后**不再为提分而 polish**——52 章实测工艺长期 88+ 而 thrill thrilling 仅 9/39，
+>    读者为爽感和情感留下，不为再 +1 的文笔分留下；多打磨一轮工艺只增加 canon 漂移风险。
+> 2. `get-reading-trend` 报 `READING_LINE_POLISH_PRIORITY` 时（rc 连续 3 章 < 85），本章 polish
+>    必须先穷尽 reader 维度 critical/high 再考虑其他；润色报告需注明追读线修复项数。
+
 **字数预算硬约束**：
 
 **为什么需要**：
