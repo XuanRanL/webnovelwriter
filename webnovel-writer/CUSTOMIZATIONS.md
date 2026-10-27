@@ -7,6 +7,24 @@
 
 ---
 
+## [Tavily 网关] tavily_search.py 优先走自建网关，不再轮换原始 key
+
+### 背景
+多套工具（SEO Blog、建站工厂、本插件等）各自轮换同一个约 800 个 key 的 Tavily 池、各记各的余额：余额漂移、批量 `/usage` 体检让服务器 IP 被 Tavily 限流、key 毫无预兆地用光。工作区 `.env` 里的 6 个 key 也来自这个共享池。现在 key 只归自建网关（打过补丁的 TavilyProxyManager，`https://tavily.quickforyou.online`）管：选 key、每 key 出口 IP、冷却、额度记账；客户端只带限定范围的 token。
+
+### 改动
+1. **`scripts/tavily_search.py` 凭证优先级：网关配置 → 旧的原始 key**。网关配置 = `~/.xuanran-seo/credentials/tavily-gateway.json`（`{"base_url","token"}`），环境变量 `TAVILY_GATEWAY_URL` / `TAVILY_GATEWAY_TOKEN` 覆盖其字段。配了就只走网关：`Authorization: Bearer <token>`，请求体不带 `api_key`，不轮换 key、不调 `/usage`；research 轮询用同一网关与 token（网关固定 key）。没配时 `TAVILY_API_KEYS` / `.env` / `~/.claude.json` 的旧行为一字不改。
+2. **网关错误契约（`GatewayClient`）**：401 token 无效、503 `no_available_keys` 立即失败；429 按 `Retry-After` 最多重试 2 次（>120s 的冷却直接报错）；502 重试 1 次。
+3. **不悄悄退回原始 key**：配置残缺（缺 token、JSON 坏、非 https）直接退出 2；网关不可达退出 4。只有显式 `TAVILY_GATEWAY_FALLBACK=pool`（或 `keys`）才在网关不可达时改用原始 key，并在 stderr 打出醒目警告。
+4. 退出码：0 成功 · 1 其他 · 2 凭证问题（无 key / 网关配置错 / token 被拒）· 3 网关无可用 key · 4 网关不可达。
+5. `step-0.md` Search 失败处理协议改为先查网关配置。
+6. 新测试 `data_modules/tests/test_tavily_gateway.py`（22 个，真实本地 HTTP 服务器模拟网关；不读真实网关配置、工作区 `.env` 与外网）。
+
+### 注意
+项目本地的 `万妖图鉴/调研笔记/_tavily_search.py` 不被插件引用，未改动（它自带硬编码 key，若还在用，建议改为调用插件脚本）。插件改动后跑 `webnovel.py sync-cache` 同步到 cache。网关模式实测通过后，删除工作区 `.env` 的 `TAVILY_API_KEYS=` 行（先备份为 `.env.bak-20261027`），避免网关配置被移走时悄悄回到共享池。
+
+---
+
 ## [Round 29 · Phase 3] data-agent 唯一写库协议：core 字段完整性前移到写库时刻
 
 ### 背景

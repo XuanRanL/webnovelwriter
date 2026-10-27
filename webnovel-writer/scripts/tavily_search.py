@@ -7,14 +7,26 @@ Usage:
   python tavily_search.py search "query text" [--max 5] [--depth advanced] [--answer advanced]
   python tavily_search.py research "research question" [--model pro|mini|auto] [--max-wait 600]
 
-Key discovery order:
-  1. env var TAVILY_API_KEYS (comma-separated) or TAVILY_API_KEY
-  2. .env files:  <project>/.env  ->  <script>/.env  ->  CWD/.env
-  3. ~/.claude.json  (extracted from MCP tavily url: tavilyApiKey=tvly-...)
+Credential precedence:
+  1. Tavily gateway (preferred) — ~/.xuanran-seo/credentials/tavily-gateway.json
+     {"base_url": "https://...", "token": "..."}; env TAVILY_GATEWAY_URL / TAVILY_GATEWAY_TOKEN override it.
+     Configured = gateway mode: every request carries the gateway token, the gateway picks the Tavily key
+     (no client-side rotation, no /usage, no api_key in the body). A broken config is an error, never a
+     silent switch to raw keys. Only TAVILY_GATEWAY_FALLBACK=pool (or =keys) lets an unreachable gateway
+     fall back to the legacy keys below, with a loud warning.
+  2. Legacy raw keys, only when no gateway is configured:
+     a. env var TAVILY_API_KEYS (comma-separated) or TAVILY_API_KEY
+     b. .env files:  <project>/.env  ->  <script>/.env  ->  CWD/.env
+     c. ~/.claude.json  (extracted from MCP tavily url: tavilyApiKey=tvly-...)
+
+Exit codes: 0 ok · 1 other error · 2 no usable credentials (no keys, broken gateway config, gateway
+rejected the token) · 3 gateway has no available keys (503) · 4 gateway unreachable.
 
 Output: markdown to stdout (UTF-8 forced on Windows). Use --json for raw JSON.
 """
 import argparse
+import datetime
+import email.utils
 import json
 import os
 import re
@@ -23,6 +35,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # Force UTF-8 stdout/stderr on Windows (avoid GBK encode errors)
 try:
@@ -32,6 +45,201 @@ except AttributeError:
     pass
 
 API_BASE = "https://api.tavily.com"
+
+# ---------- Tavily gateway (one owner of the shared key pool) ----------
+# Several tools used to rotate the same Tavily key pool with their own balance tracking; balances drifted,
+# bulk /usage checks got the server IP rate-limited and keys ran dry. The self-hosted gateway now owns the
+# keys (selection, egress IPs, cooldowns, credits); this client sends only a scoped token.
+GATEWAY_FILE = Path.home() / ".xuanran-seo" / "credentials" / "tavily-gateway.json"
+GATEWAY_ENV_URL, GATEWAY_ENV_TOKEN, GATEWAY_ENV_FALLBACK = (
+    "TAVILY_GATEWAY_URL", "TAVILY_GATEWAY_TOKEN", "TAVILY_GATEWAY_FALLBACK")
+GATEWAY_HINT = "~/.xuanran-seo/credentials/tavily-gateway.json or TAVILY_GATEWAY_URL / TAVILY_GATEWAY_TOKEN"
+MAX_429_RETRIES = 2
+MAX_502_RETRIES = 1
+DEFAULT_RETRY_AFTER = 1.0
+MAX_RETRY_AFTER = 120.0          # a longer cooldown is reported, not slept through
+UNREACHABLE_STATUSES = {520, 521, 522, 523, 524, 530}   # Cloudflare: origin unreachable
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+class GatewayConfigError(ValueError):
+    """The gateway config exists but is unusable. Never contains the token."""
+
+
+class GatewayError(RuntimeError):
+    def __init__(self, message, status=None, code=None):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+
+
+class GatewayUnreachable(GatewayError):
+    """No answer from the gateway (connection, TLS, timeout, Cloudflare origin errors)."""
+
+
+def load_gateway(environ=None, path=None):
+    """{"base_url", "token"} when the gateway is configured, None when not; GatewayConfigError if broken."""
+    environ = os.environ if environ is None else environ
+    path = GATEWAY_FILE if path is None else Path(path)
+    data = {}
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            raise GatewayConfigError(f"{path.name} is not readable JSON") from None
+        if not isinstance(data, dict):
+            raise GatewayConfigError(f'{path.name} must be {{"base_url": ..., "token": ...}}')
+    env_url = str(environ.get(GATEWAY_ENV_URL) or "").strip()
+    env_token = str(environ.get(GATEWAY_ENV_TOKEN) or "").strip()
+    if not (data or env_url or env_token):
+        return None
+    url = env_url or str(data.get("base_url") or "").strip()
+    token = env_token or str(data.get("token") or "").strip()
+    missing = [name for name, value in (("base_url", url), ("token", token)) if not value]
+    if missing:
+        raise GatewayConfigError(f"Tavily gateway config is missing {' / '.join(missing)} ({GATEWAY_HINT})")
+    if any(ch.isspace() for ch in token):
+        raise GatewayConfigError("Tavily gateway token contains whitespace")
+    parts = urlsplit(url)
+    local = parts.scheme == "http" and (parts.hostname or "") in LOCAL_HOSTS
+    if not parts.hostname or not (parts.scheme == "https" or local):
+        # the bearer token must not travel in clear text
+        raise GatewayConfigError(f"Tavily gateway base_url must be https:// (http only for localhost): {url[:80]}")
+    return {"base_url": url.rstrip("/"), "token": token}
+
+
+def fallback_allowed(environ=None):
+    environ = os.environ if environ is None else environ
+    return str(environ.get(GATEWAY_ENV_FALLBACK) or "").strip().lower() in ("pool", "keys")
+
+
+def _retry_after(headers):
+    value = str((headers or {}).get("Retry-After") or "").strip()
+    if not value:
+        return DEFAULT_RETRY_AFTER
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        when = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return DEFAULT_RETRY_AFTER
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    return max(0.0, (when - datetime.datetime.now(datetime.timezone.utc)).total_seconds())
+
+
+def _error_code(raw):
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        return None
+    if isinstance(body, dict):
+        code = body.get("error") or body.get("detail")
+        if isinstance(code, dict):
+            code = code.get("error")
+        return str(code)[:120] if code else None
+    return None
+
+
+class GatewayClient:
+    """Tavily-compatible client for the gateway: same search/research surface as TavilyClient.
+
+    Error contract: 401 (bad token) and 503 (no_available_keys) fail fast; 429 waits for Retry-After
+    at most twice; 502 is retried once. Never rotates keys, never sends api_key, never calls /usage.
+    """
+
+    def __init__(self, base_url, token, sleep=None):
+        self.base_url = base_url.rstrip("/")
+        self._token = token
+        self.sleep = sleep if sleep is not None else time.sleep
+
+    def __repr__(self):
+        return f"GatewayClient(base_url={self.base_url!r})"
+
+    def _send(self, method, path, body=None, timeout=90):
+        data = None
+        headers = {"Authorization": f"Bearer {self._token}"}
+        if body is not None:
+            body = {k: v for k, v in body.items() if k != "api_key"}   # the gateway picks the key
+            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(f"{self.base_url}{path}", data=data, headers=headers, method=method)
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode("utf-8", errors="replace")
+        return json.loads(raw) if raw else {}
+
+    def _call(self, method, path, body=None, timeout=90):
+        tries_429 = tries_502 = 0
+        while True:
+            try:
+                return self._send(method, path, body=body, timeout=timeout)
+            except urllib.error.HTTPError as e:
+                status = e.code
+                try:
+                    raw = e.read().decode("utf-8", errors="replace")
+                except Exception:
+                    raw = ""
+                code = _error_code(raw)
+                where = f"{method} {path}"
+                if status == 401:
+                    raise GatewayError(f"Tavily gateway rejected the token (HTTP 401 {code or 'unauthorized'}) on {where}",
+                                       401, code) from None
+                if status == 503:
+                    raise GatewayError(f"Tavily gateway HTTP 503 ({code or 'unavailable'}) on {where}", 503, code) from None
+                if status == 429 and tries_429 < MAX_429_RETRIES:
+                    delay = _retry_after(e.headers)
+                    if delay > MAX_RETRY_AFTER:
+                        raise GatewayError(f"Tavily gateway 429 with Retry-After {delay:.0f}s (> {MAX_RETRY_AFTER:.0f}s) "
+                                           f"on {where}", 429, code) from None
+                    tries_429 += 1
+                    print(f"[warn] gateway 429 on {where}; retry {tries_429}/{MAX_429_RETRIES} in {delay:.1f}s",
+                          file=sys.stderr)
+                    self.sleep(delay)
+                    continue
+                if status == 502 and tries_502 < MAX_502_RETRIES:
+                    tries_502 += 1
+                    print(f"[warn] gateway 502 on {where}; retrying once", file=sys.stderr)
+                    continue
+                if status in UNREACHABLE_STATUSES:
+                    raise GatewayUnreachable(f"Tavily gateway unreachable (HTTP {status}) on {where}", status) from None
+                raise GatewayError(f"Tavily gateway HTTP {status} on {where}: {code or raw[:200]}", status, code) from None
+            except OSError as e:   # URLError, timeouts, refused/reset connections, TLS errors
+                raise GatewayUnreachable(f"Tavily gateway unreachable ({type(e).__name__}: {str(e)[:120]})") from None
+
+    def search(self, query, max_results=5, search_depth="advanced",
+               include_answer="advanced", topic="general", extras=None):
+        body = {
+            "query": query,
+            "max_results": max_results,
+            "search_depth": search_depth,
+            "include_answer": include_answer,
+            "topic": topic,
+        }
+        if extras:
+            body.update({k: v for k, v in extras.items() if v is not None})
+        return self._call("POST", "/search", body, timeout=90)
+
+    def research(self, input_text, model="pro", poll_interval=6, max_wait=600):
+        d = self._call("POST", "/research", {"input": input_text, "model": model}, timeout=60)
+        rid = d.get("request_id")
+        if not rid:
+            return d
+        print(f"[info] research submitted via gateway, rid={rid}, polling every {poll_interval}s (max {max_wait}s)...",
+              file=sys.stderr)
+        start = time.time()
+        while True:
+            elapsed = time.time() - start
+            if elapsed > max_wait:
+                raise TimeoutError(f"Research timed out after {max_wait}s, rid={rid}")
+            # same base URL and token: the gateway pins the key that created the task
+            d = self._call("GET", f"/research/{rid}", timeout=30)
+            status = d.get("status")
+            if status not in ("pending", "in_progress", "queued"):
+                print(f"[info] research finished after {elapsed:.1f}s status={status}", file=sys.stderr)
+                return d
+            self.sleep(poll_interval)
 
 
 # ---------- Key discovery ----------
@@ -269,7 +477,7 @@ def fmt_research(d, query):
 
 
 # ---------- CLI ----------
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Tavily direct API client (bypasses MCP proxy for rate-limit reliability)",
     )
@@ -301,18 +509,58 @@ def main():
     p_res.add_argument("--poll-interval", type=int, default=6)
     p_res.add_argument("--json", action="store_true")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    keys = _load_keys()
-    if not keys:
-        print("[ERR] No Tavily keys found.", file=sys.stderr)
-        print("      Set TAVILY_API_KEYS env var, or add to .env, "
-              "or ensure ~/.claude.json has tavily MCP entries.", file=sys.stderr)
+    def legacy_client():
+        keys = _load_keys()
+        if not keys:
+            print("[ERR] No Tavily keys found.", file=sys.stderr)
+            print(f"      Configure the Tavily gateway ({GATEWAY_HINT}), or set TAVILY_API_KEYS env var, "
+                  "or add to .env, or ensure ~/.claude.json has tavily MCP entries.", file=sys.stderr)
+            sys.exit(2)
+        print(f"[info] {len(keys)} tavily key(s) loaded", file=sys.stderr)
+        return TavilyClient(keys)
+
+    # Precedence: gateway config, then legacy raw keys. A broken gateway config never falls back.
+    try:
+        gateway = load_gateway()
+    except GatewayConfigError as e:
+        print(f"[ERR] {e}", file=sys.stderr)
+        print("      Fix the gateway config; raw keys are not used while a gateway config is present.", file=sys.stderr)
         sys.exit(2)
+    if gateway:
+        print(f"[info] tavily gateway mode: {gateway['base_url']}", file=sys.stderr)
+        client = GatewayClient(gateway["base_url"], gateway["token"])
+    else:
+        client = legacy_client()
 
-    print(f"[info] {len(keys)} tavily key(s) loaded", file=sys.stderr)
-    client = TavilyClient(keys)
+    try:
+        _run(client, args)
+    except GatewayUnreachable as e:
+        if not fallback_allowed():
+            print(f"[ERR] {e}", file=sys.stderr)
+            print(f"      Set {GATEWAY_ENV_FALLBACK}=pool to use the legacy raw keys until the gateway is back "
+                  "(not recommended: it brings back client-side rotation of the shared pool).", file=sys.stderr)
+            sys.exit(4)
+        print("[WARN] " + "!" * 60, file=sys.stderr)
+        print(f"[WARN] {GATEWAY_ENV_FALLBACK}={os.environ.get(GATEWAY_ENV_FALLBACK)}: {e}", file=sys.stderr)
+        print("[WARN] FALLING BACK TO RAW TAVILY KEYS (client-side rotation of the shared pool). "
+              f"Unset {GATEWAY_ENV_FALLBACK} once the gateway is back.", file=sys.stderr)
+        print("[WARN] " + "!" * 60, file=sys.stderr)
+        _run(legacy_client(), args)
+    except GatewayError as e:
+        print(f"[ERR] {e}", file=sys.stderr)
+        if e.status == 401:
+            print(f"      The gateway token is invalid: check {GATEWAY_HINT}.", file=sys.stderr)
+            sys.exit(2)
+        if e.status == 503:
+            print("      The gateway has no available Tavily key right now: add keys on the gateway or wait for "
+                  "cooldowns; adding raw keys locally does not help.", file=sys.stderr)
+            sys.exit(3)
+        sys.exit(1)
 
+
+def _run(client, args):
     if args.cmd == "search":
         include_answer = args.answer
         if include_answer.lower() in ("none", "no", "false", "off", ""):

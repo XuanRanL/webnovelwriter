@@ -219,9 +219,9 @@ python -X utf8 "${SCRIPTS_DIR}/webnovel.py" --project-root "${PROJECT_ROOT}" wor
 搜索结果归档：有价值的专业信息保存到 `调研笔记/` 对应主题文件，供后续章节复用。
 
 **Search 失败处理协议（硬规则）**：
-如果 `tavily_search.py` 执行失败（API key 缺失/全部 key 耗尽/网络超时）：
+如果 `tavily_search.py` 执行失败（网关 token 无效/网关无可用 key/网关不可达/API key 缺失/全部 key 耗尽/网络超时）：
 1. 立即停止当前工作
-2. 告知用户搜索脚本执行失败及具体错误信息
-3. 建议用户检查 API key 配置（环境变量 `TAVILY_API_KEYS` / `.env` 文件 / `~/.claude.json`）
+2. 告知用户搜索脚本执行失败及具体错误信息（退出码：2 凭证问题 · 3 网关无可用 key · 4 网关不可达）
+3. 建议用户检查凭证配置：优先 Tavily 网关（`~/.xuanran-seo/credentials/tavily-gateway.json` 或 `TAVILY_GATEWAY_URL` / `TAVILY_GATEWAY_TOKEN`，配了就只走网关）；未配网关时才用 `TAVILY_API_KEYS` / `.env` / `~/.claude.json` 的原始 key。不要自行设 `TAVILY_GATEWAY_FALLBACK` 绕过网关
 4. 等待用户修复配置后再继续
 5. 不要跳过搜索步骤直接继续——搜索获取的专业细节直接影响质量
