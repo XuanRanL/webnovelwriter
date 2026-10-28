@@ -14,7 +14,7 @@
 
 ### 改动
 1. **`scripts/tavily_search.py` 凭证优先级：网关配置 → 旧的原始 key**。网关配置 = `~/.xuanran-seo/credentials/tavily-gateway.json`（`{"base_url","token"}`），环境变量 `TAVILY_GATEWAY_URL` / `TAVILY_GATEWAY_TOKEN` 覆盖其字段。配了就只走网关：`Authorization: Bearer <token>`，请求体不带 `api_key`，不轮换 key、不调 `/usage`；research 轮询用同一网关与 token（网关固定 key）。没配时 `TAVILY_API_KEYS` / `.env` / `~/.claude.json` 的旧行为一字不改。
-2. **网关错误契约（`GatewayClient`）**：401 token 无效、503 `no_available_keys` 立即失败；429 按 `Retry-After` 最多重试 2 次（>120s 的冷却直接报错）；502 重试 1 次。
+2. **网关错误契约（`GatewayClient`）**：401 token 无效、503 `no_available_keys` 立即失败；429 按 `Retry-After` 最多重试 2 次（>120s 的冷却直接报错）；502 重试 1 次。网关请求带具名 `User-Agent`（实测 2026-10-27：网关前的 Cloudflare 对 urllib 默认的 `Python-urllib/3.x` 返回 403 `error code: 1010`）。
 3. **不悄悄退回原始 key**：配置残缺（缺 token、JSON 坏、非 https）直接退出 2；网关不可达退出 4。只有显式 `TAVILY_GATEWAY_FALLBACK=pool`（或 `keys`）才在网关不可达时改用原始 key，并在 stderr 打出醒目警告。
 4. 退出码：0 成功 · 1 其他 · 2 凭证问题（无 key / 网关配置错 / token 被拒）· 3 网关无可用 key · 4 网关不可达。
 5. `step-0.md` Search 失败处理协议改为先查网关配置。

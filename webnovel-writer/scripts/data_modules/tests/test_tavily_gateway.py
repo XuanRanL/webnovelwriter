@@ -35,7 +35,8 @@ class FakeGateway:
                 length = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(length)) if length else None
                 state.requests.append({"method": self.command, "path": self.path,
-                                       "auth": self.headers.get("Authorization"), "body": body})
+                                       "auth": self.headers.get("Authorization"), "body": body,
+                                       "ua": self.headers.get("User-Agent") or ""})
                 status, payload, headers = state.script.pop(0) if state.script else state.default(self.command, self.path)
                 data = json.dumps(payload).encode("utf-8")
                 self.send_response(status)
@@ -143,6 +144,16 @@ def test_search_sends_the_token_and_no_api_key(gw):
     assert [(r["method"], r["path"], r["auth"]) for r in gw.requests] == [("POST", "/search", f"Bearer {TOKEN}")]
     assert "api_key" not in gw.requests[0]["body"]
     assert TOKEN not in repr(client(gw))
+
+
+def test_gateway_requests_carry_a_named_user_agent(gw):
+    # Live 2026-10-27: Cloudflare in front of the gateway answers urllib's default "Python-urllib/3.x"
+    # with 403 "error code: 1010" (banned browser signature); httpx-based clients passed.
+    client(gw).research("question", poll_interval=0, max_wait=30)
+    agents = {r["ua"] for r in gw.requests}
+    assert len(agents) == 1
+    agent = agents.pop()
+    assert agent.startswith("webnovel-writer") and "Python-urllib" not in agent
 
 
 def test_401_fails_fast(gw):

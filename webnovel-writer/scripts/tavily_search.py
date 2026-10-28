@@ -60,6 +60,8 @@ DEFAULT_RETRY_AFTER = 1.0
 MAX_RETRY_AFTER = 120.0          # a longer cooldown is reported, not slept through
 UNREACHABLE_STATUSES = {520, 521, 522, 523, 524, 530}   # Cloudflare: origin unreachable
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# Cloudflare in front of the gateway bans urllib's default "Python-urllib/3.x" signature (403, error 1010).
+GATEWAY_USER_AGENT = "webnovel-writer-tavily/1.0 (+gateway client)"
 
 
 class GatewayConfigError(ValueError):
@@ -160,7 +162,8 @@ class GatewayClient:
 
     def _send(self, method, path, body=None, timeout=90):
         data = None
-        headers = {"Authorization": f"Bearer {self._token}"}
+        headers = {"Authorization": f"Bearer {self._token}", "User-Agent": GATEWAY_USER_AGENT,
+                   "Accept": "application/json"}
         if body is not None:
             body = {k: v for k, v in body.items() if k != "api_key"}   # the gateway picks the key
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")
